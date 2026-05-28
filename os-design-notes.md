@@ -781,3 +781,53 @@ Deliverables:
 3. Add a root-level Space-oriented `.in` example or design stub in Inauguration if it matches current syntax.
 4. Identify the smallest Inauguration compiler improvement that moves toward component manifests.
 5. Keep Space native terms consistent before writing kernel code.
+
+## Current Inauguration Readiness Snapshot
+
+Checked after creating this planning repo.
+
+What exists now:
+
+- `.in` supports imports, capabilities, extern bindings with required capabilities, structs, functions, bounded bodies, annotations, distributed function facts, and parallel regions.
+- `in agent` emits machine-readable imports, effects, capabilities, Core IR summaries, call edges, orchestration facts, diagnostics, and timing.
+- `in build --parser in` can parse and lower `.in` into the current Core IR/textual SIL path.
+- Package reporting already has package capabilities and capability policy validation.
+- Native backend work exists, but the public CLI still reports native backend status rather than a complete native object backend.
+
+Space-oriented work landed in Inauguration:
+
+- Root `space.in` declares a first Space boot contract using today's `.in` grammar.
+- It declares Space capabilities for boot, capability tables, component loading, object graph access, and snapshots.
+- It declares extern Space service bindings for capability grant, component load, object-root creation, and realm checkpointing.
+- It verifies through `in build --parser in --path space.in --module-id Space`.
+- It reports cleanly through `in agent --parser in --path space.in --module-id Space`.
+- It was committed to Inauguration branch `self-hosted-compiler` as `05519e8`.
+
+What is still missing for Space:
+
+- First-class `.in` component declarations rather than modeling components as functions plus capabilities.
+- Component image manifest emission.
+- Native Space Component Image metadata format.
+- Capability type checking beyond string policy facts.
+- Capability attenuation, delegation, leases, and revocation semantics.
+- Object schema declarations in `.in`.
+- Realm declarations in `.in`.
+- Checkpoint policy declarations in `.in`.
+- Deterministic execution declarations in `.in`.
+- Freestanding x86_64 code generation suitable for a nanokernel or early runtime.
+- A no-host runtime mode for `.in`.
+- A stable ABI/interface model for Space service calls.
+- A boot-image emitter or manifest that Space can load directly.
+
+Smallest next compiler improvement:
+
+Add a `component` surface to `.in` that can be parsed into agent/graph/package facts before it lowers to executable code. The first version can be metadata-only and should report:
+
+- component name
+- required capabilities
+- exported service names
+- checkpoint policy
+- deterministic policy
+- entry function
+
+That keeps the next step aligned with Space without prematurely committing to native codegen or a final image format.
