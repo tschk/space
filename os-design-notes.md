@@ -1,14 +1,24 @@
 # Space OS Design Notes
 
-## Reasoning Path
+## Direction
 
-Space is a true new 64-bit x86_64-first operating system design. It uses `.in` as the native systems and orchestration language through the Inauguration compiler toolchain. Soliloquy and RV8 are references for the browser-facing shell and web/runtime surface, not the kernel substrate.
+Space is a true new 64-bit x86_64-first operating system centered on `.in` as the native systems and orchestration language.
 
-The design should not assume POSIX, ELF, fork, Unix files, or a traditional userspace/kernel split. Compatibility with Linux, Darwin/XNU, and Windows applications should be implemented as sandboxed personalities on top of native primitives, not as the core contract.
+Space is not a POSIX clone, not an ELF-first system, and not a Unix-like kernel with a different shell. The native model is:
 
-CS: 8/10.
+```text
+component + capability + object + execution graph
+```
 
-## Non-Negotiable Direction
+The traditional model is explicitly not the native contract:
+
+```text
+process + file + syscall + user
+```
+
+Compatibility with Linux, Darwin/XNU, and Windows applications should exist as sandboxed personalities on top of Space primitives. Those personalities may expose legacy concepts internally, but they must not define the native OS.
+
+## Non-Negotiables
 
 - 64-bit only.
 - x86_64 first.
@@ -25,207 +35,113 @@ CS: 8/10.
 - Snapshotting and checkpointing as primitives.
 - Deterministic builds and deterministic execution modes.
 - Zero-copy IPC.
-- Integrated AI/runtime orchestration.
+- Integrated runtime orchestration.
 
-## Working Philosophy
+## Chosen Architecture
 
-Space is closest to a nanokernel, but the center of the system is the `.in` language and compiler rather than a traditional kernel API.
+Space uses a nanokernel plus capability microkernel hybrid with a single-object-space runtime.
 
-The core foundation should be as small as possible. It exists to get onto bare metal, establish memory safety boundaries, enforce capabilities, schedule execution, and bootstrap the compiler/runtime environment. Everything above that foundation is a separate isolated service. Each service receives only the capabilities it needs, and all authority is explicit.
+The nanokernel is the smallest hardware enforcement layer that makes `.in` capability semantics real on bare metal. It should not contain filesystems, Unix processes, users, package managers, desktop sessions, browser tabs, or compatibility policy.
 
-The goal is not to stack many compatibility or abstraction layers on top of hardware. The goal is to make the compiler, runtime, and capability model the operating system contract. The kernel substrate should expose the minimum hardware-enforced primitives needed for `.in` to express and enforce:
-
-- component boundaries
-- authority transfer
-- object identity
-- scheduling intent
-- persistence
-- checkpointing
-- distributed placement
-- deterministic execution
-- compatibility containment
-
-This means native Space software should not think in terms of Unix processes, files, users, or inherited descriptors. It should think in terms of compiled components, persistent objects, capability handles, execution graphs, and isolated services.
-
-## Kernel Substrate Options
-
-### Option 1: Capability Microkernel
-
-A capability microkernel keeps the privileged kernel small. The kernel owns CPU scheduling, address spaces, interrupt routing, memory objects, capability tables, channels, timers, and checkpoint hooks. Drivers, object storage, network stacks, GPU services, compatibility layers, and AI/runtime orchestration run as sandboxed components.
-
-Native system calls would operate on typed object handles. There would be no ambient path lookup, global process table, Unix user IDs, inherited file descriptors, or process cloning. Authority is passed by explicit capability transfer.
-
-The core kernel object set would likely include:
-
-- `Task`
-- `Thread`
-- `AddressSpace`
-- `CapabilityTable`
-- `Channel`
-- `VmObject`
-- `Interrupt`
-- `Timer`
-- `Snapshot`
-- `Component`
-- `ComputeQueue`
-
-This fits the strongest version of the design. It gives clear isolation, zero-copy IPC through shared VM objects, and a natural place to implement compatibility personalities as isolated services.
-
-The main downside is complexity at the system boundary. A microkernel is only elegant if the service contracts are strong. If the driver model, memory object model, and component lifecycle model are vague, the design turns into a pile of privileged servers with hidden ambient trust.
-
-This is a strong candidate for Space, but it should be paired with a higher-level runtime supervisor so the system does not feel like raw kernel handles everywhere.
-
-### Option 2: Exokernel / Library OS
-
-An exokernel exposes protected hardware resources directly through capabilities and leaves abstractions to library operating systems. Instead of one kernel-defined process/file/socket model, different personalities can define their own runtime contracts.
-
-In this model:
-
-- Native `.in` components use Space object graphs and capability channels.
-- Linux compatibility runs as a Linux personality library/runtime.
-- Darwin compatibility runs as a Mach/BSD/Cocoa personality.
-- Windows compatibility runs as an NT object-manager personality.
-
-This is the most radical and wheel-reinventing option. It makes compatibility layers first-class without letting any one legacy OS define the native platform.
-
-The downside is that it can fragment the platform. If every personality owns too much policy, the native system loses coherence. Debugging can also become difficult because failures happen in the boundary between kernel resource protection, library OS policy, and component runtime behavior.
-
-This option is attractive for research, but risky for a first bootable system.
-
-### Option 3: Nanokernel Plus Managed Runtime
-
-A nanokernel does even less than a microkernel. It provides isolation, CPU entry, memory mapping, interrupts, timers, and low-level capability enforcement. Most OS policy moves into a managed runtime written in `.in`.
-
-The `.in` runtime becomes the real operating system brain:
-
-- component graph supervisor
-- persistent object graph manager
-- scheduler policy engine
-- distributed execution coordinator
-- AI orchestration service
-- compatibility personality loader
-- deterministic execution controller
-- snapshot/checkpoint coordinator
-
-This fits the language-aware goal best. The kernel is not where most semantics live. The kernel only enforces the substrate that the `.in` runtime cannot safely enforce itself.
-
-The hard part is bootstrapping. The runtime becomes critical very early. A broken runtime can break the entire system even when the nanokernel is correct. The design therefore needs a tiny rescue path and a deterministic bootstrap image format.
-
-This is likely the best long-term identity for Space if the `.in` language is central.
-
-### Option 4: Monolithic Capability Kernel
-
-A monolithic capability kernel puts drivers, scheduler, object store, network, GPU services, and compatibility code into one kernel image, but still uses internal capability APIs rather than Unix-like global authority.
-
-This is the fastest path to visible progress. Early boot, framebuffer, keyboard, memory allocation, object storage, and a browser shell can be wired without designing a full service graph first.
-
-The downside is architectural drift. It violates the spirit of sandboxed components if treated as the final design. Once drivers and compatibility layers live in-kernel, extracting them later is expensive.
-
-This option is useful only as a temporary bring-up substrate. If used, the rule should be: internal interfaces must already look like the future component contracts.
-
-### Option 5: Single Address Space Runtime Kernel
-
-A single address space operating system maps all components into one global virtual address space. Isolation is enforced by capabilities, language/runtime safety, memory permissions, and typed object access rather than by giving each process an unrelated address space.
-
-This is different from a traditional monolithic kernel. Components can still be sandboxed. The sandbox boundary is capability and object access, not necessarily page-table separation for every component.
-
-Potential benefits:
-
-- Very fast IPC because pointers, object references, and shared buffers can remain meaningful across components.
-- Persistent object graphs become easier because object identity can be stable across runtime boundaries.
-- Snapshotting and checkpointing can operate over object reachability instead of file/process reconstruction.
-- The `.in` runtime can reason about live objects, capabilities, and execution graphs directly.
-- GPU and heterogeneous compute queues can share buffers with fewer translation layers.
-
-Major risks:
-
-- A memory safety bug can become catastrophic unless unsafe/native code is tightly confined.
-- Revocation is harder because many components may hold references into shared object spaces.
-- Compatibility layers for Linux, Darwin, and Windows expect process-local address-space semantics.
-- Garbage collection, object pinning, and persistent references become core OS problems.
-- Hardware isolation still matters for hostile or legacy code.
-
-A practical version would not be a fully shared raw address space for everything. It would be a hybrid:
-
-- One global object identity space.
-- Per-component capability views.
-- Per-component memory protection domains for unsafe code.
-- Shared immutable and copy-on-write object regions.
-- Zero-copy transfer through typed shared memory objects.
-- Language-managed components can share more aggressively.
-- Legacy compatibility personalities run in stricter isolated address spaces.
-
-This makes the single-address-space idea compatible with sandboxing. Space can expose a single persistent object graph while still using hardware page tables where needed.
-
-## Recommended Direction
-
-The best substrate is a nanokernel plus capability microkernel hybrid with a single-address-space-inspired object runtime.
-
-The kernel should provide:
+The kernel substrate owns only what must be hardware-enforced:
 
 - CPU bootstrap and x86_64 long mode.
-- Physical and virtual memory management.
-- Capability tables.
-- Typed kernel objects.
-- Threads and scheduling.
-- Interrupt routing.
+- Physical memory discovery.
+- Virtual memory and page table control.
+- Interrupt and exception routing.
 - Timers.
+- CPU scheduling hooks.
+- Typed kernel object IDs.
+- Capability tables.
+- Memory protection domains.
 - Channels.
 - VM objects.
-- Snapshot and checkpoint hooks.
 - Minimal debug console.
+- Fault handling.
 - Component bootstrap.
+- Snapshot/checkpoint hooks.
 
-The `.in` runtime should provide:
+Everything else is a sandboxed component above the substrate:
 
-- component lifecycle
-- object graph storage
-- package/build verification
-- policy evaluation
-- compatibility personality management
-- distributed execution
-- AI/runtime orchestration
-- high-level scheduling policy
-- deterministic replay mode
+- component supervisor
+- object graph store
+- network service
+- input service
+- compositor service
+- GPU/compute service
+- package/build verifier
+- compatibility personalities
+- distributed execution fabric
+- runtime policy engine
+- browser/runtime shell
 
-The memory model should provide:
+The guiding rule is simple: if a feature can run as an isolated component with explicit capabilities, it should not live in the nanokernel.
 
-- hardware-isolated domains for unsafe or legacy code
-- shared object regions for native safe `.in` components
-- stable object IDs instead of pathnames as the main reference model
-- typed capabilities for object access
-- revocation and lease tracking
-- snapshot roots and checkpoint epochs
+## Compiler-As-OS Contract
 
-This avoids becoming just another Unix kernel, but it also avoids betting everything on a pure single-address-space system before the safety model is mature.
+Space treats the `.in` language and compiler as the native OS contract.
 
-## Compatibility Personalities
+The compiler should output more than machine code. It should produce a component artifact that describes:
 
-Compatibility should not be the native contract.
+- component code
+- required capabilities
+- exported interfaces
+- imported services
+- object schemas
+- scheduling hints
+- determinism constraints
+- snapshot policy
+- migration policy
+- target architecture
+- build provenance
 
-Linux support should run as a Linux personality that translates syscalls into Space objects, channels, sockets, and object-graph storage. It should start with a narrow syscall set for statically linked command-line programs before attempting graphical applications.
+The runtime then loads this artifact and the nanokernel enforces it on hardware.
 
-Darwin/XNU support should be shaped more like Darling: Mach ports, launch services, dyld behavior, frameworks, and app bundles are translated into Space services. It should not require importing XNU code.
+The flow should become:
 
-Windows support should be shaped more like ReactOS/Wine at the boundary: NT objects, handles, registry, Win32, and PE loading are personality services. The native kernel should not become NT.
+```text
+.in source
+compiled component image
+verified capability manifest
+runtime loader
+nanokernel enforcement
+isolated component execution
+```
 
-All personalities should be sandboxed components with explicit capabilities. They should not receive global authority just because legacy software expects it.
+This means native Space development should feel like writing declared components and authority graphs, not calling syscalls.
 
-## Open Decisions
+## Single Object Space
 
-- Native executable/package format to replace ELF.
-- Whether `.in` compiles kernel components directly at v0 or first generates Rust/C-compatible low-level artifacts.
-- Whether the first graphics path is framebuffer, virtio-gpu, or a minimal software compositor.
-- Whether the first object store is in-memory only, append-log-backed, or built over a block device from day one.
-- How much of the single-address-space model is safe to expose before the `.in` runtime is mature.
-- Whether deterministic execution is default or an opt-in mode for replay/build/test.
-- How AI orchestration is represented without giving it ambient authority.
+Space should not use a raw single address space for every kind of code. That is too dangerous for drivers, legacy compatibility, and unsafe code.
+
+Instead, Space should use one global object identity space with multiple memory protection domains.
+
+The object model:
+
+- Objects have stable IDs.
+- Objects have schemas.
+- Objects can reference other objects.
+- Object access requires capabilities.
+- Object mutation is policy-controlled.
+- Object graph roots can be snapshotted.
+- Object graph regions can be replicated or migrated later.
+
+The memory model:
+
+- Safe native `.in` components can share object regions more aggressively.
+- Unsafe components run in stricter memory domains.
+- Legacy compatibility personalities get process-like address-space isolation.
+- Large data moves through typed VM objects for zero-copy transfer.
+- Immutable and copy-on-write regions are preferred for shared state.
+- Raw pointers are not the cross-component identity model.
+
+This keeps the benefit of single-address-space systems, especially fast IPC and persistent identity, without trusting every component with every address.
 
 ## Native Vocabulary
 
-Space should avoid Unix names when the model is not Unix. Naming should teach the architecture.
+Space should use names that describe its real model.
 
-Preferred native terms:
+Preferred terms:
 
 - `component`: a compiled unit of execution and authority.
 - `realm`: an isolation and authority view for one or more components.
@@ -246,34 +162,12 @@ Terms to avoid as native concepts:
 - group
 - fork
 - executable
-- syscall as the main abstraction
 - root
 - global namespace
 
-Compatibility personalities may expose those legacy terms internally, but the native kernel/runtime should not be designed around them.
-
-## Proposed System Stack
-
-The intended stack is:
-
-```text
-hardware
-nanokernel enforcement substrate
-Space loader
-minimal supervisor
-.in runtime
-native service graph
-browser/runtime shell
-compatibility personalities
-distributed execution fabric
-AI/runtime orchestration
-```
-
-The kernel should remain small enough that most of the OS can be updated, restarted, snapshotted, and verified as components. The compiler should know about the component graph before boot, and the runtime should enforce the graph during boot.
-
 ## Boot Flow
 
-The first boot path should be x86_64 in QEMU.
+The first target is x86_64 in QEMU.
 
 Initial boot path:
 
@@ -288,10 +182,9 @@ timer setup
 serial debug console
 capability root creation
 bootstrap realm creation
-supervisor component load
+minimal supervisor load
 object graph root load
 first service graph activation
-shell component activation
 ```
 
 The boot image should contain:
@@ -301,16 +194,16 @@ The boot image should contain:
 - initial object graph
 - component manifests
 - capability manifests
-- debug symbols or deterministic symbol map
+- deterministic symbol map
 - build provenance
 
-The boot image should be deterministic. Given the same source, compiler, inputs, and config, it should produce byte-identical output or at least a verifiable reproducibility record.
+The boot image should be reproducible. Given the same source, compiler, inputs, and config, the output should be byte-identical or carry a verifiable reproducibility record.
 
-## Native Artifact Format
+## Native Component Image
 
-Space should not use ELF as the native executable contract. ELF can still be supported inside Linux compatibility.
+Space should not use ELF as its native component contract. ELF can exist inside a Linux personality.
 
-The native artifact should be a Space component image. Tentative name: `SCI`, for Space Component Image.
+The native artifact should be a Space Component Image. Tentative name: `SCI`.
 
 An SCI should contain:
 
@@ -329,9 +222,16 @@ An SCI should contain:
 - debug and trace metadata
 - compiler version and source hash graph
 
-The loader should reject artifacts that ask for undeclared authority. The runtime should be able to answer: what can this component do, what can it access, what can it call, what can call it, and what happens if it faults?
+The loader should reject images that request undeclared authority. The runtime should always be able to answer:
 
-Early versions may wrap a simpler machine-code blob, but the metadata contract should be designed first so the temporary encoding does not become the real ABI by accident.
+- what can this component do?
+- what can it access?
+- what can it call?
+- what can call it?
+- what state does it own?
+- what happens if it faults?
+
+Early versions may wrap a simpler machine-code blob, but the metadata contract should be designed first so a temporary encoding does not become the permanent ABI.
 
 ## Capability Model
 
@@ -360,13 +260,12 @@ Capability examples:
 - access network endpoint class
 - load compatibility personality
 - create checkpoint
-- request AI agent action
 
-There should be no ambient authority. A component should not be able to discover global services unless its manifest receives a discovery capability.
+There should be no ambient authority. A component should not discover global services unless its manifest receives a discovery capability.
 
 ## Component Model
 
-A component is the native replacement for an app, service, process, daemon, driver, library, and agent tool.
+A component is the native replacement for app, service, daemon, driver, library, and runtime module.
 
 A component has:
 
@@ -394,7 +293,7 @@ Components should be restartable where possible. The runtime should know whether
 
 ## Object Graph Storage
 
-Space should treat persistent object graphs as the native storage model.
+Persistent object graphs are the native storage model.
 
 An object has:
 
@@ -409,7 +308,7 @@ An object has:
 - migration policy
 - audit metadata
 
-The object graph replaces files for native components. A compatibility personality may present objects as files, registry keys, bundles, plist data, or other legacy forms.
+The object graph replaces files for native components. A compatibility personality may present objects as files, registry keys, app bundles, plist data, or other legacy forms.
 
 Early implementation path:
 
@@ -421,7 +320,7 @@ Early implementation path:
 
 ## Snapshot And Checkpoint Model
 
-Snapshots are not backups. They are OS primitives.
+Snapshots are OS primitives.
 
 Snapshot targets:
 
@@ -441,11 +340,11 @@ Checkpoint requirements:
 - preserve replay metadata
 - define restore authority
 
-Not every component is snapshot-safe. Device drivers, network endpoints, GPU queues, and AI agent sessions may need custom checkpoint adapters or may be marked non-checkpointable.
+Not every component is snapshot-safe. Device drivers, network endpoints, and GPU queues may need custom checkpoint adapters or may be marked non-checkpointable.
 
 ## Scheduling Model
 
-Space should have two scheduling layers.
+Space has two scheduling layers.
 
 The nanokernel schedules CPU time and enforces hard isolation.
 
@@ -454,19 +353,20 @@ The `.in` runtime schedules semantic work:
 - component priorities
 - graph waves
 - deterministic replay regions
-- AI orchestration jobs
 - distributed placement
 - GPU/CPU work partitioning
 - compatibility personality throttling
 - latency-sensitive UI work
 
-The compiler should emit scheduling hints, but the runtime owns final policy. The nanokernel should expose enough hooks for the runtime to express policy without moving all policy into privileged code.
+The compiler may emit scheduling hints, but the runtime owns final policy. The nanokernel should expose enough hooks for policy without moving policy into privileged code.
 
 ## GPU And Heterogeneous Compute
 
-GPU scheduling should be a native resource model, not a driver afterthought.
+GPU scheduling should be a native resource model.
 
-The kernel should expose only protected queue, memory, and interrupt primitives where possible. The GPU service should own:
+The kernel should expose protected queue, memory, and interrupt primitives where possible.
+
+The GPU service should own:
 
 - command validation
 - queue scheduling
@@ -487,20 +387,19 @@ The `.in` compiler should eventually understand:
 - shader/kernel provenance
 - fallback CPU execution
 
-Early graphics should likely start with framebuffer or virtio-gpu, then move to a native compositor service.
+Early graphics should start with framebuffer or virtio-gpu, then move to a native compositor service.
 
 ## Distributed-First Model
 
 Distributed-first does not mean every component is remote. It means the native model does not assume the machine boundary is the trust or execution boundary.
 
-The same component graph should be able to represent:
+The same component graph should represent:
 
 - local component call
 - cross-realm call
 - cross-device call
 - replicated object update
 - migrated compute job
-- remote AI agent operation
 
 Distribution must be capability-gated. A component should not become remotely callable merely because networking exists.
 
@@ -532,27 +431,9 @@ Deterministic execution needs:
 
 Not all interactive components need deterministic execution all the time. The important design point is that nondeterminism must be visible and capability-mediated.
 
-## AI Runtime Orchestration
+## Compatibility Personalities
 
-AI orchestration should be native but not ambiently trusted.
-
-An AI agent is a component or service with capabilities. It can only inspect objects, edit code, invoke tools, or control devices if those capabilities were granted.
-
-AI orchestration should integrate with:
-
-- build graph
-- component graph
-- object graph
-- test graph
-- deployment graph
-- runtime telemetry
-- policy engine
-
-Agent actions should be auditable and replayable where practical. The system should be able to distinguish human actions, compiler actions, runtime actions, and AI agent actions.
-
-## Compatibility Personality Plan
-
-Compatibility support is important, but it should arrive after the native substrate is coherent.
+Compatibility support is important, but it must not define the native platform.
 
 ### Linux Personality
 
@@ -573,7 +454,7 @@ Then expand:
 - graphics bridge
 - package/runtime environments
 
-Linux personality maps Linux expectations onto Space capabilities. It must not add a global Unix namespace to the native OS.
+Linux expectations map onto Space capabilities. The personality must not add a global Unix namespace to the native OS.
 
 ### Darwin Personality
 
@@ -603,14 +484,13 @@ Main surfaces:
 
 The native kernel should not become NT.
 
-## Inauguration Requirements
+## `.in` Language Requirements
 
-Inauguration must mature enough to support Space.
+The `.in` language must become strong enough to describe native Space components directly.
 
-Required compiler/language capabilities:
+Required language/compiler capabilities:
 
-- stable `.in` syntax for components
-- Core IR support for component declarations
+- stable component declarations
 - capability declaration syntax
 - capability type checking
 - deterministic AST and formatting
@@ -621,12 +501,11 @@ Required compiler/language capabilities:
 - dependency graph output
 - object schema output
 - interface/ABI output
-- error reporting good enough for OS work
 - cross-component call model
 - restricted unsafe/native escape hatch
-- test runner support for `.in` components
+- test runner support for native components
 
-Required runtime/compiler outputs:
+Required compiler outputs:
 
 - component image metadata
 - capability manifest
@@ -638,9 +517,9 @@ Required runtime/compiler outputs:
 - debug map
 - provenance map
 
-Space can start before all of this exists, but the first Space implementation should avoid creating a permanent parallel language/runtime that bypasses `.in`.
+Space can start before all of this exists, but Space-specific source, examples, and manifests should live in the Space repo.
 
-## First Implementation Roadmap
+## Implementation Roadmap
 
 ### Phase 0: Planning Repository
 
@@ -654,20 +533,21 @@ Deliverables:
 - kernel object list
 - compatibility non-goals
 
-### Phase 1: Inauguration Readiness
+### Phase 1: `.in` Component Surface
 
-Deliverables in `../inauguration`:
+Deliverables:
 
-- minimal `.in` component syntax
-- capability declaration syntax
-- manifest emitter
-- deterministic formatting/checking path
-- x86_64 freestanding artifact story, even if initially stubbed
-- sample Space component in repo root or examples
+- component declaration syntax
+- capability metadata
+- export/import metadata
+- object schema syntax
+- checkpoint policy syntax
+- deterministic policy syntax
+- sample Space components in this repo
 
 ### Phase 2: Nanokernel Skeleton
 
-Deliverables in Space:
+Deliverables:
 
 - x86_64 boot in QEMU
 - serial logging
@@ -730,7 +610,7 @@ Deliverables:
 - basic framebuffer or virtio-gpu path
 - compositor component
 - input component
-- RV8/Soliloquy-inspired browser shell model
+- browser/runtime shell model
 - native object-backed shell state
 
 ### Phase 8: Compatibility Experiments
@@ -752,15 +632,14 @@ Deliverables:
 - deterministic scheduler mode
 - restore test
 
-### Phase 10: Distributed And AI Orchestration
+### Phase 10: Distributed Runtime
 
 Deliverables:
 
 - remote component graph model
 - remote capability attenuation
-- AI agent component contract
-- audited tool invocation
-- build/runtime orchestration integration
+- replicated object graph path
+- migration policy checks
 
 ## Things Not To Do Early
 
@@ -769,65 +648,14 @@ Deliverables:
 - Do not implement `fork()`.
 - Do not start with Linux app compatibility before native components exist.
 - Do not put the whole OS in a monolithic kernel permanently.
-- Do not give AI orchestration broad ambient authority.
 - Do not make the object store look like files internally.
 - Do not make the browser shell define the kernel architecture.
 - Do not import incompatible licensed code into the substrate.
 
 ## Immediate Next Work
 
-1. Create and publish the private Space planning repo.
-2. Inspect Inauguration's current `.in` syntax, Core IR, native backend, and manifest capabilities.
-3. Add a root-level Space-oriented `.in` example or design stub in Inauguration if it matches current syntax.
-4. Identify the smallest Inauguration compiler improvement that moves toward component manifests.
-5. Keep Space native terms consistent before writing kernel code.
-
-## Current Inauguration Readiness Snapshot
-
-Checked after creating this planning repo.
-
-What exists now:
-
-- `.in` supports imports, capabilities, extern bindings with required capabilities, structs, functions, bounded bodies, annotations, distributed function facts, and parallel regions.
-- `in agent` emits machine-readable imports, effects, capabilities, Core IR summaries, call edges, orchestration facts, diagnostics, and timing.
-- `in build --parser in` can parse and lower `.in` into the current Core IR/textual SIL path.
-- Package reporting already has package capabilities and capability policy validation.
-- Native backend work exists, but the public CLI still reports native backend status rather than a complete native object backend.
-
-Space-oriented work landed in Inauguration:
-
-- Root `space.in` declares a first Space boot contract using today's `.in` grammar.
-- It declares Space capabilities for boot, capability tables, component loading, object graph access, and snapshots.
-- It declares extern Space service bindings for capability grant, component load, object-root creation, and realm checkpointing.
-- It verifies through `in build --parser in --path space.in --module-id Space`.
-- It reports cleanly through `in agent --parser in --path space.in --module-id Space`.
-- It was committed to Inauguration branch `self-hosted-compiler` as `05519e8`.
-
-What is still missing for Space:
-
-- First-class `.in` component declarations rather than modeling components as functions plus capabilities.
-- Component image manifest emission.
-- Native Space Component Image metadata format.
-- Capability type checking beyond string policy facts.
-- Capability attenuation, delegation, leases, and revocation semantics.
-- Object schema declarations in `.in`.
-- Realm declarations in `.in`.
-- Checkpoint policy declarations in `.in`.
-- Deterministic execution declarations in `.in`.
-- Freestanding x86_64 code generation suitable for a nanokernel or early runtime.
-- A no-host runtime mode for `.in`.
-- A stable ABI/interface model for Space service calls.
-- A boot-image emitter or manifest that Space can load directly.
-
-Smallest next compiler improvement:
-
-Add a `component` surface to `.in` that can be parsed into agent/graph/package facts before it lowers to executable code. The first version can be metadata-only and should report:
-
-- component name
-- required capabilities
-- exported service names
-- checkpoint policy
-- deterministic policy
-- entry function
-
-That keeps the next step aligned with Space without prematurely committing to native codegen or a final image format.
+1. Keep all Space-specific source, examples, and planning inside this repo.
+2. Add a small `examples/` directory with proposed `.in` component syntax.
+3. Define the first `SCI` metadata schema on paper.
+4. Define the initial nanokernel object list and capability table layout.
+5. Decide the bootloader path for x86_64 QEMU.
