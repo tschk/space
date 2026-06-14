@@ -659,3 +659,10 @@ Deliverables:
 3. Define the first `SCI` metadata schema on paper.
 4. Define the initial nanokernel object list and capability table layout.
 5. Decide the bootloader path for x86_64 QEMU.
+
+Current artifacts:
+
+- `bootstrap-plan.md`
+- `sci-schema.md`
+- `examples/kernel-root.in`
+- `examples/bootstrap-supervisor.in`
