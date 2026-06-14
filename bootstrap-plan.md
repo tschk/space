@@ -1,49 +1,351 @@
-# Space Bootstrap Plan
+# Space Kernel In `.in` Implementation Plan
 
-## Goal
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Make `.in` the whole Space kernel implementation language by moving the kernel from contract-first `.in` components to freestanding `.in` machine code in small bootable slices.
+**Goal:** Make `.in` the whole Space kernel implementation language, with only the irreducible CPU reset/boot shim outside `.in`.
+
+**Architecture:** Space owns the OS contracts, examples, SCI profile, and boot plan. Inauguration owns generic compiler capabilities such as freestanding x86_64 output, SCI-like metadata emission, object/schema/capability extraction, and native lowering; those capabilities must not be Space-branded inside Inauguration.
+
+**Tech Stack:** `.in`, Inauguration CLI/Rust compiler implementation, x86_64 freestanding objects, QEMU, Limine or UEFI boot substrate, SCI metadata.
+
+---
+
+## File Ownership
+
+Space repo:
+
+- `AGENTS.md`: repository workflow and boundaries.
+- `bootstrap-plan.md`: this implementation plan.
+- `sci-schema.md`: Space SCI profile.
+- `examples/kernel-root.in`: target kernel-root component contract.
+- `examples/bootstrap-supervisor.in`: target supervisor component contract.
+- future `kernel/`: Space nanokernel `.in` sources.
+- future `boot/`: boot-image config, linker scripts, and QEMU harness.
+
+Inauguration repo:
+
+- `in-cli/src/native_emit/`: generic code emitters and freestanding object writers.
+- `in-cli/src/owned_compile.rs`: generic owned compile routing.
+- `in-cli/src/in_lang_parse.rs`: generic `.in` syntax support.
+- `in-cli/src/core_ir.rs`: generic IR model.
+- `in-cli/src/boundary_emit.rs` and `in-cli/src/boundary_ir.rs`: generic ABI/capability/object metadata.
+- `scripts/check-target-matrix.sh`: generic target checks.
+- future generic script names such as `scripts/check-freestanding-x86_64.sh`.
 
 ## Compiler Targets
 
 Space needs two target identities:
 
-- `x86_64-space`: native Space component target, freestanding, SCI-first
-- `x86_64-unknown-none`: lower-level freestanding object target used while SCI and boot-image tooling mature
+- `x86_64-unknown-none`: generic freestanding compiler target implemented in Inauguration.
+- Space SCI profile: defined in this repo and consumed by Space tooling.
 
-`x86_64-space` must not mean Linux, POSIX, ELF-as-contract, or host syscalls. Early compiler artifacts may contain ELF sections while the loader and boot image are being built, but SCI is the native contract.
+Do not add `x86_64-space` as an Inauguration target. The compiler should stay generic; Space can map its native profile to generic freestanding compiler outputs and Space-owned SCI metadata.
 
-## Phase A: Contract-First Components
+## Task 1: Keep Space Examples Parse-Visible
 
-Deliverables:
+**Files:**
+- Modify: `examples/kernel-root.in`
+- Modify: `examples/bootstrap-supervisor.in`
+- Modify in Inauguration later: `in-cli/src/in_lang_parse.rs`
+- Test in Inauguration later: parser tests for component declarations
 
-- proposed `.in` kernel root component
-- proposed `.in` bootstrap supervisor component
-- SCI v0 metadata schema
-- capability and object vocabulary in examples
-- compiler target identity in `inauguration`
+- [ ] Step 1: Record unsupported syntax intentionally
 
-Exit criteria:
+Run from Space:
 
-- Space examples compile far enough to produce parse/manifest diagnostics, or fail with explicit unsupported syntax diagnostics
-- `in backend --target native --target-triple x86_64-space --json` reports contract-only, not host fallback
+```bash
+../inauguration/target/release/in compile --path examples/kernel-root.in --target bytecode --json
+```
 
-## Phase B: Freestanding Codegen Slice
+Expected today: failure with a parser diagnostic, because `component`, `capability`, and `interface` are not implemented syntax yet.
 
-Deliverables:
+- [ ] Step 2: Add generic parser support in Inauguration
 
-- x86_64 freestanding object for a scalar `_space_start`
-- no libc, no Linux syscall, no dynamic loader
-- explicit stack and calling convention contract
-- linker script or boot image section map
-- QEMU test harness that reaches the entry and writes serial output
+Implement generic `.in` component declarations, capability declarations, imports, exports, and interface declarations in `../inauguration/in-cli/src/in_lang_parse.rs`.
 
-Exit criteria:
+The parser output should preserve:
 
-- QEMU x86_64 boots and prints a line produced by `.in`-compiled code
-- unsupported `.in` features fail closed
+- component name
+- target string
+- deterministic policy
+- checkpoint policy
+- import declarations
+- export declarations
+- capability declarations
+- interface method signatures
 
-## Phase C: Nanokernel In `.in`
+- [ ] Step 3: Add Inauguration parser tests
+
+Run from `../inauguration`:
+
+```bash
+cargo test -q in_lang_parse::tests::parse_component_declaration --manifest-path in-cli/Cargo.toml
+cargo test -q in_lang_parse::tests::parse_capability_declaration --manifest-path in-cli/Cargo.toml
+```
+
+Expected after implementation: both pass.
+
+- [ ] Step 4: Re-run Space examples
+
+Run from Space:
+
+```bash
+../inauguration/target/release/in compile --path examples/kernel-root.in --target bytecode --json
+../inauguration/target/release/in compile --path examples/bootstrap-supervisor.in --target bytecode --json
+```
+
+Expected after implementation: successful parse/metadata extraction or an explicit unsupported-lowering diagnostic. A silent host-native fallback is failure.
+
+## Task 2: Add Generic Component Metadata Output In Inauguration
+
+**Files:**
+- Modify in Inauguration: `in-cli/src/boundary_ir.rs`
+- Modify in Inauguration: `in-cli/src/boundary_emit.rs`
+- Modify in Inauguration: `in-cli/src/owned_compile.rs`
+- Create in Inauguration: `scripts/check-component-metadata.sh`
+- Modify in Space: `sci-schema.md`
+
+- [ ] Step 1: Define generic metadata fields in Inauguration
+
+Add generic component metadata structs for:
+
+- component identity
+- target
+- imports
+- exports
+- required capabilities
+- exported capabilities
+- object schemas
+- checkpoint policy
+- deterministic policy
+
+- [ ] Step 2: Emit JSON metadata sidecar
+
+Add a generic compile option or report field that writes component metadata beside existing artifacts. Use generic names such as `component-metadata`, not `space`.
+
+- [ ] Step 3: Add Inauguration check script
+
+Create `../inauguration/scripts/check-component-metadata.sh` that compiles a generic `.in` component sample and validates JSON keys.
+
+Run:
+
+```bash
+bash scripts/check-component-metadata.sh
+```
+
+Expected: metadata contains component identity, capabilities, imports, exports, and target.
+
+- [ ] Step 4: Sync Space SCI profile
+
+Update `sci-schema.md` only after the generic metadata shape exists. Space may add stricter loader rules here without requiring Inauguration to know the Space product name.
+
+## Task 3: Add Generic `x86_64-unknown-none` Freestanding Object Output
+
+**Files:**
+- Modify in Inauguration: `in-cli/src/native_emit/elf.rs`
+- Modify in Inauguration: `in-cli/src/native_emit/object.rs`
+- Modify in Inauguration: `in-cli/src/owned_compile.rs`
+- Modify in Inauguration: `in-cli/src/native_emit/target.rs`
+- Create in Inauguration: `scripts/check-freestanding-x86_64.sh`
+
+- [ ] Step 1: Add failing dispatch test
+
+Add a test in `native_emit::object` requiring:
+
+- target triple `x86_64-unknown-none`
+- linkage `static-lib`
+- artifact kind `elf-relocatable-object`
+- runtime level `freestanding-none`
+- no Linux syscall bytes
+
+Run:
+
+```bash
+cargo test -q native_emit::object::tests::dispatches_x86_64_unknown_none_object --manifest-path in-cli/Cargo.toml
+```
+
+Expected before implementation: fail because dispatch is unsupported.
+
+- [ ] Step 2: Implement minimal freestanding object dispatch
+
+Route `x86_64-unknown-none` to the existing x86_64 ELF relocatable writer, but report it as freestanding and keep Linux executable support separate.
+
+- [ ] Step 3: Add script gate
+
+Create `scripts/check-freestanding-x86_64.sh` that compiles:
+
+```in
+fn kernel_entry() -> Int { return 42; }
+```
+
+Expected checks:
+
+- ELF magic
+- `ET_REL`
+- `EM_X86_64`
+- exported `kernel_entry`
+- no Linux `syscall` instruction requirement
+
+- [ ] Step 4: Run gates
+
+Run from Inauguration:
+
+```bash
+cargo test -q native_emit::object --manifest-path in-cli/Cargo.toml
+bash scripts/check-freestanding-x86_64.sh
+bash scripts/check-target-matrix.sh
+```
+
+Expected: all pass.
+
+## Task 4: Add Real x86_64 Lowering Slice
+
+**Files:**
+- Create in Inauguration: `in-cli/src/native_emit/x86_64.rs`
+- Create in Inauguration: `in-cli/src/native_emit/x86_64_lower.rs`
+- Modify in Inauguration: `in-cli/src/native_emit/mod.rs`
+- Modify in Inauguration: `in-cli/src/native_emit/object.rs`
+- Modify in Inauguration: `in-cli/src/owned_compile.rs`
+
+- [ ] Step 1: Add instruction encoding tests
+
+Add tests for:
+
+- `ret`
+- `push rbp`
+- `mov rbp, rsp`
+- `sub rsp, imm32`
+- `mov rax, imm64`
+- `call rel32`
+- `add rax, rbx`
+
+Run:
+
+```bash
+cargo test -q native_emit::x86_64 --manifest-path in-cli/Cargo.toml
+```
+
+Expected before implementation: fail because module does not exist.
+
+- [ ] Step 2: Implement instruction encoder
+
+Implement the minimal x86_64 encoder needed for scalar functions.
+
+- [ ] Step 3: Add Core IR lowering tests
+
+Support:
+
+- scalar return literal
+- scalar params
+- local bindings
+- direct call
+- integer add/sub/mul
+
+Run:
+
+```bash
+cargo test -q native_emit::x86_64_lower --manifest-path in-cli/Cargo.toml
+```
+
+Expected after implementation: tests pass and unsupported constructs fail closed.
+
+- [ ] Step 4: Route freestanding object through real lowering
+
+For `x86_64-unknown-none` static-lib, lower eligible Core IR functions into `.text` rather than const-eval-only stubs.
+
+Run:
+
+```bash
+bash scripts/check-freestanding-x86_64.sh
+```
+
+Expected: object contains function code for at least one non-const direct call sample.
+
+## Task 5: Add QEMU Boot Harness In Space
+
+**Files:**
+- Create in Space: `boot/limine.conf`
+- Create in Space: `boot/linker.ld`
+- Create in Space: `boot/x86_64-entry.S`
+- Create in Space: `scripts/check-qemu-boot.sh`
+- Create in Space: `kernel/kernel-root.in`
+
+- [ ] Step 1: Choose boot substrate
+
+Use Limine first unless a later decision changes it. The assembly shim may set stack and enter `.in`-compiled `kernel_entry`.
+
+- [ ] Step 2: Add QEMU script
+
+Create `scripts/check-qemu-boot.sh` that:
+
+- builds the `.in` freestanding object through Inauguration
+- links with `boot/x86_64-entry.S`
+- creates a bootable image
+- runs QEMU x86_64
+- checks serial output for `space: kernel root entered`
+
+- [ ] Step 3: Run boot check
+
+Run from Space:
+
+```bash
+bash scripts/check-qemu-boot.sh
+```
+
+Expected after implementation: QEMU exits after printing the serial marker.
+
+## Task 6: Add SCI Sidecar And Loader Contract
+
+**Files:**
+- Modify in Space: `sci-schema.md`
+- Create in Space: `scripts/check-sci-contract.sh`
+- Modify in Inauguration: generic component metadata emitter from Task 2
+
+- [ ] Step 1: Generate generic metadata from Inauguration
+
+Run from Space:
+
+```bash
+../inauguration/target/release/in compile --path kernel/kernel-root.in --target native --target-triple x86_64-unknown-none --linkage static-lib --entry kernel_entry --json
+```
+
+Expected: object artifact plus generic component metadata sidecar.
+
+- [ ] Step 2: Validate Space SCI profile
+
+Create a Space script that validates the generic metadata against `sci-schema.md` rules.
+
+Run:
+
+```bash
+bash scripts/check-sci-contract.sh
+```
+
+Expected: required capabilities, imports, exports, target, and provenance are present.
+
+## What Is Left
+
+Compiler work left in Inauguration:
+
+- generic component declaration parsing
+- generic capability/interface/object-schema metadata
+- `x86_64-unknown-none` freestanding object route
+- real x86_64 Core IR lowering
+- multi-function object symbols and relocations
+- generic metadata sidecar suitable for SCI transformation
+- QEMU-friendly freestanding test gate
+
+Space work left here:
+
+- move examples into `kernel/` once syntax is implemented
+- choose and wire Limine or UEFI boot substrate
+- define linker script and serial output ABI
+- create Space SCI validator
+- implement nanokernel object/capability table vocabulary
+- boot one `.in`-compiled kernel entry in QEMU
+- load one `.in` supervisor component from SCI metadata
+
+## Phase After First Boot: Nanokernel In `.in`
 
 Deliverables:
 
