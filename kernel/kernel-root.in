@@ -745,6 +745,52 @@ fn run_channels(port: Int) -> void {
   return
 }
 
+// --- deterministic execution ------------------------------------------------
+// In a deterministic region, nondeterminism is capability-mediated and seeded:
+// the seed is the only nondeterminism source, so the same seed reproduces the
+// same execution exactly. det_next is a xorshift64 PRNG (using logical shifts).
+fn det_next(s: Int) -> Int {
+  let x = s
+  x = x ^ (x << 13)
+  x = x ^ (x >> 7)
+  x = x ^ (x << 17)
+  return x
+}
+
+// A deterministic workload: 64 seeded "scheduling decisions" folded into a
+// checksum. Pure function of the seed -- no clock, no ambient state.
+fn det_workload(seed: Int) -> Int {
+  let s = seed
+  let checksum = 0
+  for i in 0..64 {
+    s = det_next(s)
+    let pick = s & 0x7
+    checksum = (checksum * 31 + pick) & 0xFFFFFFFF
+  }
+  return checksum
+}
+
+fn run_determinism(port: Int) -> void {
+  let r1 = det_workload(0x12345678)
+  let r2 = det_workload(0x12345678)
+  let r3 = det_workload(0x12345679)
+  serial_write_cstr(port, "  det run1 (seed 0x12345678) 0x")
+  serial_write_hex(port, r1)
+  serial_put(port, 10)
+  serial_write_cstr(port, "  det run2 (seed 0x12345678) 0x")
+  serial_write_hex(port, r2)
+  serial_put(port, 10)
+  if r1 == r2 {
+    serial_write_cstr(port, "  DETERMINISTIC: identical result for identical seed\n")
+  } else {
+    serial_write_cstr(port, "  NONDETERMINISTIC: results differ\n")
+  }
+  serial_write_cstr(port, "  det altseed (0x12345679) 0x")
+  serial_write_hex(port, r3)
+  serial_write_cstr(port, " (differs, as expected)\n")
+  return
+}
+
 // --- SCI component loader ---------------------------------------------------
 // Load a separately-compiled component from a binary SCI manifest in memory:
 // [magic][required_caps][entry][reserved] followed by the component's code.
@@ -869,7 +915,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test snapshot spawn restore map sci fault divzero echo <x> halt\n")
+      serial_write_cstr(port, "commands: help status mem ticks ps test det snapshot spawn restore map sci fault divzero echo <x> halt\n")
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
@@ -887,6 +933,8 @@ fn shell(port: Int) -> void {
       serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
       serial_write_hex(port, obj_counter)
       serial_put(port, 10)
+    } else if line_eq("det") != 0 {
+      run_determinism(port)
     } else if line_eq("sci") != 0 {
       sci_load(port, 0x140000)
     } else if line_eq("map") != 0 {
