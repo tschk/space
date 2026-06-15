@@ -12,8 +12,13 @@ var nic_tx_buf: Int = 0
 var nic_tx_tail: Int = 0
 var nic_mac_lo: Int = 0
 var nic_mac_hi: Int = 0
+var nic_rx_ring: Int = 0
+var nic_rx_head: Int = 0
+var nic_rx_len: Int = 0
+var gw_mac: Int = 0
 
 const TX_NDESC = 8
+const RX_NDESC = 8
 
 fn mmio_r32(off: Int) -> Int {
   return load32(nic_mmio + off)
@@ -53,7 +58,10 @@ fn e1000_init(port: Int) -> Int {
     serial_write_cstr(port, "  net: no e1000 NIC found\n")
     return 0
   }
-  pci_enable_e1000()
+  let pcicmd = pci_enable_e1000()
+  serial_write_cstr(port, "  net: PCI command/status 0x")
+  serial_write_hex(port, pcicmd)
+  serial_put(port, 10)
   // Map the NIC register window (64 KiB) uncached and identity, since BAR0 is
   // above the trampoline's 1 GiB identity map.
   let pg = bar0
@@ -81,7 +89,59 @@ fn e1000_init(port: Int) -> Int {
   mmio_w32(0x410, 0x60200A)          // TIPG
   mmio_w32(0x400, 0x400FA)           // TCTL: EN | PSP | CT=15 | COLD=64
   nic_tx_tail = 0
+  // Receive ring: one buffer per descriptor; hand them all to the NIC.
+  nic_rx_ring = frame_alloc()
+  for i in 0..RX_NDESC {
+    let buf = frame_alloc()
+    store64(nic_rx_ring + i * 16 + 0, buf)
+    store64(nic_rx_ring + i * 16 + 8, 0)
+  }
+  mmio_w32(0x0, mmio_r32(0x0) | 0x40) // CTRL.SLU: set link up
+  mmio_w32(0x2800, nic_rx_ring)      // RDBAL
+  mmio_w32(0x2804, 0)                // RDBAH
+  mmio_w32(0x2808, RX_NDESC * 16)    // RDLEN
+  mmio_w32(0x2810, 0)                // RDH
+  mmio_w32(0x2818, 0)                // RDT (armed after RCTL.EN below)
+  mmio_w32(0x100, 0x400801A)         // RCTL: EN|UPE|MPE|BAM|SECRC
+  mmio_w32(0x2818, RX_NDESC - 1)     // RDT: hand descriptors to the NIC
+  nic_rx_head = 0
+  gw_mac = frame_alloc()
   return bar0
+}
+
+// Poll the next RX descriptor; return its buffer address (and set nic_rx_len)
+// if a frame arrived, else 0. Recycles the descriptor back to the NIC.
+fn e1000_rx_poll() -> Int {
+  let d = nic_rx_ring + nic_rx_head * 16
+  if (load8(d + 12) & 1) == 0 {
+    return 0
+  }
+  nic_rx_len = load16(d + 8)
+  let buf = load64(d + 0)
+  store8(d + 12, 0)
+  mmio_w32(0x2818, nic_rx_head)
+  nic_rx_head = (nic_rx_head + 1) % RX_NDESC
+  return buf
+}
+
+fn e1000_rx_wait() -> Int {
+  let tries = 0
+  while tries < 3000000 {
+    // Read RDH via MMIO each iteration: this both detects reception (RDH moves
+    // past our consumer index) and pumps QEMU's device/network emulation.
+    let rdh = mmio_r32(0x2810)
+    if rdh != nic_rx_head {
+      let d = nic_rx_ring + nic_rx_head * 16
+      nic_rx_len = load16(d + 8)
+      let buf = load64(d + 0)
+      store8(d + 12, 0)
+      mmio_w32(0x2818, nic_rx_head)
+      nic_rx_head = (nic_rx_head + 1) % RX_NDESC
+      return buf
+    }
+    tries = tries + 1
+  }
+  return 0
 }
 
 fn e1000_tx(len: Int) -> void {
@@ -149,16 +209,116 @@ fn build_arp() -> Int {
   return 42
 }
 
+fn cstr_len(addr: Int) -> Int {
+  let n = 0
+  while load8(addr + n) != 0 {
+    n = n + 1
+  }
+  return n
+}
+
+// Internet checksum over `len` bytes at `addr`.
+fn ip_checksum(addr: Int, len: Int) -> Int {
+  let sum = 0
+  let i = 0
+  while i < len {
+    sum = sum + ((load8(addr + i) << 8) | load8(addr + i + 1))
+    i = i + 2
+  }
+  while (sum >> 16) != 0 {
+    sum = (sum & 0xFFFF) + (sum >> 16)
+  }
+  return (-1 ^ sum) & 0xFFFF
+}
+
+// Build an Ethernet + IPv4 + UDP datagram to 10.0.2.2:9999 carrying `payload`
+// (a NUL-terminated string) in the TX buffer. Returns the total frame length.
+fn build_udp(payload: Int) -> Int {
+  let p = nic_tx_buf
+  let plen = cstr_len(payload)
+  for i in 0..6 {
+    store8(p + i, load8(gw_mac + i))
+  }
+  net_store_mac(p + 6)
+  store8(p + 12, 0x08)
+  store8(p + 13, 0x00)
+  let ip = p + 14
+  let iplen = 28 + plen
+  store8(ip + 0, 0x45)
+  store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF)
+  store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00)
+  store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40)
+  store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40)
+  store8(ip + 9, 0x11)
+  store8(ip + 10, 0x00)
+  store8(ip + 11, 0x00)
+  store8(ip + 12, 10)
+  store8(ip + 13, 0)
+  store8(ip + 14, 2)
+  store8(ip + 15, 15)
+  store8(ip + 16, 10)
+  store8(ip + 17, 0)
+  store8(ip + 18, 2)
+  store8(ip + 19, 2)
+  let csum = ip_checksum(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF)
+  store8(ip + 11, csum & 0xFF)
+  let udp = ip + 20
+  let ulen = 8 + plen
+  store8(udp + 0, 0x27)
+  store8(udp + 1, 0x0F)
+  store8(udp + 2, 0x27)
+  store8(udp + 3, 0x0F)
+  store8(udp + 4, (ulen >> 8) & 0xFF)
+  store8(udp + 5, ulen & 0xFF)
+  store8(udp + 6, 0x00)
+  store8(udp + 7, 0x00)
+  for i in 0..plen {
+    store8(udp + 8 + i, load8(payload + i))
+  }
+  return 14 + iplen
+}
+
 fn run_net(port: Int) -> void {
   let bar0 = e1000_init(port)
   if bar0 == 0 {
     return
   }
-  let len = build_arp()
-  serial_write_cstr(port, "  net: transmitting broadcast ARP request, len 0x")
-  serial_write_hex(port, len)
+  serial_write_cstr(port, "  net: sending broadcast ARP for 10.0.2.2...\n")
+  e1000_tx(build_arp())
+  let f = e1000_rx_wait()
+  if (f != 0) && (((load8(f + 12) << 8) | load8(f + 13)) == 0x0806) {
+    for i in 0..6 {
+      store8(gw_mac + i, load8(f + 22 + i))
+    }
+    serial_write_cstr(port, "  net: ARP reply received, 10.0.2.2 is-at ")
+  } else {
+    // RX not delivered under this emulator; use the deterministic SLIRP
+    // gateway MAC (52:55:0a:00:02:02) so the UDP path still runs.
+    store8(gw_mac + 0, 0x52)
+    store8(gw_mac + 1, 0x55)
+    store8(gw_mac + 2, 0x0A)
+    store8(gw_mac + 3, 0x00)
+    store8(gw_mac + 4, 0x02)
+    store8(gw_mac + 5, 0x02)
+    serial_write_cstr(port, "  net: no ARP reply; using SLIRP gateway ")
+  }
+  for i in 0..6 {
+    net_print_byte(port, load8(gw_mac + i))
+    if i < 5 {
+      serial_put(port, 58)
+    }
+  }
   serial_put(port, 10)
-  e1000_tx(len)
-  serial_write_cstr(port, "  net: frame transmitted via e1000 TX ring\n")
+  let ulen = build_udp("hello from spaceOS")
+  serial_write_cstr(port, "  net: sending UDP to 10.0.2.2:9999, frame len 0x")
+  serial_write_hex(port, ulen)
+  serial_put(port, 10)
+  e1000_tx(ulen)
+  serial_write_cstr(port, "  net: UDP datagram transmitted\n")
   return
 }

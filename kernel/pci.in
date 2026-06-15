@@ -33,17 +33,20 @@ fn pci_find_e1000() -> Int {
   return 0
 }
 
-// Enable bus mastering and memory space for the e1000 (PCI command register).
-fn pci_enable_e1000() -> void {
+// Enable I/O space, memory space, and bus mastering for the e1000, and return
+// the resulting command/status register (low 16 bits are the command).
+fn pci_enable_e1000() -> Int {
   for dev in 0..32 {
     let v = pci_read32(0, dev, 0, 0)
-    if v == (0x100E0000 | 0x8086) {
+    let vendor = v & 0xFFFF
+    let device = (v >> 16) & 0xFFFF
+    if (vendor == 0x8086) && (device == 0x100E) {
       let cmd = pci_read32(0, dev, 0, 0x04)
-      pci_write32(0, dev, 0, 0x04, cmd | 0x6)
-      return
+      pci_write32(0, dev, 0, 0x04, cmd | 0x7)
+      return pci_read32(0, dev, 0, 0x04)
     }
   }
-  return
+  return 0
 }
 
 fn pci_scan(port: Int) -> void {
