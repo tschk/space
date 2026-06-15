@@ -43,6 +43,7 @@ var cap_count: Int = 0
 var root_realm: Int = 0
 var ticks: Int = 0
 var idt_base: Int = 0
+var realm_grants: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
 fn com1() -> Int {
@@ -246,6 +247,88 @@ fn interrupts_init() -> void {
   return
 }
 
+// --- component supervisor ---------------------------------------------------
+// Capability bits a realm can grant to a component.
+fn cap_serial() -> Int { return 1 }
+fn cap_timer() -> Int { return 2 }
+fn cap_memory() -> Int { return 4 }
+fn cap_graph() -> Int { return 8 }
+
+// Register a component as an object in the graph (40 bytes):
+// [id][type=5][entry_addr][required_caps][name_addr].
+fn component_register(name: Int, entry: Int, required: Int) -> Int {
+  let c = alloc(40)
+  obj_counter = obj_counter + 1
+  store64(c + 0, obj_counter)
+  store64(c + 8, 5)
+  store64(c + 16, entry)
+  store64(c + 24, required)
+  store64(c + 32, name)
+  return c
+}
+
+// The SCI loader rule, enforced live: a component may only be activated if the
+// authority it declares is a subset of what its realm grants. Components that
+// request undeclared capabilities are denied before their entry ever runs.
+fn supervisor_activate(port: Int, c: Int) -> void {
+  let name = load64(c + 32)
+  let entry = load64(c + 16)
+  let required = load64(c + 24)
+  let missing = required & (-1 ^ realm_grants)
+  serial_write_cstr(port, "space: supervisor evaluating ")
+  serial_write_cstr(port, name)
+  if missing != 0 {
+    serial_write_cstr(port, " -> DENIED undeclared cap 0x")
+    serial_write_hex(port, missing)
+    serial_put(port, 10)
+    return
+  }
+  cap_mint(c, required)
+  serial_write_cstr(port, " -> ACTIVATING\n")
+  let status = invoke(entry)
+  serial_write_cstr(port, "space:   ")
+  serial_write_cstr(port, name)
+  serial_write_cstr(port, " returned status 0x")
+  serial_write_hex(port, status)
+  serial_put(port, 10)
+  return
+}
+
+// --- sample service components ----------------------------------------------
+fn svc_heartbeat() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
+  serial_write_hex(port, ticks)
+  serial_put(port, 10)
+  return 0
+}
+
+fn svc_logger() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "space:   [logger] objects 0x")
+  serial_write_hex(port, obj_counter)
+  serial_write_cstr(port, " caps 0x")
+  serial_write_hex(port, cap_count)
+  serial_put(port, 10)
+  return 0
+}
+
+fn svc_pager() -> Int {
+  return 0xDEAD
+}
+
+fn run_supervisor(port: Int) -> void {
+  realm_grants = cap_serial() | cap_timer() | cap_graph()
+  let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
+  let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
+  let c3 = component_register("pager", svc_pager, cap_memory())
+  serial_write_cstr(port, "space: supervisor activating component graph\n")
+  supervisor_activate(port, c1)
+  supervisor_activate(port, c2)
+  supervisor_activate(port, c3)
+  return
+}
+
 // --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
@@ -297,6 +380,9 @@ fn kernel_entry(mb_info: Int) -> Int {
       shown = shown + 1
     }
   }
+
+  // Hand the running system to the component supervisor.
+  run_supervisor(port)
 
   serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
