@@ -440,6 +440,100 @@ fn run_scheduler(port: Int) -> void {
   return
 }
 
+// --- typed channels (inter-component IPC) -----------------------------------
+// A channel is a ring buffer in the object graph:
+// [capacity][count][read_pos][write_pos][slot0 slot1 ...].
+var chan0: Int = 0
+
+fn chan_new(cap: Int) -> Int {
+  let c = alloc(32 + cap * 8)
+  store64(c + 0, cap)
+  store64(c + 8, 0)
+  store64(c + 16, 0)
+  store64(c + 24, 0)
+  return c
+}
+
+fn chan_count(c: Int) -> Int {
+  return load64(c + 8)
+}
+
+fn chan_send(c: Int, msg: Int) -> Int {
+  let cap = load64(c + 0)
+  let count = load64(c + 8)
+  if count >= cap {
+    return 0
+  }
+  let wpos = load64(c + 24)
+  let buf = c + 32
+  buf[wpos] = msg
+  store64(c + 24, (wpos + 1) % cap)
+  store64(c + 8, count + 1)
+  return 1
+}
+
+fn chan_recv(c: Int) -> Int {
+  let count = load64(c + 8)
+  if count == 0 {
+    return -1
+  }
+  let cap = load64(c + 0)
+  let rpos = load64(c + 16)
+  let buf = c + 32
+  let msg = buf[rpos]
+  store64(c + 16, (rpos + 1) % cap)
+  store64(c + 8, count - 1)
+  return msg
+}
+
+fn task_producer() -> Int {
+  let i = 0
+  while true {
+    if i < 8 {
+      let port = com1()
+      chan_send(chan0, 0x100 + i)
+      serial_write_cstr(port, "space:   <producer> sent 0x")
+      serial_write_hex(port, 0x100 + i)
+      serial_put(port, 10)
+      i = i + 1
+    }
+    yield_to_kernel()
+  }
+  return 0
+}
+
+fn task_consumer() -> Int {
+  while true {
+    let m = chan_recv(chan0)
+    if m >= 0 {
+      let port = com1()
+      serial_write_cstr(port, "space:   <consumer> recv 0x")
+      serial_write_hex(port, m)
+      serial_put(port, 10)
+    }
+    yield_to_kernel()
+  }
+  return 0
+}
+
+fn run_channels(port: Int) -> void {
+  serial_write_cstr(port, "space: channel IPC demo (producer -> consumer)\n")
+  scheduler_init(8)
+  chan0 = chan_new(4)
+  task_create(task_producer)
+  task_create(task_consumer)
+  let passes = 0
+  while passes < 9 {
+    switch_to_task(0)
+    switch_to_task(1)
+    passes = passes + 1
+  }
+  serial_write_cstr(port, "space: channel drained, remaining 0x")
+  serial_write_hex(port, chan_count(chan0))
+  serial_put(port, 10)
+  return
+}
+
 // --- interactive serial shell ----------------------------------------------
 fn serial_has_byte(port: Int) -> Int {
   return inb(port + 5) & 1
@@ -632,6 +726,9 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Run the cooperative multitasking scheduler.
   run_scheduler(port)
+
+  // Demonstrate typed-channel IPC between scheduled components.
+  run_channels(port)
 
   // Drop into the interactive serial shell.
   shell(port)
