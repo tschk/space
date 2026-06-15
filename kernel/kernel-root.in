@@ -44,6 +44,11 @@ var root_realm: Int = 0
 var ticks: Int = 0
 var idt_base: Int = 0
 var realm_grants: Int = 0
+var ctxsw: Int = 0
+var kernel_slot: Int = 0
+var tasks_sp_base: Int = 0
+var current_task: Int = 0
+var task_count: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
 fn com1() -> Int {
@@ -329,6 +334,111 @@ fn run_supervisor(port: Int) -> void {
   return
 }
 
+// --- cooperative scheduler --------------------------------------------------
+// Tasks are components with their own stacks. The kernel switches into a task;
+// the task runs a unit of work and yields control back to the kernel. Context
+// is preserved across yields by the assembly context_switch routine.
+fn scheduler_init(max_tasks: Int) -> void {
+  ctxsw = load64(0x4018)
+  kernel_slot = alloc(8)
+  tasks_sp_base = alloc(max_tasks * 8)
+  task_count = 0
+  current_task = 0
+  return
+}
+
+// Build a fresh task stack whose first switch-in "returns" into `entry`.
+fn task_create(entry: Int) -> Int {
+  let t = task_count
+  let stack = alloc(16384)
+  let sp = stack + 16384 - 56
+  store64(sp + 0, 0)
+  store64(sp + 8, 0)
+  store64(sp + 16, 0)
+  store64(sp + 24, 0)
+  store64(sp + 32, 0)
+  store64(sp + 40, 0)
+  store64(sp + 48, entry)
+  store64(tasks_sp_base + t * 8, sp)
+  task_count = task_count + 1
+  return t
+}
+
+// Kernel -> task: run task `t` until it yields back.
+fn switch_to_task(t: Int) -> void {
+  current_task = t
+  let new_sp = load64(tasks_sp_base + t * 8)
+  invoke2(ctxsw, kernel_slot, new_sp)
+  return
+}
+
+// Task -> kernel: save the running task and resume the kernel scheduler.
+fn yield_to_kernel() -> void {
+  let slot = tasks_sp_base + current_task * 8
+  let ksp = load64(kernel_slot)
+  invoke2(ctxsw, slot, ksp)
+  return
+}
+
+// --- worker tasks -----------------------------------------------------------
+fn worker_a() -> Int {
+  let round = 0
+  while true {
+    let port = com1()
+    serial_write_cstr(port, "space:   <task A> round 0x")
+    serial_write_hex(port, round)
+    serial_put(port, 10)
+    round = round + 1
+    yield_to_kernel()
+  }
+  return 0
+}
+
+fn worker_b() -> Int {
+  let round = 0
+  while true {
+    let port = com1()
+    serial_write_cstr(port, "space:   <task B> round 0x")
+    serial_write_hex(port, round)
+    serial_put(port, 10)
+    round = round + 1
+    yield_to_kernel()
+  }
+  return 0
+}
+
+fn worker_c() -> Int {
+  let round = 0
+  while true {
+    let port = com1()
+    serial_write_cstr(port, "space:   <task C> round 0x")
+    serial_write_hex(port, round)
+    serial_put(port, 10)
+    round = round + 1
+    yield_to_kernel()
+  }
+  return 0
+}
+
+fn run_scheduler(port: Int) -> void {
+  scheduler_init(8)
+  task_create(worker_a)
+  task_create(worker_b)
+  task_create(worker_c)
+  serial_write_cstr(port, "space: scheduler running 3 tasks, round-robin\n")
+  let rounds = 0
+  while rounds < 3 {
+    let t = 0
+    while t < task_count {
+      switch_to_task(t)
+      t = t + 1
+    }
+    rounds = rounds + 1
+  }
+  serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes\n")
+  return
+}
+
 // --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
@@ -383,6 +493,9 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Hand the running system to the component supervisor.
   run_supervisor(port)
+
+  // Run the cooperative multitasking scheduler.
+  run_scheduler(port)
 
   serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)

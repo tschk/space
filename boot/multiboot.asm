@@ -97,6 +97,9 @@ long_mode:
     mov rbx, 0x4010
     mov rax, isr_default
     mov [rbx], rax
+    mov rbx, 0x4018
+    mov rax, context_switch
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -138,6 +141,28 @@ isr_timer:
     pop rcx
     pop rax
     iretq
+
+; --- cooperative context switch --------------------------------------------
+; context_switch(rdi = pointer to the outgoing task's saved-RSP slot,
+;                rsi = the incoming task's saved RSP).
+; Saves callee-saved registers, stores RSP into [rdi], loads RSP from rsi, and
+; restores the incoming task's callee-saved registers before returning into it.
+context_switch:
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+    mov [rdi], rsp
+    mov rsp, rsi
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
 
 align 4
 mb_info: dd 0
