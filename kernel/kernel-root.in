@@ -18,12 +18,6 @@ component KernelRoot {
   capability caps: CapabilityTable(create_root, mint_kernel)
 }
 
-struct MemoryRegion {
-  Int base
-  Int length
-  Int kind
-}
-
 struct KernelState {
   Int root_table_id
   Int realm_id
@@ -38,12 +32,21 @@ interface DebugConsole {
   fn write(msg: String) -> void
 }
 
-// COM1, the 16550 UART exposed by QEMU on `-serial`.
+// --- nanokernel state -------------------------------------------------------
+var heap_next: Int = 0
+var heap_end: Int = 0
+var total_ram: Int = 0
+var region_count: Int = 0
+var obj_counter: Int = 0
+var cap_table_base: Int = 0
+var cap_count: Int = 0
+var root_realm: Int = 0
+
+// --- serial console (COM1) --------------------------------------------------
 fn com1() -> Int {
   return 0x3F8
 }
 
-// Initialize COM1: 38400 baud, 8N1, FIFO enabled.
 fn serial_init(port: Int) -> void {
   outb(port + 1, 0x00)
   outb(port + 3, 0x80)
@@ -55,7 +58,6 @@ fn serial_init(port: Int) -> void {
   return
 }
 
-// Spin until the transmit-holding register is empty.
 fn serial_wait_tx(port: Int) -> void {
   while (inb(port + 5) & 0x20) == 0 {
   }
@@ -68,7 +70,6 @@ fn serial_put(port: Int, ch: Int) -> void {
   return
 }
 
-// Write a NUL-terminated string whose address is `addr`.
 fn serial_write_cstr(port: Int, addr: Int) -> void {
   let i = 0
   while load8(addr + i) != 0 {
@@ -78,7 +79,6 @@ fn serial_write_cstr(port: Int, addr: Int) -> void {
   return
 }
 
-// Write a 64-bit value as 16 hex digits.
 fn serial_write_hex(port: Int, value: Int) -> void {
   let shift = 60
   while shift >= 0 {
@@ -93,14 +93,127 @@ fn serial_write_hex(port: Int, value: Int) -> void {
   return
 }
 
+// --- bump heap allocator ----------------------------------------------------
+fn alloc(n: Int) -> Int {
+  let aligned = (n + 15) & -16
+  let p = heap_next
+  heap_next = heap_next + aligned
+  return p
+}
+
+// --- physical memory discovery (Multiboot1 memory map) ----------------------
+fn discover_memory(mb: Int) -> void {
+  let flags = load32(mb)
+  if (flags & 0x40) == 0 {
+    return
+  }
+  let mmap_len = load32(mb + 44)
+  let mmap_addr = load32(mb + 48)
+  let end = mmap_addr + mmap_len
+  let entry = mmap_addr
+  let best_base = 0
+  let best_len = 0
+  let total = 0
+  let count = 0
+  while entry < end {
+    let size = load32(entry)
+    let base = load64(entry + 4)
+    let len = load64(entry + 12)
+    let kind = load32(entry + 20)
+    if kind == 1 {
+      total = total + len
+      count = count + 1
+      if len > best_len {
+        best_base = base
+        best_len = len
+      }
+    }
+    entry = entry + size + 4
+  }
+  total_ram = total
+  region_count = count
+  // Place the heap above the first 16 MiB so it cannot clobber the kernel
+  // image (loaded at 1 MiB) or low memory used by the boot trampoline.
+  let hstart = best_base
+  if hstart < 0x1000000 {
+    hstart = 0x1000000
+  }
+  heap_next = hstart
+  heap_end = best_base + best_len
+  return
+}
+
+// --- object graph v0 --------------------------------------------------------
+// Object record (32 bytes): [id][type_tag][ref0][ref1].
+fn obj_alloc(type_tag: Int) -> Int {
+  let p = alloc(32)
+  obj_counter = obj_counter + 1
+  store64(p + 0, obj_counter)
+  store64(p + 8, type_tag)
+  store64(p + 16, 0)
+  store64(p + 24, 0)
+  return p
+}
+
+fn obj_id(obj: Int) -> Int {
+  return load64(obj + 0)
+}
+
+// --- capability table v0 ----------------------------------------------------
+// Capability slot (16 bytes): [target_object_ptr][rights].
+fn cap_table_init(capacity: Int) -> void {
+  cap_table_base = alloc(capacity * 16)
+  cap_count = 0
+  return
+}
+
+fn cap_mint(target_obj: Int, rights: Int) -> Int {
+  let idx = cap_count
+  let slot = cap_table_base + idx * 16
+  store64(slot + 0, target_obj)
+  store64(slot + 8, rights)
+  cap_count = cap_count + 1
+  return idx
+}
+
+// --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
   serial_init(port)
   serial_write_cstr(port, "space: kernel root entered\n")
-  serial_write_cstr(port, "space: long mode active, multiboot info at 0x")
-  serial_write_hex(port, mb_info)
+
+  discover_memory(mb_info)
+  serial_write_cstr(port, "space: available RAM bytes 0x")
+  serial_write_hex(port, total_ram)
+  serial_write_cstr(port, " across regions 0x")
+  serial_write_hex(port, region_count)
   serial_put(port, 10)
-  serial_write_cstr(port, "space: nanokernel halting\n")
+  serial_write_cstr(port, "space: heap window 0x")
+  serial_write_hex(port, heap_next)
+  serial_write_cstr(port, " .. 0x")
+  serial_write_hex(port, heap_end)
+  serial_put(port, 10)
+
+  // Capability root, bootstrap realm, and root capability table object.
+  cap_table_init(64)
+  let cap_table_obj = obj_alloc(2)
+  root_realm = obj_alloc(1)
+  store64(root_realm + 16, cap_table_obj)
+  let kernel_cap = cap_mint(root_realm, 0xF)
+
+  serial_write_cstr(port, "space: bootstrap realm object id 0x")
+  serial_write_hex(port, obj_id(root_realm))
+  serial_put(port, 10)
+  serial_write_cstr(port, "space: root cap table at 0x")
+  serial_write_hex(port, cap_table_base)
+  serial_write_cstr(port, " caps 0x")
+  serial_write_hex(port, cap_count)
+  serial_put(port, 10)
+  serial_write_cstr(port, "space: objects allocated 0x")
+  serial_write_hex(port, obj_counter)
+  serial_put(port, 10)
+
+  serial_write_cstr(port, "space: nanokernel ready, halting\n")
   while true {
     hlt()
   }
