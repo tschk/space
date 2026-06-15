@@ -88,6 +88,16 @@ long_mode:
     mov gs, ax
     mov rsp, 0x90000
 
+    ; Publish the ISR stub addresses so the `.in` kernel can install them in
+    ; its IDT. The kernel publishes its dispatcher at [0x4000]; the stubs read
+    ; it back at interrupt time.
+    mov rbx, 0x4008
+    mov rax, isr_timer
+    mov [rbx], rax
+    mov rbx, 0x4010
+    mov rax, isr_default
+    mov [rbx], rax
+
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
     mov rax, KERNEL_ENTRY
@@ -97,6 +107,37 @@ long_mode:
     cli
     hlt
     jmp .hang
+
+; --- interrupt service stubs (64-bit) --------------------------------------
+; Default gate: ignore and return.
+isr_default:
+    iretq
+
+; Timer gate (IRQ0 -> vector 32). Saves caller-clobbered registers, calls the
+; `.in` dispatcher published at [0x4000] with the vector in rdi, then returns.
+isr_timer:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov rdi, 32
+    mov rax, [0x4000]
+    call rax
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
 
 align 4
 mb_info: dd 0

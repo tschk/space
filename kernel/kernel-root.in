@@ -41,6 +41,8 @@ var obj_counter: Int = 0
 var cap_table_base: Int = 0
 var cap_count: Int = 0
 var root_realm: Int = 0
+var ticks: Int = 0
+var idt_base: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
 fn com1() -> Int {
@@ -176,6 +178,74 @@ fn cap_mint(target_obj: Int, rights: Int) -> Int {
   return idx
 }
 
+// --- interrupts: IDT, PIC, PIT timer ---------------------------------------
+// Interrupt dispatcher, called from the assembly timer stub with the vector in
+// the first argument. Counts ticks and acknowledges the interrupt controller.
+fn isr_dispatch(vector: Int) -> void {
+  ticks = ticks + 1
+  outb(0x20, 0x20)
+  return
+}
+
+// Install a 64-bit interrupt gate into the IDT.
+fn idt_set(vec: Int, handler: Int) -> void {
+  let e = idt_base + vec * 16
+  store16(e + 0, handler & 0xFFFF)
+  store16(e + 2, 0x08)
+  store8(e + 4, 0)
+  store8(e + 5, 0x8E)
+  store16(e + 6, (handler >> 16) & 0xFFFF)
+  store32(e + 8, (handler >> 32) & 0xFFFFFFFF)
+  store32(e + 12, 0)
+  return
+}
+
+// Remap the 8259 PICs so hardware IRQs land on vectors 32..47, then mask
+// everything except IRQ0 (the timer).
+fn pic_remap() -> void {
+  outb(0x20, 0x11)
+  outb(0xA0, 0x11)
+  outb(0x21, 0x20)
+  outb(0xA1, 0x28)
+  outb(0x21, 0x04)
+  outb(0xA1, 0x02)
+  outb(0x21, 0x01)
+  outb(0xA1, 0x01)
+  outb(0x21, 0xFE)
+  outb(0xA1, 0xFF)
+  return
+}
+
+// Program PIT channel 0 to ~100 Hz.
+fn pit_init() -> void {
+  let divisor = 11932
+  outb(0x43, 0x36)
+  outb(0x40, divisor & 0xFF)
+  outb(0x40, (divisor >> 8) & 0xFF)
+  return
+}
+
+fn interrupts_init() -> void {
+  store64(0x4000, isr_dispatch)
+  let timer_stub = load64(0x4008)
+  let default_stub = load64(0x4010)
+  idt_base = alloc(256 * 16)
+  let i = 0
+  while i < 256 {
+    idt_set(i, default_stub)
+    i = i + 1
+  }
+  idt_set(32, timer_stub)
+  let idtr = alloc(16)
+  store16(idtr + 0, 256 * 16 - 1)
+  store64(idtr + 2, idt_base)
+  lidt(idtr)
+  pic_remap()
+  pit_init()
+  sti()
+  return
+}
+
 // --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
@@ -213,7 +283,26 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_hex(port, obj_counter)
   serial_put(port, 10)
 
-  serial_write_cstr(port, "space: nanokernel ready, halting\n")
+  // Bring up interrupts and run the timer for a short, observable window.
+  interrupts_init()
+  serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)\n")
+
+  let shown = 0
+  while shown < 5 {
+    hlt()
+    if ticks >= (shown + 1) * 20 {
+      serial_write_cstr(port, "space: timer ticks 0x")
+      serial_write_hex(port, ticks)
+      serial_put(port, 10)
+      shown = shown + 1
+    }
+  }
+
+  serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
+  serial_write_hex(port, ticks)
+  serial_put(port, 10)
+  serial_write_cstr(port, "space: halting\n")
+  cli()
   while true {
     hlt()
   }
