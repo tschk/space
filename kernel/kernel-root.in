@@ -745,6 +745,44 @@ fn run_channels(port: Int) -> void {
   return
 }
 
+// --- SCI component loader ---------------------------------------------------
+// Load a separately-compiled component from a binary SCI manifest in memory:
+// [magic][required_caps][entry][reserved] followed by the component's code.
+// The loader validates the declared authority against the realm's grants
+// before transferring control -- the SCI loader rule, applied to real loaded
+// code rather than an in-image component.
+const SCI_MAGIC = 0x5343490000000001
+
+fn sci_load(port: Int, load_addr: Int) -> Int {
+  let magic = load64(load_addr + 0)
+  if magic != SCI_MAGIC {
+    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
+    serial_write_hex(port, load_addr)
+    serial_put(port, 10)
+    return -1
+  }
+  let required = load64(load_addr + 8)
+  let entry = load64(load_addr + 16)
+  serial_write_cstr(port, "  SCI: manifest ok, required caps 0x")
+  serial_write_hex(port, required)
+  serial_write_cstr(port, " entry 0x")
+  serial_write_hex(port, entry)
+  serial_put(port, 10)
+  let missing = required & (-1 ^ realm_grants)
+  if missing != 0 {
+    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial_write_hex(port, missing)
+    serial_put(port, 10)
+    return -1
+  }
+  serial_write_cstr(port, "  SCI: capability check passed, entering component\n")
+  let status = invoke1(entry, 0x42)
+  serial_write_cstr(port, "  SCI: component returned status 0x")
+  serial_write_hex(port, status)
+  serial_put(port, 10)
+  return status
+}
+
 // --- interactive serial shell ----------------------------------------------
 fn serial_has_byte(port: Int) -> Int {
   return inb(port + 5) & 1
@@ -831,7 +869,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test snapshot spawn restore map fault divzero echo <x> halt\n")
+      serial_write_cstr(port, "commands: help status mem ticks ps test snapshot spawn restore map sci fault divzero echo <x> halt\n")
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
@@ -849,6 +887,8 @@ fn shell(port: Int) -> void {
       serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
       serial_write_hex(port, obj_counter)
       serial_put(port, 10)
+    } else if line_eq("sci") != 0 {
+      sci_load(port, 0x140000)
     } else if line_eq("map") != 0 {
       let frame = frame_alloc()
       map_page(0x40000000, frame, 3)
