@@ -1,5 +1,28 @@
 # Space OS Design Notes
 
+## Current Status (implemented and booting)
+
+The Space nanokernel root, written in `.in` and compiled by the Inauguration
+toolchain (`../inauguration`), boots to x86_64 long mode under QEMU and runs the
+following, all observable on the serial console (`scripts/check-qemu-boot.sh`):
+
+- long-mode bring-up from a Multiboot1 trampoline (`boot/multiboot.asm`)
+- serial console (COM1) output and input
+- physical memory discovery from the Multiboot memory map
+- a bump heap allocator
+- an object graph (typed object records with stable ids)
+- a capability table and a bootstrap realm
+- hardware interrupts: a 256-entry IDT, 8259 PIC remap, PIT timer at 100 Hz
+- a capability-gated component supervisor that enforces the SCI loader rule
+  (components requesting undeclared authority are denied before they run)
+- a cooperative multitasking scheduler with real x86_64 context switching
+- typed channels for inter-component IPC (producer/consumer over a ring buffer)
+- an interactive serial shell (`help`, `status`, `mem`, `ticks`, `ps`, `test`,
+  `echo`, `halt`)
+
+The roadmap below describes the broader design; the list above is the part that
+exists and runs today.
+
 ## Direction
 
 Space is a true new 64-bit x86_64-first operating system centered on `.in` as the native systems and orchestration language.
