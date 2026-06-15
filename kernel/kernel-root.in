@@ -1,5 +1,8 @@
 package space.kernel
 
+// Deterministic-execution subsystem, compiled as a separate `.in` module.
+import "determinism.in"
+
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
 // built from; the functions below are the lowerable nanokernel control flow
@@ -742,52 +745,6 @@ fn run_channels(port: Int) -> void {
   serial_write_cstr(port, "space: channel drained, remaining 0x")
   serial_write_hex(port, chan_count(chan0))
   serial_put(port, 10)
-  return
-}
-
-// --- deterministic execution ------------------------------------------------
-// In a deterministic region, nondeterminism is capability-mediated and seeded:
-// the seed is the only nondeterminism source, so the same seed reproduces the
-// same execution exactly. det_next is a xorshift64 PRNG (using logical shifts).
-fn det_next(s: Int) -> Int {
-  let x = s
-  x = x ^ (x << 13)
-  x = x ^ (x >> 7)
-  x = x ^ (x << 17)
-  return x
-}
-
-// A deterministic workload: 64 seeded "scheduling decisions" folded into a
-// checksum. Pure function of the seed -- no clock, no ambient state.
-fn det_workload(seed: Int) -> Int {
-  let s = seed
-  let checksum = 0
-  for i in 0..64 {
-    s = det_next(s)
-    let pick = s & 0x7
-    checksum = (checksum * 31 + pick) & 0xFFFFFFFF
-  }
-  return checksum
-}
-
-fn run_determinism(port: Int) -> void {
-  let r1 = det_workload(0x12345678)
-  let r2 = det_workload(0x12345678)
-  let r3 = det_workload(0x12345679)
-  serial_write_cstr(port, "  det run1 (seed 0x12345678) 0x")
-  serial_write_hex(port, r1)
-  serial_put(port, 10)
-  serial_write_cstr(port, "  det run2 (seed 0x12345678) 0x")
-  serial_write_hex(port, r2)
-  serial_put(port, 10)
-  if r1 == r2 {
-    serial_write_cstr(port, "  DETERMINISTIC: identical result for identical seed\n")
-  } else {
-    serial_write_cstr(port, "  NONDETERMINISTIC: results differ\n")
-  }
-  serial_write_cstr(port, "  det altseed (0x12345679) 0x")
-  serial_write_hex(port, r3)
-  serial_write_cstr(port, " (differs, as expected)\n")
   return
 }
 
