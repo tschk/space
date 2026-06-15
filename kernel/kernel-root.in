@@ -161,9 +161,28 @@ fn discover_memory(mb: Int) -> void {
 }
 
 // --- object graph v0 --------------------------------------------------------
+// The object graph lives in a dedicated arena so it can be checkpointed and
+// restored independently of kernel scratch allocations.
+var obj_arena: Int = 0
+var obj_arena_next: Int = 0
+var obj_arena_size: Int = 0
+
+fn obj_arena_init(size: Int) -> void {
+  obj_arena = alloc(size)
+  obj_arena_next = obj_arena
+  obj_arena_size = size
+  return
+}
+
+fn obj_bump(n: Int) -> Int {
+  let p = obj_arena_next
+  obj_arena_next = obj_arena_next + ((n + 15) & -16)
+  return p
+}
+
 // Object record (32 bytes): [id][type_tag][ref0][ref1].
 fn obj_alloc(type_tag: Int) -> Int {
-  let p = alloc(32)
+  let p = obj_bump(32)
   obj_counter = obj_counter + 1
   store64(p + 0, obj_counter)
   store64(p + 8, type_tag)
@@ -174,6 +193,39 @@ fn obj_alloc(type_tag: Int) -> Int {
 
 fn obj_id(obj: Int) -> Int {
   return load64(obj + 0)
+}
+
+// --- object-graph checkpoint / restore --------------------------------------
+// Snapshotting is a Space primitive: capture a consistent copy of the object
+// graph and its allocator/counter state, and restore the graph to it later.
+var snap_buf: Int = 0
+var snap_obj_next: Int = 0
+var snap_obj_counter: Int = 0
+var snap_cap_count: Int = 0
+
+fn checkpoint_save() -> void {
+  if snap_buf == 0 {
+    snap_buf = alloc(obj_arena_size)
+  }
+  let words = (obj_arena_next - obj_arena) / 8
+  for k in 0..words {
+    store64(snap_buf + k * 8, load64(obj_arena + k * 8))
+  }
+  snap_obj_next = obj_arena_next
+  snap_obj_counter = obj_counter
+  snap_cap_count = cap_count
+  return
+}
+
+fn checkpoint_restore() -> void {
+  let words = (snap_obj_next - obj_arena) / 8
+  for k in 0..words {
+    store64(obj_arena + k * 8, load64(snap_buf + k * 8))
+  }
+  obj_arena_next = snap_obj_next
+  obj_counter = snap_obj_counter
+  cap_count = snap_cap_count
+  return
 }
 
 // --- capability table v0 ----------------------------------------------------
@@ -299,7 +351,7 @@ fn cap_graph() -> Int { return 8 }
 // Register a component as an object in the graph (40 bytes):
 // [id][type=5][entry_addr][required_caps][name_addr].
 fn component_register(name: Int, entry: Int, required: Int) -> Int {
-  let c = alloc(40)
+  let c = obj_bump(40)
   obj_counter = obj_counter + 1
   store64(c + 0, obj_counter)
   store64(c + 8, 5)
@@ -732,7 +784,24 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test fault divzero echo <x> halt\n")
+      serial_write_cstr(port, "commands: help status mem ticks ps test snapshot spawn restore fault divzero echo <x> halt\n")
+    } else if line_eq("snapshot") != 0 {
+      checkpoint_save()
+      serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
+      serial_write_hex(port, obj_counter)
+      serial_put(port, 10)
+    } else if line_eq("spawn") != 0 {
+      let o = obj_alloc(3)
+      serial_write_cstr(port, "  spawned object id 0x")
+      serial_write_hex(port, obj_id(o))
+      serial_write_cstr(port, " (objects now 0x")
+      serial_write_hex(port, obj_counter)
+      serial_write_cstr(port, ")\n")
+    } else if line_eq("restore") != 0 {
+      checkpoint_restore()
+      serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
+      serial_write_hex(port, obj_counter)
+      serial_put(port, 10)
     } else if line_eq("fault") != 0 {
       serial_write_cstr(port, "  triggering a page fault at 0x50000000...\n")
       store64(0x50000000, 1)
@@ -805,6 +874,7 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_put(port, 10)
 
   // Capability root, bootstrap realm, and root capability table object.
+  obj_arena_init(65536)
   cap_table_init(64)
   let cap_table_obj = obj_alloc(2)
   root_realm = obj_alloc(1)
