@@ -9,16 +9,27 @@ following, all observable on the serial console (`scripts/check-qemu-boot.sh`):
 - long-mode bring-up from a Multiboot1 trampoline (`boot/multiboot.asm`)
 - serial console (COM1) output and input
 - physical memory discovery from the Multiboot memory map
-- a bump heap allocator
-- an object graph (typed object records with stable ids)
+- a bump heap allocator and a 4 KiB frame allocator
+- virtual-memory management: dynamic 4-level page mapping (`map_page`)
+- an object graph (typed object records with stable ids) in a dedicated arena
 - a capability table and a bootstrap realm
+- object-graph checkpoint and restore (snapshots)
 - hardware interrupts: a 256-entry IDT, 8259 PIC remap, PIT timer at 100 Hz
+- CPU exception handling (page fault, divide error, #GP, invalid opcode) with
+  vector / error-code / RIP / CR2 diagnostics
 - a capability-gated component supervisor that enforces the SCI loader rule
   (components requesting undeclared authority are denied before they run)
-- a cooperative multitasking scheduler with real x86_64 context switching
+- cooperative AND timer-driven preemptive multitasking with full x86_64 context
+  switching
 - typed channels for inter-component IPC (producer/consumer over a ring buffer)
+- an SCI loader that loads a separately-compiled component, validates its binary
+  capability manifest against the realm's grants, then runs it
 - an interactive serial shell (`help`, `status`, `mem`, `ticks`, `ps`, `test`,
-  `echo`, `halt`)
+  `snapshot`/`spawn`/`restore`, `map`, `sci`, `fault`, `divzero`, `echo`, `halt`)
+
+Two checks verify it: `scripts/check-qemu-boot.sh` (drives the shell and asserts
+a marker for every subsystem) and `scripts/build-multicomponent.sh` (the SCI
+loader running a separately-compiled component).
 
 The roadmap below describes the broader design; the list above is the part that
 exists and runs today.

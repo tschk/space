@@ -37,11 +37,17 @@ verifies the `space: kernel root entered` marker on the serial line.
 
 ## Layout
 
-- `kernel/kernel-root.in` — the nanokernel root component and its lowerable
-  serial/bring-up code, written in `.in`.
+- `kernel/kernel-root.in` — the nanokernel root component and all of its
+  lowerable subsystems (serial, memory, VM, object graph, capabilities,
+  interrupts, exceptions, schedulers, channels, checkpoint, SCI loader, shell).
+- `kernel/guest-service.in` — a separately-compiled component the SCI loader
+  loads and runs at runtime.
 - `boot/multiboot.asm` — the irreducible CPU bring-up shim (32-bit protected
-  mode → x86_64 long mode), the only non-`.in` code in the kernel.
-- `scripts/check-qemu-boot.sh` — the build-and-boot pipeline.
+  mode → x86_64 long mode) plus the ISR / context-switch stubs.
+- `scripts/check-qemu-boot.sh` — build, boot, drive the shell, and assert a
+  marker for every subsystem.
+- `scripts/build-multicomponent.sh` — assemble and boot the kernel + a
+  separately-compiled SCI component and exercise the loader.
 - `sci-schema.md` — the Space Component Image (SCI) metadata profile.
 - `bootstrap-plan.md` — the kernel-in-`.in` implementation plan.
 - `examples/` — proposed `.in` component contracts.
