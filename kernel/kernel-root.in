@@ -200,6 +200,30 @@ fn isr_dispatch(vector: Int) -> void {
   return
 }
 
+// CPU exception handler. Reports the fault and halts the nanokernel rather than
+// letting an unhandled fault triple-fault the machine.
+fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
+  let port = com1()
+  serial_write_cstr(port, "\nspace: *** CPU EXCEPTION vector 0x")
+  serial_write_hex(port, vector)
+  serial_write_cstr(port, " error 0x")
+  serial_write_hex(port, error_code)
+  serial_write_cstr(port, " rip 0x")
+  serial_write_hex(port, rip)
+  serial_put(port, 10)
+  if vector == 14 {
+    serial_write_cstr(port, "space:     page fault address CR2 0x")
+    serial_write_hex(port, read_cr2())
+    serial_put(port, 10)
+  }
+  serial_write_cstr(port, "space: nanokernel fault handler halting\n")
+  cli()
+  while true {
+    hlt()
+  }
+  return
+}
+
 // Install a 64-bit interrupt gate into the IDT.
 fn idt_set(vec: Int, handler: Int) -> void {
   let e = idt_base + vec * 16
@@ -249,6 +273,12 @@ fn interrupts_init() -> void {
     i = i + 1
   }
   idt_set(32, timer_stub)
+  // Wire CPU exception vectors to the fault handler.
+  store64(0x4050, exception_handler)
+  idt_set(0, load64(0x4030))
+  idt_set(6, load64(0x4038))
+  idt_set(13, load64(0x4040))
+  idt_set(14, load64(0x4048))
   let idtr = alloc(16)
   store16(idtr + 0, 256 * 16 - 1)
   store64(idtr + 2, idt_base)
@@ -708,7 +738,16 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test echo <x> halt\n")
+      serial_write_cstr(port, "commands: help status mem ticks ps test fault divzero echo <x> halt\n")
+    } else if line_eq("fault") != 0 {
+      serial_write_cstr(port, "  triggering a page fault at 0x50000000...\n")
+      store64(0x50000000, 1)
+    } else if line_eq("divzero") != 0 {
+      serial_write_cstr(port, "  triggering divide-by-zero...\n")
+      let z = ticks - ticks
+      let q = 100 / z
+      serial_write_hex(port, q)
+      serial_put(port, 10)
     } else if line_eq("status") != 0 {
       serial_write_cstr(port, "  realm object id 0x")
       serial_write_hex(port, obj_id(root_realm))

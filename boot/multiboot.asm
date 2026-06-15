@@ -103,6 +103,20 @@ long_mode:
     mov rbx, 0x4020
     mov rax, isr_timer_preempt
     mov [rbx], rax
+    ; Publish exception stub addresses: divide(0), invalid-opcode(6),
+    ; general-protection(13), page-fault(14).
+    mov rbx, 0x4030
+    mov rax, exc_0
+    mov [rbx], rax
+    mov rbx, 0x4038
+    mov rax, exc_6
+    mov [rbx], rax
+    mov rbx, 0x4040
+    mov rax, exc_13
+    mov [rbx], rax
+    mov rbx, 0x4048
+    mov rax, exc_14
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -144,6 +158,35 @@ isr_timer:
     pop rcx
     pop rax
     iretq
+
+; --- CPU exception stubs ---------------------------------------------------
+; Each stub normalizes the stack to [vector][error_code][RIP][CS][RFLAGS]...
+; then calls the `.in` handler published at [0x4050] with
+; (vector, error_code, faulting_rip). The handler reports and halts.
+exc_0:
+    push 0          ; no CPU error code; push a placeholder
+    push 0          ; vector 0 (divide error)
+    jmp exc_common
+exc_6:
+    push 0
+    push 6          ; invalid opcode
+    jmp exc_common
+exc_13:
+    push 13         ; #GP: CPU already pushed an error code
+    jmp exc_common
+exc_14:
+    push 14         ; #PF: CPU already pushed an error code
+    jmp exc_common
+exc_common:
+    mov rdi, [rsp]       ; vector
+    mov rsi, [rsp + 8]   ; error code
+    mov rdx, [rsp + 16]  ; faulting RIP
+    mov rax, [0x4050]
+    call rax
+.hang:
+    cli
+    hlt
+    jmp .hang
 
 ; --- preemptive timer gate -------------------------------------------------
 ; Saves the full interrupted register state, hands a pointer to it to the `.in`
