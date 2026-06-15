@@ -1,0 +1,5 @@
+# Inauguration compiler cache
+target/
+
+# macOS
+.DS_Store

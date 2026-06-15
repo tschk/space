@@ -1,0 +1,35 @@
+package space.kernel.serial
+
+struct SerialPort {
+  Int port_base
+  Int baud_divisor
+}
+
+interface SerialController {
+  fn init(port: Int, baud: Int) -> SerialPort
+  fn write_byte(port: SerialPort, b: Int) -> void
+  fn write_string(port: SerialPort, s: String) -> void
+  fn read_byte(port: SerialPort) -> Int
+}
+
+fn serial_divisor(baud: Int) -> Int {
+  return 115200 / baud
+}
+
+fn serial_init(port: Int, baud: Int) -> SerialPort {
+  let divisor = serial_divisor(baud)
+  return SerialPort {
+    port_base: port,
+    baud_divisor: divisor,
+  }
+}
+
+fn serial_write_byte(port: SerialPort, b: Int) -> void {
+  return
+}
+
+fn serial_write_string(port: SerialPort, s: String) -> void {
+  serial_write_byte(port, 48)
+  serial_write_byte(port, 10)
+  return
+}

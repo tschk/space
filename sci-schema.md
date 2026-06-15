@@ -4,24 +4,71 @@
 
 ## Version 0 Fields
 
-| Field | Purpose |
-|-------|---------|
-| `magic` | `SCI0` |
-| `target` | Target identity such as `x86_64-space` |
-| `component` | Package and component name |
-| `entry` | Exported entry interface and function |
-| `code` | Machine-code section descriptors |
-| `data` | Data section descriptors |
-| `imports` | Required service interfaces |
-| `exports` | Provided interfaces |
-| `capabilities_required` | Capabilities the loader must grant |
-| `capabilities_exported` | Capabilities this component may create or delegate |
-| `object_schemas` | Persistent object schemas used by the component |
-| `memory` | Stack, heap, static memory, and VM object requirements |
-| `isolation` | Required protection domain and unsafe/native restrictions |
-| `checkpoint` | Checkpoint eligibility and restore policy |
-| `determinism` | Time, randomness, scheduling, and replay requirements |
-| `provenance` | Compiler version, source hash graph, and build inputs |
+The Inauguration compiler emits component metadata as a JSON sidecar
+(`<artifact>.component-metadata.json`) alongside compiled freestanding objects.
+
+| Metadata Key | SCI Equivalent | Source |
+|---|---|---|
+| `component` | Component identity (`package/name`) | `Decl::Component` + package |
+| `target` | Target triple/architecture | `Decl::Component.target` |
+| `entry` | Entry function name | Compile `--entry` flag |
+| `code_sections` | `.text` segment descriptor | Compiler lowering output |
+| `data_sections` | Initialized data segment | Struct initializers |
+| `imports` | Required service interfaces | `Decl::Component.imports` |
+| `exports` | Provided service interfaces | `Decl::Component.exports` |
+| `capabilities_required` | Capabilities the loader must grant | `Decl::Component.capabilities` |
+| `capabilities_exported` | Capabilities this component may delegate | Derived from `capabilities` |
+| `object_schemas` | Struct/object type definitions | `Decl::Struct` from module |
+| `memory` | Stack, heap, static data requirements | Compiler default / profile |
+| `checkpoint` | Checkpoint eligibility policy | `Decl::Component.checkpoint` |
+| `deterministic` | Deterministic execution requirement | `Decl::Component.deterministic` |
+| `provenance` | Compiler version and build metadata | `CARGO_PKG_VERSION` + source hash |
+
+## Example
+
+```json
+{
+  "component": "space.kernel/KernelRoot",
+  "target": "x86_64-space",
+  "entry": "start",
+  "code_sections": [
+    { "name": ".text", "offset": 0, "size": 0, "flags": "rx" }
+  ],
+  "data_sections": [],
+  "imports": [],
+  "exports": [
+    { "name": "boot", "interface": "BootEntry" }
+  ],
+  "capabilities_required": [
+    { "name": "serial", "capability_type": "DebugConsole", "args": ["write"] },
+    { "name": "memory", "capability_type": "PhysicalMemory", "args": ["discover", "map"] },
+    { "name": "tables", "capability_type": "PageTables", "args": ["create", "activate"] },
+    { "name": "traps", "capability_type": "TrapTable", "args": ["install"] },
+    { "name": "caps", "capability_type": "CapabilityTable", "args": ["create_root", "mint_kernel"] }
+  ],
+  "capabilities_exported": [],
+  "object_schemas": [
+    {
+      "name": "KernelState",
+      "fields": [
+        { "name": "root_table_id", "type": "Int", "offset": 0, "size": 8 },
+        { "name": "realm_id", "type": "Int", "offset": 8, "size": 8 },
+        { "name": "cpu_ready", "type": "Bool", "offset": 16, "size": 8 }
+      ],
+      "size": 24,
+      "align": 8
+    }
+  ],
+  "memory": { "stack": 16384, "heap": 0, "static_data": 0 },
+  "checkpoint": "none",
+  "deterministic": true,
+  "provenance": {
+    "compiler": "inauguration",
+    "compiler_version": "0.2.0",
+    "source_hash": ""
+  }
+}
+```
 
 ## Loader Rule
 
@@ -33,6 +80,26 @@ The loader rejects an SCI when:
 - unsafe/native sections request more authority than the realm policy allows
 - checkpoint or determinism metadata conflicts with the component placement
 
-## First Compiler Milestone
+## Compiler Milestone Status
 
-The first `.in` compiler milestone is an `SCI` metadata sidecar for `x86_64-space` with no executable machine-code claim. The second milestone is a freestanding x86_64 code section for a scalar `start` entry. The third milestone is a boot image that loads one SCI and enters its component entry under QEMU.
+| Milestone | Status |
+|---|---|
+| Component declaration parsing | ✅ Complete |
+| Component metadata sidecar | ✅ Complete |
+| Freestanding x86_64 ELF object | ✅ Complete |
+| Real x86_64 function body lowering | ✅ Complete |
+| Metadata + code in same artifact | ✅ Complete |
+| Boot image loads one SCI and enters under QEMU | 🔜 Next |
+
+## Future Version Fields
+
+Future SCI versions may add:
+
+- `isolation`: required protection domain and unsafe/native restrictions
+- `scheduling`: priority, latency class, CPU affinity
+- `migration`: migration eligibility and policy
+- `snapshot`: snapshot eligibility and policy
+- `channels`: typed channel endpoint declarations
+- `graph`: dependency and execution graph edges
+- `compat`: compatibility personality requirements
+- `gpu`: GPU/compute requirements and limits

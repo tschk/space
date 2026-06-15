@@ -1,0 +1,99 @@
+package space.kernel
+
+component KernelRoot {
+  target "x86_64-space"
+  deterministic true
+  checkpoint none
+
+  export boot: BootEntry
+
+  capability serial: DebugConsole(write)
+  capability memory: PhysicalMemory(discover, map)
+  capability tables: PageTables(create, activate)
+  capability traps: TrapTable(install)
+  capability caps: CapabilityTable(create_root, mint_kernel)
+}
+
+struct MemoryRegion {
+  Int base
+  Int length
+  Int typ
+}
+
+struct MemoryMap {
+  MemoryRegion regions
+  Int region_count
+}
+
+struct FramebufferInfo {
+  Int address
+  Int width
+  Int height
+  Int pitch
+  Int bpp
+}
+
+struct BootInfo {
+  MemoryMap memory_map
+  FramebufferInfo framebuffer
+  String bootloader_name
+  Int rsdp_address
+}
+
+struct KernelState {
+  Int root_table_id
+  Int realm_id
+  Bool cpu_ready
+}
+
+interface BootEntry {
+  fn start(info: BootInfo) -> KernelState
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+  fn write_byte(b: Int) -> void
+  fn write_hex(val: Int) -> void
+}
+
+interface PhysicalMemory {
+  fn discover(map: MemoryMap) -> void
+  fn map_region(base: Int, length: Int, flags: Int) -> Int
+}
+
+interface PageTables {
+  fn create() -> Int
+  fn activate(root: Int) -> void
+  fn map_page(table: Int, virt: Int, phys: Int, flags: Int) -> void
+}
+
+interface TrapTable {
+  fn install() -> void
+  fn register_handler(vec: Int, handler: Int) -> void
+}
+
+interface CapabilityTable {
+  fn create_root() -> Int
+  fn mint_kernel(parent: Int, label: String) -> Int
+  fn grant(child: Int, target: Int, caps: Int) -> void
+}
+
+fn serial_early_init() -> Int {
+  return 3192
+}
+
+fn spin_wait() -> void {
+  while true {
+  }
+}
+
+fn start(info: BootInfo) -> KernelState {
+  let serial_port = serial_early_init()
+  let root_table = 0
+  let realm = 0
+  return KernelState {
+    root_table_id: root_table,
+    realm_id: realm,
+    cpu_ready: true,
+  }
+}
