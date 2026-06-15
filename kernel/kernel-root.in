@@ -4,6 +4,8 @@ package space.kernel
 import "determinism.in"
 // PCI configuration-space access and bus enumeration.
 import "pci.in"
+// Intel e1000 NIC driver.
+import "net.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -894,6 +896,8 @@ fn shell(port: Int) -> void {
       serial_put(port, 10)
     } else if line_eq("pci") != 0 {
       pci_scan(port)
+    } else if line_eq("net") != 0 {
+      run_net(port)
     } else if line_eq("det") != 0 {
       run_determinism(port)
     } else if line_eq("sci") != 0 {

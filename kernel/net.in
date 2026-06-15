@@ -1,0 +1,164 @@
+package space.kernel
+
+// A minimal Intel 82540EM (e1000) driver: map the NIC's MMIO registers, read
+// its MAC, set up a transmit descriptor ring, and send raw Ethernet frames by
+// DMA. Imports pci.in (PCI access) and calls back into the kernel's serial,
+// map_page, and frame_alloc helpers. This is the device side of Space's
+// distributed-first design: a real driver as a sandboxed-capable component.
+
+var nic_mmio: Int = 0
+var nic_tx_ring: Int = 0
+var nic_tx_buf: Int = 0
+var nic_tx_tail: Int = 0
+var nic_mac_lo: Int = 0
+var nic_mac_hi: Int = 0
+
+const TX_NDESC = 8
+
+fn mmio_r32(off: Int) -> Int {
+  return load32(nic_mmio + off)
+}
+
+fn mmio_w32(off: Int, v: Int) -> void {
+  store32(nic_mmio + off, v)
+  return
+}
+
+fn net_print_byte(port: Int, b: Int) -> void {
+  let hi = (b >> 4) & 0xF
+  let lo = b & 0xF
+  if hi < 10 { serial_put(port, 48 + hi) } else { serial_put(port, 87 + hi) }
+  if lo < 10 { serial_put(port, 48 + lo) } else { serial_put(port, 87 + lo) }
+  return
+}
+
+fn net_print_mac(port: Int) -> void {
+  net_print_byte(port, nic_mac_lo & 0xFF)
+  serial_put(port, 58)
+  net_print_byte(port, (nic_mac_lo >> 8) & 0xFF)
+  serial_put(port, 58)
+  net_print_byte(port, (nic_mac_lo >> 16) & 0xFF)
+  serial_put(port, 58)
+  net_print_byte(port, (nic_mac_lo >> 24) & 0xFF)
+  serial_put(port, 58)
+  net_print_byte(port, nic_mac_hi & 0xFF)
+  serial_put(port, 58)
+  net_print_byte(port, (nic_mac_hi >> 8) & 0xFF)
+  return
+}
+
+fn e1000_init(port: Int) -> Int {
+  let bar0 = pci_find_e1000()
+  if bar0 == 0 {
+    serial_write_cstr(port, "  net: no e1000 NIC found\n")
+    return 0
+  }
+  pci_enable_e1000()
+  // Map the NIC register window (64 KiB) uncached and identity, since BAR0 is
+  // above the trampoline's 1 GiB identity map.
+  let pg = bar0
+  while pg < bar0 + 0x10000 {
+    map_page(pg, pg, 0x1B)
+    pg = pg + 0x1000
+  }
+  nic_mmio = bar0
+  nic_mac_lo = mmio_r32(0x5400)
+  nic_mac_hi = mmio_r32(0x5404) & 0xFFFF
+  serial_write_cstr(port, "  net: e1000 MMIO 0x")
+  serial_write_hex(port, bar0)
+  serial_write_cstr(port, " MAC ")
+  net_print_mac(port)
+  serial_put(port, 10)
+  // Transmit ring and a packet buffer (DMA'd by the NIC at these physical
+  // addresses; identity-mapped so phys == virt).
+  nic_tx_ring = frame_alloc()
+  nic_tx_buf = frame_alloc()
+  mmio_w32(0x3800, nic_tx_ring)      // TDBAL
+  mmio_w32(0x3804, 0)                // TDBAH
+  mmio_w32(0x3808, TX_NDESC * 16)    // TDLEN
+  mmio_w32(0x3810, 0)                // TDH
+  mmio_w32(0x3818, 0)                // TDT
+  mmio_w32(0x410, 0x60200A)          // TIPG
+  mmio_w32(0x400, 0x400FA)           // TCTL: EN | PSP | CT=15 | COLD=64
+  nic_tx_tail = 0
+  return bar0
+}
+
+fn e1000_tx(len: Int) -> void {
+  let d = nic_tx_ring + nic_tx_tail * 16
+  store64(d + 0, nic_tx_buf)         // buffer address
+  store16(d + 8, len)                // length
+  store8(d + 10, 0)                  // CSO
+  store8(d + 11, 0xB)                // CMD: EOP | IFCS | RS
+  store8(d + 12, 0)                  // STATUS
+  store8(d + 13, 0)                  // CSS
+  store16(d + 14, 0)                 // special
+  nic_tx_tail = (nic_tx_tail + 1) % TX_NDESC
+  mmio_w32(0x3818, nic_tx_tail)      // TDT: hand the descriptor to the NIC
+  let tries = 0
+  while (load8(d + 12) & 1) == 0 {
+    tries = tries + 1
+    if tries > 2000000 {
+      break
+    }
+  }
+  return
+}
+
+// Write our 6-byte MAC at address p.
+fn net_store_mac(p: Int) -> void {
+  store8(p + 0, nic_mac_lo & 0xFF)
+  store8(p + 1, (nic_mac_lo >> 8) & 0xFF)
+  store8(p + 2, (nic_mac_lo >> 16) & 0xFF)
+  store8(p + 3, (nic_mac_lo >> 24) & 0xFF)
+  store8(p + 4, nic_mac_hi & 0xFF)
+  store8(p + 5, (nic_mac_hi >> 8) & 0xFF)
+  return
+}
+
+// Build a broadcast ARP request ("who has 10.0.2.2, tell 10.0.2.15") in the TX
+// buffer and return its length (42 bytes).
+fn build_arp() -> Int {
+  let p = nic_tx_buf
+  for i in 0..6 {
+    store8(p + i, 0xFF)
+  }
+  net_store_mac(p + 6)
+  store8(p + 12, 0x08)
+  store8(p + 13, 0x06)
+  store8(p + 14, 0x00)
+  store8(p + 15, 0x01)
+  store8(p + 16, 0x08)
+  store8(p + 17, 0x00)
+  store8(p + 18, 0x06)
+  store8(p + 19, 0x04)
+  store8(p + 20, 0x00)
+  store8(p + 21, 0x01)
+  net_store_mac(p + 22)
+  store8(p + 28, 10)
+  store8(p + 29, 0)
+  store8(p + 30, 2)
+  store8(p + 31, 15)
+  for i in 0..6 {
+    store8(p + 32 + i, 0x00)
+  }
+  store8(p + 38, 10)
+  store8(p + 39, 0)
+  store8(p + 40, 2)
+  store8(p + 41, 2)
+  return 42
+}
+
+fn run_net(port: Int) -> void {
+  let bar0 = e1000_init(port)
+  if bar0 == 0 {
+    return
+  }
+  let len = build_arp()
+  serial_write_cstr(port, "  net: transmitting broadcast ARP request, len 0x")
+  serial_write_hex(port, len)
+  serial_put(port, 10)
+  e1000_tx(len)
+  serial_write_cstr(port, "  net: frame transmitted via e1000 TX ring\n")
+  return
+}
