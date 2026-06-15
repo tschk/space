@@ -2,6 +2,8 @@ package space.kernel
 
 // Deterministic-execution subsystem, compiled as a separate `.in` module.
 import "determinism.in"
+// PCI configuration-space access and bus enumeration.
+import "pci.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -872,7 +874,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test det snapshot spawn restore map sci fault divzero echo <x> halt\n")
+      serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> halt\n")
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
@@ -890,6 +892,8 @@ fn shell(port: Int) -> void {
       serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
       serial_write_hex(port, obj_counter)
       serial_put(port, 10)
+    } else if line_eq("pci") != 0 {
+      pci_scan(port)
     } else if line_eq("det") != 0 {
       run_determinism(port)
     } else if line_eq("sci") != 0 {
