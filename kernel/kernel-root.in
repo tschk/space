@@ -58,8 +58,10 @@ var work_a: Int = 0
 var work_b: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
+const COM1_PORT = 0x3F8
+
 fn com1() -> Int {
-  return 0x3F8
+  return COM1_PORT
 }
 
 fn serial_init(port: Int) -> void {
@@ -267,10 +269,8 @@ fn interrupts_init() -> void {
   let timer_stub = load64(0x4008)
   let default_stub = load64(0x4010)
   idt_base = alloc(256 * 16)
-  let i = 0
-  while i < 256 {
+  for i in 0..256 {
     idt_set(i, default_stub)
-    i = i + 1
   }
   idt_set(32, timer_stub)
   // Wire CPU exception vectors to the fault handler.
@@ -481,10 +481,8 @@ fn run_scheduler(port: Int) -> void {
 // by the iretq frame (RIP, CS, RFLAGS with IF set, RSP, SS).
 fn build_preempt_task(entry: Int, stack_top: Int) -> Int {
   let sp = stack_top - 160
-  let i = 0
-  while i < 15 {
+  for i in 0..15 {
     store64(sp + i * 8, 0)
-    i = i + 1
   }
   store64(sp + 120, entry)
   store64(sp + 128, 0x08)
@@ -717,16 +715,12 @@ fn line_prefix(prefix: Int) -> Int {
 // A self-test of array indexing: sum of squares 0..7 == 140 (0x8C).
 fn array_selftest() -> Int {
   let a = alloc(64)
-  let i = 0
-  while i < 8 {
+  for i in 0..8 {
     a[i] = i * i
-    i = i + 1
   }
   let sum = 0
-  let j = 0
-  while j < 8 {
+  for j in 0..8 {
     sum = sum + a[j]
-    j = j + 1
   }
   return sum
 }
