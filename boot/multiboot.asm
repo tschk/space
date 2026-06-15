@@ -100,6 +100,9 @@ long_mode:
     mov rbx, 0x4018
     mov rax, context_switch
     mov [rbx], rax
+    mov rbx, 0x4020
+    mov rax, isr_timer_preempt
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -139,6 +142,47 @@ isr_timer:
     pop rsi
     pop rdx
     pop rcx
+    pop rax
+    iretq
+
+; --- preemptive timer gate -------------------------------------------------
+; Saves the full interrupted register state, hands a pointer to it to the `.in`
+; scheduler published at [0x4028], and resumes whatever task the scheduler
+; selects (possibly a different one) via its returned stack pointer + iretq.
+isr_timer_preempt:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, rsp                 ; arg0 = pointer to the saved context
+    mov rax, [0x4028]            ; schedule_tick, published by the .in kernel
+    call rax
+    mov rsp, rax                 ; switch to the selected task's saved context
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
     pop rax
     iretq
 

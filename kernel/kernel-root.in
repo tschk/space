@@ -50,6 +50,12 @@ var tasks_sp_base: Int = 0
 var current_task: Int = 0
 var task_count: Int = 0
 var line: Int = 0
+var ptasks: Int = 0
+var pcount: Int = 0
+var pcurrent: Int = 0
+var preempt_deadline: Int = 0
+var work_a: Int = 0
+var work_b: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
 fn com1() -> Int {
@@ -440,6 +446,84 @@ fn run_scheduler(port: Int) -> void {
   return
 }
 
+// --- preemptive scheduler ---------------------------------------------------
+// Build a full interrupt-frame for a new task: 15 saved GP registers followed
+// by the iretq frame (RIP, CS, RFLAGS with IF set, RSP, SS).
+fn build_preempt_task(entry: Int, stack_top: Int) -> Int {
+  let sp = stack_top - 160
+  let i = 0
+  while i < 15 {
+    store64(sp + i * 8, 0)
+    i = i + 1
+  }
+  store64(sp + 120, entry)
+  store64(sp + 128, 0x08)
+  store64(sp + 136, 0x202)
+  store64(sp + 144, stack_top)
+  store64(sp + 152, 0x10)
+  return sp
+}
+
+// Invoked from the preemptive timer ISR with a pointer to the interrupted
+// task's saved context. Saves it, advances round-robin, and returns the next
+// task's saved stack pointer for the ISR to resume.
+fn schedule_tick(ctx: Int) -> Int {
+  ticks = ticks + 1
+  outb(0x20, 0x20)
+  store64(ptasks + pcurrent * 8, ctx)
+  if ticks >= preempt_deadline {
+    pcurrent = 0
+    return load64(ptasks)
+  }
+  pcurrent = (pcurrent + 1) % pcount
+  return load64(ptasks + pcurrent * 8)
+}
+
+fn preempt_worker_a() -> Int {
+  while true {
+    work_a = work_a + 1
+  }
+  return 0
+}
+
+fn preempt_worker_b() -> Int {
+  while true {
+    work_b = work_b + 1
+  }
+  return 0
+}
+
+fn run_preemptive(port: Int) -> void {
+  serial_write_cstr(port, "space: preemptive scheduler (timer-driven)\n")
+  // Task 0 is this kernel context, captured on the first preemption. Tasks 1
+  // and 2 are independent workers with pre-built interrupt frames.
+  ptasks = alloc(3 * 8)
+  pcount = 3
+  pcurrent = 0
+  store64(ptasks + 0, 0)
+  let sa = alloc(16384)
+  let sb = alloc(16384)
+  store64(ptasks + 8, build_preempt_task(preempt_worker_a, sa + 16384))
+  store64(ptasks + 16, build_preempt_task(preempt_worker_b, sb + 16384))
+  preempt_deadline = ticks + 60
+  cli()
+  store64(0x4028, schedule_tick)
+  idt_set(32, load64(0x4020))
+  sti()
+  while ticks < preempt_deadline {
+    hlt()
+  }
+  cli()
+  idt_set(32, load64(0x4008))
+  sti()
+  serial_write_cstr(port, "space: preemption ended; worker A iters 0x")
+  serial_write_hex(port, work_a)
+  serial_write_cstr(port, " worker B iters 0x")
+  serial_write_hex(port, work_b)
+  serial_put(port, 10)
+  return
+}
+
 // --- typed channels (inter-component IPC) -----------------------------------
 // A channel is a ring buffer in the object graph:
 // [capacity][count][read_pos][write_pos][slot0 slot1 ...].
@@ -729,6 +813,9 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Demonstrate typed-channel IPC between scheduled components.
   run_channels(port)
+
+  // Demonstrate timer-driven preemptive multitasking.
+  run_preemptive(port)
 
   // Drop into the interactive serial shell.
   shell(port)
