@@ -1,69 +1,63 @@
 #!/usr/bin/env bash
 #
-# check-qemu-boot.sh — Build Space kernel and boot in QEMU
+# check-qemu-boot.sh — Build the Space nanokernel from `.in` and boot it in QEMU.
 #
-# Prerequisites:
-#   - ../inauguration built (release mode)
-#   - limine installed
-#   - x86_64-qemu available (qemu-system-x86_64)
+# Pipeline:
+#   1. build the Inauguration `.in` compiler (../inauguration)
+#   2. assemble the long-mode boot trampoline (nasm -f bin)
+#   3. compile kernel/kernel-root.in to a flat Multiboot1 boot image
+#   4. boot it under qemu-system-x86_64 and verify the serial marker
 #
+# Requirements: clang, make, nasm, qemu-system-x86_64.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
-INAUG_DIR="$SPACE_DIR/../inauguration"
-BUILD_DIR="/tmp/space-boot"
+INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
+BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
+MARKER="space: kernel root entered"
 
+IN="$INAUG_DIR/in-cli/in"
 KERNEL_IN="$SPACE_DIR/kernel/kernel-root.in"
-LIMINE_CONF="$SPACE_DIR/boot/limine.conf"
-LINKER_SCRIPT="$SPACE_DIR/boot/linker.ld"
-ENTRY_ASM="$SPACE_DIR/boot/x86_64-entry.S"
+TRAMPOLINE_ASM="$SPACE_DIR/boot/multiboot.asm"
 
-echo "=== Space QEMU Boot Check ==="
-
-# Clean build directory
-rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# Step 1: Compile .in kernel to freestanding ELF object
-echo "[1/5] Compiling .in kernel..."
-"$INAUG_DIR/in-cli/target/release/in" compile \
-    --path "$KERNEL_IN" \
-    --target native \
-    --target-triple x86_64-unknown-none \
-    --linkage static-lib \
-    --entry kernel_entry \
-    --out "$BUILD_DIR/kernel.o" \
-    --json 2>&1 || echo "  (compilation not yet implemented — placeholder)"
+echo "[1/4] Building the Inauguration .in compiler..."
+make -C "$INAUG_DIR/in-cli" >/dev/null
 
-# Step 2: Assemble boot shim
-echo "[2/5] Assembling boot shim..."
-as --64 -o "$BUILD_DIR/entry.o" "$ENTRY_ASM"
+echo "[2/4] Assembling the boot trampoline..."
+nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
+tramp_size=$(stat -f%z "$BUILD_DIR/trampoline.bin" 2>/dev/null || stat -c%s "$BUILD_DIR/trampoline.bin")
+if [ "$tramp_size" -ne 8192 ]; then
+  echo "  error: trampoline is $tramp_size bytes, expected 8192" >&2
+  exit 1
+fi
 
-# Step 3: Link into final ELF
-echo "[3/5] Linking kernel..."
-ld.lld \
-    -T "$LINKER_SCRIPT" \
-    -o "$BUILD_DIR/kernel.elf" \
-    "$BUILD_DIR/entry.o" \
-    "$BUILD_DIR/kernel.o" \
-    2>&1 || echo "  (linking not yet possible — placeholder)"
+echo "[3/4] Compiling kernel-root.in to a boot image..."
+"$IN" compile \
+  --path "$KERNEL_IN" \
+  --entry kernel_entry \
+  --emit boot \
+  --trampoline "$BUILD_DIR/trampoline.bin" \
+  --out "$BUILD_DIR/kernel.bin" \
+  --metadata "$BUILD_DIR/kernel.component-metadata.json" \
+  --json
 
-# Step 4: Create bootable image
-echo "[4/5] Creating boot image..."
-cp "$LIMINE_CONF" "$BUILD_DIR/limine.conf"
-# limine bios-install "$BUILD_DIR/kernel.elf" 2>&1 || true
+echo "[4/4] Booting in QEMU..."
+rm -f "$BUILD_DIR/serial.log"
+perl -e 'alarm 6; exec @ARGV' qemu-system-x86_64 \
+  -kernel "$BUILD_DIR/kernel.bin" \
+  -serial "file:$BUILD_DIR/serial.log" \
+  -display none -no-reboot >/dev/null 2>&1 || true
 
-# Step 5: Boot in QEMU
-echo "[5/5] Booting in QEMU..."
-# qemu-system-x86_64 \
-#     -cdrom "$BUILD_DIR/space.iso" \
-#     -serial stdio \
-#     -no-reboot \
-#     -m 256M \
-#     2>&1
+echo "--- serial output ---"
+cat "$BUILD_DIR/serial.log" 2>/dev/null || true
+echo "---------------------"
 
-echo ""
-echo "=== Boot check complete ==="
-echo "Note: full compilation and boot requires Inauguration"
-echo "Tasks 2-4 (freestanding x86_64 output + real lowering)."
+if grep -q "$MARKER" "$BUILD_DIR/serial.log" 2>/dev/null; then
+  echo "PASS: '$MARKER' observed on serial."
+  exit 0
+fi
+echo "FAIL: boot marker not found on serial." >&2
+exit 1

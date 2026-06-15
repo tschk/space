@@ -89,7 +89,8 @@ The loader rejects an SCI when:
 | Freestanding x86_64 ELF object | ✅ Complete |
 | Real x86_64 function body lowering | ✅ Complete |
 | Metadata + code in same artifact | ✅ Complete |
-| Boot image loads one SCI and enters under QEMU | 🔜 Next |
+| Boot image enters `.in`-compiled `kernel_entry` in long mode under QEMU | ✅ Complete |
+| Loader validates SCI metadata against granted capabilities before entry | 🔜 Next |
 
 ## Future Version Fields
 

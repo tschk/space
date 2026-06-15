@@ -1,5 +1,9 @@
 package space.kernel
 
+// The nanokernel root component. The component, interface, and struct
+// declarations are the Space contract surface the loader and SCI metadata are
+// built from; the functions below are the lowerable nanokernel control flow
+// that runs after the boot trampoline enters long mode.
 component KernelRoot {
   target "x86_64-space"
   deterministic true
@@ -17,27 +21,7 @@ component KernelRoot {
 struct MemoryRegion {
   Int base
   Int length
-  Int typ
-}
-
-struct MemoryMap {
-  MemoryRegion regions
-  Int region_count
-}
-
-struct FramebufferInfo {
-  Int address
-  Int width
-  Int height
-  Int pitch
-  Int bpp
-}
-
-struct BootInfo {
-  MemoryMap memory_map
-  FramebufferInfo framebuffer
-  String bootloader_name
-  Int rsdp_address
+  Int kind
 }
 
 struct KernelState {
@@ -47,53 +31,78 @@ struct KernelState {
 }
 
 interface BootEntry {
-  fn start(info: BootInfo) -> KernelState
+  fn start(mb_info: Int) -> Int
 }
 
 interface DebugConsole {
   fn write(msg: String) -> void
-  fn write_byte(b: Int) -> void
-  fn write_hex(val: Int) -> void
 }
 
-interface PhysicalMemory {
-  fn discover(map: MemoryMap) -> void
-  fn map_region(base: Int, length: Int, flags: Int) -> Int
+// COM1, the 16550 UART exposed by QEMU on `-serial`.
+fn com1() -> Int {
+  return 0x3F8
 }
 
-interface PageTables {
-  fn create() -> Int
-  fn activate(root: Int) -> void
-  fn map_page(table: Int, virt: Int, phys: Int, flags: Int) -> void
+// Initialize COM1: 38400 baud, 8N1, FIFO enabled.
+fn serial_init(port: Int) -> void {
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x80)
+  outb(port + 0, 0x03)
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x03)
+  outb(port + 2, 0xC7)
+  outb(port + 4, 0x0B)
+  return
 }
 
-interface TrapTable {
-  fn install() -> void
-  fn register_handler(vec: Int, handler: Int) -> void
+// Spin until the transmit-holding register is empty.
+fn serial_wait_tx(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
 }
 
-interface CapabilityTable {
-  fn create_root() -> Int
-  fn mint_kernel(parent: Int, label: String) -> Int
-  fn grant(child: Int, target: Int, caps: Int) -> void
+fn serial_put(port: Int, ch: Int) -> void {
+  serial_wait_tx(port)
+  outb(port, ch)
+  return
 }
 
-fn serial_early_init() -> Int {
-  return 3192
+// Write a NUL-terminated string whose address is `addr`.
+fn serial_write_cstr(port: Int, addr: Int) -> void {
+  let i = 0
+  while load8(addr + i) != 0 {
+    serial_put(port, load8(addr + i))
+    i = i + 1
+  }
+  return
 }
 
-fn spin_wait() -> void {
+// Write a 64-bit value as 16 hex digits.
+fn serial_write_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      serial_put(port, 48 + nibble)
+    } else {
+      serial_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+fn kernel_entry(mb_info: Int) -> Int {
+  let port = com1()
+  serial_init(port)
+  serial_write_cstr(port, "space: kernel root entered\n")
+  serial_write_cstr(port, "space: long mode active, multiboot info at 0x")
+  serial_write_hex(port, mb_info)
+  serial_put(port, 10)
+  serial_write_cstr(port, "space: nanokernel halting\n")
   while true {
+    hlt()
   }
-}
-
-fn start(info: BootInfo) -> KernelState {
-  let serial_port = serial_early_init()
-  let root_table = 0
-  let realm = 0
-  return KernelState {
-    root_table_id: root_table,
-    realm_id: realm,
-    cpu_ready: true,
-  }
+  return 0
 }
