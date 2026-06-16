@@ -309,6 +309,34 @@ fn serial_write_cstr(port: Int, addr: Int) -> void {
   return
 }
 
+fn serial_write_dec_wide(port: Int, value: Int) -> void {
+  // ponytail: simple 20-digit buffer approach
+  let buf = alloc(20)
+  let i = 0
+  let n = value
+  if n < 0 {
+    serial_put(port, 45)  // '-'
+    n = -n
+  }
+  // Store digits in reverse order
+  if n == 0 {
+    buf[0] = 48  // '0'
+    i = 1
+  } else {
+    while n > 0 {
+      buf[i] = 48 + n % 10
+      n = n / 10
+      i = i + 1
+    }
+  }
+  // Print in correct order
+  while i > 0 {
+    i = i - 1
+    serial_put(port, buf[i])
+  }
+  return
+}
+
 fn serial_write_hex(port: Int, value: Int) -> void {
   let shift = 60
   while shift >= 0 {
@@ -1105,6 +1133,27 @@ fn read_line(port: Int) -> Int {
   return len
 }
 
+// Parse a hex string at addr into an integer.
+// ponytail: stops at first non-hex char; no overflow check.
+fn str_to_hex(addr: Int) -> Int {
+  let result = 0
+  let i = 0
+  while true {
+    let c = load8(addr + i)
+    if (c >= 48) && (c <= 57) {  // 0-9
+      result = result * 16 + c - 48
+    } else if (c >= 65) && (c <= 70) {  // A-F
+      result = result * 16 + c - 55
+    } else if (c >= 97) && (c <= 102) {  // a-f
+      result = result * 16 + c - 87
+    } else {
+      return result
+    }
+    i = i + 1
+  }
+  return 0
+}
+
 // Compare the line buffer against a NUL-terminated command string.
 fn line_eq(cmd: Int) -> Int {
   let i = 0
@@ -1158,7 +1207,7 @@ fn shell(port: Int) -> void {
     serial_flush(port)  // ensure prompt visible before waiting for input
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> halt")
+        serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> uptime halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1240,14 +1289,45 @@ fn shell(port: Int) -> void {
         serial_write_cstr(port, "  halting on request")
       serial_nl(port)
       return
+    } else if line_eq("uptime") != 0 {
+      serial_write_cstr(port, "  ")
+      serial_write_dec_wide(port, ticks)
+        serial_write_cstr(port, " ticks since boot")
+      serial_nl(port)
     } else {
       let rest = line_prefix("echo ")
       if rest >= 0 {
         serial_write_cstr(port, line + rest)
         serial_nl(port)
-      } else if n != 0 {
-          serial_write_cstr(port, "  unknown command (try 'help')")
-        serial_nl(port)
+      } else {
+        let rest = line_prefix("peek ")
+        if rest >= 0 {
+          let addr = str_to_hex(line + rest)
+          serial_write_cstr(port, "  [0x")
+          serial_write_hex(port, addr)
+          serial_write_cstr(port, "] = 0x")
+          serial_write_hex(port, load64(addr))
+          serial_nl(port)
+        } else {
+          let rest = line_prefix("poke ")
+          if rest >= 0 {
+            let space_pos = 0
+            while load8(line + rest + space_pos) > 32 {
+              space_pos = space_pos + 1
+            }
+            let addr = str_to_hex(line + rest)
+            let val = str_to_hex(line + rest + space_pos + 1)
+            store64(addr, val)
+            serial_write_cstr(port, "  [0x")
+            serial_write_hex(port, addr)
+            serial_write_cstr(port, "] := 0x")
+            serial_write_hex(port, load64(addr))
+            serial_nl(port)
+          } else if n != 0 {
+            serial_write_cstr(port, "  unknown command (try 'help')")
+            serial_nl(port)
+          }
+        }
       }
     }
   }
