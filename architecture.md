@@ -883,3 +883,561 @@ The nanokernel is the hardware enforcement layer underneath it.
 | SCI | Package it with its authority | Passport |
 | Space | Execute it within its bounds | Executive |
 | Nanokernel | Enforce the boundaries | Police |
+
+---
+
+## Implementation Roadmap
+
+### Dependency Graph
+
+```
+Phase 0: Domains ──────────────────────────────────────┐
+  creates: domain_create, domain_switch, domain_map     │
+  unlocks: isolated memory for microservices            │
+                                                        │
+Phase 1: Cross-Domain Channels ─────────────────────────┤
+  creates: chan_connect, chan_send_cross, VM object xfer│
+  unlocks: IPC between isolated components              │
+                                                        │
+Phase 2: Component Loader ──────────────────────────────┤
+  creates: loader.in (parse + place SCI into domain)    │
+  unlocks: loading any .in component into its own realm │
+                                                        │
+Phase 3: Core Microservices ─────────┬──────────────────┘
+  proc.in mem.in time.in rand.in     │
+  (first .in services in own domains)│
+                                     ▼
+Phase 4: fs.in ───────────── Phase 5: net.in ───────────┐
+  file I/O, dirs, mounts     sockets, DNS, TLS          │
+                                                        │
+Phase 6: gfx.in ──────────── Phase 7: audio.in ─────────┤
+  compositor, surfaces      PCM, mixing, streams        │
+                                                        │
+Phase 8: Compatibility ─────────────────────────────────┤
+  loader.in (ELF/PE/Mach-O)  linux/darwin/win compat    │
+                                                        │
+Phase 9: Distribution ──────────────────────────────────┘
+  remote components, replicated objects, migration
+```
+
+---
+
+## Phase 0: Domain Subsystem
+
+**What**: Multiple memory domains (page table trees).
+**Why**: The #1 blocker. Without domains, every component shares one
+         address space — no isolation, no microservices, no compat.
+**Where**: `kernel/kernel-root.in` + new `kernel/domain.in`
+
+### Primitives To Add
+
+```in
+fn domain_create() -> Int
+  // Allocates a new PML4 (4K frame)
+  // Copies kernel mappings (code, data, stack, MMIO)
+  // Returns a domain ID
+
+fn domain_switch(id: Int) -> void
+  // Writes CR3 with the domain's PML4 physical address
+  // Executes INVPG for all pages (or uses PCID if available)
+
+fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void
+  // Walks the domain's page table hierarchy
+  // Creates intermediate tables as needed
+  // Installs a leaf PTE mapping virt → phys with flags
+  // Does NOT affect the current address space
+
+fn domain_unmap(domain: Int, virt: Int) -> void
+  // Removes a mapping from the domain's page table
+
+fn domain_destroy(id: Int) -> void
+  // Frees all frames in the domain's page table tree
+  // Does NOT free the domain's memory (caller must free)
+```
+
+### Data Structures
+
+```in
+// In kernel-root.in or kernel/domain.in
+const MAX_DOMAINS = 64
+var domain_count = 0
+var domain_table: Int  // array of { cr3, state, owner_cap } per domain
+  // allocated during domain_init
+
+// Domain state
+const DOMAIN_FREE = 0
+const DOMAIN_ACTIVE = 1
+const DOMAIN_SUSPENDED = 2
+const DOMAIN_DESTROYED = 3
+```
+
+### Channel Shared Page Protocol
+
+Cross-domain communication requires a page mapped into both domains.
+
+```in
+fn domain_create_shared_page(dom_a: Int, dom_b: Int, virt_a: Int, virt_b: Int) -> Int
+  // Allocates a physical frame
+  // Maps it into dom_a at virt_a
+  // Maps it into dom_b at virt_b
+  // Returns the physical address (for capability tracking)
+```
+
+The shared page holds a simple ring buffer:
+
+```in
+// Layout of a shared channel page (4096 bytes)
+// offset 0:     head (write index, owned by sender)
+// offset 8:     tail (read index, owned by receiver)
+// offset 16:    capacity (max messages)
+// offset 24:    message_size (bytes per slot)
+// offset 4096:  message data (ring buffer)
+```
+
+### Verification
+
+```in
+fn test_domain_create() -> void {
+  let d = domain_create()
+  // d should be 1 (first non-kernel domain)
+  // CR3 should point to new PML4, not kernel's PML4
+}
+
+fn test_domain_isolation() -> void {
+  let d1 = domain_create()
+  let d2 = domain_create()
+  let page = domain_create_shared_page(d1, d2, 0xFFFF8000, 0xFFFF8000)
+  // d1 can write 0xFFFF8000, d2 can read it
+  // d1 CANNOT read d2's private pages
+  // d2 CANNOT read d1's private pages
+}
+```
+
+### Files
+- `kernel/kernel-root.in` — add domain_create, domain_switch, domain_map
+- `kernel/domain.in` — domain data structures, channel shared page protocol
+- `tests/test-domain.in` — verification tests
+
+---
+
+## Phase 1: Cross-Domain Channel Fabric
+
+**What**: Channels that work across domains, with capability transfer.
+**Why**: Microservices need to communicate. Current channels are
+         single-address-space only.
+**Where**: `kernel/channel.in`
+
+### Primitives To Add
+
+```in
+fn chan_connect(local_domain: Int, remote_domain: Int, shared_page: Int) -> Int
+  // Creates a cross-domain channel endpoint
+  // Returns a channel handle
+
+fn chan_send_cross(ch: Int, msg: Int, cap: Int) -> void
+  // Writes message to shared page ring buffer
+  // Optionally transfers a capability
+  // Notifies remote domain (scheduling hint)
+
+fn chan_recv_cross(ch: Int) -> (Int, Int)
+  // Reads message from shared page ring buffer
+  // Returns (message, transferred_capability)
+
+fn chan_transfer_cap(ch: Int, cap: Int) -> void
+  // Tags a capability for transfer across domains
+  // Receiver gets a minted copy with attenuated rights
+```
+
+### Capability Transfer Protocol
+
+1. Sender calls `chan_transfer_cap(ch, cap_handle)`
+2. Kernel validates sender has `delegate-cap` right on the cap
+3. Kernel creates a minted copy in receiver's capability table
+4. Next message on the channel carries the new cap handle
+5. Receiver gets the attenuated capability
+
+### Files
+- `kernel/channel.in` — cross-domain extensions
+- `kernel/cap-table.in` — capability delegation, minting, revocation
+
+---
+
+## Phase 2: Core Microservices
+
+**What**: First .in components that run in their own domains.
+**Why**: Prove the domain + channel fabric works with real services.
+**Where**: `services/proc.in`, `services/mem.in`, `services/time.in`, `services/rand.in`
+
+### Service: proc.in
+
+```in
+// Process lifecycle service
+// Runs in its own domain, accepts channel requests
+
+fn proc_main() -> void {
+  let ch = channel_accept_bootstrap()
+  while true {
+    let (req, cap) = chan_recv_cross(ch)
+    match req.op {
+      "spawn" => proc_spawn(req.binary_id, req.caps)
+      "exit"  => proc_exit(req.code)
+      "wait"  => proc_wait(req.pid)
+      "signal" => proc_signal(req.pid, req.sig)
+    }
+  }
+}
+```
+
+### Service: mem.in
+
+```in
+// Memory management service
+// Manages virtual memory within a realm
+
+fn mem_map(domain: Int, virt: Int, size: Int, flags: Int) -> Int
+fn mem_unmap(domain: Int, virt: Int, size: Int) -> void
+fn mem_brk(domain: Int, new_brk: Int) -> Int
+fn mem_shm_create(domain_a: Int, domain_b: Int, size: Int) -> Int
+```
+
+### Service: time.in
+
+```in
+// Clock and timer service
+
+fn time_now() -> Int     // nanosecond timestamp
+fn time_sleep(us: Int) -> void  // yield for microseconds
+fn time_timer_create(interval_us: Int) -> Int  // periodic timer handle
+```
+
+### Service: rand.in
+
+```in
+// Entropy service
+// Capability-gated — components without the capability get zeroes
+
+fn rand_bytes(buf: Int, len: Int) -> void
+fn rand_u64() -> Int
+```
+
+### Files
+- `services/proc.in`
+- `services/mem.in`
+- `services/time.in`
+- `services/rand.in`
+- `services/manifest.in` — component declarations for each service
+
+---
+
+## Phase 3: Component Loader / SCI Runtime
+
+**What**: Load an SCI into a new domain, validate its manifest, start it.
+**Why**: Every .in component needs this to run as an isolated microservice.
+**Where**: `kernel/loader.in`
+
+### Loader Flow
+
+```in
+fn sci_load(sci_addr: Int, domain: Int) -> Int
+  // Parse SCI header
+  // Validate capability manifest against grant policy
+  // Map code and data sections into domain
+  // Set up initial stack
+  // Register channels from import table
+  // Return component handle (for supervisor tracking)
+```
+
+### What The Loader Validates
+
+Before mapping a single page, the loader checks:
+
+- SCI magic and version
+- Target architecture matches boot target
+- Every required capability has a grant
+- Every imported service has a provider channel
+- Code section does not exceed size limit
+- Checkpoint policy is compatible with domain
+- Determinism flags are compatible with realm
+
+### Files
+- `kernel/loader.in`
+- `kernel/sci-parser.in` — SCI header and section parsing
+- `tests/test-loader.in` — load a minimal component
+
+---
+
+## Phase 4: Filesystem (fs.in)
+
+**What**: Directory tree, file I/O, mounts — as a .in microservice.
+**Why**: Microservices and guests need to read/write data.
+**Where**: `services/fs.in`
+
+### Channel Protocol
+
+```in
+// Request types
+const FS_OPEN = 1
+const FS_READ = 2
+const FS_WRITE = 3
+const FS_CLOSE = 4
+const FS_STAT = 5
+const FS_READDIR = 6
+const FS_MKDIR = 7
+const FS_MOUNT = 8
+
+// Response
+struct FSResponse {
+  status: Int     // 0 = OK, negative = errno
+  data: Int       // depends on operation
+  cap: Int        // capability for opened file (if applicable)
+}
+```
+
+### Backend
+
+Early fs.in uses a simple in-memory object-graph-backed filesystem.
+Later it gains block-device mounts through filesystem driver components
+(ext4.in, tmpfs.in, devfs.in).
+
+### Files
+- `services/fs.in`
+- `services/fs-ram.in` — in-memory root filesystem
+- `services/fs-dev.in` — device node resolution
+- `tests/test-fs.in` — file I/O verification
+
+---
+
+## Phase 5: Networking (net.in)
+
+**What**: Sockets, DNS, TLS — as a .in microservice.
+**Why**: Microservices need to communicate with the outside world.
+**Where**: `services/net.in`
+
+### Channel Protocol
+
+```in
+// Request types
+const NET_SOCKET = 1
+const NET_BIND = 2
+const NET_CONNECT = 3
+const NET_LISTEN = 4
+const NET_ACCEPT = 5
+const NET_SEND = 6
+const NET_RECV = 7
+const NET_GETADDRINFO = 8
+
+// Socket types
+const SOCK_STREAM = 1
+const SOCK_DGRAM = 2
+```
+
+### Dependencies
+
+- NIC driver (e1000.in already exists in kernel)
+- TCP/IP stack (could be a separate .in component: tcpip.in)
+- DNS resolver (dns.in)
+- TLS handshake (tls.in)
+
+### Files
+- `services/net.in`
+- `services/tcpip.in`
+- `services/dns.in`
+- `services/tls.in`
+- `drivers/e1000.in` — existing, move to driver domain
+
+---
+
+## Phase 6: Graphics (gfx.in)
+
+**What**: Compositor, surfaces, input routing — as a .in microservice.
+**Why**: Native graphics for components and compatibility personalities.
+**Where**: `services/gfx.in`
+
+### Pipeline
+
+```
+Component
+  │  channel: "create_surface 800x600"
+  │           "blit x=10 y=20 pixels=..."
+  ▼
+gfx.in (compositor)
+  │  framebuffer blit or virtio-gpu command
+  ▼
+Hardware (framebuffer / GPU)
+```
+
+### Surfaces
+
+- Each surface is a VM object shared between the component and gfx.in
+- Components blit by writing to the VM object and sending a damage notification
+- gfx.in composites damaged regions and presents to hardware
+- Input events flow from gfx.in to the focused component via channel
+
+### Files
+- `services/gfx.in`
+- `services/gfx-compositor.in`
+- `services/gfx-input.in`
+- `drivers/framebuffer.in`
+- `tests/test-gfx.in`
+
+---
+
+## Phase 7: Compatibility Personalities
+
+**What**: Run Linux, Darwin, and Windows binaries as guest components.
+**Why**: The whole point of the microservice architecture.
+**Where**: `services/loader.in`, `services/linux-compat.in`,
+           `services/darwin-compat.in`, `services/win-compat.in`
+
+### Loader.in (Binary Parser)
+
+```in
+fn elf_load(domain: Int, elf_addr: Int) -> Int
+  // Parse ELF headers
+  // Map LOAD segments into domain
+  // Set up TLS, stack, auxiliary vector
+  // Return entry point
+
+fn macho_load(domain: Int, macho_addr: Int) -> Int
+  // Parse Mach-O headers (FAT + thin)
+  // Map segments
+  // Set up dyld stub
+
+fn pe_load(domain: Int, pe_addr: Int) -> Int
+  // Parse PE headers
+  // Map sections
+  // Resolve IAT stubs
+```
+
+### Linux Compat Service
+
+- Maintains per-guest fd table (maps fd → fs.in channel)
+- Translates POSIX calls into channel messages
+- Manages signal delivery
+- Handles clone/thread creation within guest domain
+
+### Darwin Compat Service
+
+- Maintains Mach port name space
+- Translates mach_msg → channel operations
+- Manages dyld loading
+- Routes IOKit to device capabilities
+
+### Windows Compat Service
+
+- Maintains NT handle table
+- Translates NT syscalls → capabilities
+- Presents registry view over object graph
+- Routes Win32 calls to gfx.in + input channels
+
+### Files
+- `services/loader.in`
+- `services/linux-compat.in`
+- `services/linux-shim.in` — guest libc replacement
+- `services/darwin-compat.in`
+- `services/darwin-shim.in`
+- `services/win-compat.in`
+- `services/win-shim.in`
+
+---
+
+## Phase 8: Distribution
+
+**What**: Remote components, replicated objects, component migration.
+**Why**: Distributed-first model.
+**Where**: `services/dist.in`, `services/objstore.in`
+
+### Remote Components
+
+- Components declare distribution eligibility
+- Runtime can instantiate a component on a remote node
+- Channel endpoints transparently bridge across the network
+- Capabilities are attenuated for remote access
+
+### Replicated Objects
+
+- Object graph regions can be replicated
+- Conflict resolution policies (last-writer-wins, CRDT, custom)
+- Consistency models (eventual, strong, causal)
+
+### Migration
+
+- Checkpoint component state
+- Transfer checkpoint + SCI to remote node
+- Resume execution on remote node
+- Update routing tables for open channels
+
+### Files
+- `services/dist.in`
+- `services/objstore.in`
+- `services/dist-channel.in` — network channel bridge
+- `services/dist-migrate.in` — migration coordinator
+
+---
+
+## Phase Dependency Table
+
+| Phase | Depends On | Effort | Verification |
+|-------|-----------|--------|-------------|
+| 0: Domains | — | 2-3 weeks | Create domain, write/read isolation test |
+| 1: Cross-domain channels | Phase 0 | 1-2 weeks | Two domains communicate over shared page |
+| 2: Core microservices | Phase 0, 1 | 1-2 weeks | proc.in spawns a thread in new domain |
+| 3: SCI loader | Phase 0, 1 | 2-3 weeks | Load minimal component, verify cap grant |
+| 4: fs.in | Phase 2, 3 | 2-3 weeks | Guest reads a file over channel |
+| 5: net.in | Phase 2, 3 | 3-4 weeks | Guest sends UDP packet over channel |
+| 6: gfx.in | Phase 2, 3 | 3-4 weeks | Surface created, pixel blitted, displayed |
+| 7: Compat | Phase 3, 4, 5, 6 | 3-6 months per personality | Run a real binary (busybox, basic CLI) |
+| 8: Distribution | Phase 0-7 | Ongoing | Two QEMU instances communicate |
+
+---
+
+## Current Status
+
+### Running Today
+- Nanokernel boots x86_64 long mode under QEMU
+- Serial console, physical memory discovery, page tables
+- Object graph arena, capability table, bootstrap realm
+- Cooperative + preemptive multitasking
+- Typed channels for inter-component IPC
+- SCI loader with capability validation
+- Interactive shell (16 commands)
+- e1000 NIC driver (UDP transmit, ARP)
+- Deterministic execution subsystem
+
+### Next Blockers (Phase 0)
+1. `domain_create()` — allocate new PML4, copy kernel mappings
+2. `domain_switch()` — CR3 switch with TLB management
+3. `domain_map()` — install mapping in a domain's page table
+4. Shared page protocol for cross-domain channels
+5. Test isolation (write to one domain, read from another)
+
+### Repository Layout
+
+```
+/Users/undivisible/projects/space/
+  kernel/
+    kernel-root.in        nanokernel (1420 lines, 88 functions)
+    domain.in             Phase 0 - multiple memory domains
+    channel.in            Phase 1 - cross-domain channels
+    loader.in             Phase 3 - SCI loader
+  services/
+    proc.in               Phase 2 - process lifecycle
+    mem.in                Phase 2 - memory management
+    time.in               Phase 2 - clock and timer
+    rand.in               Phase 2 - entropy
+    fs.in                 Phase 4 - filesystem
+    net.in                Phase 5 - networking
+    gfx.in                Phase 6 - graphics
+    linux-compat.in       Phase 7 - Linux binary compat
+    darwin-compat.in      Phase 7 - Darwin binary compat
+    win-compat.in         Phase 7 - Windows binary compat
+  drivers/
+    e1000.in              NIC driver
+  arch/
+    architecture.md       This document
+    os-design-notes.md    Original design notes
+    sci-schema.md         SCI format specification
+    bootstrap-plan.md     Original bootstrap plan
+    compatibility-personalities.md   Microservice compat model
+```
+
