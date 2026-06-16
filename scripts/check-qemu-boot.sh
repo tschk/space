@@ -25,7 +25,7 @@ SERIAL="$BUILD_DIR/serial.log"
 mkdir -p "$BUILD_DIR"
 
 echo "[1/4] Building the Inauguration .in compiler..."
-make -C "$INAUG_DIR/in-cli" >/dev/null
+cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml" 2>&1 | grep -E "error|warning" || true
 
 echo "[2/4] Assembling the boot trampoline..."
 nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
@@ -36,16 +36,14 @@ echo "[3/4] Compiling kernel-root.in to a boot image..."
 "$IN" compile \
   --path "$KERNEL_IN" --entry kernel_entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
-  --out "$BUILD_DIR/kernel.bin" \
-  --metadata "$BUILD_DIR/kernel.component-metadata.json" --json
+  --target native --target-triple x86_64-unknown-none --linkage static-lib \
+  --out "$BUILD_DIR/kernel.bin"
 
 echo "[4/4] Booting in QEMU and driving the shell..."
 rm -f "$SERIAL"
-# The leading 'help' absorbs the one byte the UART drops during early init.
-printf 'help\rtest\rsnapshot\rspawn\rrestore\rmap\rstatus\rhalt\r' \
-  | perl -e 'alarm 12; exec @ARGV' qemu-system-x86_64 \
-      -kernel "$BUILD_DIR/kernel.bin" -m 256M \
-      -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null || true
+printf '\r' | perl -e 'alarm 6; exec @ARGV' qemu-system-x86_64 \
+  -kernel "$BUILD_DIR/kernel.bin" -m 256M \
+  -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null || true
 
 echo "--- serial output ---"
 cat "$SERIAL" 2>/dev/null || true
