@@ -1,0 +1,63 @@
+package space.guest
+
+// A standalone Space component, compiled separately from the nanokernel and
+// loaded at runtime by the SCI loader. Its capability contract is declared here
+// and mirrored in the binary SCI manifest the loader validates before entry.
+component GuestService {
+  target "x86_64-space"
+  deterministic true
+  checkpoint none
+
+  export svc: GuestApi
+
+  capability serial: DebugConsole(write)
+}
+
+interface GuestApi {
+  fn run(arg: Int) -> Int
+}
+
+fn g_wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn g_put(port: Int, ch: Int) -> void {
+  g_wait(port)
+  outb(port, ch)
+  return
+}
+
+fn g_puts(port: Int, addr: Int) -> void {
+  let i = 0
+  while load8(addr + i) != 0 {
+    g_put(port, load8(addr + i))
+    i = i + 1
+  }
+  return
+}
+
+fn g_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      g_put(port, 48 + nibble)
+    } else {
+      g_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+// The component entry. It is compiled first so it sits at the component's load
+// base. It runs on the serial console it was granted and returns a status.
+fn guest_entry(arg: Int) -> Int {
+  let port = 0x3F8
+  g_puts(port, "    [guest-service] separately-compiled SCI component running, arg 0x")
+  g_hex(port, arg)
+  g_put(port, 10)
+  return arg + 0x1000
+}

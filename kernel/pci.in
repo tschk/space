@@ -1,0 +1,73 @@
+package space.kernel
+
+// PCI configuration-space access via the legacy 0xCF8/0xCFC port pair, plus a
+// bus-0 enumerator. The serial_* helpers it calls live in the importing module.
+const PCI_CONFIG_ADDR = 0xCF8
+const PCI_CONFIG_DATA = 0xCFC
+
+fn pci_addr(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+  return 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+}
+
+fn pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+  outl(PCI_CONFIG_ADDR, pci_addr(bus, dev, func, off))
+  return inl(PCI_CONFIG_DATA)
+}
+
+fn pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+  outl(PCI_CONFIG_ADDR, pci_addr(bus, dev, func, off))
+  outl(PCI_CONFIG_DATA, val)
+  return
+}
+
+// Return the BAR0 MMIO base of the Intel 82540EM (e1000) NIC, or 0 if absent.
+fn pci_find_e1000() -> Int {
+  for dev in 0..32 {
+    let v = pci_read32(0, dev, 0, 0)
+    let vendor = v & 0xFFFF
+    let device = (v >> 16) & 0xFFFF
+    if (vendor == 0x8086) && (device == 0x100E) {
+      return pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0
+    }
+  }
+  return 0
+}
+
+// Enable I/O space, memory space, and bus mastering for the e1000, and return
+// the resulting command/status register (low 16 bits are the command).
+fn pci_enable_e1000() -> Int {
+  for dev in 0..32 {
+    let v = pci_read32(0, dev, 0, 0)
+    let vendor = v & 0xFFFF
+    let device = (v >> 16) & 0xFFFF
+    if (vendor == 0x8086) && (device == 0x100E) {
+      let cmd = pci_read32(0, dev, 0, 0x04)
+      pci_write32(0, dev, 0, 0x04, cmd | 0x7)
+      return pci_read32(0, dev, 0, 0x04)
+    }
+  }
+  return 0
+}
+
+fn pci_scan(port: Int) -> void {
+  serial_write_cstr(port, "  PCI devices on bus 0 (vendor:device):\n")
+  for dev in 0..32 {
+    let v = pci_read32(0, dev, 0, 0)
+    let vendor = v & 0xFFFF
+    if vendor != 0xFFFF {
+      let device = (v >> 16) & 0xFFFF
+      serial_write_cstr(port, "    00:")
+      serial_write_hex(port, dev)
+      serial_write_cstr(port, ".0  ")
+      serial_write_hex(port, vendor)
+      serial_write_cstr(port, ":")
+      serial_write_hex(port, device)
+      if (vendor == 0x8086) && (device == 0x100E) {
+        serial_write_cstr(port, "  <- e1000 NIC, BAR0 0x")
+        serial_write_hex(port, pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0)
+      }
+      serial_put(port, 10)
+    }
+  }
+  return
+}
