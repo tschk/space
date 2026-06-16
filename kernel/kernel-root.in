@@ -483,8 +483,12 @@ fn run_supervisor(port: Int) -> void {
 // is preserved across yields by the assembly context_switch routine.
 fn scheduler_init(max_tasks: Int) -> void {
   ctxsw = load64(0x4018)
-  kernel_slot = alloc(8)
-  tasks_sp_base = alloc(max_tasks * 8)
+  if kernel_slot == 0 {
+    kernel_slot = alloc(8)
+  }
+  if tasks_sp_base == 0 {
+    tasks_sp_base = alloc(max_tasks * 8)
+  }
   task_count = 0
   current_task = 0
   return
