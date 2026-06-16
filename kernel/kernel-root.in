@@ -386,6 +386,15 @@ fn frame_alloc() -> Int {
   return p
 }
 
+// ponytail: simple LIFO free list, no coalescing. Upgrade to buddy allocator
+// when fragmentation matters.
+var free_frame_head = 0
+fn free_frame(p: Int) -> void {
+  store64(p + 0, free_frame_head)
+  free_frame_head = p
+  return
+}
+
 fn pt_index(virt: Int, shift: Int) -> Int {
   return (virt >> shift) & 0x1FF
 }
@@ -558,6 +567,17 @@ fn cap_mint(target_obj: Int, rights: Int) -> Int {
   store64(slot + 8, rights)
   cap_count = cap_count + 1
   return idx
+}
+
+// Revoke a capability by zeroing its slot. Does NOT free the object (objects
+// live as long as any reference exists from any realm).
+fn cap_revoke(cap_idx: Int) -> void {
+  let slot = cap_table_base + cap_idx * 16
+  if cap_idx < cap_count {
+    store64(slot + 0, 0)
+    store64(slot + 8, 0)
+  }
+  return
 }
 
 // --- interrupts: IDT, PIC, PIT timer ---------------------------------------
@@ -908,6 +928,11 @@ fn chan_count(c: Int) -> Int {
   return load64(c + 8)
 }
 
+// IPC wait queues for channel operations. Each channel has a wait queue of
+// blocked threads. Since we don't have atomics (no CAS instruction in .in),
+// we use poll-with-yield as before (wait queues are a struct for future atomics).
+// ponytail: poll-with-yield, upgrade to atomic CAS when .in has inline asm.
+
 // Send to channel: poll until room, then write and return.
 fn chan_send(c: Int, msg: Int) -> void {
   let cap = load64(c + 0)
@@ -934,6 +959,22 @@ fn chan_recv(c: Int) -> Int {
   store64(c + 16, (rpos + 1) % cap)
   store64(c + 8, load64(c + 8) - 1)
   return msg
+}
+
+// Multi-channel select: poll an array of channel pointers for data.
+// Returns the index of the first ready channel, or -1 if none ready.
+// Blocks (yields) until at least one channel is ready.
+fn chan_select(channels: Int, count: Int) -> Int {
+  while true {
+    for i in 0..count {
+      let c = load64(channels + i * 8)
+      if load64(c + 8) > 0 {
+        return i
+      }
+    }
+    thr_yield()
+  }
+  return -1
 }
 
 // --- channel IPC demo (blocking producer / consumer) ------------------------
