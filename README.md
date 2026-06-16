@@ -218,4 +218,4 @@ before execution.
 
 ## License
 
-Per-repository. See `LICENSE` if present.
+[Mozilla Public License 2.0](LICENSE)
