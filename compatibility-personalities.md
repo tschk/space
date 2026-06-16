@@ -1,604 +1,497 @@
-# Compatibility Personalities: Running Linux, Darwin, and Windows Apps Natively
+# Compatibility Model: Microservice Architecture
 
-## Philosophy
+## Architecture
 
-Space is not a compatibility layer pretending to be another OS. Space is a new
-operating system built on capabilities, objects, and component graphs.
+Space runs Windows, Darwin, and Linux programs natively through a fabric of
+`.in` capability microservices, not through syscall-translation layers or
+personality traps in kernel mode.
 
-Compatibility personalities exist so that existing applications can run on Space.
-They should not exist so that Space can pretend to be Linux, macOS, or Windows.
+The nanokernel provides only:
 
-The native model is always:
+- memory domains (page table isolation)
+- channels (typed IPC)
+- capabilities (unforgeable authority)
+- scheduling (CPU time + thread primitives)
+- hardware access (interrupts, IO ports, MMIO)
 
-```text
-component + capability + object + execution graph
-```
+Everything else is a `.in` microservice — a separate component with its own
+capability grants, fault isolation, and lifecycle.
 
-Compatibility personalities translate legacy concepts into Space primitives:
-
-| Legacy Concept | Space Primitive |
-|---|---|
-| Process | Realm + component + protection domain |
-| File descriptor | Object graph node + capability |
-| Syscall | Channel message to personality service |
-| Signal / Mach trap | Fault handler + channel notification |
-| ELF / PE / Mach-O | Decompressed into component image |
-| Dynamic linking | Capability + object graph resolution |
-| Registry / plist | Object graph view |
-| Window server | Compositor component + surface channel |
-| Unix socket / Mach port | Named channel endpoint |
-| Thread | Cooperative / preemptive unit in realm |
-| `fork()` | Object graph snapshot + new realm |
-
-## No POSIX As Native Contract
-
-Space explicitly does not expose POSIX as its native programming model.
-
-A compatibility personality may offer `read()`, `write()`, `open()`, or
-`select()` to guest programs, but Space components should not use these
-concepts. The native APIs are capability operations, channel sends, and object
-graph transactions.
-
-This means:
-
-- No `/proc` or `/sys` in the native namespace
-- No global PID namespace
-- No `SIGKILL` as a native concept
-- No `mmap()` as the primary memory interface
-- No environment variables as a primary configuration mechanism
-- No `errno` as a native error contract
-
-Personalities wrap these concepts so existing software compiles and runs
-without modification. They do not import them into the native OS surface.
-
----
-
-## Part 1: Linux Personality
-
-### Behaviors To Explore
-
-Linux exposes a wide surface through ~400 syscalls, `/proc`, `/sys`, cgroups,
-namespaces, seccomp, ptrace, futex, epoll, signalfd, eventfd, timerfd,
-io_uring, memfd, userfaultfd, inotify, fanotify, perf_event_open, bpf, and
-more. A minimal personality does not need all of these.
-
-The priority behaviors for a first working personality (in order):
-
-| # | Behavior | Space Mapping | Complexity |
-|---|----------|---------------|------------|
-| 1 | ELF loading (static PIE, no libc dependency) | Decompress ELF → map segments → resolve absolute symbols → jump to entry | Small |
-| 2 | `read` / `write` on pipes and serial fds | Channel-backed file descriptor table in the personality | Small |
-| 3 | `exit` / `exit_group` | Terminate realm, return exit code to supervisor | Small |
-| 4 | `brk` / `sbrk` | Simple bump allocator within realm address space | Small |
-| 5 | `mmap` / `munmap` (MAP_ANONYMOUS, MAP_PRIVATE) | VM object + page table manipulation | Medium |
-| 6 | `open` / `close` / `read` / `write` for object-backed files | Object graph node exposed as fd | Medium |
-| 7 | `clone` / `gettid` / `tgkill` | New thread within realm, signal delivery channel | Large |
-| 8 | `nanosleep` | Timer capability | Small |
-| 9 | `clock_gettime` / `gettimeofday` | Timer capability read | Small |
-| 10 | `getrandom` | Random capability (if granted) | Small |
-| 11 | `futex` (FUTEX_WAIT, FUTEX_WAKE) | Channel-based wait queue in personality | Medium |
-| 12 | `epoll_create` / `epoll_ctl` / `epoll_wait` | Personality-level fd readiness tracking | Medium |
-| 13 | `sigaction` / `sigreturn` / `rt_sigprocmask` | Fault handler table, signal delivery channel | Large |
-| 14 | `set_robust_list` / `futex` PI | Thread exit + priority inheritance stubs | Medium |
-| 15 | `getdents64` for simple filesystem | Directory listing over object graph | Medium |
-| 16 | `execve` | Load new ELF, reset personality realm | Large |
-| 17 | `ioctl` (TIOCGWINSZ, TCGETS, etc.) | Serial personality ioctl stubs | Medium |
-| 18 | `writev` / `readv` | Scatter/gather over channel | Small |
-| 19 | `prctl` (PR_SET_NAME, PR_GET_NAME) | Thread name through personality | Small |
-| 20 | Dynamic linker (`ld-linux-x86-64.so.2`) | Full ELF loading with symbol resolution + TLS | Very Large |
-
-### Linux Special Cases
-
-#### `fork()`
-
-Space does not have `fork()` as a native primitive. A personality can implement
-`fork()` by:
-
-1. Checkpointing the current realm's object graph
-2. Creating a new realm with a copy of the page tables (COW)
-3. Copying the fd table, signal handlers, and thread state
-4. Returning 0 in the child and the child's realm ID in the parent
-
-This is expensive and should be discouraged in native Space development,
-but a compatibility personality must offer it for POSIX compliance.
-
-#### Process ID Namespace
-
-The personality assigns local PIDs within its realm. These are not global
-OS-level identifiers. `getpid()` returns a personality-local number.
-
-#### `/proc` and `/sys`
-
-These are synthetic filesystems backed by object graph queries or personality
-state, not real filesystem mounts.
-
-### Implementation Plan
+## How A Guest Program Runs
 
 ```
-Phase 1: Static binary runner
-  - Load static PIE ELF
-  - Map segments
-  - Stub syscall handler (exit, brk, write to serial)
-  - Print "hello world" from a real Linux binary
-
-Phase 2: libc-aware runner
-  - Implement mmap, open/read/write for stdin/stdout/stderr
-  - Implement nanosleep, clock_gettime
-  - Run a C program compiled with `-static -nostartfiles`
-
-Phase 3: Dynamic linking
-  - Implement ld-linux loader within the personality
-  - TLS support via `arch_prctl(ARCH_SET_FS)`
-  - Run a dynamically-linked C program
-
-Phase 4: Concurrency
-  - clone/getpid/tgkill for threads
-  - futex for synchronization
-  - epoll for I/O multiplexing
-  - Run a multi-threaded C program
-
-Phase 5: Signals
-  - sigaction/sigreturn/rt_sigprocmask
-  - Signal delivery via channel
-  - SIGSEGV from page faults
-  - Run programs using signal handlers
-
-Phase 6: Operating system personality
-  - getdents64 for directory listing
-  - execve for program loading
-  - Limited /proc and /sys views
-  - Run a shell (busybox sh)
+  ┌─────────────────────────────┐
+  │      loader.in              │  understands ELF/PE/Mach-O layout
+  │  (cap: memory, channel)     │  creates memory domain for guest
+  └────────┬────────────────────┘
+           │ channel: "load this binary"
+           ▼
+  ┌─────────────────────────────┐
+  │      linux-compat.in        │  maps POSIX semantics to microservice calls
+  │  (cap: channel to fs, net,  │  guest libc links against this component's
+  │         gfx, proc, ...)     │  channel interface (not raw syscalls)
+  └────────┬────────────────────┘
+           │ calls to:
+           ├──► fs.in      (file I/O, directories, mounts)
+           ├──► net.in     (sockets, DNS, TLS)
+           ├──► gfx.in     (compositor, surfaces, input)
+           ├──► proc.in    (process lifecycle, signals, exit)
+           ├──► time.in    (clocks, timers, sleep)
+           ├──► mem.in     (mmap, shared memory, heap)
+           ├──► rand.in    (entropy)
+           └──► ...        (audio, GPU, sensors, etc.)
 ```
 
----
+Each microservice is an independent `.in` component:
 
-## Part 2: Darwin / XNU Personality
+- Compiled and sandboxed like any other Space component
+- Declares exactly the capabilities it needs (no ambient authority)
+- Communicates through typed channels only
+- Can be restarted, upgraded, or replaced independently
+- Shares nothing — no kernel object, no global state
+- Verified by the SCI loader before attachment
 
-### Behaviors To Explore
+## Why Microservices Over Translation Layers
 
-Darwin's surface is very different from Linux. It has Mach messages, host/port
-notifications, IOKit, Grand Central Dispatch, the Objective-C runtime,
-launchd, XPC, System Configuration, Core Foundation, and a BSD syscall layer
-wrapped around the XNU kernel.
+| Aspect | Translation Layer (old) | Microservice Fabric (this) |
+|--------|------------------------|---------------------------|
+| Kernel complexity | Trap handler for every guest syscall | No guest syscall awareness |
+| Isolation | Single personality realm has broad authority | Each microservice has minimal, declared capabilities |
+| Development language | C or asm for trap handling | `.in` — the native Space language |
+| Upgrade path | Must recompile personality | Hot-swap individual `.in` components |
+| Debugging | Hard — syscall trace or nothing | Each microservice debuggable independently |
+| Reuse | Personality-specific | `fs.in`, `net.in`, `gfx.in` serve ALL guests |
+| Failure domain | One crash kills all guest programs | One microservice restarts independently |
+| Testability | Full OS needed for test | Unit-test each `.in` microservice in isolation |
 
-Key behaviors:
+## Microservice Catalog
 
-| # | Behavior | Space Mapping | Complexity |
-|---|----------|---------------|------------|
-| 1 | Mach-O loading (FAT + thin x86_64) | Parse Mach-O header, load segments, resolve dyld stub | Medium |
-| 2 | `mach_msg` / `mach_msg_trap` | Channel-based message transport in personality | Medium |
-| 3 | `task_self_trap` / `thread_self_trap` | Return personality-local task/thread port | Small |
-| 4 | `host_get_clock_service` / `clock_sleep` | Timer capability gate | Medium |
-| 5 | `vm_allocate` / `vm_deallocate` / `vm_protect` | VM object operations within realm | Medium |
-| 6 | `mach_port_allocate` / `mach_port_deallocate` | Capability minting / revocation | Medium |
-| 7 | `mach_port_insert_right` / `mach_port_extract_right` | Capability transfer over channels | Medium |
-| 8 | `thread_create` / `thread_start` / `thread_terminate` | Thread creation in personality realm | Large |
-| 9 | `syscall` (BSD layer: read/write/open/close/exit) | Channel-backed fd table (same as Linux) | Small |
-| 10 | `getentropy` / `getpid` / `getppid` | Personality-local state | Small |
-| 11 | `shm_open` / `shm_unlink` | Named VM object under personality scope | Medium |
-| 12 | `kqueue` / `kevent` | fd readiness + mach port delivery events | Large |
-| 13 | Dyld loading + `_dyld_start` | Dynamic linker within personality (similar to Linux ld-linux) | Very Large |
-| 14 | `__thread_register` / TLS setup | `arch_prctl(ARCH_SET_FS)` equivalent | Large |
-| 15 | `getattrlist` / `getdirentriesattr` | Object graph attribute query | Medium |
-| 16 | IOKit `IOServiceOpen` / `IOConnectCallMethod` | Device capability + channel-based service dispatch | Very Large |
-| 17 | Grand Central Dispatch (`dispatch_async`, `dispatch_apply`) | Work queue over cooperative threads | Very Large |
-| 18 | Objective-C runtime (`objc_msgSend`, `sel_registerName`) | Message dispatch through method mapping | Very Large |
+### Core Services (needed by all guests)
 
-### Darwin Special Cases
+| Service | Capabilities | Channel Ops | Written In |
+|---------|-------------|-------------|------------|
+| `fs.in` | block device, memory | open, read, write, close, seek, stat, readdir, mkdir, unlink, rename, truncate, mount | `.in` |
+| `net.in` | NIC, channel to fs | socket, bind, listen, accept, connect, send, recv, getaddrinfo, tls_handshake | `.in` |
+| `gfx.in` | framebuffer, MMIO, channel | create_surface, present, blit, text_out, cursor, input_subscribe | `.in` |
+| `proc.in` | memory, channel to loader | spawn, exit, wait, signal, kill, cred, cwd, environ | `.in` |
+| `time.in` | timer, RTC | now, sleep, timer_create, clock_gettime, gettimeofday | `.in` |
+| `mem.in` | memory | mmap, munmap, mprotect, madvise, brk, shm_open, shm_unlink | `.in` |
+| `rand.in` | RDRAND, entropy source | getrandom, seed, bytes | `.in` |
 
-#### Mach Messages
+### Guest-Specific Shims
 
-Mach messages are the core IPC primitive in XNU. They carry ports, data, and
-out-of-line memory. Space channels map naturally: a Mach port is a capability,
-a message send is a channel operation, and out-of-line memory is a VM object
-transfer.
+| Shim | Purpose | Calls |
+|------|---------|-------|
+| `linux-compat.in` | Linux app ABI | maps POSIX to core services, manages fd table, thread creation |
+| `darwin-compat.in` | Darwin app ABI | maps Mach IPC to channels, dyld, ObjC runtime, IOKit stubs |
+| `win-compat.in` | Windows app ABI | maps NT syscalls, Win32 API, registry, COM |
 
-The personality maintains a port name space per realm. `mach_port_allocate`
-creates a channel endpoint in the personality. `mach_msg` translates port
-rights to capability transfers.
+These shims are thinner than traditional translation layers because the core
+services (fs, net, gfx, proc) handle the heavy lifting. The shim mainly
+translates data structures and calling conventions.
 
-#### Launchd And XPC
-
-launchd is the bootstrap daemon that manages services, sockets, and scheduled
-jobs. XPC is the high-level IPC framework.
-
-In Space, launchd maps to the component supervisor. A personality translates:
-
-- `launchd` plist → component manifest + capability grants
-- `xpc_connection_create` → channel creation
-- `xpc_connection_send_message` → channel message with capability transfer
-
-#### Objective-C Runtime
-
-The Objective-C runtime (`libobjc.A.dylib`) depends on:
-
-- Mach messages for `objc_msgSend` forwarding
-- `pthread`-based thread-local storage
-- `dlopen` for dynamic framework loading
-- `mprotect` for method patching (JIT)
-
-Each of these must be supported by the personality before Cocoa or
-AppKit-based programs can run.
-
-#### Grand Central Dispatch
-
-GCD is fundamentally a work-stealing thread pool with:
-
-- Global concurrent queues
-- Serial dispatch queues
-- Dispatch sources (fd, mach port, timer, signal, process)
-- Dispatch groups and barriers
-
-The personality can map GCD's dispatch queues to Space's cooperative
-thread pool. Dispatch sources become channel + capability monitoring.
-This is one of the most complex subsystems to emulate.
-
-### Darling As Reference
-
-The [Darling](https://www.darlinghq.org/) project translates Darwin syscalls
-to Linux. Its approaches for Mach message translation, dyld loading,
-and IOKit stubs are directly applicable to a Space personality. The key
-difference: Space channels map more naturally to Mach ports than Linux
-pipes or sockets do.
-
-### Implementation Plan
+## Guest Binary Lifecycle
 
 ```
-Phase 1: Mach-O static binary runner
-  - Load a static x86_64 Mach-O binary
-  - Stub `syscall` (exit, write to serial)
-  - Stub `mach_msg` (return success for simple traps)
-  - Print output from a simple Darwin program
-
-Phase 2: Mach IPC surface
-  - Implement `mach_port_allocate`, `mach_msg`, `mach_port_deallocate`
-  - Channel-backed port implementation
-  - Run a program using `mach_clock_sleep`
-
-Phase 3: Memory management
-  - `vm_allocate`, `vm_deallocate`, `vm_protect`
-  - `shm_open` for shared memory
-  - Run a program using `mmap` (BSD wrapper)
-
-Phase 4: Threads and synchronization
-  - `pthread`-level thread creation via `thread_create`
-  - `__thread_register` and TLS
-  - `kqueue` / `kevent` for fd + port multiplexing
-
-Phase 5: Dyld and frameworks
-  - Load `dyld` and resolve framework dependencies
-  - `dlopen` / `dlsym` within personality
-  - Stub common system frameworks (CoreFoundation, IOKit)
+1. Guest binary arrives as a blob (ELF, PE, Mach-O)
+         │
+         ▼
+2. loader.in opens the binary
+   - Parses headers, segments, imports
+   - Creates a memory domain for the guest
+   - Maps segments at correct addresses
+   - Loads the shim library (linux-compat's guest libc shim)
+         │
+         ▼
+3. Guest's entry point starts
+   - Guest libc shim connects to compat.in channel
+   - Every "syscall" is actually a channel send to the shim
+   - The shim translates and forwards to core microservices
+         │
+         ▼
+4. Runtime
+   - Guest calls write(1, buf, len)
+   - Guest libc shim sends channel message to linux-compat.in
+   - linux-compat.in calls fs.in's write operation
+   - fs.in writes to serial (or file, or pipe, or socket)
+         │
+         ▼
+5. Guest exits
+   - proc.in is notified
+   - Memory domain is reclaimed
+   - Channel connections are closed
+   - Object graph references are released
 ```
 
----
+### Guest Libc Shim
 
-## Part 3: ReactOS / Windows Personality
+The guest binary links against a small shim library at load time. This shim:
 
-### Behaviors To Explore
+- Replaces libc's syscall wrappers with channel sends
+- Keeps a local fd table (mapping guest fd → channel endpoint + capability)
+- Manages thread-local storage
+- Delivers signals as channel notifications
 
-Windows/NT has the largest emulation surface of the three. The NT kernel
-provides system services through `ntdll!Nt*` functions dispatched via
-`sysenter` (on x64). Win32 sits on top of NT through `kernel32`,
-`user32`, `gdi32`, and `ntdll`.
+The shim is the only guest-specific code. It is ~50 KB for Linux, similar for
+Darwin and Windows. The shim is loaded into the guest's memory domain.
 
-ReactOS is the primary reference: a clean-room implementation of the
-Windows NT kernel and Win32 API.
+## Memory Domains
 
-Key behaviors:
-
-| # | Behavior | Space Mapping | Complexity |
-|---|----------|---------------|------------|
-| 1 | PE/COFF loading | Parse PE header, load sections, resolve IAT | Medium |
-| 2 | NT syscall dispatch (`syscall` instruction handler) | Trap handler in personality → dispatch table | Medium |
-| 3 | `NtCreateFile` / `NtReadFile` / `NtWriteFile` / `NtClose` | Object-backed IO in personality | Medium |
-| 4 | `NtCreateProcess` / `NtCreateThread` / `NtTerminateProcess` | Realm + component creation | Large |
-| 5 | `NtAllocateVirtualMemory` / `NtFreeVirtualMemory` | VM object management | Medium |
-| 6 | `NtCreateEvent` / `NtSetEvent` / `NtWaitForSingleObject` | Channel-backed event object | Medium |
-| 7 | `NtCreateMutant` (mutex), `NtCreateSemaphore` | Channel-backed synchronization objects | Medium |
-| 8 | `NtCreateKey` / `NtOpenKey` / `NtQueryValueKey` / `NtSetValueKey` | Registry as object graph view | Medium |
-| 9 | `NtQuerySystemInformation` | Personality state + capabilities | Small |
-| 10 | `NtDeviceIoControlFile` | Device capability + channel (similar to IOKit) | Large |
-| 11 | `RtlUserThreadStart` / `LdrInitializeThunk` | Process/thread initialization in personality | Large |
-| 12 | SEH (Structured Exception Handling) via `RtlDispatchException` | Fault handler table in personality | Large |
-| 13 | `LdrLoadDll` / `LdrGetProcedureAddress` | PE loader with import resolution + forwarding | Very Large |
-| 14 | `NtCreateFile` for named pipes, mailslots | Channel-based named pipe backing | Medium |
-| 15 | `RtlCreateHeap` / `RtlAllocateHeap` | Heap manager in personality address space | Large |
-| 16 | Win32 subsystem (`kernel32!CreateWindowEx`, `user32!DispatchMessage`) | GUI service component + compositor surface | Very Large |
-| 17 | `Gdi32!BitBlt` / `Gdi32!TextOut` | Surface compositor capability | Very Large |
-| 18 | COM (`CoCreateInstance`, `IUnknown`, IDispatch) | Object graph + capability dispatch | Extremely Large |
-
-### Windows Special Cases
-
-#### NT Object Manager
-
-The NT kernel has a global object namespace (`\BaseNamedObjects`, `\Device`,
-`\Registry`, etc.) with security descriptors.
-
-Space has per-realm object graphs with capability-gated access. The
-personality presents a virtual NT object namespace backed by:
-
-- `\BaseNamedObjects` → realm-scoped named objects
-- `\Registry` → object graph registry view
-- `\Device` → device capability resolution
-- `\??` (DosDevices) → personality device mapping
-
-#### NT Handle Table
-
-NT handles are process-local indices into a kernel-managed handle table.
-Space capabilities are already unforgeable references. The personality
-wraps capabilities in an NT-compatible handle table.
-
-A handle close is a capability revocation. A handle duplication
-(`NtDuplicateObject`) is a capability mint. A handle inheritance
-across `NtCreateProcess` is a capability transfer to a new realm.
-
-#### Registry
-
-The Windows registry is a hierarchical key-value store with typed values,
-ACLs, and transaction support. The personality maps:
-
-- Registry keys → object graph nodes
-- Registry values → typed object fields
-- Registry transactions → object graph checkpoint/rollback
-
-#### Win32
-
-Win32 is the largest subsystem. It depends on:
-
-- Window station / desktop objects
-- Message queue per-thread
-- Window handle table
-- GDI handle table
-- USER object table
-- Clipboard, atoms, hooks, timers
-
-The personality maps these to Space primitives:
-
-- Windows → surface channel + compositor component
-- Messages → channel message queue per thread
-- GDI → surface rendering capability
-- USER → input event channel
-
-#### COM / COM+
-
-COM is an object model based on reference-counted interfaces,
-class factories, and the registry (`HKEY_CLASSES_ROOT`).
-
-Space's native object model (capabilities + channels + schemas) maps
-naturally:
-
-- COM `IUnknown` → capability with method dispatch
-- `CLSID` → object schema ID
-- `CoCreateInstance` → component instantiation with capability grants
-- COM apartments → thread-local capability dispatch
-
-#### PE Loading And DLL Hell
-
-Windows executables depend on:
-
-- Import Address Table (IAT) resolution
-- Export forwarding (`ntdll.RtlAllocateHeap` → `heap32.HeapAlloc`)
-- Side-by-side assemblies (SxS)
-- Activation contexts
-- Delay-load imports
-
-The personality loader must implement all of these before any non-trivial
-Windows executable can run. This is a Very Large task.
-
-### ReactOS As Reference
-
-[ReactOS](https://www.reactos.org/) is a clean-room Windows-compatible OS.
-Its implementations of:
-
-- `ntdll` syscall dispatch
-- `kernel32` WIN32 API
-- `csrss` client-server runtime
-- Registry engine
-- Object manager layout
-
-...are all directly applicable as reference for a Space personality.
-ReactOS runs real Windows apps (Notepad, regedit, 7-Zip, etc.) and
-its architecture is thoroughly documented.
-
-### Wine As Reference
-
-[Wine](https://www.winehq.org/) translates Windows syscalls to POSIX on
-Linux and macOS. Its PE loader, DLL loader, registry engine, and Win32
-user/gdi implementations work without an NT kernel.
-
-A Space Windows personality could start from Wine's loader and syscall
-translation layer, replacing the POSIX backend with Space primitives
-(channels, capabilities, object graph). This is a significant but
-achievable engineering project.
-
-### Implementation Plan
+Each guest program gets its own memory domain (page table tree + TLB context).
 
 ```
-Phase 1: PE static binary runner
-  - Load a static PE image (no imports)
-  - Stub NT syscall handler for NtWriteFile (stdout)
-  - Stub RtlUserThreadStart
-  - Print output from a minimal Windows program
-
-Phase 2: NT syscall surface
-  - Implement object manager (NtCreateFile, NtClose)
-  - Implement virtual memory (NtAllocateVirtualMemory, NtFreeVirtualMemory)
-  - Implement synchronization (NtCreateEvent, NtWaitForSingleObject)
-  - Implement registry (NtCreateKey, NtQueryValueKey)
-  - Run a simple Windows CLI utility (e.g. cmd.exe --help)
-
-Phase 3: PE loader + DLL resolution
-  - LdrLoadDll / LdrGetProcedureAddress
-  - Import Address Table resolution
-  - Export forwarding
-  - Run a dynamically-linked Windows program
-
-Phase 4: Threading and processes
-  - NtCreateProcess / NtCreateThread
-  - RtlUserThreadStart initialization
-  - Thread-local storage (TEB, PEB)
-  - SEH handling
-  - Run a multi-threaded Windows program
-
-Phase 5: Win32 subsystem
-  - kernel32 + user32 base stubs
-  - Message queue + window handling
-  - GDI surface capability
-  - Compositor integration
-  - Run Notepad or a simple Win32 app
+  ┌─────────────────────┐
+  │   kernel domain     │  nanokernel, page tables
+  └─────────────────────┘
+         │
+  ┌──────┴──────┐
+  │  service    │  shared among all .in microservices
+  │  domain     │  (fs.in, net.in, gfx.in, ...)
+  └──────┬──────┘
+         │
+  ┌──────┴──────┐
+  │  guest      │  isolated per guest program
+  │  domain     │  (Linux app, Darwin app, Windows app)
+  └─────────────┘
 ```
 
----
+The service domain hosts all `.in` microservices. Microservices communicate
+through channels (cross-domain message passing). Guest domains cannot
+directly access each other or the service domain.
 
-## Part 4: Cross-Cutting Concerns
+Microservices CAN share an object graph region for performance (zero-copy
+data sharing between fs.in and net.in, for example). Guest domains never
+share memory with other guest domains or with services — they communicate
+only through channels handled by their `*-compat.in` shim.
 
-### Syscall Dispatch Architecture
+## Channel Protocol Design
 
-All three personalities follow the same pattern:
-
-```text
-Guest application (x86_64 code)
-  │
-  ▼ executes syscall instruction
-  ├── Linux:  syscall (0F 05)
-  ├── Darwin: syscall (0F 05)  (Mach trap via SYSENTER)
-  └── Windows: syscall (0F 05) (or int 0x2E on older)
-        │
-        ▼
-  Personality trap handler in realm
-        │
-        ▼ dispatches to:
-  ├── Linux:    linux_syscall_table[]
-  ├── Darwin:   darwin_mach_trap_table[] + darwin_bsd_syscall_table[]
-  └── Windows:  nt_syscall_table[] via ntdll ordinal
-        │
-        ▼ translates to:
-  ├── Channel message to personality service
-  ├── Capability operation
-  ├── Object graph transaction
-  └── Native Space component invoke
-```
-
-Each personality maintains its own dispatch table. The tables are populated
-from a minimal core (exit, write) and grow as more behaviors are implemented.
-
-### Memory Protection Domains
-
-Personalities need per-process address space isolation similar to traditional
-OSes. Space achieves this through:
-
-- Per-realm page tables
-- VM objects managed by the personality
-- Separate TLB context per realm
-
-A personality creates a new realm for each emulated process. The realm owns
-the address space, handle table, and capability set. When the process exits,
-the realm is destroyed and its resources are reclaimed.
-
-### File Descriptor / Handle Table
-
-Each personality maintains a table mapping guest-visible integers to Space
-resources:
-
-```text
-Linux fd 0 → channel to serial input
-Linux fd 1 → channel to serial output
-Linux fd 3 → object graph node for /tmp/foo
-
-Windows handle 0x4 → capability for \Device\KeyboardClass0
-Windows handle 0x8 → event object capability
-Windows handle 0xC → registry key object graph node
-```
-
-The personality translates guest operations (read, write, ioctl, DeviceIoControl)
-into capability-channel operations.
-
-### Signal / Exception Delivery
-
-Linux signals, Mach exceptions, and Windows SEH all follow similar patterns:
-
-1. An event occurs (fault, timer, IPC)
-2. The personality intercepts it through a trap or channel notification
-3. The personality saves guest register state
-4. The personality delivers the event to the guest's handler
-5. On return, the personality restores guest state or handles termination
-
-Space already has fault handlers (page faults, divide errors). The personality
-extends these to deliver signals to guest signal handlers.
-
-### Dynamic Linker Loading
-
-All three personalities need a dynamic linker:
-
-| OS | Dynamic Linker | Entry |
-|----|---------------|-------|
-| Linux | `ld-linux-x86-64.so.2` | `_start` → `__libc_start_main` |
-| Darwin | `/usr/lib/dyld` | `__dyld_start` → `main` |
-| Windows | `ntdll.dll` | `LdrInitializeThunk` → `RtlUserThreadStart` |
-
-The personality must:
-1. Load the dynamic linker as the first user-space image
-2. Map the guest executable
-3. Have the linker resolve imports against personality-provided libraries
-4. Jump to the guest's entry point
-
-This is the single largest compatibility task for all three personalities.
-
----
-
-## Part 5: Plan Summary
-
-### Phase Table
-
-| Phase | Linux | Darwin | Windows | Cross-Cutting |
-|-------|-------|--------|---------|---------------|
-| **0** | — | — | — | Design document, reference research, tooling |
-| **1** | Static ELF runner | Static Mach-O runner | Static PE runner | Trap dispatch framework, realm-per-process |
-| **2** | `libc`-aware runtime | Mach IPC + memory | NT syscall surface | Channel-backed fd/handle table |
-| **3** | Dynamic linking | Threads + dyld | PE loader + DLLs | Dynamic linker host within personality |
-| **4** | Threads + futex | Framework stubs | Threading + SEH | Thread model unification |
-| **5** | Signals + shell | Dyld + frameworks | Win32 base | Compositor integration |
-| **6** | Busybox, vim | Simple CLI Darwin apps | Notepad, regedit | Benchmark suite, CI for each personality |
-| **7** | GUI programs | Lightweight Cocoa apps | GUI Windows apps | Shared compositor pipeline |
-| **8** | Full LAMP stack | Native macOS CLI | Windows development tools | Cross-personality object graph sharing |
-
-### Priority (Ponytail Assessment)
+Each microservice exposes a typed channel protocol. Example for `fs.in`:
 
 ```
-1. Linux personality Phase 1-2     (static ELF + libc)    ← start here
-   Why: most existing tooling, largest ecosystem, best reference docs.
-   Worth it before native components even mature (can dogfood the compiler).
+Request:   { op: "open", path: "/home/user/file.txt", flags: O_RDWR }
+Response:  { status: 0, fd: 7, cap: "cap:fs:file-0x3f2a" }
 
-2. Windows personality Phase 1-2   (static PE + NT syscalls)
-   Why: ReactOS + Wine provide tested reference implementations.
-   Larger surface but better-documented than Darwin.
+Request:   { op: "read", fd: 7, offset: 0, len: 4096 }
+Response:  { status: 0, data: <bytes>, len: 256 }
 
-3. Darwin personality Phase 1-2    (static Mach-O + Mach IPC)
-   Why: Darling exists but is less mature than Wine/ReactOS.
-   Mach IPC maps beautifully to Space channels (best fit of the three).
-
-4. All Phase 3+                    (dynamic linking, concurrency, GUI)
-   Why: each requires multi-person-year effort. Worth it when native
-   space components are mature and the personalities are needed.
+Request:   { op: "close", fd: 7 }
+Response:  { status: 0 }
 ```
 
-### First Actionable Step
+Protocols use flat capability references (not opaque handles). The `cap`
+field in a response is an unforgeable reference that the caller can use
+to mint sub-capabilities or delegate to other components.
 
-Build a Linux static PIE runner in `.in`:
+## Graphics Pipeline (gfx.in)
 
-```text
-1. Accept a static PIE ELF binary as a component argument
-2. Create a new realm with isolated page tables
-3. Parse the ELF Program Headers
-4. Map LOAD segments at specified virtual addresses
-5. Zero-fill .bss
-6. Set up a minimal stack
-7. Jump to ELF entry point (with RDI=0, RSI=0, argc=0, argv=0)
-8. Trap the first `syscall` instruction
-9. Dispatch to a personality handler: write("hello from Linux!") to serial
-10. Halt
+```
+  Guest app (SDL, GTK, Win32, Cocoa)
+       │   channel: "create_surface 800x600"
+       │             "blit x=10 y=20 w=200 h=100 pixels=..."
+       ▼
+  ┌──────────────────────────────────┐
+  │  gfx.in                          │
+  │  compositor, surface manager,    │
+  │  input router, cursor renderer   │
+  └────────┬─────────────────────────┘
+           │   blit to framebuffer / virtio-gpu
+           ▼
+  ┌──────────────────────────────────┐
+  │  hw surface (framebuffer, GPU)   │
+  └──────────────────────────────────┘
 ```
 
-This fits in 200-400 lines of `.in` and proves the personality architecture
-before any complex syscall translation exists.
+`gfx.in` is the only component with direct framebuffer or GPU MMIO access. All
+other components (guests and services) create surfaces through `gfx.in`
+channels. The compositor handles:
+
+- Surface allocation and damage tracking
+- Input event routing (keyboard, mouse, touch)
+- Cursor rendering
+- Window management (position, focus, minimize, close)
+- Copy-paste between surfaces (cross-guest clipboard)
+
+## Thread Model
+
+Guest threads map to Space's cooperative M:N threading:
+
+- `clone()` / `CreateThread()` / `pthread_create()` → `thr_create()` in the
+  guest's memory domain
+- Each thread has its own channel receive queue
+- Threads yield cooperatively (no preemption)
+- Preemption is available as a timer capability for real-time threads
+- `linux-compat.in` maintains the thread list and handles scheduling
+
+The shim manages thread-local storage (TLS) in the guest domain:
+
+- Linux: `arch_prctl(ARCH_SET_FS)` → set FS.base in shim
+- Darwin: `__thread_register` → allocate TLS in shim
+- Windows: TEB in user mode → shim maintains TEB pointer
+
+## Signal / Exception Delivery
+
+Space already has fault handlers (page fault, divide error, #GP). The compat
+shim extends them:
+
+1. A fault occurs in the guest domain
+2. The nanokernel delivers the fault to the shim's registered handler
+3. The shim saves guest register state on the signal stack
+4. The shim delivers a signal to the guest's signal handler
+5. The guest handler runs, modifies saved registers if needed
+6. The shim restores register state and returns from the fault
+
+For async signals (SIGTERM, SIGINT):
+
+1. `proc.in` sends a channel message to `linux-compat.in`
+2. `linux-compat.in` injects the signal into the guest's signal handler
+3. The guest thread is interrupted on next channel operation
+
+## Filesystem Architecture
+
+```
+  Guest (POSIX: open, read, write, stat)
+       │ channel to linux-compat.in
+       ▼
+  linux-compat.in  (translates POSIX → fs.in protocol)
+       │ channel to fs.in
+       ▼
+  fs.in
+       │
+       ├── rootfs  (object-graph-backed root filesystem)
+       ├── tmpfs   (in-memory scratch)
+       ├── devfs   (device nodes → capability resolution)
+       └── mount   (block device → filesystem driver)
+```
+
+`fs.in` is NOT a kernel filesystem. It is a `.in` component that:
+
+- Maintains a directory tree as an object graph
+- Mounts block devices through filesystem driver components (ext4.in, etc.)
+- Routes file operations to the correct backing store
+- Implements POSIX file permissions as capability checks
+- Provides `stat`, `readdir`, `symlink`, `hardlink`, `chmod`, `chown` as
+  channel operations
+
+The root filesystem is pre-populated at boot time from an object graph
+snapshot (not a disk image). Additional filesystems mount on top.
+
+## Registry (Windows)
+
+For Windows compatibility, the registry is a view over an object graph subtree
+served by `win-compat.in`:
+
+```
+  HKLM\SYSTEM\CurrentControlSet\Services\... → obj:/services/tcpip/config
+  HKCU\Software\Microsoft\Windows\...        → obj:/users/default/windows
+```
+
+`win-compat.in` translates `NtCreateKey`, `NtSetValueKey`, etc. into object
+graph operations. The registry hierarchy exists only within the Windows
+compatibility shim — it does not leak into the native object graph namespace.
+
+## Mach IPC (Darwin)
+
+Darwin's Mach IPC maps beautifully to Space channels because BOTH are
+capability-based message passing:
+
+| Mach Concept | Space Primitive |
+|-------------|-----------------|
+| Mach port | Channel endpoint (capability-gated) |
+| `mach_msg` | Channel send + receive |
+| Port rights (send, receive, send-once) | Capability attenuation |
+| Out-of-line memory | VM object transfer over channel |
+| Port name space | Per-realm channel endpoint table |
+| `mach_port_allocate` | Channel creation + capability mint |
+| `mach_port_deallocate` | Capability revocation |
+| `mach_port_insert_right` | Capability delegation over channel |
+| Bootstrapping | Component supervisor grants initial channel |
+
+The `darwin-compat.in` shim maintains a port name space for the guest
+and translates Mach messages to channel operations. The bootstrapping port
+is connected to the component supervisor, which provides service resolution
+via the same mechanism as launchd.
+
+This is the cleanest mapping of the three personalities because Space channels
+were designed with the same semantics as Mach messages.
+
+## Windows Object Manager
+
+NT's object manager provides a hierarchical namespace of named objects
+(\\Device, \\BaseNamedObjects, \\Registry, \\??, etc.). `win-compat.in`
+presents a virtual object namespace that routes to microservices:
+
+| NT Path | Backing |
+|---------|---------|
+| `\Device\KeyboardClass0` | Channel to input service |
+| `\Device\Video0` | Channel to gfx.in surface |
+| `\BaseNamedObjects\*` | Realm-scoped named objects |
+| `\Registry\*` | Object graph registry view |
+| `\??\C:` | fs.in volume mount |
+
+NT handles are capabilities wrapped in a handle table. The shim maintains
+the handle table and translates `NtClose`, `NtDuplicateObject`, etc. into
+capability operations. Handle inheritance across `NtCreateProcess` becomes
+capability delegation to a new memory domain.
+
+## Microservice Write Path
+
+Each microservice is written in `.in` and compiled by Inauguration:
+
+```in
+// fs.in — filesystem service
+component "space.services/fs" {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint "on-request"
+  
+  import "core.channel"
+  import "core.block-device"
+  
+  capability block-device: read-sectors(dev: Int, buf: Int, lba: Int, count: Int) -> Int
+  capability channel: accept-request() -> Request
+  capability channel: send-response(resp: Response) -> void
+}
+
+fn fs_main() -> void {
+  let ch = channel_accept()
+  while true {
+    let req = channel_recv(ch)
+    match req.op {
+      "open"   => handle_open(req.path, req.flags)
+      "read"   => handle_read(req.fd, req.offset, req.len)
+      "write"  => handle_write(req.fd, req.offset, req.data)
+      "close"  => handle_close(req.fd)
+      "stat"   => handle_stat(req.path)
+      "readdir" => handle_readdir(req.path)
+      _        => send_error(ch, EINVAL)
+    }
+  }
+}
+```
+
+## How The Nanokernel Sees This
+
+The nanokernel sees only:
+
+```
+channel endpoints
+capability tables
+memory domains
+threads
+```
+
+It does NOT know about:
+
+- ELF, PE, or Mach-O
+- POSIX, Win32, or Cocoa
+- Filesystems, sockets, or windows
+- Processes, users, or signals
+
+All of those are `.in` components. The nanokernel just enforces boundaries
+and delivers messages. The microservices define what the OS looks like.
+
+## Boot Flow With Microservices
+
+```
+1. Nanokernel boots (kernel-root.in)
+   - Memory domains
+   - Channel fabric
+   - Capability root
+   - Object graph arena
+
+2. Component supervisor boots
+   - Loads microservice manifests
+   - Creates channels for each service
+   - Grants declared capabilities
+
+3. Core microservices start:
+   ┌─ proc.in    (process lifecycle)
+   ├─ fs.in      (filesystem)
+   ├─ net.in     (networking)
+   ├─ gfx.in     (compositor)
+   ├─ time.in    (clocks)
+   ├─ mem.in     (memory management)
+   ├─ rand.in    (randomness)
+   └─ ...        (audio, GPU, sensors)
+
+4. Guest loader available:
+   ┌─ loader.in  (ELF/PE/Mach-O parser)
+   ├─ linux-compat.in
+   ├─ darwin-compat.in
+   └─ win-compat.in
+
+5. User launches a program:
+   - loader.in opens the binary
+   - Creates a new memory domain
+   - Loads the binary + shim
+   - Connects shim to compat service
+   - Program runs
+```
+
+## Implementation Order
+
+### Phase 1: Microservice Framework (nanokernel + core services)
+
+| Step | Component | What |
+|------|-----------|------|
+| 1 | kernel-root.in | Channel fabric, memory domains, capability tables |
+| 2 | proc.in | spawn guest domain, exit, wait, thread list |
+| 3 | mem.in | mmap-like, brk, shm_open in guest domain |
+| 4 | time.in | sleep, clock_gettime, timer_create |
+| 5 | rand.in | getrandom via RDRAND |
+
+### Phase 2: Linux Compat
+
+| Step | Component | What |
+|------|-----------|------|
+| 6 | fs.in | Directory tree, file ops, mount |
+| 7 | net.in | Sockets, connect, send, recv |
+| 8 | loader.in | ELF parser, segment mapper |
+| 9 | linux-shim.in | Guest libc shim (channel-based), fd table, TLS |
+| 10 | linux-compat.in | POSIX → microservice dispatch |
+
+### Phase 3: Darwin Compat
+
+| Step | Component | What |
+|------|-----------|------|
+| 11 | loader.in | Mach-O + FAT binary support |
+| 12 | darwin-shim.in | Mach message → channel, dyld |
+| 13 | darwin-compat.in | Dispatch to core services |
+
+### Phase 4: Windows Compat
+
+| Step | Component | What |
+|------|-----------|------|
+| 14 | loader.in | PE/COFF support, IAT resolution |
+| 15 | win-shim.in | NT syscall → channel, handle table |
+| 16 | win-compat.in | Registry, object namespace, Win32 dispatch |
+
+### Phase 5: Graphics
+
+| Step | Component | What |
+|------|-----------|------|
+| 17 | gfx.in | Compositor, surface manager, input |
+| 18 | linux-compat.in | Wayland/X11 surface → gfx.in channel |
+| 19 | win-compat.in | Win32 GDI/USER → gfx.in channel |
+| 20 | darwin-compat.in | Cocoa/AppKit → gfx.in channel |
+
+## First Actionable Step
+
+The first thing to build is the **microservice channel framework** — the
+nanokernel primitives that let a `.in` component declare a channel endpoint,
+accept requests, and send responses. This already partially exists (channels
+in kernel-root.in). The next step is a `proc.in` that can spawn a new memory
+domain and load a binary into it.
+
+After that, the path is:
+
+```
+proc.in (spawn + domain)
+  → loader.in (ELF load)
+    → linux-shim.in (guest libc with channel I/O)
+      → "hello world" from a real Linux binary
+```
+
+No syscall traps. No kernel personality code. Just `.in` microservices
+talking over channels.
