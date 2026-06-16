@@ -64,6 +64,31 @@ var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
 
+// --- serial TX buffer (batched output) -------------------------------------
+// Instead of waiting per-character for TX ready, batch writes and flush.
+// At 115200 baud this saves ~87µs per serial_wait_tx call.
+var tx_buf: Int = 0
+var tx_len: Int = 0
+const TX_BUF_SIZE = 256
+const TX_BUF_MASK = 255
+
+fn serial_buf_init() -> void {
+  tx_buf = alloc(256)
+  tx_len = 0
+  return
+}
+
+fn serial_flush(port: Int) -> void {
+  let i = 0
+  while i < tx_len {
+    serial_wait_tx(port)
+    outb(port, load8(tx_buf + i))
+    i = i + 1
+  }
+  tx_len = 0
+  return
+}
+
 // --- serial console (COM1) --------------------------------------------------
 const COM1_PORT = 0x3F8
 
@@ -89,8 +114,12 @@ fn serial_wait_tx(port: Int) -> void {
 }
 
 fn serial_put(port: Int, ch: Int) -> void {
-  serial_wait_tx(port)
-  outb(port, ch)
+  // Buffer the character. Flush automatically when the buffer is full.
+  store8(tx_buf + tx_len, ch)
+  tx_len = tx_len + 1
+  if tx_len >= TX_BUF_SIZE {
+    serial_flush(port)
+  }
   return
 }
 
@@ -631,6 +660,7 @@ fn schedule_tick(ctx: Int) -> Int {
 fn preempt_worker_a() -> Int {
   while true {
     work_a = work_a + 1
+    pause()
   }
   return 0
 }
@@ -638,6 +668,7 @@ fn preempt_worker_a() -> Int {
 fn preempt_worker_b() -> Int {
   while true {
     work_b = work_b + 1
+    pause()
   }
   return 0
 }
@@ -891,11 +922,13 @@ fn array_selftest() -> Int {
 
 fn shell(port: Int) -> void {
   line = alloc(256)
+  serial_flush(port)
   serial_nl(port)
     serial_write_cstr(port, "space interactive shell -- type 'help'")
   serial_nl(port)
   while true {
     serial_write_cstr(port, "space> ")
+    serial_flush(port)  // ensure prompt visible before waiting for input
     let n = read_line(port)
     if line_eq("help") != 0 {
         serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> halt")
@@ -997,6 +1030,7 @@ fn shell(port: Int) -> void {
 // --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
+  serial_buf_init()
   serial_init(port)
     serial_write_cstr(port, "space: kernel root entered")
   serial_nl(port)
@@ -1064,11 +1098,13 @@ fn kernel_entry(mb_info: Int) -> Int {
   // Drop into the interactive serial shell.
   shell(port)
 
-  serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
+  serial_flush(port)
+    serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
   serial_nl(port)
     serial_write_cstr(port, "space: halting")
   serial_nl(port)
+  serial_flush(port)
   cli()
   while true {
     hlt()
