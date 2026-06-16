@@ -53,9 +53,6 @@ var idt_base: Int = 0
 var realm_grants: Int = 0
 var ctxsw: Int = 0
 var kernel_slot: Int = 0
-var tasks_sp_base: Int = 0
-var current_task: Int = 0
-var task_count: Int = 0
 var line: Int = 0
 var ptasks: Int = 0
 var pcount: Int = 0
@@ -64,13 +61,188 @@ var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
 
+// --- thread system (M:N cooperative threading, goroutine-like) --------------
+// Threads are lightweight, stackful execution contexts switched via ctxsw.
+// Unlike the old task model, threads support blocking (wait queues), waking,
+// and automatic round-robin scheduling. The main kernel context is thread 0.
+const THR_RUNNABLE = 0
+const THR_BLOCKED = 1
+const THR_DONE = 2
+
+var thread_sp: Int = 0      // array[t]: saved stack pointer
+var thread_state: Int = 0   // array[t]: state (RUNNABLE/BLOCKED/DONE)
+var thread_count: Int = 0
+var current_task: Int = 0
+
+fn thr_init(max: Int) -> void {
+  thread_sp = alloc(max * 8)
+  thread_state = alloc(max * 8)
+  thread_count = 1  // thread 0 = main kernel context
+  for i in 0..max {
+    store64(thread_state + i * 8, THR_DONE)
+    store64(thread_sp + i * 8, 0)
+  }
+  store64(thread_state + 0, THR_RUNNABLE)
+  return
+}
+
+fn thr_create(entry: Int) -> Int {
+  let t = thread_count
+  let stack = alloc(16384)
+  let sp = stack + 16384 - 64  // 6 callee-saved regs + entry + exit cleanup
+  store64(sp + 0, 0)       // RBX
+  store64(sp + 8, 0)       // RBP
+  store64(sp + 16, 0)      // R12
+  store64(sp + 24, 0)      // R13
+  store64(sp + 32, 0)      // R14
+  store64(sp + 40, 0)      // R15
+  store64(sp + 48, entry)  // ret addr → first function
+  store64(sp + 56, thr_exit)  // entry's ret → cleanup
+  store64(thread_sp + t * 8, sp)
+  store64(thread_state + t * 8, THR_RUNNABLE)
+  thread_count = thread_count + 1
+  return t
+}
+
+// Called when a thread's entry function returns. Marks as DONE and yields back
+// to the kernel scheduler, which will skip it in thr_next().
+fn thr_exit() -> void {
+  store64(thread_state + current_task * 8, THR_DONE)
+  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+  // ponytail: unreachable after yield
+  return
+}
+
+// Thread callback: switch to and run this thread.
+fn thr_switch(t: Int) -> void {
+  current_task = t
+  invoke2(ctxsw, kernel_slot, load64(thread_sp + t * 8))
+  return
+}
+
+// Yield voluntarily (mark RUNNABLE, switch back to scheduler).
+fn thr_yield() -> void {
+  store64(thread_state + current_task * 8, THR_RUNNABLE)
+  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+  return
+}
+
+// Block until woken (mark BLOCKED, switch back to scheduler).
+fn thr_block() -> void {
+  store64(thread_state + current_task * 8, THR_BLOCKED)
+  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+  return
+}
+
+// Wake a blocked thread.
+fn thr_wake(tid: Int) -> void {
+  store64(thread_state + tid * 8, THR_RUNNABLE)
+  return
+}
+
+// Run all runnable threads; return when all are DONE (HLT if temporarily idle).
+// Uses fair round-robin: scan from the last dispatched thread.
+var thr_last: Int = 0
+
+fn thr_run() -> void {
+  thr_last = 1
+  while true {
+    let t = thr_next(thr_last)
+    if t >= 0 {
+      thr_last = (t + 1) % thread_count
+      thr_switch(t)
+    } else if thr_all_done() != 0 {
+      return
+    } else {
+      sti()
+      while thr_next(thr_last) < 0 && thr_all_done() == 0 {
+        hlt()
+      }
+      cli()
+    }
+  }
+  return
+}
+
+fn thr_next(start: Int) -> Int {
+  let n = start
+  let tries = 0
+  while tries < thread_count {
+    if n == 0 {
+      n = 1
+    }
+    if n < thread_count {
+      if load64(thread_state + n * 8) == THR_RUNNABLE {
+        return n
+      }
+    }
+    n = n + 1
+    if n >= thread_count {
+      n = 0
+    }
+    tries = tries + 1
+  }
+  return -1
+}
+
+// Returns 1 when all non-main threads are THR_DONE.
+fn thr_all_done() -> Int {
+  let t = 1
+  while t < thread_count {
+    if load64(thread_state + t * 8) != THR_DONE {
+      return 0
+    }
+    t = t + 1
+  }
+  return 1
+}
+
+// --- channel wait queues (linked list per channel) --------------------------
+// Blocked-task wait lists for chan0. Each channel has send-blocked and
+// recv-blocked task chains. A fixed-size next[] array links them.
+var chan0_send_wait: Int = -1
+var chan0_recv_wait: Int = -1
+var chan_wait_next: Int = 0
+
+fn wait_init(max: Int) -> void {
+  chan_wait_next = alloc(max * 8)
+  let i = 0
+  while i < max {
+    store64(chan_wait_next + i * 8, -1)
+    i = i + 1
+  }
+  return
+}
+
+fn wait_push(head_addr: Int, tid: Int) -> void {
+  store64(chan_wait_next + tid * 8, load64(head_addr))
+  store64(head_addr, tid)
+  return
+}
+
+fn wait_pop(head_addr: Int) -> Int {
+  let tid = load64(head_addr)
+  if tid < 0 {
+    return -1
+  }
+  store64(head_addr, load64(chan_wait_next + tid * 8))
+  store64(chan_wait_next + tid * 8, -1)
+  return tid
+}
+
+fn wait_has(head_addr: Int) -> Int {
+  if load64(head_addr) >= 0 {
+    return 1
+  }
+  return 0
+}
+
 // --- serial TX buffer (batched output) -------------------------------------
 // Instead of waiting per-character for TX ready, batch writes and flush.
 // At 115200 baud this saves ~87µs per serial_wait_tx call.
 var tx_buf: Int = 0
 var tx_len: Int = 0
 const TX_BUF_SIZE = 256
-const TX_BUF_MASK = 255
 
 fn serial_buf_init() -> void {
   tx_buf = alloc(256)
@@ -281,6 +453,61 @@ fn obj_alloc(type_tag: Int) -> Int {
 
 fn obj_id(obj: Int) -> Int {
   return load64(obj + 0)
+}
+
+// Object graph reference edges. Each edge is [src_ptr][slot][dst_id] stored in
+// a separate edge arena. Graph walks traverse edges from a root set.
+// ponytail: slot-limited edges (2 per object), grow to dynamic edge store when
+// the graph has objects with arbitrary fan-out.
+fn obj_link(src: Int, slot: Int, dst: Int) -> void {
+  if slot == 0 {
+    store64(src + 16, dst)
+  } else {
+    store64(src + 24, dst)
+  }
+  return
+}
+
+fn obj_ref(src: Int, slot: Int) -> Int {
+  if slot == 0 {
+    return load64(src + 16)
+  }
+  return load64(src + 24)
+}
+
+// Walk the object graph from a root, returning the count of reachable objects.
+// ponytail: depth-first, no cycle detection (graph is a DAG for now).
+fn obj_walk(root: Int) -> Int {
+  let visited = alloc(256)  // bitmask of visited objects (up to 2048)
+  let stack = alloc(64 * 8)  // explicit DFS stack
+  let sp = 0
+  let count = 0
+  store64(stack + 0, root)
+  sp = 1
+  while sp > 0 {
+    sp = sp - 1
+    let obj = load64(stack + sp * 8)
+    let id = load64(obj + 0)
+    let bit = id / 64
+    let mask = 1 << (id % 64)
+    if (load64(visited + bit * 8) & mask) != 0 {
+      // Already visited
+    } else {
+      store64(visited + bit * 8, load64(visited + bit * 8) | mask)
+      count = count + 1
+      let r0 = load64(obj + 16)
+      if r0 != 0 {
+        store64(stack + sp * 8, r0)
+        sp = sp + 1
+      }
+      let r1 = load64(obj + 24)
+      if r1 != 0 {
+        store64(stack + sp * 8, r1)
+        sp = sp + 1
+      }
+    }
+  }
+  return count
 }
 
 // --- object-graph checkpoint / restore --------------------------------------
@@ -515,112 +742,67 @@ fn run_supervisor(port: Int) -> void {
   return
 }
 
-// --- cooperative scheduler --------------------------------------------------
-// Tasks are components with their own stacks. The kernel switches into a task;
-// the task runs a unit of work and yields control back to the kernel. Context
-// is preserved across yields by the assembly context_switch routine.
+// --- thread-based cooperative scheduler (M:N goroutine-like) ----------------
+// Threads replace the old flat task array. Each thread has its own stack and
+// is scheduled round-robin via ctxsw. Threads can block on channels (wait
+// queues) and be woken by other threads. The main kernel context is thread 0.
 fn scheduler_init(max_tasks: Int) -> void {
   ctxsw = load64(0x4018)
   if kernel_slot == 0 {
     kernel_slot = alloc(8)
   }
-  if tasks_sp_base == 0 {
-    tasks_sp_base = alloc(max_tasks * 8)
-  }
-  task_count = 0
-  current_task = 0
+  thr_init(max_tasks)
   return
 }
 
-// Build a fresh task stack whose first switch-in "returns" into `entry`.
-fn task_create(entry: Int) -> Int {
-  let t = task_count
-  let stack = alloc(16384)
-  let sp = stack + 16384 - 56
-  store64(sp + 0, 0)
-  store64(sp + 8, 0)
-  store64(sp + 16, 0)
-  store64(sp + 24, 0)
-  store64(sp + 32, 0)
-  store64(sp + 40, 0)
-  store64(sp + 48, entry)
-  store64(tasks_sp_base + t * 8, sp)
-  task_count = task_count + 1
-  return t
-}
-
-// Kernel -> task: run task `t` until it yields back.
-fn switch_to_task(t: Int) -> void {
-  current_task = t
-  let new_sp = load64(tasks_sp_base + t * 8)
-  invoke2(ctxsw, kernel_slot, new_sp)
-  return
-}
-
-// Task -> kernel: save the running task and resume the kernel scheduler.
-fn yield_to_kernel() -> void {
-  let slot = tasks_sp_base + current_task * 8
-  let ksp = load64(kernel_slot)
-  invoke2(ctxsw, slot, ksp)
-  return
-}
-
-// --- worker tasks -----------------------------------------------------------
+// --- worker threads ---------------------------------------------------------
 fn worker_a() -> Int {
   let round = 0
-  while true {
+  while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <task A> round 0x")
+    serial_write_cstr(port, "space:   <worker A> round 0x")
     serial_write_hex(port, round)
     serial_nl(port)
     round = round + 1
-    yield_to_kernel()
+    thr_yield()
   }
   return 0
 }
 
 fn worker_b() -> Int {
   let round = 0
-  while true {
+  while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <task B> round 0x")
+    serial_write_cstr(port, "space:   <worker B> round 0x")
     serial_write_hex(port, round)
     serial_nl(port)
     round = round + 1
-    yield_to_kernel()
+    thr_yield()
   }
   return 0
 }
 
 fn worker_c() -> Int {
   let round = 0
-  while true {
+  while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <task C> round 0x")
+    serial_write_cstr(port, "space:   <worker C> round 0x")
     serial_write_hex(port, round)
     serial_nl(port)
     round = round + 1
-    yield_to_kernel()
+    thr_yield()
   }
   return 0
 }
 
 fn run_scheduler(port: Int) -> void {
   scheduler_init(8)
-  task_create(worker_a)
-  task_create(worker_b)
-  task_create(worker_c)
-    serial_write_cstr(port, "space: scheduler running 3 tasks, round-robin")
+  thr_create(worker_a)
+  thr_create(worker_b)
+  thr_create(worker_c)
+    serial_write_cstr(port, "space: scheduler running 3 threads, round-robin")
   serial_nl(port)
-  let rounds = 0
-  while rounds < 3 {
-    let t = 0
-    while t < task_count {
-      switch_to_task(t)
-      t = t + 1
-    }
-    rounds = rounds + 1
-  }
+  thr_run()
     serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
   serial_nl(port)
   return
@@ -705,17 +887,20 @@ fn run_preemptive(port: Int) -> void {
   return
 }
 
-// --- typed channels (inter-component IPC) -----------------------------------
-// A channel is a ring buffer in the object graph:
-// [capacity][count][read_pos][write_pos][slot0 slot1 ...].
+// --- typed channels with blocking (CSP-style) ------------------------------
+// Channels are ring buffers with non-busy polling. A thread that tries to send
+// on a full channel or recv from an empty one yields until room/data appears.
+// ponytail: polling with yield is correct for small thread counts; add proper
+// wait queues with atomic flags when M:N threading is in place.
 var chan0: Int = 0
 
 fn chan_new(cap: Int) -> Int {
-  let c = alloc(32 + cap * 8)
+  let c = alloc(40 + cap * 8)
   store64(c + 0, cap)
   store64(c + 8, 0)
   store64(c + 16, 0)
   store64(c + 24, 0)
+  store64(c + 32, 0)  // reserved for future wait queue
   return c
 }
 
@@ -723,82 +908,83 @@ fn chan_count(c: Int) -> Int {
   return load64(c + 8)
 }
 
-fn chan_send(c: Int, msg: Int) -> Int {
+// Send to channel: poll until room, then write and return.
+fn chan_send(c: Int, msg: Int) -> void {
   let cap = load64(c + 0)
-  let count = load64(c + 8)
-  if count >= cap {
-    return 0
+  while load64(c + 8) >= cap {
+    thr_yield()
   }
   let wpos = load64(c + 24)
-  let buf = c + 32
+  let buf = c + 40
   buf[wpos] = msg
   store64(c + 24, (wpos + 1) % cap)
-  store64(c + 8, count + 1)
-  return 1
+  store64(c + 8, load64(c + 8) + 1)
+  return
 }
 
+// Recv from channel: poll until data, then read and return.
 fn chan_recv(c: Int) -> Int {
-  let count = load64(c + 8)
-  if count == 0 {
-    return -1
+  while load64(c + 8) == 0 {
+    thr_yield()
   }
   let cap = load64(c + 0)
   let rpos = load64(c + 16)
-  let buf = c + 32
+  let buf = c + 40
   let msg = buf[rpos]
   store64(c + 16, (rpos + 1) % cap)
-  store64(c + 8, count - 1)
+  store64(c + 8, load64(c + 8) - 1)
   return msg
 }
 
+// --- channel IPC demo (blocking producer / consumer) ------------------------
+// --- channel IPC demo (blocking producer / consumer) ------------------------
 fn task_producer() -> Int {
   let i = 0
-  while true {
-    if i < 8 {
-      let port = com1()
-      chan_send(chan0, 0x100 + i)
-      serial_write_cstr(port, "space:   <producer> sent 0x")
-      serial_write_hex(port, 0x100 + i)
-      serial_nl(port)
-      i = i + 1
-    }
-    yield_to_kernel()
+  while i < 8 {
+    chan_send(chan0, 0x100 + i)
+    let port = com1()
+    serial_write_cstr(port, "space:   <producer> sent 0x")
+    serial_write_hex(port, 0x100 + i)
+    serial_nl(port)
+    i = i + 1
+    thr_yield()
   }
   return 0
 }
 
 fn task_consumer() -> Int {
-  while true {
-    let m = chan_recv(chan0)
-    if m >= 0 {
-      let port = com1()
-      serial_write_cstr(port, "space:   <consumer> recv 0x")
-      serial_write_hex(port, m)
-      serial_nl(port)
-    }
-    yield_to_kernel()
+  let m = 0
+  while m < 8 {
+    let v = chan_recv(chan0)
+    let port = com1()
+    serial_write_cstr(port, "space:   <consumer> recv 0x")
+    serial_write_hex(port, v)
+    serial_nl(port)
+    m = m + 1
   }
   return 0
 }
 
 fn run_channels(port: Int) -> void {
-    serial_write_cstr(port, "space: channel IPC demo (producer -> consumer)")
+    serial_flush(port)
+    serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
   serial_nl(port)
+  serial_flush(port)
   scheduler_init(8)
   chan0 = chan_new(4)
-  task_create(task_producer)
-  task_create(task_consumer)
-  let passes = 0
-  // ponytail: 8 passes matches 8 messages (i from 0..7). 9th pass
-  // triggers context-switch bug when tasks have empty body.
-  while passes < 8 {
-    switch_to_task(0)
-    switch_to_task(1)
-    passes = passes + 1
-  }
-  serial_write_cstr(port, "space: channel drained, remaining 0x")
-  serial_write_hex(port, chan_count(chan0))
+  thr_create(task_consumer)  // thread 1 = consumer
+  thr_create(task_producer)  // thread 2 = producer
+  serial_flush(port)
+    serial_write_cstr(port, "space:   running threads...")
   serial_nl(port)
+  serial_flush(port)
+  thr_run()
+  let cnt = chan_count(chan0)
+  serial_flush(port)
+  serial_write_cstr(port, "space: channel demo complete, remaining 0x")
+  serial_write_hex(port, cnt)
+  serial_nl(port)
+  serial_flush(port)
   return
 }
 
@@ -1001,8 +1187,8 @@ fn shell(port: Int) -> void {
       serial_nl(port)
     } else if line_eq("ps") != 0 {
       serial_write_cstr(port, "  scheduler tasks 0x")
-      serial_write_hex(port, task_count)
-        serial_write_cstr(port, " (A B C)")
+      serial_write_hex(port, thread_count)
+        serial_write_cstr(port, " (workers)")
       serial_nl(port)
     } else if line_eq("test") != 0 {
       serial_write_cstr(port, "  array selftest sum 0x")

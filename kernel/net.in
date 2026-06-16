@@ -109,21 +109,9 @@ fn e1000_init(port: Int) -> Int {
   return bar0
 }
 
-// Poll the next RX descriptor; return its buffer address (and set nic_rx_len)
+// Poll the next RX descriptor; return its buffer address and set nic_rx_len
 // if a frame arrived, else 0. Recycles the descriptor back to the NIC.
-fn e1000_rx_poll() -> Int {
-  let d = nic_rx_ring + nic_rx_head * 16
-  if (load8(d + 12) & 1) == 0 {
-    return 0
-  }
-  nic_rx_len = load16(d + 8)
-  let buf = load64(d + 0)
-  store8(d + 12, 0)
-  mmio_w32(0x2818, nic_rx_head)
-  nic_rx_head = (nic_rx_head + 1) % RX_NDESC
-  return buf
-}
-
+// ponytail: only e1000_rx_wait is called; e1000_rx_poll removed.
 fn e1000_rx_wait() -> Int {
   let tries = 0
   while tries < 3000000 {
