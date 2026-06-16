@@ -324,11 +324,11 @@ fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
   serial_write_hex(port, error_code)
   serial_write_cstr(port, " rip 0x")
   serial_write_hex(port, rip)
-  serial_put(port, 10)
+  serial_nl(port)
   if vector == 14 {
     serial_write_cstr(port, "space:     page fault address CR2 0x")
     serial_write_hex(port, read_cr2())
-    serial_put(port, 10)
+    serial_nl(port)
   }
     serial_write_cstr(port, "space: nanokernel fault handler halting")
   serial_nl(port)
@@ -435,7 +435,7 @@ fn supervisor_activate(port: Int, c: Int) -> void {
   if missing != 0 {
     serial_write_cstr(port, " -> DENIED undeclared cap 0x")
     serial_write_hex(port, missing)
-    serial_put(port, 10)
+    serial_nl(port)
     return
   }
   cap_mint(c, required)
@@ -446,7 +446,7 @@ fn supervisor_activate(port: Int, c: Int) -> void {
   serial_write_cstr(port, name)
   serial_write_cstr(port, " returned status 0x")
   serial_write_hex(port, status)
-  serial_put(port, 10)
+  serial_nl(port)
   return
 }
 
@@ -455,7 +455,7 @@ fn svc_heartbeat() -> Int {
   let port = com1()
   serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
   serial_write_hex(port, ticks)
-  serial_put(port, 10)
+  serial_nl(port)
   return 0
 }
 
@@ -465,7 +465,7 @@ fn svc_logger() -> Int {
   serial_write_hex(port, obj_counter)
   serial_write_cstr(port, " caps 0x")
   serial_write_hex(port, cap_count)
-  serial_put(port, 10)
+  serial_nl(port)
   return 0
 }
 
@@ -543,7 +543,7 @@ fn worker_a() -> Int {
     let port = com1()
     serial_write_cstr(port, "space:   <task A> round 0x")
     serial_write_hex(port, round)
-    serial_put(port, 10)
+    serial_nl(port)
     round = round + 1
     yield_to_kernel()
   }
@@ -556,7 +556,7 @@ fn worker_b() -> Int {
     let port = com1()
     serial_write_cstr(port, "space:   <task B> round 0x")
     serial_write_hex(port, round)
-    serial_put(port, 10)
+    serial_nl(port)
     round = round + 1
     yield_to_kernel()
   }
@@ -569,7 +569,7 @@ fn worker_c() -> Int {
     let port = com1()
     serial_write_cstr(port, "space:   <task C> round 0x")
     serial_write_hex(port, round)
-    serial_put(port, 10)
+    serial_nl(port)
     round = round + 1
     yield_to_kernel()
   }
@@ -670,7 +670,7 @@ fn run_preemptive(port: Int) -> void {
   serial_write_hex(port, work_a)
   serial_write_cstr(port, " worker B iters 0x")
   serial_write_hex(port, work_b)
-  serial_put(port, 10)
+  serial_nl(port)
   return
 }
 
@@ -728,7 +728,7 @@ fn task_producer() -> Int {
       chan_send(chan0, 0x100 + i)
       serial_write_cstr(port, "space:   <producer> sent 0x")
       serial_write_hex(port, 0x100 + i)
-      serial_put(port, 10)
+      serial_nl(port)
       i = i + 1
     }
     yield_to_kernel()
@@ -743,7 +743,7 @@ fn task_consumer() -> Int {
       let port = com1()
       serial_write_cstr(port, "space:   <consumer> recv 0x")
       serial_write_hex(port, m)
-      serial_put(port, 10)
+      serial_nl(port)
     }
     yield_to_kernel()
   }
@@ -767,7 +767,7 @@ fn run_channels(port: Int) -> void {
   }
   serial_write_cstr(port, "space: channel drained, remaining 0x")
   serial_write_hex(port, chan_count(chan0))
-  serial_put(port, 10)
+  serial_nl(port)
   return
 }
 
@@ -784,7 +784,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   if magic != SCI_MAGIC {
     serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
     serial_write_hex(port, load_addr)
-    serial_put(port, 10)
+    serial_nl(port)
     return -1
   }
   let required = load64(load_addr + 8)
@@ -793,12 +793,12 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_hex(port, required)
   serial_write_cstr(port, " entry 0x")
   serial_write_hex(port, entry)
-  serial_put(port, 10)
+  serial_nl(port)
   let missing = required & (-1 ^ realm_grants)
   if missing != 0 {
     serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
     serial_write_hex(port, missing)
-    serial_put(port, 10)
+    serial_nl(port)
     return -1
   }
     serial_write_cstr(port, "  SCI: capability check passed, entering component")
@@ -806,7 +806,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   let status = invoke1(entry, 0x42)
   serial_write_cstr(port, "  SCI: component returned status 0x")
   serial_write_hex(port, status)
-  serial_put(port, 10)
+  serial_nl(port)
   return status
 }
 
@@ -827,7 +827,7 @@ fn read_line(port: Int) -> Int {
   while true {
     let c = serial_read(port)
     if (c == 13) || (c == 10) {
-      serial_put(port, 10)
+      serial_nl(port)
       store8(line + len, 0)
       return len
     }
@@ -904,7 +904,7 @@ fn shell(port: Int) -> void {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
       serial_write_hex(port, obj_counter)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("spawn") != 0 {
       let o = obj_alloc(3)
       serial_write_cstr(port, "  spawned object id 0x")
@@ -917,7 +917,7 @@ fn shell(port: Int) -> void {
       checkpoint_restore()
       serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
       serial_write_hex(port, obj_counter)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("pci") != 0 {
       pci_scan(port)
     } else if line_eq("net") != 0 {
@@ -934,7 +934,7 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, frame)
       serial_write_cstr(port, " readback 0x")
       serial_write_hex(port, load64(0x40000000))
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("fault") != 0 {
         serial_write_cstr(port, "  triggering a page fault at 0x50000000...")
       serial_nl(port)
@@ -945,7 +945,7 @@ fn shell(port: Int) -> void {
       let z = ticks - ticks
       let q = 100 / z
       serial_write_hex(port, q)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("status") != 0 {
       serial_write_cstr(port, "  realm object id 0x")
       serial_write_hex(port, obj_id(root_realm))
@@ -953,7 +953,7 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, obj_counter)
       serial_write_cstr(port, " caps 0x")
       serial_write_hex(port, cap_count)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("mem") != 0 {
       serial_write_cstr(port, "  RAM 0x")
       serial_write_hex(port, total_ram)
@@ -961,11 +961,11 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, heap_next)
       serial_write_cstr(port, " heap_end 0x")
       serial_write_hex(port, heap_end)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("ticks") != 0 {
       serial_write_cstr(port, "  timer ticks 0x")
       serial_write_hex(port, ticks)
-      serial_put(port, 10)
+      serial_nl(port)
     } else if line_eq("ps") != 0 {
       serial_write_cstr(port, "  scheduler tasks 0x")
       serial_write_hex(port, task_count)
@@ -984,7 +984,7 @@ fn shell(port: Int) -> void {
       let rest = line_prefix("echo ")
       if rest >= 0 {
         serial_write_cstr(port, line + rest)
-        serial_put(port, 10)
+        serial_nl(port)
       } else if n != 0 {
           serial_write_cstr(port, "  unknown command (try 'help')")
         serial_nl(port)
@@ -1006,12 +1006,12 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_hex(port, total_ram)
   serial_write_cstr(port, " across regions 0x")
   serial_write_hex(port, region_count)
-  serial_put(port, 10)
+  serial_nl(port)
   serial_write_cstr(port, "space: heap window 0x")
   serial_write_hex(port, heap_next)
   serial_write_cstr(port, " .. 0x")
   serial_write_hex(port, heap_end)
-  serial_put(port, 10)
+  serial_nl(port)
 
   // Capability root, bootstrap realm, and root capability table object.
   obj_arena_init(65536)
@@ -1023,15 +1023,15 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   serial_write_cstr(port, "space: bootstrap realm object id 0x")
   serial_write_hex(port, obj_id(root_realm))
-  serial_put(port, 10)
+  serial_nl(port)
   serial_write_cstr(port, "space: root cap table at 0x")
   serial_write_hex(port, cap_table_base)
   serial_write_cstr(port, " caps 0x")
   serial_write_hex(port, cap_count)
-  serial_put(port, 10)
+  serial_nl(port)
   serial_write_cstr(port, "space: objects allocated 0x")
   serial_write_hex(port, obj_counter)
-  serial_put(port, 10)
+  serial_nl(port)
 
   // Bring up interrupts and run the timer for a short, observable window.
   interrupts_init()
@@ -1044,7 +1044,7 @@ fn kernel_entry(mb_info: Int) -> Int {
     if ticks >= (shown + 1) * 20 {
       serial_write_cstr(port, "space: timer ticks 0x")
       serial_write_hex(port, ticks)
-      serial_put(port, 10)
+      serial_nl(port)
       shown = shown + 1
     }
   }
@@ -1066,7 +1066,7 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
-  serial_put(port, 10)
+  serial_nl(port)
     serial_write_cstr(port, "space: halting")
   serial_nl(port)
   cli()
