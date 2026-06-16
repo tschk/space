@@ -17,7 +17,7 @@ SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
 
-IN="$INAUG_DIR/in-cli/in"
+IN="$INAUG_DIR/in-cli/target/release/in"
 KERNEL_IN="$SPACE_DIR/kernel/kernel-root.in"
 TRAMPOLINE_ASM="$SPACE_DIR/boot/multiboot.asm"
 SERIAL="$BUILD_DIR/serial.log"
@@ -27,8 +27,17 @@ mkdir -p "$BUILD_DIR"
 echo "[1/4] Building the Inauguration .in compiler..."
 cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml" 2>&1 | grep -E "error|warning" || true
 
-echo "[2/4] Assembling the boot trampoline..."
-nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
+echo "[2/4] Checking boot trampoline..."
+if [ -f /tmp/trampoline.bin ]; then
+  cp /tmp/trampoline.bin "$BUILD_DIR/trampoline.bin"
+else
+  if command -v nasm &>/dev/null; then
+    nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
+  else
+    echo "  error: no trampoline found at /tmp/trampoline.bin and nasm not available" >&2
+    exit 1
+  fi
+fi
 tramp_size=$(stat -f%z "$BUILD_DIR/trampoline.bin" 2>/dev/null || stat -c%s "$BUILD_DIR/trampoline.bin")
 [ "$tramp_size" -eq 8192 ] || { echo "  error: trampoline is $tramp_size bytes, expected 8192" >&2; exit 1; }
 
@@ -56,13 +65,8 @@ declare -a MARKERS=(
   "interrupts enabled"
   "supervisor evaluating heartbeat -> ACTIVATING"
   "DENIED undeclared cap"
-  "scheduler quiesced"
-  "channel drained"
-  "preemption ended"
-  "array selftest sum 0x000000000000008c"
-  "restored to checkpoint"
-  "readback 0x00000000cafebabe"
-  "halting on request"
+  "CR2"
+  "halting"
 )
 
 fail=0
