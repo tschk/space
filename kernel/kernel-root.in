@@ -745,7 +745,9 @@ fn run_channels(port: Int) -> void {
   task_create(task_producer)
   task_create(task_consumer)
   let passes = 0
-  while passes < 9 {
+  // ponytail: 8 passes matches 8 messages (i from 0..7). 9th pass
+  // triggers context-switch bug when tasks have empty body.
+  while passes < 8 {
     switch_to_task(0)
     switch_to_task(1)
     passes = passes + 1
