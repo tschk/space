@@ -94,6 +94,11 @@ fn serial_put(port: Int, ch: Int) -> void {
   return
 }
 
+fn serial_nl(port: Int) -> void {
+  serial_put(port, 10)
+  return
+}
+
 fn serial_write_cstr(port: Int, addr: Int) -> void {
   let i = 0
   while load8(addr + i) != 0 {
@@ -312,7 +317,8 @@ fn isr_dispatch(vector: Int) -> void {
 // letting an unhandled fault triple-fault the machine.
 fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
   let port = com1()
-  serial_write_cstr(port, "\nspace: *** CPU EXCEPTION vector 0x")
+  serial_nl(port)
+    serial_write_cstr(port, "space: *** CPU EXCEPTION vector 0x")
   serial_write_hex(port, vector)
   serial_write_cstr(port, " error 0x")
   serial_write_hex(port, error_code)
@@ -324,7 +330,8 @@ fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
     serial_write_hex(port, read_cr2())
     serial_put(port, 10)
   }
-  serial_write_cstr(port, "space: nanokernel fault handler halting\n")
+    serial_write_cstr(port, "space: nanokernel fault handler halting")
+  serial_nl(port)
   cli()
   while true {
     hlt()
@@ -432,7 +439,8 @@ fn supervisor_activate(port: Int, c: Int) -> void {
     return
   }
   cap_mint(c, required)
-  serial_write_cstr(port, " -> ACTIVATING\n")
+    serial_write_cstr(port, " -> ACTIVATING")
+  serial_nl(port)
   let status = invoke(entry)
   serial_write_cstr(port, "space:   ")
   serial_write_cstr(port, name)
@@ -470,7 +478,8 @@ fn run_supervisor(port: Int) -> void {
   let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
   let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
   let c3 = component_register("pager", svc_pager, cap_memory())
-  serial_write_cstr(port, "space: supervisor activating component graph\n")
+    serial_write_cstr(port, "space: supervisor activating component graph")
+  serial_nl(port)
   supervisor_activate(port, c1)
   supervisor_activate(port, c2)
   supervisor_activate(port, c3)
@@ -572,7 +581,8 @@ fn run_scheduler(port: Int) -> void {
   task_create(worker_a)
   task_create(worker_b)
   task_create(worker_c)
-  serial_write_cstr(port, "space: scheduler running 3 tasks, round-robin\n")
+    serial_write_cstr(port, "space: scheduler running 3 tasks, round-robin")
+  serial_nl(port)
   let rounds = 0
   while rounds < 3 {
     let t = 0
@@ -582,7 +592,8 @@ fn run_scheduler(port: Int) -> void {
     }
     rounds = rounds + 1
   }
-  serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes\n")
+    serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
+  serial_nl(port)
   return
 }
 
@@ -632,7 +643,8 @@ fn preempt_worker_b() -> Int {
 }
 
 fn run_preemptive(port: Int) -> void {
-  serial_write_cstr(port, "space: preemptive scheduler (timer-driven)\n")
+    serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
+  serial_nl(port)
   // Task 0 is this kernel context, captured on the first preemption. Tasks 1
   // and 2 are independent workers with pre-built interrupt frames.
   ptasks = alloc(3 * 8)
@@ -739,7 +751,8 @@ fn task_consumer() -> Int {
 }
 
 fn run_channels(port: Int) -> void {
-  serial_write_cstr(port, "space: channel IPC demo (producer -> consumer)\n")
+    serial_write_cstr(port, "space: channel IPC demo (producer -> consumer)")
+  serial_nl(port)
   scheduler_init(8)
   chan0 = chan_new(4)
   task_create(task_producer)
@@ -788,7 +801,8 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
     serial_put(port, 10)
     return -1
   }
-  serial_write_cstr(port, "  SCI: capability check passed, entering component\n")
+    serial_write_cstr(port, "  SCI: capability check passed, entering component")
+  serial_nl(port)
   let status = invoke1(entry, 0x42)
   serial_write_cstr(port, "  SCI: component returned status 0x")
   serial_write_hex(port, status)
@@ -877,12 +891,15 @@ fn array_selftest() -> Int {
 
 fn shell(port: Int) -> void {
   line = alloc(256)
-  serial_write_cstr(port, "\nspace interactive shell -- type 'help'\n")
+  serial_nl(port)
+    serial_write_cstr(port, "space interactive shell -- type 'help'")
+  serial_nl(port)
   while true {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> halt\n")
+        serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> halt")
+      serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
@@ -894,7 +911,8 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, obj_id(o))
       serial_write_cstr(port, " (objects now 0x")
       serial_write_hex(port, obj_counter)
-      serial_write_cstr(port, ")\n")
+        serial_write_cstr(port, ")")
+      serial_nl(port)
     } else if line_eq("restore") != 0 {
       checkpoint_restore()
       serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
@@ -918,10 +936,12 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, load64(0x40000000))
       serial_put(port, 10)
     } else if line_eq("fault") != 0 {
-      serial_write_cstr(port, "  triggering a page fault at 0x50000000...\n")
+        serial_write_cstr(port, "  triggering a page fault at 0x50000000...")
+      serial_nl(port)
       store64(0x50000000, 1)
     } else if line_eq("divzero") != 0 {
-      serial_write_cstr(port, "  triggering divide-by-zero...\n")
+        serial_write_cstr(port, "  triggering divide-by-zero...")
+      serial_nl(port)
       let z = ticks - ticks
       let q = 100 / z
       serial_write_hex(port, q)
@@ -949,13 +969,16 @@ fn shell(port: Int) -> void {
     } else if line_eq("ps") != 0 {
       serial_write_cstr(port, "  scheduler tasks 0x")
       serial_write_hex(port, task_count)
-      serial_write_cstr(port, " (A B C)\n")
+        serial_write_cstr(port, " (A B C)")
+      serial_nl(port)
     } else if line_eq("test") != 0 {
       serial_write_cstr(port, "  array selftest sum 0x")
       serial_write_hex(port, array_selftest())
-      serial_write_cstr(port, " (expect 0x8C)\n")
+        serial_write_cstr(port, " (expect 0x8C)")
+      serial_nl(port)
     } else if line_eq("halt") != 0 {
-      serial_write_cstr(port, "  halting on request\n")
+        serial_write_cstr(port, "  halting on request")
+      serial_nl(port)
       return
     } else {
       let rest = line_prefix("echo ")
@@ -963,7 +986,8 @@ fn shell(port: Int) -> void {
         serial_write_cstr(port, line + rest)
         serial_put(port, 10)
       } else if n != 0 {
-        serial_write_cstr(port, "  unknown command (try 'help')\n")
+          serial_write_cstr(port, "  unknown command (try 'help')")
+        serial_nl(port)
       }
     }
   }
@@ -974,7 +998,8 @@ fn shell(port: Int) -> void {
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
   serial_init(port)
-  serial_write_cstr(port, "space: kernel root entered\n")
+    serial_write_cstr(port, "space: kernel root entered")
+  serial_nl(port)
 
   discover_memory(mb_info)
   serial_write_cstr(port, "space: available RAM bytes 0x")
@@ -1010,7 +1035,8 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Bring up interrupts and run the timer for a short, observable window.
   interrupts_init()
-  serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)\n")
+    serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
+  serial_nl(port)
 
   let shown = 0
   while shown < 5 {
@@ -1041,7 +1067,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
   serial_put(port, 10)
-  serial_write_cstr(port, "space: halting\n")
+    serial_write_cstr(port, "space: halting")
+  serial_nl(port)
   cli()
   while true {
     hlt()
