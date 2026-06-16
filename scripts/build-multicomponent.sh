@@ -13,7 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
-IN="$INAUG_DIR/in-cli/in"
+# ponytail: use release binary, not in-tree build
+IN="$INAUG_DIR/in-cli/target/release/in"
 
 GUEST_LOAD=$((0x140000))     # manifest address
 GUEST_BASE=$((0x140020))     # guest code base (after the 32-byte manifest)
@@ -23,8 +24,12 @@ GUEST_REQUIRED_CAPS=1        # serial; must match the guest's declared capabilit
 mkdir -p "$BUILD_DIR"
 
 echo "[1/5] Building the compiler and trampoline..."
-make -C "$INAUG_DIR/in-cli" >/dev/null
-nasm -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
+cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+NASM="${NASM:-nasm}"
+if ! command -v "$NASM" >/dev/null 2>&1; then
+  NASM="/tmp/nasm-2.16.01/nasm"
+fi
+"$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
 echo "[2/5] Compiling the nanokernel boot image..."
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry \
