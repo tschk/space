@@ -17,7 +17,8 @@ MB_FLAGS     equ 0x00010000          ; AOUT_KLUDGE: provide load/entry addresses
 MB_CHECKSUM  equ -(MB_MAGIC + MB_FLAGS)
 
 KIMAGE_BASE  equ 0x100000
-KERNEL_ENTRY equ 0x102000            ; KIMAGE_BASE + 0x2000 (TRAMPOLINE_RESERVE)
+KCODE_BASE   equ 0x102000            ; KIMAGE_BASE + 0x2000 (TRAMPOLINE_RESERVE)
+KERNEL_ENTRY equ 0x102100            ; KCODE_BASE + 0x100 (SCI header size)
 
 ; Page-table scratch in low memory (free in QEMU after boot).
 PML4 equ 0x1000
