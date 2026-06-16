@@ -38,7 +38,7 @@ RUNS=5
 total_ms=0; min_ms=99999; max_ms=0
 for i in $(seq 1 $RUNS); do
   t0=$(date +%s%N 2>/dev/null || date +%s000000000)
-  timeout 20 qemu-system-x86_64 -kernel "$KERNEL_BIN" -m 256M -serial stdio -display none -no-reboot \
+  qemu-system-x86_64 -kernel "$KERNEL_BIN" -m 256M -serial stdio -display none -no-reboot \
     < /dev/null > "$BUILD_DIR/run-$i.log" 2>/dev/null || true
   t1=$(date +%s%N 2>/dev/null || date +%s000000000)
   ms=$(( (t1 - t0) / 1000000 ))
