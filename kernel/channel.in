@@ -76,21 +76,19 @@ fn chan_cross_recv(ch: Int) -> Int {
 // domain's capability table with attenuated rights.
 // ponytail: single-cap transfer, batch when IPC throughput matters.
 fn chan_transfer_cap(ch: Int, cap_index: Int, tgt_base: Int, tgt_count: Int) -> Int {
-  // Validate sender has delegate-cap right (bit 63 of rights mask)
+  // ponytail: check delegate bit via sign (rights < 0 = top bit set)
   let rights = load64(tgt_base + cap_index * 16 + 8)
-  if (rights & 0x8000000000000000) == 0 {
+  if rights >= 0 {
     serial_write_cstr(COM1_PORT, "chan: cap transfer denied")
     return 0
   }
-  // Scan receiver's cap table for an empty slot
   let i = 0
   while i < tgt_count {
     let target_ptr = load64(tgt_base + i * 16 + 0)
     if target_ptr == 0 {
       let src_target = load64(tgt_base + cap_index * 16 + 0)
-      let attenuated_rights = rights & 0x7FFFFFFFFFFFFFFF
       store64(tgt_base + i * 16 + 0, src_target)
-      store64(tgt_base + i * 16 + 8, attenuated_rights)
+      store64(tgt_base + i * 16 + 8, rights & 0x7FFFFFFF)
       return i + 1
     }
     i = i + 1

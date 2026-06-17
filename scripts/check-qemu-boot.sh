@@ -33,7 +33,7 @@ timeout 15 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 256M \
 # Core markers that must appear in normal boot
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
-         "channel drained" "interactive shell"; do
+         "channel demo complete" "interactive shell"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
