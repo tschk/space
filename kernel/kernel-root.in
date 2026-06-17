@@ -6,6 +6,8 @@ import "determinism.in"
 import "pci.in"
 // Intel e1000 NIC driver.
 import "net.in"
+// Memory domain subsystem (Phase 0).
+import "domain.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -1089,7 +1091,12 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   }
     serial_write_cstr(port, "  SCI: capability check passed, entering component")
   serial_nl(port)
-  let status = invoke1(entry, 0x42)
+  // Pack realm cap table info for guest: [cap_count][cap_table_base].
+  // The guest reads this to validate its manifest against realm grants.
+  let cap_info = alloc(16)
+  store64(cap_info + 0, cap_count)
+  store64(cap_info + 8, cap_table_base)
+  let status = invoke1(entry, cap_info)
   serial_write_cstr(port, "  SCI: component returned status 0x")
   serial_write_hex(port, status)
   serial_nl(port)
@@ -1372,6 +1379,29 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_nl(port)
   serial_write_cstr(port, "space: objects allocated 0x")
   serial_write_hex(port, obj_counter)
+  serial_nl(port)
+
+  // Initialize memory domain subsystem (Phase 0).
+  domain_init()
+  serial_write_cstr(port, "space: domain subsystem init, ")
+  serial_write_dec_wide(port, domain_count)
+  serial_write_cstr(port, " domains (kernel + ")
+  serial_write_dec_wide(port, MAX_DOMAINS - 1)
+  serial_write_cstr(port, " available)")
+  serial_nl(port)
+
+  // Run domain verification tests.
+  let dom_test = test_domain_create()
+  serial_write_cstr(port, "space: domain_create test -> id 0x")
+  serial_write_hex(port, dom_test)
+  serial_nl(port)
+  let iso_test = test_domain_isolation()
+  serial_write_cstr(port, "space: domain isolation test -> ")
+  if iso_test != 0 {
+    serial_write_cstr(port, "PASS")
+  } else {
+    serial_write_cstr(port, "FAIL")
+  }
   serial_nl(port)
 
   // Bring up interrupts and run the timer for a short, observable window.

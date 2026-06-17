@@ -17,9 +17,13 @@ interface GuestApi {
   fn run(arg: Int) -> Int
 }
 
+// SCI manifest layout and cap table constants are inlined to match the
+// kernel-root.in loader's binary layout.
+// ponytail: hardcoded offsets, define as named consts when parser supports
+// const declarations between component and fn bodies.
+
 fn g_wait(port: Int) -> void {
-  while (inb(port + 5) & 0x20) == 0 {
-  }
+  while (inb(port + 5) & 0x20) == 0 { }
   return
 }
 
@@ -52,12 +56,58 @@ fn g_hex(port: Int, value: Int) -> void {
   return
 }
 
+// Validate a binary SCI manifest against the realm's capability table.
+// realm_cap_info points to [cap_count][cap_table_base], where cap_table_base
+// points to the actual slot array. Each slot is 16 bytes:
+// [target_object_ptr][rights_mask]. Scans all slots, collects granted rights
+// as a mask, and rejects when any required bit is missing.
+// Returns 1 if all required caps are present, 0 on rejection.
+fn sci_validate_manifest(sci_ptr: Int, realm_cap_info: Int) -> Int {
+  // SCI header layout: [magic(8)][required_caps(8)][entry(8)][reserved(8)]
+  let magic = load64(sci_ptr + 0)
+  if magic != 0x5343490000000001 {
+    g_puts(0x3F8, "space: loader rejecting component: invalid SCI magic")
+    g_put(0x3F8, 10)
+    return 0
+  }
+  let cap_count = load64(realm_cap_info + 0)
+  let cap_table = load64(realm_cap_info + 8)
+  // Required capabilities bitmask at offset 8 in SCI header.
+  let required = load64(sci_ptr + 8)
+  // Scan all cap table slots (each 16 bytes: [target_ptr][rights_mask] at
+  // rights_mask offset 8). OR granted rights into a mask.
+  let granted = 0
+  let i = 0
+  while i < cap_count {
+    let rights = load64(cap_table + i * 16 + 8)
+    granted = granted | rights
+    i = i + 1
+  }
+  let missing = required & (-1 ^ granted)
+  if missing != 0 {
+    g_puts(0x3F8, "space: loader rejecting component GuestService: missing cap 0x")
+    g_hex(0x3F8, missing)
+    g_put(0x3F8, 10)
+    return 0
+  }
+  return 1
+}
+
 // The component entry. It is compiled first so it sits at the component's load
-// base. It runs on the serial console it was granted and returns a status.
-fn guest_entry(arg: Int) -> Int {
+// base. The kernel passes the address of a realm-cap-table struct as arg: the
+// first 8 bytes are cap_count, followed by the cap table slots (each 16 bytes:
+// [target_object_ptr][rights_mask]). The function validates its own SCI manifest
+// against the realm's grants before proceeding.
+fn guest_entry(realm_cap_info: Int) -> Int {
   let port = 0x3F8
-  g_puts(port, "    [guest-service] separately-compiled SCI component running, arg 0x")
-  g_hex(port, arg)
+  // Our SCI header is at a well-known load address known at link time.
+  // ponytail: hardcoded load base; retrieve from boot info in later phases.
+  let sci_ptr = 0x140000
+  let ok = sci_validate_manifest(sci_ptr, realm_cap_info)
+  if ok == 0 {
+    return 0xDEAD
+  }
+  g_puts(port, "    [guest-service] separately-compiled SCI component running, caps validated")
   g_put(port, 10)
-  return arg + 0x1000
+  return realm_cap_info + 0x1000
 }

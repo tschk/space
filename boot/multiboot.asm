@@ -118,6 +118,12 @@ long_mode:
     mov rbx, 0x4048
     mov rax, exc_14
     mov [rbx], rax
+    mov rbx, 0x4058
+    mov rax, cr3_read
+    mov [rbx], rax
+    mov rbx, 0x4060
+    mov rax, cr3_write
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -250,6 +256,19 @@ context_switch:
     pop r12
     pop rbp
     pop rbx
+    ret
+
+; --- CR3 read/write stubs for domain subsystem -----------------------------
+; cr3_read() -> Int: returns the current CR3 in rax.
+; Published at [0x4058] for the `.in` kernel's domain operations.
+cr3_read:
+    mov rax, cr3
+    ret
+
+; cr3_write(cr3: Int) -> void: sets CR3. Called via invoke1(stub, value).
+; Published at [0x4060] so invoke1 passes the PML4 phys addr in rdi.
+cr3_write:
+    mov cr3, rdi
     ret
 
 align 4
