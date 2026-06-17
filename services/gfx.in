@@ -1,0 +1,69 @@
+// Graphics compositor microservice.
+// Manages surfaces, blitting, and input routing over channel IPC.
+// ponytail: single surface, no compositing. Real gfx.in needs virtio-gpu
+// or framebuffer MMIO access granted by kernel.
+component GraphicsService {
+  target "x86_64-space"
+  deterministic false
+  checkpoint none
+
+  export svc: GraphicsApi
+
+  capability serial: DebugConsole(write)
+  capability gpu: Framebuffer(blit)
+}
+
+interface GraphicsApi {
+  fn create_surface(w: Int, h: Int) -> Int
+  fn blit(surface: Int, x: Int, y: Int, pixel: Int) -> Int
+  fn present(surface: Int) -> Int
+}
+
+const GFX_MAX_SURFACES = 4
+const GFX_MAX_WIDTH = 1024
+const GFX_MAX_HEIGHT = 768
+
+var gfx_surf_w0: Int = 0
+var gfx_surf_h0: Int = 0
+var gfx_surf_p0: Int = 0
+var gfx_surf_w1: Int = 0
+var gfx_surf_h1: Int = 0
+var gfx_surf_p1: Int = 0
+
+fn gfx_create_surface(w: Int, h: Int) -> Int {
+  if w > GFX_MAX_WIDTH || h > GFX_MAX_HEIGHT { return -1 }
+  if gfx_surf_w0 == 0 {
+    gfx_surf_w0 = w; gfx_surf_h0 = h; gfx_surf_p0 = 0; return 0
+  }
+  if gfx_surf_w1 == 0 {
+    gfx_surf_w1 = w; gfx_surf_h1 = h; gfx_surf_p1 = 0; return 1
+  }
+  return -1
+}
+
+fn gfx_blit(surface: Int, x: Int, y: Int, pixel: Int) -> Int {
+  if surface == 0 {
+    if x < gfx_surf_w0 && y < gfx_surf_h0 {
+      gfx_surf_p0 = pixel; return 1
+    }
+  }
+  if surface == 1 {
+    if x < gfx_surf_w1 && y < gfx_surf_h1 {
+      gfx_surf_p1 = pixel; return 1
+    }
+  }
+  return 0
+}
+
+fn gfx_present(surface: Int) -> Int {
+  // ponytail: no framebuffer access in standalone component.
+  // Real impl writes surface pixel data to framebuffer MMIO via kernel grant.
+  return 1
+}
+
+fn gfx_entry(shared_page: Int) -> Int {
+  let page = shared_page
+  // ponytail: service contract. Real IPC channel requires kernel to map
+  // shared page into component domain with MMIO framebuffer access.
+  return 1
+}
