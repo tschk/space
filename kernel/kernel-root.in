@@ -4,6 +4,8 @@ package space.kernel
 import "determinism.in"
 // PCI configuration-space access and bus enumeration.
 import "pci.in"
+// Cross-domain channel fabric.
+import "channel.in"
 // Intel e1000 NIC driver.
 import "net.in"
 // Memory domain subsystem (Phase 0).
