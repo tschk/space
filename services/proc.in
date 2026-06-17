@@ -1,0 +1,73 @@
+// Process lifecycle microservice.
+// Manages thread creation and exit within a domain.
+// Returns 1 for success, 0 for failure.
+component ProcService {
+  target "x86_64-space"
+  deterministic false
+  checkpoint none
+
+  export svc: ProcApi
+
+  capability serial: DebugConsole(write)
+  capability memory: PhysicalMemory(map)
+}
+
+interface ProcApi {
+  fn spawn(entry: Int, arg: Int) -> Int
+  fn exit(code: Int) -> void
+}
+
+fn p_put(port: Int, ch: Int) -> void {
+  while (load8(port + 5) & 0x20) == 0 { }
+  outb(port, ch)
+  return
+}
+
+fn p_puts(port: Int, addr: Int) -> void {
+  let i = 0
+  while load8(addr + i) != 0 {
+    p_put(port, load8(addr + i))
+    i = i + 1
+  }
+  return
+}
+
+fn proc_spawn(entry: Int, arg: Int) -> Int {
+  // ponytail: single-process spawn for now. Real impl needs domain thd_create.
+  return 1
+}
+
+fn proc_exit(code: Int) -> void {
+  return
+}
+
+
+
+fn proc_entry(shared_page: Int) -> Int {
+  let page = shared_page
+  let port = 0x3F8
+
+  p_puts(port, "    [proc.in] process service started")
+  p_put(port, 10)
+
+  while true {
+    while load64(page + 0) == load64(page + 8) { }
+
+    let opcode = load64(page + 32)
+    let arg = load64(page + 40)
+    let result = 0
+
+    if opcode == 1 {
+      result = proc_spawn(arg, load64(page + 48))
+    } else if opcode == 2 {
+      proc_exit(arg)
+      result = 1
+    } else {
+      result = -1
+    }
+
+    store64(page + 4096, result)
+    store64(page + 8, load64(page + 8) + 1)
+  }
+  return 0
+}

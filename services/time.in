@@ -1,0 +1,84 @@
+// Time service microservice.
+// Runs in its own domain, responds to time queries over a cross-domain channel.
+// ponytail: single shared page for IPC, no multi-client dispatch.
+component TimeService {
+  target "x86_64-space"
+  deterministic false
+  checkpoint none
+
+  export svc: TimeApi
+
+  capability serial: DebugConsole(write)
+  capability timer: PITTimer(read)
+}
+
+interface TimeApi {
+  fn now() -> Int
+  fn sleep(us: Int) -> Int
+}
+
+// Cross-domain channel shared page layout (passed by loader)
+// offset 0: head (write index, sender)
+// offset 8: tail (read index, receiver)
+// offset 16: request buffer (first 8 bytes = opcode, next 8 = arg)
+// offset 4096: response buffer (8 bytes = result)
+// ponytail: single-message protocol, extend to ring buffer for throughput
+
+fn t_put(port: Int, ch: Int) -> void {
+  let port_status = port + 5
+  while (load8(port_status) & 0x20) == 0 { }
+  outb(port, ch)
+  return
+}
+
+fn t_puts(port: Int, addr: Int) -> void {
+  let i = 0
+  while load8(addr + i) != 0 {
+    t_put(port, load8(addr + i))
+    i = i + 1
+  }
+  return
+}
+
+// Service entry: called by loader with shared_page address.
+fn time_entry(shared_page: Int) -> Int {
+  let page = shared_page
+  let port = 0x3F8
+
+  t_puts(port, "    [time.in] time service started")
+  t_put(port, 10)
+
+  while true {
+    // Wait for a request (head != tail)
+    while load64(page + 0) == load64(page + 8) { }
+
+    let opcode = load64(page + 32)   // request opcode at offset 32
+    let arg = load64(page + 40)       // request arg at offset 40
+    let result = 0
+
+    if opcode == 1 {
+      // now() - return current tick count via PIT read
+      // ponytail: use kernel tick var; wire HPET later
+      result = load64(0x12345678)  // placeholder: real tick addr set by loader
+      t_puts(port, "    [time.in] now -> ")
+    } else if opcode == 2 {
+      // sleep(us) - yield-loop for approximate microseconds
+      // ponytail: busy-wait sleep, use PIT channel 2 for real delay
+      let i = 0
+      while i < arg / 100 {
+        i = i + 1
+      }
+      result = 0
+      t_puts(port, "    [time.in] sleep ")
+    } else {
+      result = -1
+      t_puts(port, "    [time.in] unknown op ")
+    }
+
+    // Write response and advance tail
+    store64(page + 4096, result)     // response at offset 4096
+    store64(page + 8, load64(page + 8) + 1)   // advance tail
+  }
+
+  return 0
+}
