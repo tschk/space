@@ -1,0 +1,100 @@
+// SCI loader - loads a compiled component into a domain.
+// Imported into kernel-root.in, not standalone.
+// ponytail: flat binary loader, no ELF parsing. The SCI is a simple header +
+// code+data frames that Inauguration can emit as a sidecar artifact.
+// Builds on Phase 0 domain_map and Phase 1 channels.
+
+const SCI_HEADER_SIZE = 72
+const SCI_CAPS_OFF = 8
+const SCI_ENTRY_OFF = 16
+const SCI_TEXT_OFF = 24
+const SCI_TEXT_SIZE = 32
+const SCI_DATA_OFF = 40
+const SCI_DATA_SIZE = 48
+const SCI_STACK_SIZE = 56
+
+// Load a flat SCI binary into a domain.
+// sci_data: pointer to SCI header + code/data inline.
+// domain_id: target domain from domain_create().
+// Returns entry virtual address on success, 0 on failure.
+fn sci_load_binary(sci_data: Int, domain_id: Int) -> Int {
+  let magic = load64(sci_data + 0)
+  if magic != SCI_MAGIC {
+    serial_write_cstr(COM1_PORT, "sci: bad magic")
+    return 0
+  }
+
+  let entry = load64(sci_data + SCI_ENTRY_OFF)
+  let text_addr = load64(sci_data + SCI_TEXT_OFF)
+  let text_size = load64(sci_data + SCI_TEXT_SIZE)
+  let data_addr = load64(sci_data + SCI_DATA_OFF)
+  let data_size = load64(sci_data + SCI_DATA_SIZE)
+  let stack_size = load64(sci_data + SCI_STACK_SIZE)
+  let code_vaddr = 0x100000
+
+  // Map code pages (each 4K frame)
+  let pages = (text_size + 4095) / 4096
+  let i = 0
+  while i < pages {
+    let frame = alloc(4096)
+    let j = 0
+    while j < 4096 && (i * 4096 + j) < text_size {
+      let src_byte = load8(text_addr + i * 4096 + j)
+      store8(frame + j, src_byte)
+      j = j + 1
+    }
+    domain_map(domain_id, code_vaddr + i * 4096, frame / 4096, 0x5)  // r+x
+    i = i + 1
+  }
+
+  // Map data pages
+  let data_vaddr = code_vaddr + pages * 4096
+  let data_pages = (data_size + 4095) / 4096
+  i = 0
+  while i < data_pages {
+    let frame = alloc(4096)
+    let j = 0
+    while j < 4096 && (i * 4096 + j) < data_size {
+      let src_byte = load8(data_addr + i * 4096 + j)
+      store8(frame + j, src_byte)
+      j = j + 1
+    }
+    domain_map(domain_id, data_vaddr + i * 4096, frame / 4096, 0x3)  // r+w
+    i = i + 1
+  }
+
+  // Map stack page
+  let stack_vaddr = 0x7FF000 - stack_size
+  let stack_frame = alloc(4096)
+  domain_map(domain_id, stack_vaddr, stack_frame / 4096, 0x3)
+
+  serial_write_cstr(COM1_PORT, "sci: loaded, entry 0x")
+  serial_write_hex(COM1_PORT, entry)
+  serial_write_cstr(COM1_PORT, " text 0x")
+  serial_write_hex(COM1_PORT, code_vaddr)
+  serial_write_cstr(COM1_PORT, " size 0x")
+  serial_write_hex(COM1_PORT, text_size)
+
+  return code_vaddr
+}
+
+// Parse the capability mask from an SCI header and validate against
+// a capability table. Called before domain switch.
+// Returns 1 if all required caps are present, 0 otherwise.
+fn sci_check_caps(sci_data: Int, cap_base: Int, cap_count: Int) -> Int {
+  let required = load64(sci_data + SCI_CAPS_OFF)
+  let granted = 0
+  let i = 0
+  while i < cap_count {
+    let rights = load64(cap_base + i * 16 + 8)
+    granted = granted | rights
+    i = i + 1
+  }
+  let missing = required & (-1 ^ granted)
+  if missing != 0 {
+    serial_write_cstr(COM1_PORT, "sci: missing cap 0x")
+    serial_write_hex(COM1_PORT, missing)
+    return 0
+  }
+  return 1
+}

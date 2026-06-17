@@ -6,6 +6,7 @@ import "determinism.in"
 import "pci.in"
 // Cross-domain channel fabric.
 import "channel.in"
+// SCI loader integration (loader.in reserved for future domain-aware loading)
 // Intel e1000 NIC driver.
 import "net.in"
 // Memory domain subsystem (Phase 0).
@@ -1079,7 +1080,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   }
   let required = load64(load_addr + 8)
   let entry = load64(load_addr + 16)
-  serial_write_cstr(port, "  SCI: manifest ok, required caps 0x")
+  serial_write_cstr(port, "  SCI: manifest ok, caps 0x")
   serial_write_hex(port, required)
   serial_write_cstr(port, " entry 0x")
   serial_write_hex(port, entry)
@@ -1091,14 +1092,25 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
     serial_nl(port)
     return -1
   }
-    serial_write_cstr(port, "  SCI: capability check passed, entering component")
+  // Phase 0: create isolated domain for the component
+  let domain = domain_create()
+  if domain == 0 {
+    serial_write_cstr(port, "  SCI: domain_create failed")
+    serial_nl(port)
+    return -1
+  }
+  serial_write_cstr(port, "  SCI: domain 0x")
+  serial_write_hex(port, domain)
+  serial_write_cstr(port, ", cap check passed")
   serial_nl(port)
   // Pack realm cap table info for guest: [cap_count][cap_table_base].
-  // The guest reads this to validate its manifest against realm grants.
   let cap_info = alloc(16)
   store64(cap_info + 0, cap_count)
   store64(cap_info + 8, cap_table_base)
+  // Switch to component domain, call entry, switch back
+  domain_switch(domain)
   let status = invoke1(entry, cap_info)
+  domain_switch(0)
   serial_write_cstr(port, "  SCI: component returned status 0x")
   serial_write_hex(port, status)
   serial_nl(port)
