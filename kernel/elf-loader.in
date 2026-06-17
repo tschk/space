@@ -1,73 +1,94 @@
-// ELF64 loader for compatibility personalities.
-// Parses ELF64 binary in memory, maps PT_LOAD segments into a domain,
-// returns entry point for the guest shim.
-// Imported into kernel-root.in alongside loader.in.
-// ponytail: no interpreter/shared lib support. Flat ELF segment mapping only.
+// ELF64 parser for Space kernel. Phase 7 compatibility personalities.
+// ponytail: flat parser, no sections, no relocations, no symbols.
 
-const ELF_MAGIC = 0x464C457F  // "\x7fELF" as LE uint32
+const ELF_MAGIC = 0x464C457F
 const PT_LOAD = 1
-const PF_X = 1
-const PF_W = 2
-const PF_R = 4
+const X86_64_MACHINE = 62
 
-// Load an ELF64 binary from memory into a domain.
-// base: pointer to ELF64 header bytes.
-// domain_id: target domain from domain_create().
-// Returns entry virtual address on success, 0 on failure.
-fn elf_load(base: Int, domain_id: Int) -> Int {
-  // Validate magic: first 4 bytes must be 0x464C457F
+fn elf_parse(base: Int) -> Int {
   let magic = load64(base) & 0xFFFFFFFF
-  if magic != ELF_MAGIC { return 0 }
+  if magic != ELF_MAGIC {
+    serial_write_cstr(COM1_PORT, "elf: bad magic")
+    return 0
+  }
 
-  // Check 64-bit (e_ident[4] = 2) and little-endian (e_ident[5] = 1)
-  let ident4 = load8(base + 4)
-  if ident4 != 2 { return 0 }
-  let ident5 = load8(base + 5)
-  if ident5 != 1 { return 0 }
+  if load8(base + 4) != 2 {
+    serial_write_cstr(COM1_PORT, "elf: not 64-bit")
+    return 0
+  }
 
-  // Check x86_64 machine (e_machine = 62 = 0x3E)
+  if load8(base + 5) != 1 {
+    serial_write_cstr(COM1_PORT, "elf: not LE")
+    return 0
+  }
+
   let machine = (load64(base + 16) >> 16) & 0xFFFF
-  if machine != 62 { return 0 }
+  if machine != X86_64_MACHINE {
+    serial_write_cstr(COM1_PORT, "elf: wrong arch")
+    return 0
+  }
 
   let entry = load64(base + 24)
   let phoff = load64(base + 32)
   let phnum = load64(base + 56) & 0xFFFF
-  let phdr_size = 56
-  
+  let domain_id = domain_create()
+
+  if domain_id == 0 {
+    serial_write_cstr(COM1_PORT, "elf: domain_create failed")
+    return 0
+  }
+
+  serial_write_cstr(COM1_PORT, "elf: phnum=0x")
+  serial_write_hex(COM1_PORT, phnum)
+  serial_nl(COM1_PORT)
+
   let i = 0
   while i < phnum {
-    let ph = base + phoff + i * phdr_size
-    let p_type = load64(ph) & 0xFFFFFFFF
-    if p_type == PT_LOAD {
-      let p_flags = (load64(ph + 4) & 0xFFFFFFFF) as Int
-      let p_offset = load64(ph + 8)
-      let p_vaddr = load64(ph + 16)
-      let p_memsz = load64(ph + 40)
+    let phdr = base + phoff + i * 56
+    let p_type = load64(phdr) & 0xFFFFFFFF
+    let p_flags = load64(phdr + 4) & 0xFFFFFFFF
+    let p_offset = load64(phdr + 8)
+    let p_vaddr = load64(phdr + 16)
+    let p_memsz = load64(phdr + 40)
 
-      // Compute pages needed
-      let start_page = p_vaddr & -4096
-      let end_addr = p_vaddr + p_memsz
-      let end_page = (end_addr + 4095) & -4096
-      let page_count = (end_page - start_page) / 4096
-
-      // Convert ELF p_flags to domain_map flags (same encoding)
-      let map_flags = 0
-      if (p_flags & PF_X) != 0 { map_flags = map_flags | 1 }
-      if (p_flags & PF_W) != 0 { map_flags = map_flags | 2 }
-      if (p_flags & PF_R) != 0 { map_flags = map_flags | 4 }
-
+    if p_type == PT_LOAD && p_memsz > 0 {
+      let pages = (p_memsz + 4095) / 4096
       let j = 0
-      while j < page_count {
-        let page_vaddr = start_page + j * 4096
-        let file_offset = page_vaddr - p_vaddr + p_offset
-        // ponytail: maps pages at file offset as phys frame. In real
-        // compat mode the loader allocates frames and copies content.
-        // For now the SCI loader VM model treats all memory as flat.
-        domain_map(domain_id, page_vaddr, file_offset / 4096, map_flags)
+      while j < pages {
+        let frame = alloc(4096)
+        let remaining = p_memsz - j * 4096
+        let copy_size = 4096
+        if remaining < 4096 {
+          copy_size = remaining
+        }
+        let k = 0
+        while k < copy_size {
+          store8(frame + k, load8(base + p_offset + j * 4096 + k))
+          k = k + 1
+        }
+
+        // ELF PF_R(4)PF_W(2)PF_X(1) -> domain_map R(1)W(2)X(4)
+        let dm = 0
+        if (p_flags & 4) != 0 { dm = dm | 1 }
+        if (p_flags & 2) != 0 { dm = dm | 2 }
+        if (p_flags & 1) != 0 { dm = dm | 4 }
+
+        domain_map(domain_id, p_vaddr + j * 4096, frame / 4096, dm)
         j = j + 1
       }
+
+      serial_write_cstr(COM1_PORT, "  vaddr=0x")
+      serial_write_hex(COM1_PORT, p_vaddr)
+      serial_write_cstr(COM1_PORT, " sz=0x")
+      serial_write_hex(COM1_PORT, p_memsz)
+      serial_nl(COM1_PORT)
     }
+
     i = i + 1
   }
+
+  serial_write_cstr(COM1_PORT, "elf: entry=0x")
+  serial_write_hex(COM1_PORT, entry)
+  serial_nl(COM1_PORT)
   return entry
 }

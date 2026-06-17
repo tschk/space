@@ -11,6 +11,8 @@ import "channel.in"
 import "net.in"
 // Memory domain subsystem (Phase 0).
 import "domain.in"
+// ELF64 parser for Phase 7 compatibility personalities.
+import "elf-loader.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
