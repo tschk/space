@@ -1228,7 +1228,7 @@ fn shell(port: Int) -> void {
     serial_flush(port)  // ensure prompt visible before waiting for input
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "commands: help status mem ticks ps test det pci net snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> uptime halt")
+        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> uptime halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1254,6 +1254,46 @@ fn shell(port: Int) -> void {
       run_net(port)
     } else if line_eq("det") != 0 {
       run_determinism(port)
+    } else if line_eq("domain") != 0 {
+      let d = domain_create()
+      serial_write_cstr(port, "  created domain 0x")
+      serial_write_hex(port, d)
+      serial_write_cstr(port, " (total 0x")
+      serial_write_hex(port, domain_count)
+      serial_write_cstr(port, ")")
+      serial_nl(port)
+    } else if line_eq("chan") != 0 {
+      let d1 = domain_create()
+      let d2 = domain_create()
+      if d1 > 0 && d2 > 0 {
+        let phys = domain_create_shared_page(d1, d2, 0xFFFF8000, 0xFFFF9000)
+        if phys != 0 {
+          // Init ring buffer header via chan_cross_bind (avoids manual header setup)
+          let ch = chan_cross_bind(phys, d1, 16)
+          // Manual send (no thr_yield in shell context): slot 0
+          store64(phys + 32, 0xCAFE)
+          store64(phys + 0, 1)  // head = 1
+          // Manual recv
+          let msg = load64(phys + 32)
+          store64(phys + 8, 1)  // tail = 1
+          serial_write_cstr(port, "  chan: domain 0x")
+          serial_write_hex(port, d1)
+          serial_write_cstr(port, " <-> domain 0x")
+          serial_write_hex(port, d2)
+          serial_write_cstr(port, " shared phys 0x")
+          serial_write_hex(port, phys)
+          serial_write_cstr(port, " msg 0x")
+          serial_write_hex(port, msg)
+          serial_write_cstr(port, " OK")
+          serial_nl(port)
+        } else {
+          serial_write_cstr(port, "  chan: shared page allocation failed")
+          serial_nl(port)
+        }
+      } else {
+        serial_write_cstr(port, "  chan: domain creation failed")
+        serial_nl(port)
+      }
     } else if line_eq("sci") != 0 {
       sci_load(port, 0x140000)
     } else if line_eq("map") != 0 {
