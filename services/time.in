@@ -21,6 +21,7 @@ interface TimeApi {
 // offset 0: head (write index, sender)
 // offset 8: tail (read index, receiver)
 // offset 16: request buffer (first 8 bytes = opcode, next 8 = arg)
+// offset 48: monotonic tick/value cell
 // offset 4096: response buffer (8 bytes = result)
 // ponytail: single-message protocol, extend to ring buffer for throughput
 
@@ -57,9 +58,9 @@ fn time_entry(shared_page: Int) -> Int {
     let result = 0
 
     if opcode == 1 {
-      // now() - return current tick count via PIT read
-      // ponytail: use kernel tick var; wire HPET later
-      result = load64(0x12345678)  // placeholder: real tick addr set by loader
+      // now() - return deterministic monotonic tick count from shared page
+      result = load64(page + 48) + 1
+      store64(page + 48, result)
       t_puts(port, "    [time.in] now -> ")
     } else if opcode == 2 {
       // sleep(us) - yield-loop for approximate microseconds
