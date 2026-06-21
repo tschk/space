@@ -20,6 +20,7 @@ GUEST_LOAD=$((0x140000))     # manifest address
 GUEST_BASE=$((0x140020))     # guest code base (after the 32-byte manifest)
 SCI_MAGIC=$((0x5343490000000001))
 GUEST_REQUIRED_CAPS=1        # serial; must match the guest's declared capability
+GUEST_DENIED_CAPS=4
 
 mkdir -p "$BUILD_DIR"
 
@@ -60,10 +61,10 @@ if target != "x86_64-unknown-none":
     sys.exit(1)
 PY
 
-echo "[4/5] Assembling the combined image with the SCI manifest..."
-python3 - "$BUILD_DIR" "$GUEST_LOAD" "$GUEST_BASE" "$SCI_MAGIC" "$GUEST_REQUIRED_CAPS" <<'PY'
+assemble_image() {
+  python3 - "$BUILD_DIR" "$GUEST_LOAD" "$GUEST_BASE" "$SCI_MAGIC" "$1" "$2" <<'PY'
 import sys, struct, os
-build, gload, gbase, magic, caps = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+build, gload, gbase, magic, caps, out_name = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
 kernel = open(os.path.join(build, "kernel.bin"), "rb").read()
 guest  = open(os.path.join(build, "guest.bin"), "rb").read()
 img_base = 0x100000
@@ -73,17 +74,46 @@ out = bytearray(kernel)
 out += b"\x00" * (manifest_off - len(out))          # pad to the manifest offset
 out += struct.pack("<QQQQ", magic, caps, gbase, 0)  # 32-byte SCI manifest
 out += guest                                        # component code at gbase
-open(os.path.join(build, "combined.bin"), "wb").write(out)
-print(f"  combined image: {len(out)} bytes, manifest at 0x{gload:x}, guest at 0x{gbase:x}")
+open(os.path.join(build, out_name), "wb").write(out)
+print(f"  {out_name}: {len(out)} bytes, manifest at 0x{gload:x}, guest at 0x{gbase:x}")
 PY
+}
+
+echo "[4/5] Assembling the combined image with the SCI manifest..."
+assemble_image "$GUEST_DENIED_CAPS" "combined-denied.bin"
+assemble_image "$GUEST_REQUIRED_CAPS" "combined.bin"
 
 echo "[5/5] Booting and running the SCI loader..."
-rm -f "$BUILD_DIR/serial.log"
 EXPECT="${EXPECT:-expect}"
 if ! command -v "$EXPECT" >/dev/null 2>&1; then
   echo "FAIL: expect is required to drive QEMU serial input" >&2
   exit 1
 fi
+
+rm -f "$BUILD_DIR/serial-denied.log"
+"$EXPECT" <<EOF >/dev/null 2>&1 || true
+set timeout 20
+log_file -noappend "$BUILD_DIR/serial-denied.log"
+spawn qemu-system-x86_64 -kernel "$BUILD_DIR/combined-denied.bin" -m 256M -nographic -no-reboot
+expect "SCI: DENIED undeclared cap"
+expect "space> "
+send "halt\r"
+after 500
+close
+wait
+EOF
+
+echo "--- SCI denial output ---"
+sed -n '/SCI: manifest ok/,/SCI: DENIED undeclared cap/p' "$BUILD_DIR/serial-denied.log" 2>/dev/null || true
+echo "-------------------------"
+
+if ! grep -q "SCI: DENIED undeclared cap 0x0000000000000004" "$BUILD_DIR/serial-denied.log" 2>/dev/null \
+   || grep -q "SCI: component returned status 0x" "$BUILD_DIR/serial-denied.log" 2>/dev/null; then
+  echo "FAIL: SCI loader did not reject the missing required cap as expected." >&2
+  exit 1
+fi
+
+rm -f "$BUILD_DIR/serial.log"
 "$EXPECT" <<EOF >/dev/null 2>&1 || true
 set timeout 20
 log_file -noappend "$BUILD_DIR/serial.log"
