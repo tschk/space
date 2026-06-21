@@ -32,22 +32,26 @@ fn domain_init() -> void {
   return
 }
 
-fn copy_pml4(src_pml4: Int) -> Int {
-  // ponytail: single PML4 frame copy. Nested page table copies deferred
-  // until the native backend handles repeated frame_alloc calls reliably.
-  let dst = frame_alloc()
+fn create_domain_pml4() -> Int {
+  let dst_pml4 = frame_alloc()
+  let dst_pdpt = frame_alloc()
+  let dst_pd = frame_alloc()
   let i = 0
   while i < 512 {
-    store64(dst + i * 8, load64(src_pml4 + i * 8))
+    store64(dst_pml4 + i * 8, 0)
+    store64(dst_pdpt + i * 8, 0)
+    store64(dst_pd + i * 8, load64(0x3000 + i * 8))
     i = i + 1
   }
-  return dst
+  store64(dst_pdpt, dst_pd | 3)
+  store64(dst_pml4, dst_pdpt | 3)
+  return dst_pml4
 }
 
 fn domain_create() -> Int {
   if domain_count >= MAX_DOMAINS { return 0 }
   let id = domain_count
-  let pml4 = copy_pml4(0x1000)
+  let pml4 = create_domain_pml4()
   store64(domain_table + id * 24 + 0, pml4)
   store64(domain_table + id * 24 + 8, DOMAIN_ACTIVE)
   store64(domain_table + id * 24 + 16, 0)
@@ -243,7 +247,11 @@ fn test_domain_create() -> Int {
   let pml4 = load64(domain_table + d * 24 + 0)
   if pml4 == 0 { return 0 }
   if pml4 == 0x1000 { return 0 }
-  if load64(pml4 + 0) != load64(0x1000 + 0) { return 0 }
+  let pdpt = load64(pml4 + 0) & -4096
+  if pdpt == 0x2000 { return 0 }
+  let pd = load64(pdpt + 0) & -4096
+  if pd == 0x3000 { return 0 }
+  if load64(pd + 0) != load64(0x3000 + 0) { return 0 }
   return d
 }
 
