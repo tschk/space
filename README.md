@@ -80,9 +80,9 @@ x86_64 machine code in a 48,224-byte boot image:
 | Typed IPC channels (ring buffer, poll-with-yield) | ✅ |
 | Object graph edges (typed references, DFS walk) | ✅ |
 | Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader (same-address-space load, validate manifest) | ✅ |
+| SCI loader (same-address-space component load, manifest/cap validation) | ✅ |
 | e1000 NIC driver (PCI, ARP, UDP) | ✅ |
-| Deterministic execution | ✅ |
+| Deterministic kernel workload + time-service tick source | ✅ |
 | Shell (16 commands: help, uptime, peek, poke, echo, ...) | ✅ |
 | Kernel benchmarks (boot timing, per-subsystem) | ✅ |
 | `free_frame` LIFO reclaim | ✅ |
@@ -107,7 +107,7 @@ The [architecture document](architecture.md) defines 9 phases:
 ```
 Phase 0: Domain subsystem       ← NOW (multiple memory domains)
 Phase 1: Cross-domain channels  ← NEXT (IPC between domains)
-Phase 2: Core microservices     ← proc.in, mem.in, time.in, rand.in
+Phase 2: Core microservices     ← proc.in and time.in exist; mem.in and rand.in planned
 Phase 3: Component loader       ← SCI runtime loads .in components
 Phase 4: Filesystem             ← fs.in as .in microservice
 Phase 5: Networking             ← net.in, TCP/IP stack
@@ -116,8 +116,9 @@ Phase 7: Compatibility          ← Linux/Darwin/Windows guests
 Phase 8: Distribution           ← remote components, migration
 ```
 
-The current blocker is Phase 0: the kernel has one address space. Every
-component needs an isolated memory domain before microservices can exist.
+The current Phase 0 blocker is CR3-backed domain isolation: components and
+early services can compile or load in one address space, but isolated
+microservices are not enforced yet.
 
 ## Build and Run
 
@@ -149,6 +150,8 @@ kernel/
   channel.in              Phase 1 channel fabric
   loader.in               Phase 3 loader integration
 services/
+  proc.in                 process lifecycle service
+  time.in                 deterministic monotonic time service
   fs.in                   filesystem service
   net.in                  networking service
   gfx.in                  graphics/compositor service
