@@ -1094,7 +1094,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
     serial_nl(port)
     return -1
   }
-  // Phase 0: create isolated domain for the component
+  // Phase 0: create a domain record for the component
   let domain = domain_create()
   if domain == 0 {
     serial_write_cstr(port, "  SCI: domain_create failed")
@@ -1109,7 +1109,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   let cap_info = alloc(16)
   store64(cap_info + 0, cap_count)
   store64(cap_info + 8, cap_table_base)
-  // Switch to component domain, call entry, switch back
+  // Switch hooks are no-ops until CR3 isolation lands.
   domain_switch(domain)
   let status = invoke1(entry, cap_info)
   domain_switch(0)
@@ -1487,6 +1487,10 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Demonstrate timer-driven preemptive multitasking.
   run_preemptive(port)
+
+  if load64(0x140000) == SCI_MAGIC {
+    sci_load(port, 0x140000)
+  }
 
   // Drop into the interactive serial shell.
   shell(port)

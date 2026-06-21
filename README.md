@@ -60,8 +60,8 @@ space>
 
 ### Running Subsystems
 
-The kernel is 90 declarations in 1506 lines of `.in`, emitting 38,996 bytes of
-x86_64 machine code in a 47,444-byte boot image:
+The kernel is 90 declarations in 1510 lines of `.in`, emitting 39,776 bytes of
+x86_64 machine code in a 48,224-byte boot image:
 
 | Subsystem | Status |
 |-----------|--------|
@@ -80,7 +80,7 @@ x86_64 machine code in a 47,444-byte boot image:
 | Typed IPC channels (ring buffer, poll-with-yield) | ✅ |
 | Object graph edges (typed references, DFS walk) | ✅ |
 | Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader (load separate binary, validate manifest) | ✅ |
+| SCI loader (same-address-space load, validate manifest) | ✅ |
 | e1000 NIC driver (PCI, ARP, UDP) | ✅ |
 | Deterministic execution | ✅ |
 | Shell (16 commands: help, uptime, peek, poke, echo, ...) | ✅ |
@@ -144,7 +144,7 @@ Development is cross-platform — macOS (ARM64), Linux (x86_64, glibc and musl).
 
 ```
 kernel/
-  kernel-root.in          nanokernel (1506 lines, 90 declarations)
+  kernel-root.in          nanokernel (1510 lines, 90 declarations)
   domain.in               Phase 0 memory domains
   channel.in              Phase 1 channel fabric
   loader.in               Phase 3 loader integration

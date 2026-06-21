@@ -34,13 +34,31 @@ fi
 echo "[2/5] Compiling the nanokernel boot image..."
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry \
   --emit boot --trampoline "$BUILD_DIR/trampoline.bin" \
+  --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin" >/dev/null
 
 echo "[3/5] Compiling the guest SCI component at base $(printf 0x%x "$GUEST_BASE")..."
 "$IN" compile --path "$SPACE_DIR/kernel/guest-service.in" --entry guest_entry \
-  --emit flat --base "$(printf 0x%x "$GUEST_BASE")" \
-  --out "$BUILD_DIR/guest.bin" \
-  --metadata "$BUILD_DIR/guest.component-metadata.json" >/dev/null
+  --target native --target-triple x86_64-unknown-none --linkage static-lib \
+  --out "$BUILD_DIR/guest.o" >/dev/null
+
+OBJCOPY="${OBJCOPY:-llvm-objcopy}"
+if ! command -v "$OBJCOPY" >/dev/null 2>&1; then
+  OBJCOPY="objcopy"
+fi
+"$OBJCOPY" --change-section-address ".text=$(printf 0x%x "$GUEST_BASE")" \
+  -O binary "$BUILD_DIR/guest.o" "$BUILD_DIR/guest.bin"
+
+python3 - "$BUILD_DIR/guest.component-metadata.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    meta = json.load(f)
+target = meta.get("target")
+if target != "x86_64-unknown-none":
+    print(f"FAIL: guest metadata target {target!r}, expected 'x86_64-unknown-none'", file=sys.stderr)
+    sys.exit(1)
+PY
 
 echo "[4/5] Assembling the combined image with the SCI manifest..."
 python3 - "$BUILD_DIR" "$GUEST_LOAD" "$GUEST_BASE" "$SCI_MAGIC" "$GUEST_REQUIRED_CAPS" <<'PY'
@@ -61,16 +79,33 @@ PY
 
 echo "[5/5] Booting and running the SCI loader..."
 rm -f "$BUILD_DIR/serial.log"
-printf 'help\rsci\rhalt\r' | perl -e 'alarm 10; exec @ARGV' qemu-system-x86_64 \
-  -kernel "$BUILD_DIR/combined.bin" -m 256M \
-  -serial stdio -display none -no-reboot >"$BUILD_DIR/serial.log" 2>/dev/null || true
+EXPECT="${EXPECT:-expect}"
+if ! command -v "$EXPECT" >/dev/null 2>&1; then
+  echo "FAIL: expect is required to drive QEMU serial input" >&2
+  exit 1
+fi
+"$EXPECT" <<EOF >/dev/null 2>&1 || true
+set timeout 20
+log_file -noappend "$BUILD_DIR/serial.log"
+spawn qemu-system-x86_64 -kernel "$BUILD_DIR/combined.bin" -m 256M -nographic -no-reboot
+expect "space interactive shell"
+expect "space> "
+send "sci\r"
+expect "SCI: component returned status"
+send "halt\r"
+after 500
+close
+wait
+EOF
 
 echo "--- SCI loader output ---"
-sed -n '/space> sci/,/space>/p' "$BUILD_DIR/serial.log" 2>/dev/null || true
+sed -n '/SCI: manifest ok/,/SCI: component returned status/p' "$BUILD_DIR/serial.log" 2>/dev/null || true
 echo "-------------------------"
 
-if grep -q "guest-service] separately-compiled SCI component running" "$BUILD_DIR/serial.log" 2>/dev/null \
-   && grep -q "SCI: component returned status 0x0000000000001042" "$BUILD_DIR/serial.log" 2>/dev/null; then
+if grep -q "SCI: manifest ok, caps 0x0000000000000001 entry 0x0000000000140020" "$BUILD_DIR/serial.log" 2>/dev/null \
+   && grep -q "cap check passed" "$BUILD_DIR/serial.log" 2>/dev/null \
+   && grep -q "SCI: component returned status 0x" "$BUILD_DIR/serial.log" 2>/dev/null \
+   && ! grep -q "SCI: component returned status 0x000000000000dead" "$BUILD_DIR/serial.log" 2>/dev/null; then
   echo "PASS: SCI component loaded, validated, executed, and returned the expected status."
   exit 0
 fi

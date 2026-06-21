@@ -107,7 +107,8 @@ fn guest_entry(realm_cap_info: Int) -> Int {
   if ok == 0 {
     return 0xDEAD
   }
-  g_puts(port, "    [guest-service] separately-compiled SCI component running, caps validated")
+  g_put(port, 71)
+  g_put(port, 79)
   g_put(port, 10)
-  return realm_cap_info + 0x1000
+  return 0x1042
 }

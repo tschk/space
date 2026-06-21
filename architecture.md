@@ -1416,7 +1416,7 @@ fn pe_load(domain: Int, pe_addr: Int) -> Int
 ```
 /Users/undivisible/projects/space/
   kernel/
-    kernel-root.in        nanokernel (1506 lines, 90 declarations)
+    kernel-root.in        nanokernel (1510 lines, 90 declarations)
     domain.in             Phase 0 - multiple memory domains
     channel.in            Phase 1 - cross-domain channels
     loader.in             Phase 3 - SCI loader
