@@ -1,8 +1,6 @@
 // Phase 0: Memory Domain Subsystem.
 // Provides isolated page table trees (realms) for component isolation.
-// ponytail: domain_create returns a stub ID; real page table manipulation
-// is deferred until the x86_64 native backend handles nested frame_alloc
-// without triple-faulting. Domain 0 = kernel domain (shared PML4).
+// Domain 0 = kernel domain (shared PML4).
 // Usage: domain_create() -> domain_id for use with chan_cross_send/recv.
 
 const MAX_DOMAINS = 64
@@ -58,7 +56,11 @@ fn domain_create() -> Int {
 }
 
 fn domain_switch(id: Int) -> void {
-  // ponytail: CR3 write disabled until page table copy works
+  if id >= domain_count { return }
+  if load64(domain_table + id * 24 + 8) != DOMAIN_ACTIVE { return }
+  let pml4 = load64(domain_table + id * 24 + 0)
+  if pml4 == 0 { return }
+  invoke1(load64(0x4060), pml4)
   return
 }
 
@@ -243,6 +245,20 @@ fn test_domain_create() -> Int {
   if pml4 == 0x1000 { return 0 }
   if load64(pml4 + 0) != load64(0x1000 + 0) { return 0 }
   return d
+}
+
+fn test_domain_switch() -> Int {
+  let d = domain_create()
+  if d == 0 { return 0 }
+  let pml4 = load64(domain_table + d * 24 + 0)
+  domain_switch(d)
+  if read_cr3() != pml4 {
+    domain_switch(0)
+    return 0
+  }
+  domain_switch(0)
+  if read_cr3() != 0x1000 { return 0 }
+  return 1
 }
 
 fn test_domain_isolation() -> Int {

@@ -70,6 +70,7 @@ x86_64 machine code in a 55,047-byte boot image:
 | Physical memory discovery | ✅ |
 | Bump heap + 4K frame allocator | ✅ |
 | Kernel 4-level page table management | ✅ |
+| CR3-backed domain switching | ✅ |
 | Object graph arena (typed objects, stable IDs) | ✅ |
 | Capability table (minting, runtime check) | ✅ |
 | IDT (256-entry), PIC remap, PIT 100Hz | ✅ |
@@ -116,9 +117,9 @@ Phase 7: Compatibility          ← Linux/Darwin/Windows guests
 Phase 8: Distribution           ← remote components, migration
 ```
 
-The current Phase 0 blocker is CR3-backed domain isolation: components and
-early services can compile or load in one address space, but isolated
-microservices are not enforced yet.
+The current Phase 0 blocker is private address-space loading: domains now switch
+CR3 to separate PML4 roots, but lower kernel mappings are still shared and
+isolated microservices are not enforced yet.
 
 ## Build and Run
 

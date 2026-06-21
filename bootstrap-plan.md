@@ -332,7 +332,7 @@ Compiler work left in Inauguration:
 
 Space work left here:
 
-- CR3-backed domain isolation beyond the current verified domain metadata and tests
+- private lower page-table trees beyond the current verified CR3 domain switch
 - cross-domain channels between isolated address spaces
 - promote proc/time/fs/net/gfx services from compiled contracts to isolated loaded components
 - implement nanokernel object/capability table vocabulary

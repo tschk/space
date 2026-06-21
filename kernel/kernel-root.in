@@ -1458,6 +1458,14 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_cstr(port, "space: domain_create test -> id 0x")
   serial_write_hex(port, dom_test)
   serial_nl(port)
+  let switch_test = test_domain_switch()
+  serial_write_cstr(port, "space: domain_switch test -> ")
+  if switch_test != 0 {
+    serial_write_cstr(port, "PASS")
+  } else {
+    serial_write_cstr(port, "FAIL")
+  }
+  serial_nl(port)
   let iso_test = test_domain_isolation()
   serial_write_cstr(port, "space: domain isolation test -> ")
   if iso_test != 0 {

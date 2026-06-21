@@ -40,7 +40,8 @@ wait "$QPID" 2>/dev/null || true
 # Core markers that must appear in normal boot
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
-         "domain_create test -> id" "domain isolation test -> PASS" \
+         "domain_create test -> id" "domain_switch test -> PASS" \
+         "domain isolation test -> PASS" \
          "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
          "channel demo complete" "preemptive scheduler" "preemption ended" \
          "interactive shell"; do
