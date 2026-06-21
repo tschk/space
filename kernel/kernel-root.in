@@ -1466,7 +1466,7 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_nl(port)
 
   let shown = 0
-  while shown < 5 {
+  while shown < 1 {
     hlt()
     if ticks >= (shown + 1) * 20 {
       serial_write_cstr(port, "space: timer ticks 0x")

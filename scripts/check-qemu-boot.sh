@@ -12,7 +12,7 @@ SERIAL="$BUILD_DIR/serial.log"
 mkdir -p "$BUILD_DIR"
 
 echo "[1/3] Building compiler..."
-cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml" 2>&1 | grep -E "error" || true
+cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 
 echo "[2/3] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
@@ -27,8 +27,16 @@ NASM="${NASM:-nasm}"
 
 echo "[3/3] Booting and checking output..."
 rm -f "$SERIAL"
-timeout 15 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 256M \
-  -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null || true
+qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 256M \
+  -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null &
+QPID=$!
+for _ in $(seq 1 150); do
+  grep -qF "interactive shell" "$SERIAL" 2>/dev/null && break
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 0.1
+done
+kill "$QPID" 2>/dev/null || true
+wait "$QPID" 2>/dev/null || true
 
 # Core markers that must appear in normal boot
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
