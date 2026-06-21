@@ -2,13 +2,13 @@
 
 ## Architecture
 
-Space runs Windows, Darwin, and Linux programs natively through a fabric of
+Space is designed to run Windows, Darwin, and Linux programs through a fabric of
 `.in` capability microservices, not through syscall-translation layers or
 personality traps in kernel mode.
 
 The nanokernel provides only:
 
-- memory domains (page table isolation)
+- memory domain records; page-table isolation is still the Phase 0 blocker
 - channels (typed IPC)
 - capabilities (unforgeable authority)
 - scheduling (CPU time + thread primitives)

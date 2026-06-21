@@ -16,8 +16,7 @@ cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 
 echo "[2/3] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
-[ -f /tmp/trampoline.bin ] && cp /tmp/trampoline.bin "$BUILD_DIR/trampoline.bin" \
-  || "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
+"$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 [ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 8192 ] || { echo "trampoline size error" >&2; exit 1; }
 
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \

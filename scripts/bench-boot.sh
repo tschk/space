@@ -14,16 +14,7 @@ MARKER="interactive shell"
 
 mkdir -p "$BUILD_DIR"
 
-# Build trampoline if needed
-if [ ! -f "$BUILD_DIR/trampoline.bin" ]; then
-  if command -v nasm >/dev/null 2>&1; then
-    nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
-  elif [ -f /tmp/trampoline.bin ]; then
-    cp /tmp/trampoline.bin "$BUILD_DIR/trampoline.bin"
-  else
-    echo "bench: no trampoline found" >&2; exit 1
-  fi
-fi
+nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
 
 # Build kernel
 echo "==> Compiling kernel..."
@@ -39,6 +30,7 @@ RUNS=5
 total_ms=0; min_ms=99999; max_ms=0
 for i in $(seq 1 $RUNS); do
   rm -f "$OUTFILE"
+  t1=0
   t0=$(date +%s%N 2>/dev/null || date +%s000000000)
   # Start QEMU in background, capture serial output
   qemu-system-x86_64 -kernel "$KERNEL_BIN" -m 256M -serial stdio -display none -no-reboot \
@@ -56,6 +48,10 @@ for i in $(seq 1 $RUNS); do
   done
   kill "$QPID" 2>/dev/null || true
   wait "$QPID" 2>/dev/null || true
+  if [ "$t1" -eq 0 ]; then
+    echo "bench: missing marker '$MARKER' in run $i" >&2
+    exit 1
+  fi
   ms=$(( (t1 - t0) / 1000000 ))
   total_ms=$((total_ms + ms))
   [ "$ms" -lt "$min_ms" ] && min_ms=$ms

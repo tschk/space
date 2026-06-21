@@ -309,9 +309,11 @@ fn serial_nl(port: Int) -> void {
 
 fn serial_write_cstr(port: Int, addr: Int) -> void {
   let i = 0
-  while load8(addr + i) != 0 {
-    serial_put(port, load8(addr + i))
+  let c = load8(addr + i)
+  while c != 0 {
+    serial_put(port, c)
     i = i + 1
+    c = load8(addr + i)
   }
   return
 }
@@ -438,28 +440,32 @@ fn pt_index(virt: Int, shift: Int) -> Int {
 // page. The active PML4 is at physical 0x1000 (set up by the trampoline).
 fn map_page(virt: Int, phys: Int, flags: Int) -> void {
   let pml4 = 0x1000
-  let e4 = load64(pml4 + pt_index(virt, 39) * 8)
+  let i4 = pt_index(virt, 39)
+  let i3 = pt_index(virt, 30)
+  let i2 = pt_index(virt, 21)
+  let i1 = pt_index(virt, 12)
+  let e4 = load64(pml4 + i4 * 8)
   if (e4 & 1) == 0 {
     let np = frame_alloc()
-    store64(pml4 + pt_index(virt, 39) * 8, np | 3)
+    store64(pml4 + i4 * 8, np | 3)
     e4 = np | 3
   }
   let pdpt = e4 & -4096
-  let e3 = load64(pdpt + pt_index(virt, 30) * 8)
+  let e3 = load64(pdpt + i3 * 8)
   if (e3 & 1) == 0 {
     let np = frame_alloc()
-    store64(pdpt + pt_index(virt, 30) * 8, np | 3)
+    store64(pdpt + i3 * 8, np | 3)
     e3 = np | 3
   }
   let pd = e3 & -4096
-  let e2 = load64(pd + pt_index(virt, 21) * 8)
+  let e2 = load64(pd + i2 * 8)
   if (e2 & 1) == 0 {
     let np = frame_alloc()
-    store64(pd + pt_index(virt, 21) * 8, np | 3)
+    store64(pd + i2 * 8, np | 3)
     e2 = np | 3
   }
   let pt = e2 & -4096
-  store64(pt + pt_index(virt, 12) * 8, phys | flags)
+  store64(pt + i1 * 8, phys | flags)
   invlpg(virt)
   return
 }

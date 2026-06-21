@@ -56,14 +56,17 @@ fn elf_parse(base: Int) -> Int {
       let j = 0
       while j < pages {
         let frame = alloc(4096)
-        let remaining = p_memsz - j * 4096
+        let page_off = j * 4096
+        let remaining = p_memsz - page_off
         let copy_size = 4096
         if remaining < 4096 {
           copy_size = remaining
         }
+        let src = base + p_offset + page_off
+        let dst_vaddr = p_vaddr + page_off
         let k = 0
         while k < copy_size {
-          store8(frame + k, load8(base + p_offset + j * 4096 + k))
+          store8(frame + k, load8(src + k))
           k = k + 1
         }
 
@@ -73,7 +76,7 @@ fn elf_parse(base: Int) -> Int {
         if (p_flags & 2) != 0 { dm = dm | 2 }
         if (p_flags & 1) != 0 { dm = dm | 4 }
 
-        domain_map(domain_id, p_vaddr + j * 4096, frame / 4096, dm)
+        domain_map(domain_id, dst_vaddr, frame / 4096, dm)
         j = j + 1
       }
 

@@ -37,13 +37,14 @@ fn sci_load_binary(sci_data: Int, domain_id: Int) -> Int {
   let i = 0
   while i < pages {
     let frame = alloc(4096)
+    let page_off = i * 4096
     let j = 0
-    while j < 4096 && (i * 4096 + j) < text_size {
-      let src_byte = load8(text_addr + i * 4096 + j)
+    while j < 4096 && page_off + j < text_size {
+      let src_byte = load8(text_addr + page_off + j)
       store8(frame + j, src_byte)
       j = j + 1
     }
-    domain_map(domain_id, code_vaddr + i * 4096, frame / 4096, 0x5)  // r+x
+    domain_map(domain_id, code_vaddr + page_off, frame / 4096, 0x5)  // r+x
     i = i + 1
   }
 
@@ -53,13 +54,14 @@ fn sci_load_binary(sci_data: Int, domain_id: Int) -> Int {
   i = 0
   while i < data_pages {
     let frame = alloc(4096)
+    let page_off = i * 4096
     let j = 0
-    while j < 4096 && (i * 4096 + j) < data_size {
-      let src_byte = load8(data_addr + i * 4096 + j)
+    while j < 4096 && page_off + j < data_size {
+      let src_byte = load8(data_addr + page_off + j)
       store8(frame + j, src_byte)
       j = j + 1
     }
-    domain_map(domain_id, data_vaddr + i * 4096, frame / 4096, 0x3)  // r+w
+    domain_map(domain_id, data_vaddr + page_off, frame / 4096, 0x3)  // r+w
     i = i + 1
   }
 

@@ -7,7 +7,6 @@ Usage:
     python3 check-sci-contract.sh [--kernel KERNEL_IN] [--in COMPILER] [--trampoline TRAMP]
 """
 import json, os, subprocess, sys, tempfile
-import struct
 
 def check(label, ok):
     global passed, failed
@@ -39,13 +38,9 @@ def main():
         try: os.remove(f)
         except FileNotFoundError: pass
     if not os.path.exists(trampoline):
-        buf = bytearray(8192)
-        magic = 0x1BADB002
-        flags = 0
-        checksum = (-(magic + flags)) & 0xffffffff
-        buf[:12] = struct.pack("<III", magic, flags, checksum)
-        with open(trampoline, "wb") as f:
-            f.write(buf)
+        asm = os.path.join(os.path.dirname(__file__) or ".", "..", "boot", "multiboot.asm")
+        nasm = os.environ.get("NASM", "nasm")
+        subprocess.run([nasm, "-f", "bin", asm, "-o", trampoline], check=True, timeout=30)
 
     result = subprocess.run([
         in_bin, "compile",
@@ -55,6 +50,9 @@ def main():
         "--linkage", "static-lib",
         "--out", out_bin,
     ], capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        print(result.stderr)
+        sys.exit(result.returncode)
 
     if not os.path.exists(meta_path):
         print(f"FAIL: metadata sidecar not generated at {meta_path}")

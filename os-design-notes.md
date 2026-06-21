@@ -19,11 +19,11 @@ following, all observable on the serial console (`scripts/check-qemu-boot.sh`):
   vector / error-code / RIP / CR2 diagnostics
 - a capability-gated component supervisor that enforces the SCI loader rule
   (components requesting undeclared authority are denied before they run)
-- cooperative AND timer-driven preemptive multitasking with full x86_64 context
-  switching
+- cooperative AND timer-driven preemptive multitasking demo with x86_64
+  context-switch support
 - typed channels for inter-component IPC (producer/consumer over a ring buffer)
-- an SCI loader that loads a separately-compiled component, validates its binary
-  capability manifest against the realm's grants, then runs it
+- an SCI loader demo that calls a separately-compiled component in the current
+  address space after validating its binary capability manifest
 - an interactive serial shell (`help`, `status`, `mem`, `ticks`, `ps`, `test`,
   `snapshot`/`spawn`/`restore`, `map`, `sci`, `fault`, `divzero`, `echo`, `halt`)
 

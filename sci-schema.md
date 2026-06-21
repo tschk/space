@@ -90,7 +90,7 @@ The loader rejects an SCI when:
 | Real x86_64 function body lowering | ✅ Complete |
 | Metadata + code in same artifact | ✅ Complete |
 | Boot image enters `.in`-compiled `kernel_entry` in long mode under QEMU | ✅ Complete |
-| Loader validates SCI metadata against granted capabilities before entry | ✅ Complete |
+| Loader validates the binary SCI manifest capability mask before entry | ✅ Complete |
 
 ## Future Version Fields
 

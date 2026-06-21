@@ -27,9 +27,6 @@ mkdir -p "$BUILD_DIR"
 echo "[1/5] Building the compiler and trampoline..."
 cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 NASM="${NASM:-nasm}"
-if ! command -v "$NASM" >/dev/null 2>&1; then
-  NASM="/tmp/nasm-2.16.01/nasm"
-fi
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
 echo "[2/5] Compiling the nanokernel boot image..."

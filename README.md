@@ -42,14 +42,14 @@ The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), boots to x86_64 long
 mode under QEMU and verifies the boot-critical subsystems on every boot.
 
-Current boot output (~1230ms to shell):
+Current boot output (timing varies by host):
 
 ```
 space: kernel root entered
 space: object arena 0x...
 space: bootstrap realm object id 0x...
 space: interrupts enabled (PIC remapped, PIT 100Hz)
-space: timer ticks (5 samples)
+space: timer ticks (sample)
 space: supervisor loaded, component enforcing
 space: scheduler quiesced after 3 round-robin passes
 space: channel demo complete, remaining 0x0000000000000000
@@ -80,11 +80,11 @@ x86_64 machine code in a 48,224-byte boot image:
 | Typed IPC channels (ring buffer, poll-with-yield) | ✅ |
 | Object graph edges (typed references, DFS walk) | ✅ |
 | Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader (same-address-space component load, manifest/cap validation) | ✅ |
+| SCI loader demo (same-address-space component call, manifest/cap validation) | ✅ |
 | e1000 NIC driver (PCI, ARP, UDP) | ✅ |
 | Deterministic kernel workload + time-service tick source | ✅ |
 | Shell (16 commands: help, uptime, peek, poke, echo, ...) | ✅ |
-| Kernel benchmarks (boot timing, per-subsystem) | ✅ |
+| Kernel benchmark script (boot timing, approximate phase breakdown) | ✅ |
 | `free_frame` LIFO reclaim | ✅ |
 | `chan_select` multi-channel poll | ✅ |
 | `cap_revoke` | ✅ |
@@ -110,7 +110,7 @@ Phase 1: Cross-domain channels  ← NEXT (IPC between domains)
 Phase 2: Core microservices     ← proc.in and time.in exist; mem.in and rand.in planned
 Phase 3: Component loader       ← SCI runtime loads .in components
 Phase 4: Filesystem             ← fs.in as .in microservice
-Phase 5: Networking             ← net.in, TCP/IP stack
+Phase 5: Networking             ← e1000 ARP + UDP transmit path; TCP/IP stack planned
 Phase 6: Graphics               ← gfx.in compositor
 Phase 7: Compatibility          ← Linux/Darwin/Windows guests
 Phase 8: Distribution           ← remote components, migration
@@ -206,9 +206,9 @@ Space-branded targets to Inauguration.
   Space runtime → nanokernel enforcement
 ```
 
-The compiler generates authority, ownership, scheduling, imports, exports, and
-policy — not just machine code. The runtime loads, validates, and enforces
-before execution.
+The compiler emits machine code plus component metadata for authority, imports,
+exports, and policy fields. Runtime enforcement is currently limited to the
+verified loader checks.
 
 ## License
 
