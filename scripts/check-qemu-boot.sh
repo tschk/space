@@ -39,9 +39,11 @@ wait "$QPID" 2>/dev/null || true
 
 # Core markers that must appear in normal boot
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
+         "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
          "domain_create test -> id" "domain isolation test -> PASS" \
          "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
-         "channel demo complete" "interactive shell"; do
+         "channel demo complete" "preemptive scheduler" "preemption ended" \
+         "interactive shell"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done

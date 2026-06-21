@@ -5,7 +5,7 @@
 #
 # Memory layout of the combined image (loaded at 0x100000 by QEMU multiboot):
 #   0x100000  boot trampoline + nanokernel (the normal boot image)
-#   0x140000  16-byte SCI manifest: [magic][required_caps][entry][reserved]
+#   0x140000  32-byte SCI manifest: [magic][required_caps][entry][reserved]
 #   0x140020  guest-service component code (compiled with --base 0x140020)
 set -euo pipefail
 

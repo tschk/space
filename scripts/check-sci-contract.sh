@@ -6,7 +6,7 @@
 Usage:
     python3 check-sci-contract.sh [--kernel KERNEL_IN] [--in COMPILER] [--trampoline TRAMP]
 """
-import json, os, subprocess, sys, tempfile
+import json, os, subprocess, sys
 
 def check(label, ok):
     global passed, failed

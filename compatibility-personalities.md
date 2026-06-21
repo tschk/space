@@ -156,8 +156,8 @@ Each guest program gets its own memory domain (page table tree + TLB context).
 ```
 
 The service domain hosts all `.in` microservices. Microservices communicate
-through channels (cross-domain message passing). Guest domains cannot
-directly access each other or the service domain.
+through channels once CR3-backed domains are implemented. Guest domains are
+intended not to directly access each other or the service domain.
 
 Microservices CAN share an object graph region for performance (zero-copy
 data sharing between fs.in and net.in, for example). Guest domains never

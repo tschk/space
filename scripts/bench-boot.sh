@@ -4,7 +4,8 @@
 set -eu
 
 SPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-IN="$SPACE_DIR/../inauguration/in-cli/target/release/in"
+INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
+IN="$INAUG_DIR/in-cli/target/release/in"
 KERNEL_IN="$SPACE_DIR/kernel/kernel-root.in"
 TRAMPOLINE_ASM="$SPACE_DIR/boot/multiboot.asm"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-bench}"
@@ -18,6 +19,7 @@ nasm -f bin "$TRAMPOLINE_ASM" -o "$BUILD_DIR/trampoline.bin"
 
 # Build kernel
 echo "==> Compiling kernel..."
+cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 "$IN" compile \
   --path "$KERNEL_IN" --entry kernel_entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \

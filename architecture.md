@@ -288,7 +288,7 @@ Before execution begins, the runtime can answer:
 
 ### Loader Rule
 
-The loader rejects an SCI when:
+The intended loader rejects an SCI when:
 
 - a capability is used by code but absent from the manifest
 - an import has no granted provider
@@ -996,6 +996,8 @@ The shared page holds a simple ring buffer:
 
 ### Verification
 
+Target verification after CR3-backed domains are implemented:
+
 ```in
 fn test_domain_create() -> void {
   let d = domain_create()
@@ -1398,8 +1400,8 @@ fn pe_load(domain: Int, pe_addr: Int) -> Int
 - Serial console, physical memory discovery, page tables
 - Object graph arena, capability table, bootstrap realm
 - Cooperative + preemptive multitasking
-- Typed channels for inter-component IPC
-- SCI loader with capability validation
+- Typed in-address-space channel demo; cross-domain enforcement is blocked on Phase 0
+- SCI manifest loader demo with capability-mask validation
 - Interactive shell (16 commands)
 - e1000 NIC driver (UDP transmit, ARP)
 - Deterministic execution subsystem

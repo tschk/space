@@ -1448,7 +1448,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_cstr(port, "space: domain subsystem init, ")
   serial_write_dec_wide(port, domain_count)
   serial_write_cstr(port, " domains (kernel + ")
-  serial_write_dec_wide(port, MAX_DOMAINS - 1)
+  let available_domains = 63
+  serial_write_dec_wide(port, available_domains)
   serial_write_cstr(port, " available)")
   serial_nl(port)
 
