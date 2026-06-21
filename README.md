@@ -60,8 +60,8 @@ space>
 
 ### Running Subsystems
 
-The kernel is 90 declarations in 1517 lines of `.in`, emitting 41,447 bytes of
-x86_64 machine code in a 49,895-byte boot image:
+The kernel is 90 declarations in 1517 lines of `.in`, emitting 42,915 bytes of
+x86_64 machine code in a 51,363-byte boot image:
 
 | Subsystem | Status |
 |-----------|--------|

@@ -11,6 +11,7 @@ const DOMAIN_ACTIVE = 1
 const DOMAIN_SUSPENDED = 2
 const DOMAIN_DESTROYED = 3
 const DOMAIN_MAPPING_SIZE = 24
+const MAX_DOMAIN_MAPPINGS = 8
 
 var domain_table: Int = 0
 var domain_count: Int = 0
@@ -18,7 +19,7 @@ var domain_maps: Int = 0
 
 fn domain_init() -> void {
   domain_table = alloc(MAX_DOMAINS * 24)
-  domain_maps = alloc(MAX_DOMAINS * DOMAIN_MAPPING_SIZE)
+  domain_maps = alloc(MAX_DOMAINS * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE)
   let i = 0
   while i < MAX_DOMAINS {
     store64(domain_table + i * 24 + 0, 0)
@@ -48,14 +49,7 @@ fn copy_pml4(src_pml4: Int) -> Int {
 fn domain_create() -> Int {
   if domain_count >= MAX_DOMAINS { return 0 }
   let id = domain_count
-  let pml4 = frame_alloc()
-  if pml4 != 0 {
-    let i = 0
-    while i < 512 {
-      store64(pml4 + i * 8, 0)
-      i = i + 1
-    }
-  }
+  let pml4 = copy_pml4(0x1000)
   store64(domain_table + id * 24 + 0, pml4)
   store64(domain_table + id * 24 + 8, DOMAIN_ACTIVE)
   store64(domain_table + id * 24 + 16, 0)
@@ -72,11 +66,24 @@ fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
   // ponytail: page table manipulation disabled until copy works
   if domain >= domain_count { return }
   if domain_maps == 0 { return }
-  let maps = domain_maps + domain * DOMAIN_MAPPING_SIZE
-  store64(maps + 0, virt)
-  store64(maps + 8, phys)
-  store64(maps + 16, flags)
-  store64(domain_table + domain * 24 + 16, 1)
+  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
+  let count = load64(domain_table + domain * 24 + 16)
+  let i = 0
+  while i < count {
+    let m = maps + i * DOMAIN_MAPPING_SIZE
+    if load64(m + 0) == virt {
+      store64(m + 8, phys)
+      store64(m + 16, flags)
+      return
+    }
+    i = i + 1
+  }
+  if count >= MAX_DOMAIN_MAPPINGS { return }
+  let m = maps + count * DOMAIN_MAPPING_SIZE
+  store64(m + 0, virt)
+  store64(m + 8, phys)
+  store64(m + 16, flags)
+  store64(domain_table + domain * 24 + 16, count + 1)
   return
 }
 
@@ -84,12 +91,24 @@ fn domain_unmap(domain: Int, virt: Int) -> void {
   // ponytail: stub until full page table support
   if domain >= domain_count { return }
   if domain_maps == 0 { return }
-  let maps = domain_maps + domain * DOMAIN_MAPPING_SIZE
-  if load64(maps + 0) == virt {
-    store64(maps + 0, 0)
-    store64(maps + 8, 0)
-    store64(maps + 16, 0)
-    store64(domain_table + domain * 24 + 16, 0)
+  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
+  let count = load64(domain_table + domain * 24 + 16)
+  let i = 0
+  while i < count {
+    let m = maps + i * DOMAIN_MAPPING_SIZE
+    if load64(m + 0) == virt {
+      let last = count - 1
+      let lm = maps + last * DOMAIN_MAPPING_SIZE
+      store64(m + 0, load64(lm + 0))
+      store64(m + 8, load64(lm + 8))
+      store64(m + 16, load64(lm + 16))
+      store64(lm + 0, 0)
+      store64(lm + 8, 0)
+      store64(lm + 16, 0)
+      store64(domain_table + domain * 24 + 16, last)
+      return
+    }
+    i = i + 1
   }
   return
 }
@@ -118,6 +137,11 @@ fn domain_create_shared_page(dom_a: Int, dom_b: Int, virt_a: Int, virt_b: Int) -
 
 fn test_domain_create() -> Int {
   let d = domain_create()
+  if d == 0 { return 0 }
+  let pml4 = load64(domain_table + d * 24 + 0)
+  if pml4 == 0 { return 0 }
+  if pml4 == 0x1000 { return 0 }
+  if load64(pml4 + 0) != load64(0x1000 + 0) { return 0 }
   return d
 }
 
@@ -135,18 +159,22 @@ fn test_domain_isolation() -> Int {
   store64(page + 16, d2)
   if load64(page + 8) != d1 { return 0 }
   if load64(page + 16) != d2 { return 0 }
-  let m1 = domain_maps + d1 * DOMAIN_MAPPING_SIZE
-  let m2 = domain_maps + d2 * DOMAIN_MAPPING_SIZE
+  domain_map(d1, 0xFFFFA000, page + 4096, 0x1)
+  let m1 = domain_maps + d1 * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
+  let m2 = domain_maps + d2 * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
   if domain_maps == 0 { return 0 }
-  if load64(domain_table + d1 * 24 + 16) != 1 { return 0 }
+  if load64(domain_table + d1 * 24 + 16) != 2 { return 0 }
   if load64(domain_table + d2 * 24 + 16) != 1 { return 0 }
   if load64(m1 + 0) != 0xFFFF8000 { return 0 }
   if load64(m1 + 8) != page { return 0 }
   if load64(m1 + 16) != 0x3 { return 0 }
+  if load64(m1 + DOMAIN_MAPPING_SIZE + 0) != 0xFFFFA000 { return 0 }
+  if load64(m1 + DOMAIN_MAPPING_SIZE + 8) != page + 4096 { return 0 }
+  if load64(m1 + DOMAIN_MAPPING_SIZE + 16) != 0x1 { return 0 }
   if load64(m2 + 0) != 0xFFFF9000 { return 0 }
   if load64(m2 + 8) != page { return 0 }
   if load64(m2 + 16) != 0x3 { return 0 }
   domain_unmap(d1, 0xFFFF8000)
-  if load64(domain_table + d1 * 24 + 16) != 0 { return 0 }
+  if load64(domain_table + d1 * 24 + 16) != 1 { return 0 }
   return 1
 }
