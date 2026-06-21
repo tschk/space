@@ -5,8 +5,8 @@
 #
 # Memory layout of the combined image (loaded at 0x100000 by QEMU multiboot):
 #   0x100000  boot trampoline + nanokernel (the normal boot image)
-#   0x140000  32-byte SCI manifest: [magic][required_caps][entry][reserved]
-#   0x140020  guest-service component code (compiled with --base 0x140020)
+#   0x140000  32-byte SCI manifest: [magic][required_caps][virtual_entry][image_size]
+#   0x140020  guest-service component code, mapped at 0x40000020 in its domain
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,8 +16,9 @@ BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
 # ponytail: use release binary, not in-tree build
 IN="$INAUG_DIR/in-cli/target/release/in"
 
-GUEST_LOAD=$((0x140000))     # manifest address
-GUEST_BASE=$((0x140020))     # guest code base (after the 32-byte manifest)
+GUEST_LOAD=$((0x140000))     # physical manifest address in the boot image
+GUEST_VIRT_LOAD=$((0x40000000))
+GUEST_BASE=$((GUEST_VIRT_LOAD + 0x20))
 SCI_MAGIC=$((0x5343490000000001))
 GUEST_REQUIRED_CAPS=1        # serial; must match the guest's declared capability
 GUEST_DENIED_CAPS=4
@@ -69,7 +70,7 @@ manifest_off = gload - img_base       # file offset of the manifest
 assert len(kernel) <= manifest_off, "kernel image overlaps the guest load address"
 out = bytearray(kernel)
 out += b"\x00" * (manifest_off - len(out))          # pad to the manifest offset
-out += struct.pack("<QQQQ", magic, caps, gbase, 0)  # 32-byte SCI manifest
+out += struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest))  # 32-byte SCI manifest
 out += guest                                        # component code at gbase
 open(os.path.join(build, out_name), "wb").write(out)
 print(f"  {out_name}: {len(out)} bytes, manifest at 0x{gload:x}, guest at 0x{gbase:x}")
@@ -129,8 +130,9 @@ echo "--- SCI loader output ---"
 sed -n '/SCI: manifest ok/,/SCI: component returned status/p' "$BUILD_DIR/serial.log" 2>/dev/null || true
 echo "-------------------------"
 
-if grep -q "SCI: manifest ok, caps 0x0000000000000001 entry 0x0000000000140020" "$BUILD_DIR/serial.log" 2>/dev/null \
+if grep -q "SCI: manifest ok, caps 0x0000000000000001 entry 0x0000000040000020" "$BUILD_DIR/serial.log" 2>/dev/null \
    && grep -q "cap check passed" "$BUILD_DIR/serial.log" 2>/dev/null \
+   && grep -q "mapped 0x0000000000000001 pages" "$BUILD_DIR/serial.log" 2>/dev/null \
    && grep -q "SCI: component returned status 0x" "$BUILD_DIR/serial.log" 2>/dev/null \
    && ! grep -q "SCI: component returned status 0x000000000000dead" "$BUILD_DIR/serial.log" 2>/dev/null; then
   echo "PASS: SCI component loaded, validated, executed, and returned the expected status."

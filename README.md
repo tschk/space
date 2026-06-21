@@ -81,7 +81,7 @@ x86_64 machine code in a 55,047-byte boot image:
 | Typed IPC channels (ring buffer, poll-with-yield) | ✅ |
 | Object graph edges (typed references, DFS walk) | ✅ |
 | Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader demo (same-address-space component call, manifest/cap validation) | ✅ |
+| SCI loader demo (domain-mapped virtual component call, manifest/cap validation) | ✅ |
 | e1000 NIC driver (PCI, ARP, UDP) | ✅ |
 | Deterministic kernel workload + time-service tick source | ✅ |
 | Shell (16 commands: help, uptime, peek, poke, echo, ...) | ✅ |
@@ -117,9 +117,9 @@ Phase 7: Compatibility          ← Linux/Darwin/Windows guests
 Phase 8: Distribution           ← remote components, migration
 ```
 
-The current Phase 0 blocker is private service address-space loading: domains
-now switch CR3 to private low page-table roots, but isolated microservices are
-not enforced yet.
+The current Phase 0 blocker is service lifecycle wiring: the SCI demo now maps
+a component at a private virtual address in a switched domain, but proc/time/fs
+services are not loaded and scheduled as isolated microservices yet.
 
 ## Build and Run
 

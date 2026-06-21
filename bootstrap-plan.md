@@ -332,7 +332,7 @@ Compiler work left in Inauguration:
 
 Space work left here:
 
-- private service address-space loading beyond the current verified CR3 domain switch
+- service lifecycle wiring beyond the current verified domain-mapped SCI component call
 - cross-domain channels between isolated address spaces
 - promote proc/time/fs/net/gfx services from compiled contracts to isolated loaded components
 - implement nanokernel object/capability table vocabulary

@@ -100,9 +100,9 @@ fn sci_validate_manifest(sci_ptr: Int, realm_cap_info: Int) -> Int {
 // against the realm's grants before proceeding.
 fn guest_entry(realm_cap_info: Int) -> Int {
   let port = 0x3F8
-  // Our SCI header is at a well-known load address known at link time.
+  // Our SCI header is at a well-known virtual load address known at link time.
   // ponytail: hardcoded load base; retrieve from boot info in later phases.
-  let sci_ptr = 0x140000
+  let sci_ptr = 0x40000000
   let ok = sci_validate_manifest(sci_ptr, realm_cap_info)
   if ok == 0 {
     return 0xDEAD
