@@ -49,7 +49,7 @@ Do not add `x86_64-space` as an Inauguration target. The compiler should stay ge
 - Modify in Inauguration later: `in-cli/src/in_lang_parse.rs`
 - Test in Inauguration later: parser tests for component declarations
 
-- [ ] Step 1: Record unsupported syntax intentionally
+- [x] Step 1: Record unsupported syntax intentionally
 
 Run from Space:
 
@@ -59,7 +59,7 @@ Run from Space:
 
 Expected today: failure with a parser diagnostic, because `component`, `capability`, and `interface` are not implemented syntax yet.
 
-- [ ] Step 2: Add generic parser support in Inauguration
+- [x] Step 2: Add generic parser support in Inauguration
 
 Implement generic `.in` component declarations, capability declarations, imports, exports, and interface declarations in `../inauguration/in-cli/src/in_lang_parse.rs`.
 
@@ -74,7 +74,7 @@ The parser output should preserve:
 - capability declarations
 - interface method signatures
 
-- [ ] Step 3: Add Inauguration parser tests
+- [x] Step 3: Add Inauguration parser tests
 
 Run from `../inauguration`:
 
@@ -85,7 +85,7 @@ cargo test -q in_lang_parse::tests::parse_capability_declaration --manifest-path
 
 Expected after implementation: both pass.
 
-- [ ] Step 4: Re-run Space examples
+- [x] Step 4: Re-run Space examples
 
 Run from Space:
 
@@ -105,7 +105,7 @@ Expected after implementation: successful parse/metadata extraction or an explic
 - Create in Inauguration: `scripts/check-component-metadata.sh`
 - Modify in Space: `sci-schema.md`
 
-- [ ] Step 1: Define generic metadata fields in Inauguration
+- [x] Step 1: Define generic metadata fields in Inauguration
 
 Add generic component metadata structs for:
 
@@ -119,11 +119,11 @@ Add generic component metadata structs for:
 - checkpoint policy
 - deterministic policy
 
-- [ ] Step 2: Emit JSON metadata sidecar
+- [x] Step 2: Emit JSON metadata sidecar
 
 Add a generic compile option or report field that writes component metadata beside existing artifacts. Use generic names such as `component-metadata`, not `space`.
 
-- [ ] Step 3: Add Inauguration check script
+- [x] Step 3: Add Inauguration check script
 
 Create `../inauguration/scripts/check-component-metadata.sh` that compiles a generic `.in` component sample and validates JSON keys.
 
@@ -135,7 +135,7 @@ bash scripts/check-component-metadata.sh
 
 Expected: metadata contains component identity, capabilities, imports, exports, and target.
 
-- [ ] Step 4: Sync Space SCI profile
+- [x] Step 4: Sync Space SCI profile
 
 Update `sci-schema.md` only after the generic metadata shape exists. Space may add stricter loader rules here without requiring Inauguration to know the Space product name.
 
@@ -148,7 +148,7 @@ Update `sci-schema.md` only after the generic metadata shape exists. Space may a
 - Modify in Inauguration: `in-cli/src/native_emit/target.rs`
 - Create in Inauguration: `scripts/check-freestanding-x86_64.sh`
 
-- [ ] Step 1: Add failing dispatch test
+- [x] Step 1: Add failing dispatch test
 
 Add a test in `native_emit::object` requiring:
 
@@ -166,11 +166,11 @@ cargo test -q native_emit::object::tests::dispatches_x86_64_unknown_none_object 
 
 Expected before implementation: fail because dispatch is unsupported.
 
-- [ ] Step 2: Implement minimal freestanding object dispatch
+- [x] Step 2: Implement minimal freestanding object dispatch
 
 Route `x86_64-unknown-none` to the existing x86_64 ELF relocatable writer, but report it as freestanding and keep Linux executable support separate.
 
-- [ ] Step 3: Add script gate
+- [x] Step 3: Add script gate
 
 Create `scripts/check-freestanding-x86_64.sh` that compiles:
 
@@ -186,7 +186,7 @@ Expected checks:
 - exported `kernel_entry`
 - no Linux `syscall` instruction requirement
 
-- [ ] Step 4: Run gates
+- [x] Step 4: Run gates
 
 Run from Inauguration:
 
@@ -207,7 +207,7 @@ Expected: all pass.
 - Modify in Inauguration: `in-cli/src/native_emit/object.rs`
 - Modify in Inauguration: `in-cli/src/owned_compile.rs`
 
-- [ ] Step 1: Add instruction encoding tests
+- [x] Step 1: Add instruction encoding tests
 
 Add tests for:
 
@@ -227,11 +227,11 @@ cargo test -q native_emit::x86_64 --manifest-path in-cli/Cargo.toml
 
 Expected before implementation: fail because module does not exist.
 
-- [ ] Step 2: Implement instruction encoder
+- [x] Step 2: Implement instruction encoder
 
 Implement the minimal x86_64 encoder needed for scalar functions.
 
-- [ ] Step 3: Add Core IR lowering tests
+- [x] Step 3: Add Core IR lowering tests
 
 Support:
 
@@ -249,7 +249,7 @@ cargo test -q native_emit::x86_64_lower --manifest-path in-cli/Cargo.toml
 
 Expected after implementation: tests pass and unsupported constructs fail closed.
 
-- [ ] Step 4: Route freestanding object through real lowering
+- [x] Step 4: Route freestanding object through real lowering
 
 For `x86_64-unknown-none` static-lib, lower eligible Core IR functions into `.text` rather than const-eval-only stubs.
 
@@ -270,11 +270,11 @@ Expected: object contains function code for at least one non-const direct call s
 - Create in Space: `scripts/check-qemu-boot.sh`
 - Create in Space: `kernel/kernel-root.in`
 
-- [ ] Step 1: Choose boot substrate
+- [x] Step 1: Choose boot substrate
 
-Use Limine first unless a later decision changes it. The assembly shim may set stack and enter `.in`-compiled `kernel_entry`.
+Use the existing Multiboot1 trampoline. The assembly shim sets long mode state and enters `.in`-compiled `kernel_entry`.
 
-- [ ] Step 2: Add QEMU script
+- [x] Step 2: Add QEMU script
 
 Create `scripts/check-qemu-boot.sh` that:
 
@@ -284,7 +284,7 @@ Create `scripts/check-qemu-boot.sh` that:
 - runs QEMU x86_64
 - checks serial output for `space: kernel root entered`
 
-- [ ] Step 3: Run boot check
+- [x] Step 3: Run boot check
 
 Run from Space:
 
@@ -301,7 +301,7 @@ Expected after implementation: QEMU exits after printing the serial marker.
 - Create in Space: `scripts/check-sci-contract.sh`
 - Modify in Inauguration: generic component metadata emitter from Task 2
 
-- [ ] Step 1: Generate generic metadata from Inauguration
+- [x] Step 1: Generate generic metadata from Inauguration
 
 Run from Space:
 
@@ -311,7 +311,7 @@ Run from Space:
 
 Expected: object artifact plus generic component metadata sidecar.
 
-- [ ] Step 2: Validate Space SCI profile
+- [x] Step 2: Validate Space SCI profile
 
 Create a Space script that validates the generic metadata against `sci-schema.md` rules.
 
@@ -327,23 +327,16 @@ Expected: required capabilities, imports, exports, target, and provenance are pr
 
 Compiler work left in Inauguration:
 
-- generic component declaration parsing
-- generic capability/interface/object-schema metadata
-- `x86_64-unknown-none` freestanding object route
-- real x86_64 Core IR lowering
-- multi-function object symbols and relocations
-- generic metadata sidecar suitable for SCI transformation
-- QEMU-friendly freestanding test gate
+- multi-function object relocations beyond the currently verified lowering subset
+- deeper service/component entry validation for all non-root Space modules
 
 Space work left here:
 
-- move examples into `kernel/` once syntax is implemented
-- choose and wire Limine or UEFI boot substrate
-- define linker script and serial output ABI
-- create Space SCI validator
+- CR3-backed domain isolation beyond the current verified domain metadata and tests
+- cross-domain channels between isolated address spaces
+- promote proc/time/fs/net/gfx services from compiled contracts to isolated loaded components
 - implement nanokernel object/capability table vocabulary
-- boot one `.in`-compiled kernel entry in QEMU
-- load one `.in` supervisor component from SCI metadata
+- load one `.in` supervisor component from SCI metadata into its own domain
 
 ## Phase After First Boot: Nanokernel In `.in`
 
