@@ -12,4 +12,4 @@ In Progress
 - `scripts/check-sci-contract.sh` — SCI metadata check is self-contained
 
 ## Notes
-Latest verified boot image is 51,363 bytes with 42,915 bytes of x86_64 kernel code.
+Latest verified boot image is 51,978 bytes with 43,530 bytes of x86_64 kernel code.

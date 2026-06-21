@@ -113,6 +113,38 @@ fn domain_unmap(domain: Int, virt: Int) -> void {
   return
 }
 
+fn domain_translate(domain: Int, virt: Int) -> Int {
+  if domain >= domain_count { return 0 }
+  if domain_maps == 0 { return 0 }
+  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
+  let count = load64(domain_table + domain * 24 + 16)
+  let i = 0
+  while i < count {
+    let m = maps + i * DOMAIN_MAPPING_SIZE
+    if load64(m + 0) == virt {
+      return load64(m + 8)
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn domain_mapping_flags(domain: Int, virt: Int) -> Int {
+  if domain >= domain_count { return 0 }
+  if domain_maps == 0 { return 0 }
+  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
+  let count = load64(domain_table + domain * 24 + 16)
+  let i = 0
+  while i < count {
+    let m = maps + i * DOMAIN_MAPPING_SIZE
+    if load64(m + 0) == virt {
+      return load64(m + 16)
+    }
+    i = i + 1
+  }
+  return 0
+}
+
 fn domain_destroy(id: Int) -> void {
   if id > 0 && id < domain_count {
     store64(domain_table + id * 24 + 8, DOMAIN_DESTROYED)
@@ -160,21 +192,18 @@ fn test_domain_isolation() -> Int {
   if load64(page + 8) != d1 { return 0 }
   if load64(page + 16) != d2 { return 0 }
   domain_map(d1, 0xFFFFA000, page + 4096, 0x1)
-  let m1 = domain_maps + d1 * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
-  let m2 = domain_maps + d2 * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
   if domain_maps == 0 { return 0 }
   if load64(domain_table + d1 * 24 + 16) != 2 { return 0 }
   if load64(domain_table + d2 * 24 + 16) != 1 { return 0 }
-  if load64(m1 + 0) != 0xFFFF8000 { return 0 }
-  if load64(m1 + 8) != page { return 0 }
-  if load64(m1 + 16) != 0x3 { return 0 }
-  if load64(m1 + DOMAIN_MAPPING_SIZE + 0) != 0xFFFFA000 { return 0 }
-  if load64(m1 + DOMAIN_MAPPING_SIZE + 8) != page + 4096 { return 0 }
-  if load64(m1 + DOMAIN_MAPPING_SIZE + 16) != 0x1 { return 0 }
-  if load64(m2 + 0) != 0xFFFF9000 { return 0 }
-  if load64(m2 + 8) != page { return 0 }
-  if load64(m2 + 16) != 0x3 { return 0 }
+  if domain_translate(d1, 0xFFFF8000) != page { return 0 }
+  if domain_mapping_flags(d1, 0xFFFF8000) != 0x3 { return 0 }
+  if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
+  if domain_mapping_flags(d1, 0xFFFFA000) != 0x1 { return 0 }
+  if domain_translate(d2, 0xFFFF9000) != page { return 0 }
+  if domain_mapping_flags(d2, 0xFFFF9000) != 0x3 { return 0 }
   domain_unmap(d1, 0xFFFF8000)
   if load64(domain_table + d1 * 24 + 16) != 1 { return 0 }
+  if domain_translate(d1, 0xFFFF8000) != 0 { return 0 }
+  if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
   return 1
 }
