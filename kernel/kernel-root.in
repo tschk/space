@@ -6,7 +6,6 @@ import "determinism.in"
 import "pci.in"
 // Cross-domain channel fabric.
 import "channel.in"
-// SCI loader integration (loader.in reserved for future domain-aware loading)
 // Intel e1000 NIC driver.
 import "net.in"
 // Memory domain subsystem (Phase 0).

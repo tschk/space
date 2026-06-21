@@ -28,7 +28,7 @@ in compile --path kernel/kernel-root.in --out kernel/kernel-root.o \
   --target native --entry elf_parse \
   --target-triple x86_64-unknown-none --linkage static-lib --json
 ```
-Note: standalone compile of elf-loader.in fails on unresolved symbols (same as loader.in — both imported into kernel-root.in).
+Note: standalone compile of elf-loader.in fails on unresolved symbols because it is imported into kernel-root.in.
 
 ### Skipped
 - BSS zeroing (assumes filesz == memsz for PT_LOAD) — add when ELF binaries use BSS

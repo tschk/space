@@ -150,7 +150,6 @@ kernel/
   kernel-root.in          nanokernel (1510 lines, 90 declarations)
   domain.in               Phase 0 memory domains
   channel.in              Phase 1 channel fabric
-  loader.in               Phase 3 loader integration
 services/
   proc.in                 process lifecycle service
   time.in                 deterministic monotonic time service

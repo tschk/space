@@ -17,10 +17,9 @@ Space repo:
 - `AGENTS.md`: repository workflow and boundaries.
 - `bootstrap-plan.md`: this implementation plan.
 - `sci-schema.md`: Space SCI profile.
-- `examples/kernel-root.in`: target kernel-root component contract.
-- `examples/bootstrap-supervisor.in`: target supervisor component contract.
-- future `kernel/`: Space nanokernel `.in` sources.
-- future `boot/`: boot-image config, linker scripts, and QEMU harness.
+- `kernel/kernel-root.in`: nanokernel root component contract.
+- `kernel/guest-service.in`: separately compiled SCI guest component contract.
+- `boot/`: boot-image trampoline and QEMU substrate.
 
 Inauguration repo:
 
@@ -30,7 +29,7 @@ Inauguration repo:
 - `in-cli/src/core_ir.rs`: generic IR model.
 - `in-cli/src/boundary_emit.rs` and `in-cli/src/boundary_ir.rs`: generic ABI/capability/object metadata.
 - `scripts/check-target-matrix.sh`: generic target checks.
-- future generic script names such as `scripts/check-freestanding-x86_64.sh`.
+- `scripts/check-freestanding-x86_64.sh`: generic freestanding x86_64 gate.
 
 ## Compiler Targets
 
@@ -41,23 +40,23 @@ Space needs two target identities:
 
 Do not add `x86_64-space` as an Inauguration target. The compiler should stay generic; Space can map its native profile to generic freestanding compiler outputs and Space-owned SCI metadata.
 
-## Task 1: Keep Space Examples Parse-Visible
+## Task 1: Keep Space Sources Parse-Visible
 
 **Files:**
-- Modify: `examples/kernel-root.in`
-- Modify: `examples/bootstrap-supervisor.in`
-- Modify in Inauguration later: `in-cli/src/in_lang_parse.rs`
-- Test in Inauguration later: parser tests for component declarations
+- Modify: `kernel/kernel-root.in`
+- Modify: `kernel/guest-service.in`
+- Modify in Inauguration: `in-cli/src/in_lang_parse.rs`
+- Test in Inauguration: parser tests for component declarations
 
 - [x] Step 1: Record unsupported syntax intentionally
 
 Run from Space:
 
 ```bash
-../inauguration/target/release/in compile --path examples/kernel-root.in --target bytecode --json
+../inauguration/target/release/in graph --path kernel/kernel-root.in --json
 ```
 
-Expected today: failure with a parser diagnostic, because `component`, `capability`, and `interface` are not implemented syntax yet.
+Expected before implementation: failure with a parser diagnostic, because `component`, `capability`, and `interface` are not implemented syntax yet.
 
 - [x] Step 2: Add generic parser support in Inauguration
 
@@ -90,8 +89,8 @@ Expected after implementation: both pass.
 Run from Space:
 
 ```bash
-../inauguration/target/release/in compile --path examples/kernel-root.in --target bytecode --json
-../inauguration/target/release/in compile --path examples/bootstrap-supervisor.in --target bytecode --json
+../inauguration/target/release/in graph --path kernel/kernel-root.in --json
+../inauguration/target/release/in graph --path kernel/guest-service.in --json
 ```
 
 Expected after implementation: successful parse/metadata extraction or an explicit unsupported-lowering diagnostic. A silent host-native fallback is failure.
