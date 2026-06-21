@@ -133,6 +133,7 @@ echo "-------------------------"
 if grep -q "SCI: manifest ok, caps 0x0000000000000001 entry 0x0000000040000020" "$BUILD_DIR/serial.log" 2>/dev/null \
    && grep -q "cap check passed" "$BUILD_DIR/serial.log" 2>/dev/null \
    && grep -q "mapped 0x0000000000000001 pages" "$BUILD_DIR/serial.log" 2>/dev/null \
+   && grep -q "SCI: registered component object id 0x" "$BUILD_DIR/serial.log" 2>/dev/null \
    && grep -q "SCI: component returned status 0x" "$BUILD_DIR/serial.log" 2>/dev/null \
    && ! grep -q "SCI: component returned status 0x000000000000dead" "$BUILD_DIR/serial.log" 2>/dev/null; then
   echo "PASS: SCI component loaded, validated, executed, and returned the expected status."

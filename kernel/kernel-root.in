@@ -726,16 +726,18 @@ fn cap_timer() -> Int { return 2 }
 fn cap_memory() -> Int { return 4 }
 fn cap_graph() -> Int { return 8 }
 
-// Register a component as an object in the graph (40 bytes):
-// [id][type=5][entry_addr][required_caps][name_addr].
+// Register a component as an object in the graph (56 bytes):
+// [id][type=5][entry_addr][required_caps][name_addr][domain_id][last_status].
 fn component_register(name: Int, entry: Int, required: Int) -> Int {
-  let c = obj_bump(40)
+  let c = obj_bump(56)
   obj_counter = obj_counter + 1
   store64(c + 0, obj_counter)
   store64(c + 8, 5)
   store64(c + 16, entry)
   store64(c + 24, required)
   store64(c + 32, name)
+  store64(c + 40, 0)
+  store64(c + 48, 0)
   return c
 }
 
@@ -1108,6 +1110,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
     serial_nl(port)
     return -1
   }
+  let component = component_register("sci-guest", entry, required)
   let virt_load = entry - 32
   let image_pages = (image_size + 4095) / 4096
   let i = 0
@@ -1121,6 +1124,11 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_hex(port, image_pages)
   serial_write_cstr(port, " pages, cap check passed")
   serial_nl(port)
+  store64(component + 40, domain)
+  obj_link(root_realm, 1, component)
+  serial_write_cstr(port, "  SCI: registered component object id 0x")
+  serial_write_hex(port, obj_id(component))
+  serial_nl(port)
   serial_flush(port)
   // Pack realm cap table info for guest: [cap_count][cap_table_base].
   let cap_info = alloc(16)
@@ -1129,6 +1137,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   domain_switch(domain)
   let status = invoke1(entry, cap_info)
   domain_switch(0)
+  store64(component + 48, status)
   serial_write_cstr(port, "  SCI: component returned status 0x")
   serial_write_hex(port, status)
   serial_nl(port)
