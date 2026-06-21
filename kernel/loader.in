@@ -44,7 +44,7 @@ fn sci_load_binary(sci_data: Int, domain_id: Int) -> Int {
       store8(frame + j, src_byte)
       j = j + 1
     }
-    domain_map(domain_id, code_vaddr + page_off, frame / 4096, 0x5)  // r+x
+    domain_map(domain_id, code_vaddr + page_off, frame, 0x5)  // r+x
     i = i + 1
   }
 
@@ -61,14 +61,14 @@ fn sci_load_binary(sci_data: Int, domain_id: Int) -> Int {
       store8(frame + j, src_byte)
       j = j + 1
     }
-    domain_map(domain_id, data_vaddr + page_off, frame / 4096, 0x3)  // r+w
+    domain_map(domain_id, data_vaddr + page_off, frame, 0x3)  // r+w
     i = i + 1
   }
 
   // Map stack page
   let stack_vaddr = 0x7FF000 - stack_size
   let stack_frame = alloc(4096)
-  domain_map(domain_id, stack_vaddr, stack_frame / 4096, 0x3)
+  domain_map(domain_id, stack_vaddr, stack_frame, 0x3)
 
   serial_write_cstr(COM1_PORT, "sci: loaded, entry 0x")
   serial_write_hex(COM1_PORT, entry)

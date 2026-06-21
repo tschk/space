@@ -76,7 +76,7 @@ fn elf_parse(base: Int) -> Int {
         if (p_flags & 2) != 0 { dm = dm | 2 }
         if (p_flags & 1) != 0 { dm = dm | 4 }
 
-        domain_map(domain_id, dst_vaddr, frame / 4096, dm)
+        domain_map(domain_id, dst_vaddr, frame, dm)
         j = j + 1
       }
 

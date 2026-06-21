@@ -60,8 +60,8 @@ space>
 
 ### Running Subsystems
 
-The kernel is 90 declarations in 1517 lines of `.in`, emitting 43,530 bytes of
-x86_64 machine code in a 51,978-byte boot image:
+The kernel is 90 declarations in 1517 lines of `.in`, emitting 46,599 bytes of
+x86_64 machine code in a 55,047-byte boot image:
 
 | Subsystem | Status |
 |-----------|--------|
@@ -69,7 +69,7 @@ x86_64 machine code in a 51,978-byte boot image:
 | Serial console (COM1, TX buffered) | ✅ |
 | Physical memory discovery | ✅ |
 | Bump heap + 4K frame allocator | ✅ |
-| 4-level page table management | ✅ |
+| Kernel 4-level page table management | ✅ |
 | Object graph arena (typed objects, stable IDs) | ✅ |
 | Capability table (minting, runtime check) | ✅ |
 | IDT (256-entry), PIC remap, PIT 100Hz | ✅ |

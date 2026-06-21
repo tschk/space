@@ -62,10 +62,60 @@ fn domain_switch(id: Int) -> void {
   return
 }
 
+fn domain_install_mapping(domain: Int, virt: Int, phys: Int, flags: Int) -> Int {
+  if domain >= domain_count { return 0 }
+  let pml4 = load64(domain_table + domain * 24 + 0)
+  if pml4 == 0 { return 0 }
+  let i4 = (virt >> 39) & 0x1FF
+  let i3 = (virt >> 30) & 0x1FF
+  let i2 = (virt >> 21) & 0x1FF
+  let i1 = (virt >> 12) & 0x1FF
+  let e4 = load64(pml4 + i4 * 8)
+  if (e4 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pml4 + i4 * 8, np | 3)
+    e4 = np | 3
+  }
+  let pdpt = e4 & -4096
+  let e3 = load64(pdpt + i3 * 8)
+  if (e3 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pdpt + i3 * 8, np | 3)
+    e3 = np | 3
+  }
+  let pd = e3 & -4096
+  let e2 = load64(pd + i2 * 8)
+  if (e2 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pd + i2 * 8, np | 3)
+    e2 = np | 3
+  }
+  let pt = e2 & -4096
+  store64(pt + i1 * 8, phys | flags | 1)
+  return 1
+}
+
+fn domain_page_entry(domain: Int, virt: Int) -> Int {
+  if domain >= domain_count { return 0 }
+  let pml4 = load64(domain_table + domain * 24 + 0)
+  if pml4 == 0 { return 0 }
+  let i4 = (virt >> 39) & 0x1FF
+  let i3 = (virt >> 30) & 0x1FF
+  let i2 = (virt >> 21) & 0x1FF
+  let i1 = (virt >> 12) & 0x1FF
+  let e4 = load64(pml4 + i4 * 8)
+  if (e4 & 1) == 0 { return 0 }
+  let e3 = load64((e4 & -4096) + i3 * 8)
+  if (e3 & 1) == 0 { return 0 }
+  let e2 = load64((e3 & -4096) + i2 * 8)
+  if (e2 & 1) == 0 { return 0 }
+  return load64((e2 & -4096) + i1 * 8)
+}
+
 fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
-  // ponytail: page table manipulation disabled until copy works
   if domain >= domain_count { return }
   if domain_maps == 0 { return }
+  if domain_install_mapping(domain, virt, phys, flags) == 0 { return }
   let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
   let count = load64(domain_table + domain * 24 + 16)
   let i = 0
@@ -88,9 +138,9 @@ fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
 }
 
 fn domain_unmap(domain: Int, virt: Int) -> void {
-  // ponytail: stub until full page table support
   if domain >= domain_count { return }
   if domain_maps == 0 { return }
+  domain_clear_mapping(domain, virt)
   let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
   let count = load64(domain_table + domain * 24 + 16)
   let i = 0
@@ -110,6 +160,24 @@ fn domain_unmap(domain: Int, virt: Int) -> void {
     }
     i = i + 1
   }
+  return
+}
+
+fn domain_clear_mapping(domain: Int, virt: Int) -> void {
+  if domain >= domain_count { return }
+  let pml4 = load64(domain_table + domain * 24 + 0)
+  if pml4 == 0 { return }
+  let i4 = (virt >> 39) & 0x1FF
+  let i3 = (virt >> 30) & 0x1FF
+  let i2 = (virt >> 21) & 0x1FF
+  let i1 = (virt >> 12) & 0x1FF
+  let e4 = load64(pml4 + i4 * 8)
+  if (e4 & 1) == 0 { return }
+  let e3 = load64((e4 & -4096) + i3 * 8)
+  if (e3 & 1) == 0 { return }
+  let e2 = load64((e3 & -4096) + i2 * 8)
+  if (e2 & 1) == 0 { return }
+  store64((e2 & -4096) + i1 * 8, 0)
   return
 }
 
@@ -197,13 +265,17 @@ fn test_domain_isolation() -> Int {
   if load64(domain_table + d2 * 24 + 16) != 1 { return 0 }
   if domain_translate(d1, 0xFFFF8000) != page { return 0 }
   if domain_mapping_flags(d1, 0xFFFF8000) != 0x3 { return 0 }
+  if (domain_page_entry(d1, 0xFFFF8000) & -4096) != page { return 0 }
   if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
   if domain_mapping_flags(d1, 0xFFFFA000) != 0x1 { return 0 }
+  if (domain_page_entry(d1, 0xFFFFA000) & -4096) != page + 4096 { return 0 }
   if domain_translate(d2, 0xFFFF9000) != page { return 0 }
   if domain_mapping_flags(d2, 0xFFFF9000) != 0x3 { return 0 }
+  if (domain_page_entry(d2, 0xFFFF9000) & -4096) != page { return 0 }
   domain_unmap(d1, 0xFFFF8000)
   if load64(domain_table + d1 * 24 + 16) != 1 { return 0 }
   if domain_translate(d1, 0xFFFF8000) != 0 { return 0 }
+  if domain_page_entry(d1, 0xFFFF8000) != 0 { return 0 }
   if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
   return 1
 }
