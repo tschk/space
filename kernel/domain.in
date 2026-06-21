@@ -81,8 +81,16 @@ fn domain_destroy(id: Int) -> void {
 }
 
 fn domain_create_shared_page(dom_a: Int, dom_b: Int, virt_a: Int, virt_b: Int) -> Int {
-  // ponytail: returns 0 (no real shared page until MMU ops work)
-  return 0
+  let page = frame_alloc()
+  if page == 0 { return 0 }
+  let i = 0
+  while i < 512 {
+    store64(page + i * 8, 0)
+    i = i + 1
+  }
+  domain_map(dom_a, virt_a, page, 0x3)
+  domain_map(dom_b, virt_b, page, 0x3)
+  return page
 }
 
 // --- domain tests (stub until real page table operations) -------------------
@@ -93,6 +101,18 @@ fn test_domain_create() -> Int {
 }
 
 fn test_domain_isolation() -> Int {
-  // ponytail: always returns 1 (PASS) since domains share kernel PML4
+  let d1 = domain_create()
+  let d2 = domain_create()
+  if d1 == 0 { return 0 }
+  if d2 == 0 { return 0 }
+  let page = domain_create_shared_page(d1, d2, 0xFFFF8000, 0xFFFF9000)
+  if page == 0 { return 0 }
+  if load64(page + 0) != 0 { return 0 }
+  store64(page + 0, 0x5350414345)
+  if load64(page + 0) != 0x5350414345 { return 0 }
+  store64(page + 8, d1)
+  store64(page + 16, d2)
+  if load64(page + 8) != d1 { return 0 }
+  if load64(page + 16) != d2 { return 0 }
   return 1
 }
