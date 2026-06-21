@@ -3,7 +3,7 @@
 // ponytail: no kernel alloc, no hardware access. Files are Int values
 // stored in local variables. Real impl uses loader heap + block device.
 component FileSystem {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic true
   checkpoint none
 

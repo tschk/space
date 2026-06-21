@@ -229,7 +229,7 @@ become unified.
 
 ## SCI (Space Component Image)
 
-SCI replaces ELF.
+SCI replaces ELF as the native Space runtime contract.
 
 ### Today
 
@@ -1233,7 +1233,7 @@ const SOCK_DGRAM = 2
 
 ### Dependencies
 
-- NIC driver (e1000.in already exists in kernel)
+- NIC driver (`kernel/net.in` contains the current e1000 path)
 - TCP/IP stack (could be a separate .in component: tcpip.in)
 - DNS resolver (dns.in)
 - TLS handshake (tls.in)
@@ -1243,7 +1243,7 @@ const SOCK_DGRAM = 2
 - `services/tcpip.in`
 - `services/dns.in`
 - `services/tls.in`
-- `drivers/e1000.in` — existing, move to driver domain
+- `kernel/net.in` — current e1000 path; split to a driver domain when domains enforce isolation
 
 ---
 
@@ -1416,28 +1416,22 @@ fn pe_load(domain: Int, pe_addr: Int) -> Int
 ```
 /Users/undivisible/projects/space/
   kernel/
-    kernel-root.in        nanokernel (1420 lines, 88 functions)
+    kernel-root.in        nanokernel (1506 lines, 90 declarations)
     domain.in             Phase 0 - multiple memory domains
     channel.in            Phase 1 - cross-domain channels
     loader.in             Phase 3 - SCI loader
   services/
     proc.in               Phase 2 - process lifecycle
-    mem.in                Phase 2 - memory management
     time.in               Phase 2 - clock and timer
-    rand.in               Phase 2 - entropy
     fs.in                 Phase 4 - filesystem
     net.in                Phase 5 - networking
     gfx.in                Phase 6 - graphics
-    linux-compat.in       Phase 7 - Linux binary compat
-    darwin-compat.in      Phase 7 - Darwin binary compat
-    win-compat.in         Phase 7 - Windows binary compat
-  drivers/
-    e1000.in              NIC driver
-  arch/
-    architecture.md       This document
-    os-design-notes.md    Original design notes
-    sci-schema.md         SCI format specification
-    bootstrap-plan.md     Original bootstrap plan
-    compatibility-personalities.md   Microservice compat model
+  boot/
+    multiboot.asm         x86_64 CPU bring-up
+  scripts/
+    check-qemu-boot.sh    Full boot verification
+    check-sci-contract.sh Metadata validation
+  sci-schema.md           SCI format specification
+  bootstrap-plan.md       Original bootstrap plan
+  compatibility-personalities.md   Microservice compat model
 ```
-

@@ -40,7 +40,7 @@ layer.
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), boots to x86_64 long
-mode under QEMU and verifies every subsystem on every boot.
+mode under QEMU and verifies the boot-critical subsystems on every boot.
 
 Current boot output (~1230ms to shell):
 
@@ -60,8 +60,8 @@ space>
 
 ### Running Subsystems
 
-The kernel is 88 functions in 1420 lines of `.in`, emitting ~35 KB of x86_64
-machine code:
+The kernel is 90 declarations in 1506 lines of `.in`, emitting 38,996 bytes of
+x86_64 machine code in a 47,444-byte boot image:
 
 | Subsystem | Status |
 |-----------|--------|
@@ -93,11 +93,11 @@ machine code:
 
 | Arch | Compiler Status | Kernel Status |
 |------|----------------|---------------|
-| x86_64 | ✅ Native lowering, boot image, ELF object | ✅ Boots, all subsystems |
+| x86_64 | ✅ Native lowering, boot image, ELF object | ✅ Boots verified subsystems |
 | ARM64 | ⬜ Planned (SCI table) | ⬜ |
 | RISC-V | ⬜ | ⬜ |
 
-The Inauguration compiler emits freestanding x86_64 code with full SCI metadata.
+The Inauguration compiler emits freestanding x86_64 code with SCI metadata for the verified kernel contract.
 Multi-platform lowering is a target for future phases.
 
 ## Implementation Roadmap
@@ -125,7 +125,7 @@ Requirements: `clang`, `make`, `nasm`, `qemu-system-x86_64`, and Inauguration
 checked out at `../inauguration`.
 
 ```sh
-# Full boot check (compiles kernel, boots QEMU, asserts all subsystems)
+# Full boot check (compiles kernel, boots QEMU, asserts boot-critical subsystems)
 bash scripts/check-qemu-boot.sh
 
 # Boot timing benchmark (5 runs)
@@ -144,23 +144,14 @@ Development is cross-platform — macOS (ARM64), Linux (x86_64, glibc and musl).
 
 ```
 kernel/
-  kernel-root.in          nanokernel (1420 lines, 88 functions)
-  domain.in               Phase 0 — planned
-  channel.in              Phase 1 — planned
-  loader.in               Phase 3 — planned
-services/                 Phase 2+ — planned .in microservices
-  proc.in                 process lifecycle
-  mem.in                  memory management
-  time.in                 clock and timer
-  rand.in                 entropy
-  fs.in                   filesystem
-  net.in                  networking
-  gfx.in                  graphics/compositor
-  linux-compat.in         Linux binary compatibility
-  darwin-compat.in        Darwin binary compatibility
-  win-compat.in           Windows binary compatibility
-drivers/
-  e1000.in                NIC driver
+  kernel-root.in          nanokernel (1506 lines, 90 declarations)
+  domain.in               Phase 0 memory domains
+  channel.in              Phase 1 channel fabric
+  loader.in               Phase 3 loader integration
+services/
+  fs.in                   filesystem service
+  net.in                  networking service
+  gfx.in                  graphics/compositor service
 boot/
   multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
 scripts/

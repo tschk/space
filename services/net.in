@@ -2,7 +2,7 @@
 // Provides socket-like abstractions over the kernel NIC driver.
 // ponytail: stub IPC routing, real NIC driver in kernel/kernel-root.in.
 component NetService {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic false
   checkpoint none
 

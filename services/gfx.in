@@ -3,7 +3,7 @@
 // ponytail: single surface, no compositing. Real gfx.in needs virtio-gpu
 // or framebuffer MMIO access granted by kernel.
 component GraphicsService {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic false
   checkpoint none
 

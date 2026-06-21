@@ -2,7 +2,7 @@
 // Manages thread creation and exit within a domain.
 // Returns 1 for success, 0 for failure.
 component ProcService {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic false
   checkpoint none
 

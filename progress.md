@@ -4,10 +4,12 @@
 In Progress
 
 ## Tasks
-- [x] Register allocator: assign hot locals to R12–R15, skip trivial-arg push/pop
+- [x] QEMU boot check passes through `scripts/check-qemu-boot.sh`
+- [x] SCI metadata contract check passes through `scripts/check-sci-contract.sh`
 
 ## Files Changed
-- `in-cli/src/native_emit/x86_64_lower.rs` — register allocator, callee-saved regs, trivial-expr optimization
+- `kernel/kernel-root.in` — nanokernel component target uses generic `x86_64-unknown-none`
+- `scripts/check-sci-contract.sh` — SCI metadata check is self-contained
 
 ## Notes
-All 743 compiler tests pass. Kernel boots with identical size (41KB).
+Latest verified boot image is 47,444 bytes with 38,996 bytes of x86_64 kernel code.

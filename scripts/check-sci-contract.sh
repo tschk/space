@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"exec" "python3" "$0" "$@"
 # check-sci-contract.sh — Validate the compiled kernel's SCI metadata sidecar.
 # Run as a script: python3 check-sci-contract.sh  (or chmod +x and run directly)
 """Validate compiled kernel SCI metadata against the sci-schema.md contract.
@@ -7,6 +7,7 @@ Usage:
     python3 check-sci-contract.sh [--kernel KERNEL_IN] [--in COMPILER] [--trampoline TRAMP]
 """
 import json, os, subprocess, sys, tempfile
+import struct
 
 def check(label, ok):
     global passed, failed
@@ -25,10 +26,10 @@ def main():
     in_bin = os.environ.get("IN",
         os.path.join(os.path.dirname(__file__) or ".", "..", "..", "inauguration",
                      "in-cli", "target", "release", "in"))
-    trampoline = os.environ.get("TRAMPOLINE", "/tmp/trampoline.bin")
     build_dir = os.environ.get("BUILD_DIR", "/tmp/space-sci-check")
 
     os.makedirs(build_dir, exist_ok=True)
+    trampoline = os.environ.get("TRAMPOLINE", os.path.join(build_dir, "trampoline.bin"))
     out_bin = os.path.join(build_dir, "kernel.bin")
     # Compiler replaces the .bin extension with .component-metadata.json
     meta_path = out_bin.replace(".bin", "") + ".component-metadata.json"
@@ -37,6 +38,14 @@ def main():
     for f in [out_bin, meta_path]:
         try: os.remove(f)
         except FileNotFoundError: pass
+    if not os.path.exists(trampoline):
+        buf = bytearray(8192)
+        magic = 0x1BADB002
+        flags = 0
+        checksum = (-(magic + flags)) & 0xffffffff
+        buf[:12] = struct.pack("<III", magic, flags, checksum)
+        with open(trampoline, "wb") as f:
+            f.write(buf)
 
     result = subprocess.run([
         in_bin, "compile",

@@ -2,7 +2,7 @@
 // Runs in its own domain, responds to time queries over a cross-domain channel.
 // ponytail: single shared page for IPC, no multi-client dispatch.
 component TimeService {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic false
   checkpoint none
 

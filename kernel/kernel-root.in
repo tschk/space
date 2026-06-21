@@ -19,7 +19,7 @@ import "elf-loader.in"
 // built from; the functions below are the lowerable nanokernel control flow
 // that runs after the boot trampoline enters long mode.
 component KernelRoot {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic true
   checkpoint none
 

@@ -4,7 +4,7 @@ package space.guest
 // loaded at runtime by the SCI loader. Its capability contract is declared here
 // and mirrored in the binary SCI manifest the loader validates before entry.
 component GuestService {
-  target "x86_64-space"
+  target "x86_64-unknown-none"
   deterministic true
   checkpoint none
 
