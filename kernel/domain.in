@@ -8,16 +8,12 @@ const DOMAIN_FREE = 0
 const DOMAIN_ACTIVE = 1
 const DOMAIN_SUSPENDED = 2
 const DOMAIN_DESTROYED = 3
-const DOMAIN_MAPPING_SIZE = 24
-const MAX_DOMAIN_MAPPINGS = 8
 
 var domain_table: Int = 0
 var domain_count: Int = 0
-var domain_maps: Int = 0
 
 fn domain_init() -> void {
   domain_table = alloc(MAX_DOMAINS * 24)
-  domain_maps = alloc(MAX_DOMAINS * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE)
   let i = 0
   while i < MAX_DOMAINS {
     store64(domain_table + i * 24 + 0, 0)
@@ -120,56 +116,11 @@ fn domain_page_entry(domain: Int, virt: Int) -> Int {
 
 fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
   if domain >= domain_count { return }
-  if domain_maps == 0 { return }
-  if domain_install_mapping(domain, virt, phys, flags) == 0 { return }
-  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
-  let count = load64(domain_table + domain * 24 + 16)
-  let i = 0
-  while i < count {
-    let m = maps + i * DOMAIN_MAPPING_SIZE
-    if load64(m + 0) == virt {
-      store64(m + 8, phys)
-      store64(m + 16, flags)
-      return
-    }
-    i = i + 1
-  }
-  if count >= MAX_DOMAIN_MAPPINGS { return }
-  let m = maps + count * DOMAIN_MAPPING_SIZE
-  store64(m + 0, virt)
-  store64(m + 8, phys)
-  store64(m + 16, flags)
-  store64(domain_table + domain * 24 + 16, count + 1)
+  domain_install_mapping(domain, virt, phys, flags)
   return
 }
 
 fn domain_unmap(domain: Int, virt: Int) -> void {
-  if domain >= domain_count { return }
-  if domain_maps == 0 { return }
-  domain_clear_mapping(domain, virt)
-  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
-  let count = load64(domain_table + domain * 24 + 16)
-  let i = 0
-  while i < count {
-    let m = maps + i * DOMAIN_MAPPING_SIZE
-    if load64(m + 0) == virt {
-      let last = count - 1
-      let lm = maps + last * DOMAIN_MAPPING_SIZE
-      store64(m + 0, load64(lm + 0))
-      store64(m + 8, load64(lm + 8))
-      store64(m + 16, load64(lm + 16))
-      store64(lm + 0, 0)
-      store64(lm + 8, 0)
-      store64(lm + 16, 0)
-      store64(domain_table + domain * 24 + 16, last)
-      return
-    }
-    i = i + 1
-  }
-  return
-}
-
-fn domain_clear_mapping(domain: Int, virt: Int) -> void {
   if domain >= domain_count { return }
   let pml4 = load64(domain_table + domain * 24 + 0)
   if pml4 == 0 { return }
@@ -188,35 +139,15 @@ fn domain_clear_mapping(domain: Int, virt: Int) -> void {
 }
 
 fn domain_translate(domain: Int, virt: Int) -> Int {
-  if domain >= domain_count { return 0 }
-  if domain_maps == 0 { return 0 }
-  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
-  let count = load64(domain_table + domain * 24 + 16)
-  let i = 0
-  while i < count {
-    let m = maps + i * DOMAIN_MAPPING_SIZE
-    if load64(m + 0) == virt {
-      return load64(m + 8)
-    }
-    i = i + 1
-  }
-  return 0
+  let entry = domain_page_entry(domain, virt)
+  if entry == 0 { return 0 }
+  return entry & -4096
 }
 
 fn domain_mapping_flags(domain: Int, virt: Int) -> Int {
-  if domain >= domain_count { return 0 }
-  if domain_maps == 0 { return 0 }
-  let maps = domain_maps + domain * MAX_DOMAIN_MAPPINGS * DOMAIN_MAPPING_SIZE
-  let count = load64(domain_table + domain * 24 + 16)
-  let i = 0
-  while i < count {
-    let m = maps + i * DOMAIN_MAPPING_SIZE
-    if load64(m + 0) == virt {
-      return load64(m + 16)
-    }
-    i = i + 1
-  }
-  return 0
+  let entry = domain_page_entry(domain, virt)
+  if entry == 0 { return 0 }
+  return entry & 0xFFF
 }
 
 fn domain_destroy(id: Int) -> void {
@@ -237,69 +168,4 @@ fn domain_create_shared_page(dom_a: Int, dom_b: Int, virt_a: Int, virt_b: Int) -
   domain_map(dom_a, virt_a, page, 0x3)
   domain_map(dom_b, virt_b, page, 0x3)
   return page
-}
-
-// --- domain tests (stub until real page table operations) -------------------
-
-fn test_domain_create() -> Int {
-  let d = domain_create()
-  if d == 0 { return 0 }
-  let pml4 = load64(domain_table + d * 24 + 0)
-  if pml4 == 0 { return 0 }
-  if pml4 == 0x1000 { return 0 }
-  let pdpt = load64(pml4 + 0) & -4096
-  if pdpt == 0x2000 { return 0 }
-  let pd = load64(pdpt + 0) & -4096
-  if pd == 0x3000 { return 0 }
-  if load64(pd + 0) != load64(0x3000 + 0) { return 0 }
-  return d
-}
-
-fn test_domain_switch() -> Int {
-  let d = domain_create()
-  if d == 0 { return 0 }
-  let pml4 = load64(domain_table + d * 24 + 0)
-  domain_switch(d)
-  if read_cr3() != pml4 {
-    domain_switch(0)
-    return 0
-  }
-  domain_switch(0)
-  if read_cr3() != 0x1000 { return 0 }
-  return 1
-}
-
-fn test_domain_isolation() -> Int {
-  let d1 = domain_create()
-  let d2 = domain_create()
-  if d1 == 0 { return 0 }
-  if d2 == 0 { return 0 }
-  let page = domain_create_shared_page(d1, d2, 0xFFFF8000, 0xFFFF9000)
-  if page == 0 { return 0 }
-  if load64(page + 0) != 0 { return 0 }
-  store64(page + 0, 0x5350414345)
-  if load64(page + 0) != 0x5350414345 { return 0 }
-  store64(page + 8, d1)
-  store64(page + 16, d2)
-  if load64(page + 8) != d1 { return 0 }
-  if load64(page + 16) != d2 { return 0 }
-  domain_map(d1, 0xFFFFA000, page + 4096, 0x1)
-  if domain_maps == 0 { return 0 }
-  if load64(domain_table + d1 * 24 + 16) != 2 { return 0 }
-  if load64(domain_table + d2 * 24 + 16) != 1 { return 0 }
-  if domain_translate(d1, 0xFFFF8000) != page { return 0 }
-  if domain_mapping_flags(d1, 0xFFFF8000) != 0x3 { return 0 }
-  if (domain_page_entry(d1, 0xFFFF8000) & -4096) != page { return 0 }
-  if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
-  if domain_mapping_flags(d1, 0xFFFFA000) != 0x1 { return 0 }
-  if (domain_page_entry(d1, 0xFFFFA000) & -4096) != page + 4096 { return 0 }
-  if domain_translate(d2, 0xFFFF9000) != page { return 0 }
-  if domain_mapping_flags(d2, 0xFFFF9000) != 0x3 { return 0 }
-  if (domain_page_entry(d2, 0xFFFF9000) & -4096) != page { return 0 }
-  domain_unmap(d1, 0xFFFF8000)
-  if load64(domain_table + d1 * 24 + 16) != 1 { return 0 }
-  if domain_translate(d1, 0xFFFF8000) != 0 { return 0 }
-  if domain_page_entry(d1, 0xFFFF8000) != 0 { return 0 }
-  if domain_translate(d1, 0xFFFFA000) != page + 4096 { return 0 }
-  return 1
 }

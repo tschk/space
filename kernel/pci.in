@@ -20,22 +20,9 @@ fn pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
   return
 }
 
-// Return the BAR0 MMIO base of the Intel 82540EM (e1000) NIC, or 0 if absent.
-fn pci_find_e1000() -> Int {
-  for dev in 0..32 {
-    let v = pci_read32(0, dev, 0, 0)
-    let vendor = v & 0xFFFF
-    let device = (v >> 16) & 0xFFFF
-    if (vendor == 0x8086) && (device == 0x100E) {
-      return pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0
-    }
-  }
-  return 0
-}
-
-// Enable I/O space, memory space, and bus mastering for the e1000, and return
-// the resulting command/status register (low 16 bits are the command).
-fn pci_enable_e1000() -> Int {
+// Find and enable the Intel 82540EM (e1000) NIC in a single scan.
+// Returns BAR0 MMIO base, or 0 if absent. Enables memory space, I/O space, and bus mastering.
+fn pci_find_and_enable_e1000() -> Int {
   for dev in 0..32 {
     let v = pci_read32(0, dev, 0, 0)
     let vendor = v & 0xFFFF
@@ -43,7 +30,7 @@ fn pci_enable_e1000() -> Int {
     if (vendor == 0x8086) && (device == 0x100E) {
       let cmd = pci_read32(0, dev, 0, 0x04)
       pci_write32(0, dev, 0, 0x04, cmd | 0x7)
-      return pci_read32(0, dev, 0, 0x04)
+      return pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0
     }
   }
   return 0

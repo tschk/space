@@ -71,17 +71,11 @@ fn chan_cross_recv(ch: Int) -> Int {
   return msg
 }
 
-// Transfer a capability from the current domain to the target domain
-// through a cross-domain channel. Creates a minted copy in the target
-// domain's capability table with attenuated rights.
-// ponytail: single-cap transfer, batch when IPC throughput matters.
+// Transfer a capability from current domain to target domain.
+// Returns new slot index, 0 on failure.
 fn chan_transfer_cap(ch: Int, cap_index: Int, tgt_base: Int, tgt_count: Int) -> Int {
-  // ponytail: check delegate bit via sign (rights < 0 = top bit set)
   let rights = load64(tgt_base + cap_index * 16 + 8)
-  if rights >= 0 {
-    serial_write_cstr(COM1_PORT, "chan: cap transfer denied")
-    return 0
-  }
+  if rights >= 0 { return 0 }
   let i = 0
   while i < tgt_count {
     let target_ptr = load64(tgt_base + i * 16 + 0)
@@ -93,7 +87,6 @@ fn chan_transfer_cap(ch: Int, cap_index: Int, tgt_base: Int, tgt_count: Int) -> 
     }
     i = i + 1
   }
-  serial_write_cstr(COM1_PORT, "chan: cap transfer: no free slot")
   return 0
 }
 

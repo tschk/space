@@ -28,12 +28,9 @@ layer.
 
 - [`architecture.md`](architecture.md) — full system architecture, all five
   layers, implementation roadmap in 9 phases with dependencies
-- [`os-design-notes.md`](os-design-notes.md) — original design rationale,
-  non-negotiables, chosen architecture
 - [`sci-schema.md`](sci-schema.md) — Space Component Image metadata format
 - [`compatibility-personalities.md`](compatibility-personalities.md) — how
   Linux, Darwin, and Windows programs run as guest components
-- [`bootstrap-plan.md`](bootstrap-plan.md) — original task breakdown
 - [`AGENTS.md`](AGENTS.md) — repository workflow and boundaries
 
 ## Status: it boots
@@ -150,12 +147,11 @@ kernel/
   kernel-root.in          nanokernel (1510 lines, 90 declarations)
   domain.in               Phase 0 memory domains
   channel.in              Phase 1 channel fabric
-services/
-  proc.in                 process lifecycle service
-  time.in                 deterministic monotonic time service
-  fs.in                   filesystem service
-  net.in                  networking service
-  gfx.in                  graphics/compositor service
+  net.in                  e1000 NIC driver
+  pci.in                  PCI configuration space access
+  determinism.in          Deterministic execution subsystem
+  elf-loader.in           ELF64 parser for Phase 7 compatibility
+  guest-service.in        SCI component loading demo
 boot/
   multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
 scripts/

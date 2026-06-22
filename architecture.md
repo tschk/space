@@ -1434,6 +1434,5 @@ fn pe_load(domain: Int, pe_addr: Int) -> Int
     check-qemu-boot.sh    Full boot verification
     check-sci-contract.sh Metadata validation
   sci-schema.md           SCI format specification
-  bootstrap-plan.md       Original bootstrap plan
   compatibility-personalities.md   Microservice compat model
 ```

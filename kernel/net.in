@@ -29,38 +29,29 @@ fn mmio_w32(off: Int, v: Int) -> void {
   return
 }
 
-fn net_print_byte(port: Int, b: Int) -> void {
-  let hi = (b >> 4) & 0xF
-  let lo = b & 0xF
-  if hi < 10 { serial_put(port, 48 + hi) } else { serial_put(port, 87 + hi) }
-  if lo < 10 { serial_put(port, 48 + lo) } else { serial_put(port, 87 + lo) }
-  return
-}
-
 fn net_print_mac(port: Int) -> void {
-  net_print_byte(port, nic_mac_lo & 0xFF)
+  serial_write_hex(port, nic_mac_lo & 0xFF)
   serial_put(port, 58)
-  net_print_byte(port, (nic_mac_lo >> 8) & 0xFF)
+  serial_write_hex(port, (nic_mac_lo >> 8) & 0xFF)
   serial_put(port, 58)
-  net_print_byte(port, (nic_mac_lo >> 16) & 0xFF)
+  serial_write_hex(port, (nic_mac_lo >> 16) & 0xFF)
   serial_put(port, 58)
-  net_print_byte(port, (nic_mac_lo >> 24) & 0xFF)
+  serial_write_hex(port, (nic_mac_lo >> 24) & 0xFF)
   serial_put(port, 58)
-  net_print_byte(port, nic_mac_hi & 0xFF)
+  serial_write_hex(port, nic_mac_hi & 0xFF)
   serial_put(port, 58)
-  net_print_byte(port, (nic_mac_hi >> 8) & 0xFF)
+  serial_write_hex(port, (nic_mac_hi >> 8) & 0xFF)
   return
 }
 
 fn e1000_init(port: Int) -> Int {
-  let bar0 = pci_find_e1000()
+  let bar0 = pci_find_and_enable_e1000()
   if bar0 == 0 {
     serial_write_cstr(port, "  net: no e1000 NIC found\n")
     return 0
   }
-  let pcicmd = pci_enable_e1000()
-  serial_write_cstr(port, "  net: PCI command/status 0x")
-  serial_write_hex(port, pcicmd)
+  serial_write_cstr(port, "  net: e1000 found at BAR0 0x")
+  serial_write_hex(port, bar0)
   serial_put(port, 10)
   // Map the NIC register window (64 KiB) uncached and identity, since BAR0 is
   // above the trampoline's 1 GiB identity map.
@@ -168,41 +159,18 @@ fn net_store_mac(p: Int) -> void {
 // buffer and return its length (42 bytes).
 fn build_arp() -> Int {
   let p = nic_tx_buf
-  for i in 0..6 {
-    store8(p + i, 0xFF)
-  }
+  for i in 0..6 { store8(p + i, 0xFF) }
   net_store_mac(p + 6)
-  store8(p + 12, 0x08)
-  store8(p + 13, 0x06)
-  store8(p + 14, 0x00)
-  store8(p + 15, 0x01)
-  store8(p + 16, 0x08)
-  store8(p + 17, 0x00)
-  store8(p + 18, 0x06)
-  store8(p + 19, 0x04)
-  store8(p + 20, 0x00)
-  store8(p + 21, 0x01)
+  store8(p + 12, 0x08); store8(p + 13, 0x06)
+  store8(p + 14, 0x00); store8(p + 15, 0x01)
+  store8(p + 16, 0x08); store8(p + 17, 0x00)
+  store8(p + 18, 0x06); store8(p + 19, 0x04)
+  store8(p + 20, 0x00); store8(p + 21, 0x01)
   net_store_mac(p + 22)
-  store8(p + 28, 10)
-  store8(p + 29, 0)
-  store8(p + 30, 2)
-  store8(p + 31, 15)
-  for i in 0..6 {
-    store8(p + 32 + i, 0x00)
-  }
-  store8(p + 38, 10)
-  store8(p + 39, 0)
-  store8(p + 40, 2)
-  store8(p + 41, 2)
+  store8(p + 28, 10); store8(p + 29, 0); store8(p + 30, 2); store8(p + 31, 15)
+  for i in 0..6 { store8(p + 32 + i, 0x00) }
+  store8(p + 38, 10); store8(p + 39, 0); store8(p + 40, 2); store8(p + 41, 2)
   return 42
-}
-
-fn cstr_len(addr: Int) -> Int {
-  let n = 0
-  while load8(addr + n) != 0 {
-    n = n + 1
-  }
-  return n
 }
 
 // Internet checksum over `len` bytes at `addr`.
@@ -219,55 +187,41 @@ fn ip_checksum(addr: Int, len: Int) -> Int {
   return (-1 ^ sum) & 0xFFFF
 }
 
-// Build an Ethernet + IPv4 + UDP datagram to 10.0.2.2:9999 carrying `payload`
-// (a NUL-terminated string) in the TX buffer. Returns the total frame length.
+fn cstr_len(addr: Int) -> Int {
+  let n = 0
+  while load8(addr + n) != 0 {
+    n = n + 1
+  }
+  return n
+}
+
+// Build Ethernet + IPv4 + UDP datagram. Returns frame length.
 fn build_udp(payload: Int) -> Int {
   let p = nic_tx_buf
   let plen = cstr_len(payload)
-  for i in 0..6 {
-    store8(p + i, load8(gw_mac + i))
-  }
+  for i in 0..6 { store8(p + i, load8(gw_mac + i)) }
   net_store_mac(p + 6)
-  store8(p + 12, 0x08)
-  store8(p + 13, 0x00)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
   let ip = p + 14
   let iplen = 28 + plen
-  store8(ip + 0, 0x45)
-  store8(ip + 1, 0x00)
-  store8(ip + 2, (iplen >> 8) & 0xFF)
-  store8(ip + 3, iplen & 0xFF)
-  store8(ip + 4, 0x00)
-  store8(ip + 5, 0x00)
-  store8(ip + 6, 0x40)
-  store8(ip + 7, 0x00)
-  store8(ip + 8, 0x40)
-  store8(ip + 9, 0x11)
-  store8(ip + 10, 0x00)
-  store8(ip + 11, 0x00)
-  store8(ip + 12, 10)
-  store8(ip + 13, 0)
-  store8(ip + 14, 2)
-  store8(ip + 15, 15)
-  store8(ip + 16, 10)
-  store8(ip + 17, 0)
-  store8(ip + 18, 2)
-  store8(ip + 19, 2)
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x11)
+  store8(ip + 12, 10); store8(ip + 13, 0)
+  store8(ip + 14, 2); store8(ip + 15, 15)
+  store8(ip + 16, 10); store8(ip + 17, 0)
+  store8(ip + 18, 2); store8(ip + 19, 2)
   let csum = ip_checksum(ip, 20)
-  store8(ip + 10, (csum >> 8) & 0xFF)
-  store8(ip + 11, csum & 0xFF)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
   let udp = ip + 20
   let ulen = 8 + plen
-  store8(udp + 0, 0x27)
-  store8(udp + 1, 0x0F)
-  store8(udp + 2, 0x27)
-  store8(udp + 3, 0x0F)
-  store8(udp + 4, (ulen >> 8) & 0xFF)
-  store8(udp + 5, ulen & 0xFF)
-  store8(udp + 6, 0x00)
-  store8(udp + 7, 0x00)
-  for i in 0..plen {
-    store8(udp + 8 + i, load8(payload + i))
-  }
+  store8(udp + 0, 0x27); store8(udp + 1, 0x0F)
+  store8(udp + 2, 0x27); store8(udp + 3, 0x0F)
+  store8(udp + 4, (ulen >> 8) & 0xFF); store8(udp + 5, ulen & 0xFF)
+  store8(udp + 6, 0x00); store8(udp + 7, 0x00)
+  for i in 0..plen { store8(udp + 8 + i, load8(payload + i)) }
   return 14 + iplen
 }
 
@@ -296,7 +250,7 @@ fn run_net(port: Int) -> void {
     serial_write_cstr(port, "  net: no ARP reply; using SLIRP gateway ")
   }
   for i in 0..6 {
-    net_print_byte(port, load8(gw_mac + i))
+    serial_write_hex(port, load8(gw_mac + i))
     if i < 5 {
       serial_put(port, 58)
     }
