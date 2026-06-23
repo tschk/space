@@ -1,0 +1,549 @@
+package space.kernel
+
+// VBE framebuffer driver for the Space nanokernel.
+// Reads VBE mode info from the Multiboot1 info structure, maps the framebuffer
+// memory (identity-mapped in the first 4 GiB by the boot trampoline), and
+// provides drawing primitives: pixels, rectangles, lines, and bitmap text.
+//
+// The framebuffer is a linear pixel array. Each pixel is 32 bits (BGRA or RGBX
+// depending on the VBE mode). The pitch (bytes per scanline) may differ from
+// width * 4, so all drawing functions use fb_pitch for address calculation.
+//
+// Multiboot1 info structure offsets (VBE fields):
+//   offset 0:  flags (bit 11 = VBE info valid)
+//   offset 72: vbe_control_info (u32 pointer)
+//   offset 76: vbe_mode_info (u32 pointer)
+//   offset 80: vbe_mode (u16)
+//
+// VBE mode info structure offsets:
+//   offset 16: bytes_per_scanline (u16) -- pitch
+//   offset 18: x_resolution (u16)
+//   offset 20: y_resolution (u16)
+//   offset 25: bits_per_pixel (u8)
+//   offset 40: phys_base_ptr (u32) -- framebuffer physical address
+
+// --- framebuffer state ------------------------------------------------------
+var fb_addr: Int = 0       // framebuffer virtual address (identity-mapped)
+var fb_pitch: Int = 0      // bytes per scanline
+var fb_width: Int = 0      // pixels
+var fb_height: Int = 0     // pixels
+var fb_bpp: Int = 0        // bits per pixel
+var fb_size: Int = 0       // total framebuffer size in bytes
+var fb_ready: Int = 0      // 1 after successful init
+
+// --- colors (32-bit RGBX) ---------------------------------------------------
+const FB_COLOR_BLACK = 0x00000000
+const FB_COLOR_WHITE = 0x00FFFFFF
+const FB_COLOR_RED = 0x00FF0000
+const FB_COLOR_GREEN = 0x0000FF00
+const FB_COLOR_BLUE = 0x000000FF
+const FB_COLOR_CYAN = 0x0000FFFF
+const FB_COLOR_MAGENTA = 0x00FF00FF
+const FB_COLOR_YELLOW = 0x00FFFF00
+const FB_COLOR_GRAY = 0x00808080
+const FB_COLOR_DARK_GRAY = 0x00404040
+const FB_COLOR_LIGHT_GRAY = 0x00C0C0C0
+const FB_COLOR_DARK_BLUE = 0x00000080
+const FB_COLOR_DARK_GREEN = 0x00008000
+const FB_COLOR_DARK_RED = 0x00800000
+const FB_COLOR_ORANGE = 0x00FF8000
+const FB_COLOR_PURPLE = 0x00800080
+const FB_COLOR_TEAL = 0x00808000
+
+// --- font (8x8 bitmap) ------------------------------------------------------
+// Each character is 8 bytes (one per row, LSB = leftmost pixel).
+// We store 128 characters x 8 bytes = 1024 bytes in a heap buffer.
+const FB_FONT_WIDTH = 8
+const FB_FONT_HEIGHT = 8
+var fb_font: Int = 0
+
+// Store one character's 8-row bitmap data.
+fn fb_font_set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
+  let p = fb_font + ch * 8
+  store8(p + 0, r0)
+  store8(p + 1, r1)
+  store8(p + 2, r2)
+  store8(p + 3, r3)
+  store8(p + 4, r4)
+  store8(p + 5, r5)
+  store8(p + 6, r6)
+  store8(p + 7, r7)
+  return
+}
+
+// Initialize the 8x8 bitmap font with a basic ASCII subset.
+fn fb_font_init() -> void {
+  fb_font = alloc(128 * 8)
+  let i = 0
+  while i < 1024 {
+    store8(fb_font + i, 0)
+    i = i + 1
+  }
+  // Space (32)
+  fb_font_set(32, 0, 0, 0, 0, 0, 0, 0, 0)
+  // ! (33)
+  fb_font_set(33, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00)
+  // " (34)
+  fb_font_set(34, 0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // ( (40)
+  fb_font_set(40, 0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00)
+  // ) (41)
+  fb_font_set(41, 0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x18, 0x30, 0x00)
+  // * (42)
+  fb_font_set(42, 0x00, 0x66, 0x3C, 0xFF, 0x3C, 0x66, 0x00, 0x00)
+  // + (43)
+  fb_font_set(43, 0x00, 0x18, 0x18, 0x7E, 0x18, 0x18, 0x00, 0x00)
+  // , (44)
+  fb_font_set(44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // - (45)
+  fb_font_set(45, 0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00)
+  // . (46)
+  fb_font_set(46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // / (47)
+  fb_font_set(47, 0x00, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x70, 0x60)
+  // 0-9 (48-57)
+  fb_font_set(48, 0x3C, 0x66, 0x6E, 0x76, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(49, 0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00)
+  fb_font_set(50, 0x3C, 0x66, 0x06, 0x0C, 0x30, 0x60, 0x7E, 0x00)
+  fb_font_set(51, 0x3C, 0x66, 0x06, 0x1C, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(52, 0x0E, 0x1E, 0x36, 0x66, 0x7F, 0x06, 0x06, 0x00)
+  fb_font_set(53, 0x7E, 0x60, 0x7C, 0x06, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(54, 0x3C, 0x66, 0x60, 0x7C, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(55, 0x7E, 0x66, 0x0C, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(56, 0x3C, 0x66, 0x66, 0x3C, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(57, 0x3C, 0x66, 0x66, 0x3E, 0x06, 0x66, 0x3C, 0x00)
+  // : (58)
+  fb_font_set(58, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // ; (59)
+  fb_font_set(59, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // < (60)
+  fb_font_set(60, 0x06, 0x0C, 0x18, 0x30, 0x18, 0x0C, 0x06, 0x00)
+  // = (61)
+  fb_font_set(61, 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00)
+  // > (62)
+  fb_font_set(62, 0x60, 0x30, 0x18, 0x0C, 0x18, 0x30, 0x60, 0x00)
+  // ? (63)
+  fb_font_set(63, 0x3C, 0x66, 0x06, 0x0C, 0x18, 0x00, 0x18, 0x00)
+  // A-Z (65-90)
+  fb_font_set(65, 0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00)
+  fb_font_set(66, 0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00)
+  fb_font_set(67, 0x3C, 0x66, 0x60, 0x60, 0x60, 0x66, 0x3C, 0x00)
+  fb_font_set(68, 0x78, 0x6C, 0x66, 0x66, 0x66, 0x6C, 0x78, 0x00)
+  fb_font_set(69, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x7E, 0x00)
+  fb_font_set(70, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(71, 0x3C, 0x66, 0x60, 0x6E, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(72, 0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(73, 0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(74, 0x1E, 0x0C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38, 0x00)
+  fb_font_set(75, 0x66, 0x6C, 0x78, 0x70, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(76, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x7E, 0x00)
+  fb_font_set(77, 0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00)
+  fb_font_set(78, 0x66, 0x76, 0x7E, 0x7E, 0x6E, 0x66, 0x66, 0x00)
+  fb_font_set(79, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(80, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(81, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x0E, 0x00)
+  fb_font_set(82, 0x7C, 0x66, 0x66, 0x7C, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(83, 0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(84, 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(85, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(86, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb_font_set(87, 0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00)
+  fb_font_set(88, 0x66, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x66, 0x00)
+  fb_font_set(89, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(90, 0x7E, 0x06, 0x0C, 0x18, 0x30, 0x60, 0x7E, 0x00)
+  // [ (91)
+  fb_font_set(91, 0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00)
+  // ] (93)
+  fb_font_set(93, 0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00)
+  // _ (95)
+  fb_font_set(95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF)
+  // a-z (97-122) -- simplified lowercase (same as uppercase for now)
+  fb_font_set(97, 0x00, 0x00, 0x3C, 0x06, 0x3E, 0x66, 0x3E, 0x00)
+  fb_font_set(98, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00)
+  fb_font_set(99, 0x00, 0x00, 0x3C, 0x60, 0x60, 0x60, 0x3C, 0x00)
+  fb_font_set(100, 0x06, 0x06, 0x3E, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb_font_set(101, 0x00, 0x00, 0x3C, 0x66, 0x7E, 0x60, 0x3C, 0x00)
+  fb_font_set(102, 0x0E, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(103, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x3C)
+  fb_font_set(104, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(105, 0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(106, 0x0C, 0x00, 0x1C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38)
+  fb_font_set(107, 0x60, 0x60, 0x66, 0x6C, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(108, 0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(109, 0x00, 0x00, 0x66, 0x7F, 0x7F, 0x6B, 0x63, 0x00)
+  fb_font_set(110, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(111, 0x00, 0x00, 0x3C, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(112, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60)
+  fb_font_set(113, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x06)
+  fb_font_set(114, 0x00, 0x00, 0x7C, 0x66, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(115, 0x00, 0x00, 0x3E, 0x60, 0x3C, 0x06, 0x7C, 0x00)
+  fb_font_set(116, 0x18, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x0E, 0x00)
+  fb_font_set(117, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb_font_set(118, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb_font_set(119, 0x00, 0x00, 0x63, 0x6B, 0x7F, 0x3F, 0x36, 0x00)
+  fb_font_set(120, 0x00, 0x00, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x00)
+  fb_font_set(121, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3E, 0x0C, 0x38)
+  fb_font_set(122, 0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00)
+  // { (123)
+  fb_font_set(123, 0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00)
+  // } (125)
+  fb_font_set(125, 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00)
+  // | (124)
+  fb_font_set(124, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  // ~ (126)
+  fb_font_set(126, 0x00, 0x00, 0x60, 0x7E, 0x06, 0x00, 0x00, 0x00)
+  // # (35)
+  fb_font_set(35, 0x66, 0x66, 0xFF, 0xFF, 0x66, 0x66, 0xFF, 0xFF)
+  return
+}
+
+// --- Bochs VBE I/O ports (QEMU standard VGA) --------------------------------
+const VBE_INDEX = 0x1CE
+const VBE_DATA = 0x1CF
+
+// Write a VBE register.
+fn vbe_write(idx: Int, val: Int) -> void {
+  outw(VBE_INDEX, idx)
+  outw(VBE_DATA, val)
+  return
+}
+
+// Read a VBE register.
+fn vbe_read(idx: Int) -> Int {
+  outw(VBE_INDEX, idx)
+  return inw(VBE_DATA)
+}
+
+// --- framebuffer initialization ---------------------------------------------
+
+// Initialize the framebuffer using Bochs VBE I/O ports.
+// Sets a 1024x768x32 graphics mode with linear framebuffer.
+// Returns 0 on success, -1 if VBE is unavailable.
+fn fb_init(mb_info: Int) -> Int {
+  // Check for Bochs VBE by reading the ID register.
+  let vbe_id = vbe_read(0x00)
+  if vbe_id == 0 {
+    return -1
+  }
+
+  // Disable VBE while configuring.
+  vbe_write(0x04, 0x00)
+
+  // Set X resolution, Y resolution, and BPP.
+  let target_w = 1024
+  let target_h = 768
+  let target_bpp = 32
+  vbe_write(0x01, target_w)
+  vbe_write(0x02, target_h)
+  vbe_write(0x03, target_bpp)
+
+  // Enable VBE with linear framebuffer (bit 6 = LFB, bit 0 = enable).
+  // Bit 7 = clear video memory.
+  vbe_write(0x04, 0xC1)
+
+  // Read back the actual settings.
+  fb_width = vbe_read(0x01)
+  fb_height = vbe_read(0x02)
+  fb_bpp = vbe_read(0x03)
+
+  // Set pitch (bytes per scanline) = width * (bpp / 8).
+  fb_pitch = fb_width * 4
+  let virt_w = vbe_read(0x06)
+  if virt_w != 0 {
+    fb_pitch = virt_w * 4
+  }
+
+  if fb_width == 0 || fb_height == 0 {
+    return -1
+  }
+
+  // Find the framebuffer address by scanning PCI for a VGA device (class 0x030000).
+  fb_addr = 0
+  let dev = 0
+  while dev < 32 {
+    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
+    if vendor != 0xFFFF {
+      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
+      if class_code == 0x030000 {
+        // Read BAR0 (64-bit memory BAR: BAR0 at 0x10, BAR1 at 0x14).
+        let bar0_raw = pci_read32(0, dev, 0, 0x10)
+        let bar0_lo = bar0_raw & 0xFFFFFFF0
+        let bar0_hi = 0
+        if (bar0_raw & 0x6) == 0x4 {
+          bar0_hi = pci_read32(0, dev, 0, 0x14)
+        }
+        fb_addr = bar0_lo | (bar0_hi << 32)
+        // Enable PCI memory space, I/O space, and bus mastering.
+        pci_write32(0, dev, 0, 0x04, 0x7)
+        break
+      }
+    }
+    dev = dev + 1
+  }
+
+  if fb_addr == 0 {
+    return -1
+  }
+
+  // Calculate framebuffer size.
+  fb_size = fb_pitch * fb_height
+
+  // Initialize the font.
+  fb_font_init()
+  fb_ready = 1
+
+  return 0
+}
+
+// --- drawing primitives -----------------------------------------------------
+
+// Set a single pixel at (x, y) to color. Clips to screen bounds.
+fn fb_put_pixel(x: Int, y: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  if x < 0 || x >= fb_width || y < 0 || y >= fb_height {
+    return
+  }
+  let off = y * fb_pitch + x * 4
+  store32(fb_addr + off, color)
+  return
+}
+
+// Fill a rectangle with a solid color. Clips to screen bounds.
+fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  let j = 0
+  while j < h {
+    let py = y + j
+    if py >= 0 && py < fb_height {
+      let i = 0
+      while i < w {
+        let px = x + i
+        if px >= 0 && px < fb_width {
+          store32(fb_addr + py * fb_pitch + px * 4, color)
+        }
+        i = i + 1
+      }
+    }
+    j = j + 1
+  }
+  return
+}
+
+// Draw a rectangle outline (1-pixel border). Clips to screen bounds.
+fn fb_draw_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  // Top and bottom edges
+  fb_fill_rect(x, y, w, 1, color)
+  fb_fill_rect(x, y + h - 1, w, 1, color)
+  // Left and right edges
+  fb_fill_rect(x, y, 1, h, color)
+  fb_fill_rect(x + w - 1, y, 1, h, color)
+  return
+}
+
+// Draw a line using Bresenham's algorithm.
+fn fb_draw_line(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) -> void {
+  let dx = x1 - x0
+  let dy = y1 - y0
+  if dx < 0 {
+    dx = -dx
+  }
+  if dy < 0 {
+    dy = -dy
+  }
+  let sx = 1
+  if x0 > x1 {
+    sx = -1
+  }
+  let sy = 1
+  if y0 > y1 {
+    sy = -1
+  }
+  let err = dx - dy
+  let x = x0
+  let y = y0
+  let done = 0
+  let e2 = 0
+  while done == 0 {
+    fb_put_pixel(x, y, color)
+    if x == x1 {
+      if y == y1 {
+        done = 1
+      }
+    }
+    if done == 0 {
+      e2 = 2 * err
+      if e2 > -dy {
+        err = err - dy
+        x = x + sx
+      }
+      if e2 < dx {
+        err = err + dx
+        y = y + sy
+      }
+    }
+  }
+  return
+}
+
+// Draw a single character at (x, y) in the given color.
+fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  if ch < 0 || ch >= 128 {
+    ch = 63  // '?'
+  }
+  let row = 0
+  while row < 8 {
+    let bits = load8(fb_font + ch * 8 + row)
+    let col = 0
+    while col < 8 {
+      let bit = (bits >> col) & 1
+      if bit != 0 {
+        fb_put_pixel(x + col, y + row, color)
+      }
+      col = col + 1
+    }
+    row = row + 1
+  }
+  return
+}
+
+// Draw a null-terminated string at (x, y) in the given color.
+fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
+  let i = 0
+  let cx = x
+  while i < 256 {
+    let ch = load8(str + i)
+    if ch == 0 {
+      i = 256
+    } else {
+      fb_draw_char(cx, y, ch, color)
+      cx = cx + 8
+      i = i + 1
+    }
+  }
+  return
+}
+
+// Draw a string with a background color (for text on filled backgrounds).
+fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let i = 0
+  let cx = x
+  while i < 256 {
+    let ch = load8(str + i)
+    if ch == 0 {
+      i = 256
+    } else {
+      if ch == 10 {
+        cx = x
+      } else {
+        // Draw background for this character cell
+        fb_fill_rect(cx, y, 8, 8, bg)
+        fb_draw_char(cx, y, ch, fg)
+        cx = cx + 8
+      }
+      i = i + 1
+    }
+  }
+  return
+}
+
+// Clear the entire screen to a color.
+fn fb_clear(color: Int) -> void {
+  fb_fill_rect(0, 0, fb_width, fb_height, color)
+  return
+}
+
+// Print framebuffer info to the serial port.
+fn fb_info(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  fb: not initialized")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  fb: ")
+  serial_write_dec_wide(port, fb_width)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_height)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_bpp)
+  serial_write_cstr(port, " pitch=")
+  serial_write_dec_wide(port, fb_pitch)
+  serial_write_cstr(port, " addr=0x")
+  serial_write_hex(port, fb_addr)
+  serial_write_cstr(port, " size=")
+  serial_write_dec_wide(port, fb_size)
+  serial_nl(port)
+  return
+}
+
+// Test pattern: fill screen with colored stripes to verify rendering.
+fn fb_test_pattern(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  fb: not initialized")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  fb: drawing test pattern...")
+  serial_nl(port)
+
+  // Fill rows 0-255 with red
+  let y = 0
+  while y < 256 {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x00FF0000)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: red stripe done (rows 0-255)")
+  serial_nl(port)
+
+  // Fill rows 256-511 with green
+  while y < 512 {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x0000FF00)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: green stripe done (rows 256-511)")
+  serial_nl(port)
+
+  // Fill rows 512-767 with blue
+  while y < fb_height {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x000000FF)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: blue stripe done (rows 512-767)")
+  serial_nl(port)
+
+  // Read back a few pixels to verify
+  serial_write_cstr(port, "  fb: readback (0,0)=0x")
+  serial_write_hex(port, load32(fb_addr + 0))
+  serial_write_cstr(port, " (128,128)=0x")
+  serial_write_hex(port, load32(fb_addr + 128 * fb_pitch + 128 * 4))
+  serial_write_cstr(port, " (384,384)=0x")
+  serial_write_hex(port, load32(fb_addr + 384 * fb_pitch + 384 * 4))
+  serial_write_cstr(port, " (640,640)=0x")
+  serial_write_hex(port, load32(fb_addr + 640 * fb_pitch + 640 * 4))
+  serial_write_cstr(port, " (1023,767)=0x")
+  serial_write_hex(port, load32(fb_addr + 767 * fb_pitch + 1023 * 4))
+  serial_nl(port)
+
+  return
+}

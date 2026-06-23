@@ -1,0 +1,204 @@
+package space.kernel
+
+// PS/2 mouse driver for the Space nanokernel.
+// Uses polling (no IRQ) to read 3-byte mouse packets from the PS/2 controller.
+// The PS/2 controller is accessed via ports 0x60 (data) and 0x64 (status/control).
+//
+// Mouse packet format (3 bytes):
+//   byte 0: [Y overflow][X overflow][Y sign bit][X sign bit][Always 1][Middle][Right][Left]
+//   byte 1: X movement (relative, 8-bit signed)
+//   byte 2: Y movement (relative, 8-bit signed, inverted)
+//
+// The mouse is initialized by:
+//   1. Disable both PS/2 ports
+//   2. Read controller configuration byte
+//   3. Enable mouse IRQ and second port
+//   4. Enable mouse port
+//   5. Send "enable data reporting" to mouse
+
+// --- PS/2 controller ports --------------------------------------------------
+const PS2_DATA = 0x60
+const PS2_STATUS = 0x64
+const PS2_CMD = 0x64
+
+// --- mouse state ------------------------------------------------------------
+var mouse_x: Int = 0
+var mouse_y: Int = 0
+var mouse_buttons: Int = 0     // bit 0=left, 1=right, 2=middle
+var mouse_ready: Int = 0
+var mouse_cycle: Int = 0       // packet byte index (0-2)
+var mouse_buf0: Int = 0
+var mouse_buf1: Int = 0
+var mouse_buf2: Int = 0
+
+// Wait for the PS/2 controller output buffer to be full (data available).
+fn mouse_wait_output() -> void {
+  while (inb(PS2_STATUS) & 0x01) == 0 {
+  }
+  return
+}
+
+// Wait for the PS/2 controller input buffer to be empty (ready for writing).
+fn mouse_wait_input() -> void {
+  while (inb(PS2_STATUS) & 0x02) != 0 {
+  }
+  return
+}
+
+// Send a command to the PS/2 controller (port 0x64).
+fn ps2_cmd(cmd: Int) -> void {
+  mouse_wait_input()
+  outb(PS2_CMD, cmd)
+  return
+}
+
+// Send a byte to the PS/2 mouse (via 0xD4 command prefix).
+fn mouse_cmd(cmd: Int) -> void {
+  mouse_wait_input()
+  outb(PS2_CMD, 0xD4)
+  mouse_wait_input()
+  outb(PS2_DATA, cmd)
+  return
+}
+
+// Read a byte from the PS/2 data port, waiting for output.
+fn ps2_read() -> Int {
+  mouse_wait_output()
+  return inb(PS2_DATA)
+}
+
+// Initialize the PS/2 mouse. Returns 0 on success.
+fn mouse_init() -> Int {
+  // Disable both PS/2 ports
+  ps2_cmd(0xAD)  // disable first port
+  ps2_cmd(0xA7)  // disable second port (mouse)
+
+  // Flush output buffer
+  while (inb(PS2_STATUS) & 0x01) != 0 {
+    inb(PS2_DATA)
+  }
+
+  // Read controller configuration byte
+  ps2_cmd(0x20)
+  let config = ps2_read()
+
+  // Enable mouse IRQ (bit 1) and second port (bit 5), clear disable bits
+  let new_config = (config | 0x02 | 0x20) & -0x21
+  ps2_cmd(0x60)
+  mouse_wait_input()
+  outb(PS2_DATA, new_config)
+
+  // Enable mouse port
+  ps2_cmd(0xA8)
+
+  // Reset the mouse
+  mouse_cmd(0xFF)
+  let ack = ps2_read()  // 0xFA = ACK
+  if ack != 0xFA {
+    return -1
+  }
+
+  // Set defaults
+  mouse_cmd(0xF6)
+  ps2_read()  // ACK
+
+  // Enable data reporting
+  mouse_cmd(0xF4)
+  ps2_read()  // ACK
+
+  // Enable first PS/2 port
+  ps2_cmd(0xAE)
+
+  // Center the mouse cursor
+  mouse_x = fb_width / 2
+  mouse_y = fb_height / 2
+  mouse_buttons = 0
+  mouse_cycle = 0
+  mouse_ready = 1
+  return 0
+}
+
+// Check if mouse data is available (output buffer full and mouse data).
+fn mouse_has_data() -> Int {
+  return inb(PS2_STATUS) & 0x01
+}
+
+// Process one byte of mouse data. Returns 1 when a complete packet is received.
+fn mouse_process_byte(b: Int) -> Int {
+  if mouse_cycle == 0 {
+    // Byte 0: flags. Bit 3 must be set for a valid packet.
+    if (b & 0x08) == 0 {
+      return 0  // out of sync, discard
+    }
+    mouse_buf0 = b
+    mouse_cycle = 1
+    return 0
+  }
+  if mouse_cycle == 1 {
+    mouse_buf1 = b
+    mouse_cycle = 2
+    return 0
+  }
+  // Byte 2: complete packet
+  mouse_buf2 = b
+  mouse_cycle = 0
+
+  // Extract button states
+  mouse_buttons = mouse_buf0 & 0x07
+
+  // Extract X movement (sign-extend 8-bit)
+  let dx = mouse_buf1
+  if (mouse_buf0 & 0x10) != 0 {
+    dx = mouse_buf1 - 256
+  }
+
+  // Extract Y movement (sign-extend, inverted)
+  let dy = mouse_buf2
+  if (mouse_buf0 & 0x20) != 0 {
+    dy = mouse_buf2 - 256
+  }
+  dy = -dy  // invert Y (screen coordinates)
+
+  // Update position with clipping
+  mouse_x = mouse_x + dx
+  if mouse_x < 0 {
+    mouse_x = 0
+  }
+  if mouse_x >= fb_width {
+    mouse_x = fb_width - 1
+  }
+  mouse_y = mouse_y + dy
+  if mouse_y < 0 {
+    mouse_y = 0
+  }
+  if mouse_y >= fb_height {
+    mouse_y = fb_height - 1
+  }
+  return 1
+}
+
+// Poll the mouse: read all available bytes and process complete packets.
+// Returns the number of complete packets processed.
+fn mouse_poll() -> Int {
+  if mouse_ready == 0 {
+    return 0
+  }
+  let count = 0
+  while mouse_has_data() != 0 {
+    let b = inb(PS2_DATA)
+    if mouse_process_byte(b) != 0 {
+      count = count + 1
+    }
+  }
+  return count
+}
+
+// Check if left mouse button is currently pressed.
+fn mouse_left_pressed() -> Int {
+  return mouse_buttons & 0x01
+}
+
+// Check if right mouse button is currently pressed.
+fn mouse_right_pressed() -> Int {
+  return mouse_buttons & 0x02
+}

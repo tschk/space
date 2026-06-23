@@ -1,0 +1,480 @@
+package space.kernel
+
+// Wayland-style compositor for the Space nanokernel.
+// Manages windows, renders them to the VBE framebuffer, and handles
+// mouse/keyboard input. This is a minimal display server that demonstrates
+// the Space OS desktop environment.
+//
+// Window record (64 bytes):
+//   [0..4]   id
+//   [4..8]   x
+//   [8..12]  y
+//   [12..16] width
+//   [16..20] height
+//   [20..24] flags (bit 0 = visible, bit 1 = focused, bit 2 = dirty)
+//   [24..32] title string address
+//   [32..40] content buffer address (or 0 for auto-rendered)
+//   [40..48] reserved
+//   [48..56] reserved
+//   [56..64] reserved
+
+// --- window constants -------------------------------------------------------
+const COMP_MAX_WINDOWS = 16
+const COMP_WIN_SIZE = 64
+const COMP_TITLE_BAR_H = 16
+const COMP_BORDER_W = 2
+
+const COMP_WIN_VISIBLE = 1
+const COMP_WIN_FOCUSED = 2
+const COMP_WIN_DIRTY = 4
+
+// --- compositor state -------------------------------------------------------
+var comp_windows: Int = 0    // array of window records
+var comp_count: Int = 0      // number of windows
+var comp_focused: Int = 0    // index of focused window
+var comp_dragging: Int = 0   // index of window being dragged (-1 = none)
+var comp_drag_off_x: Int = 0 // drag offset from window origin to mouse
+var comp_drag_off_y: Int = 0
+var comp_running: Int = 0    // 1 when compositor loop is active
+
+// --- window management ------------------------------------------------------
+
+// Initialize the compositor.
+fn comp_init() -> void {
+  comp_windows = alloc(COMP_MAX_WINDOWS * COMP_WIN_SIZE)
+  let i = 0
+  while i < COMP_MAX_WINDOWS {
+    comp_win_clear(i)
+    i = i + 1
+  }
+  comp_count = 0
+  comp_focused = -1
+  comp_dragging = -1
+  comp_running = 0
+  return
+}
+
+// Clear a window slot.
+fn comp_win_clear(idx: Int) -> void {
+  let base = comp_windows + idx * COMP_WIN_SIZE
+  let i = 0
+  while i < COMP_WIN_SIZE {
+    store8(base + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+// Get the base address of a window record.
+fn comp_win_base(idx: Int) -> Int {
+  return comp_windows + idx * COMP_WIN_SIZE
+}
+
+// Create a new window. Returns the window index or -1 if the table is full.
+fn comp_win_create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
+  if comp_count >= COMP_MAX_WINDOWS {
+    return -1
+  }
+  let idx = comp_count
+  let base = comp_win_base(idx)
+  store32(base + 0, idx)
+  store32(base + 4, x)
+  store32(base + 8, y)
+  store32(base + 12, w)
+  store32(base + 16, h)
+  store32(base + 20, COMP_WIN_VISIBLE | COMP_WIN_DIRTY)
+  store64(base + 24, title)
+  store64(base + 32, 0)
+  comp_count = comp_count + 1
+  comp_focused = idx
+  return idx
+}
+
+// Set a window's content buffer (for custom rendering).
+fn comp_win_set_content(idx: Int, buf: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  store64(comp_win_base(idx) + 32, buf)
+  return
+}
+
+// Check if a point is inside a window's title bar.
+fn comp_win_in_titlebar(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp_win_base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  if mx >= x && mx < x + w && my >= y && my < y + COMP_TITLE_BAR_H {
+    return 1
+  }
+  return 0
+}
+
+// Check if a point is inside a window (including title bar).
+fn comp_win_contains(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp_win_base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  if mx >= x && mx < x + w && my >= y && my < y + h + COMP_TITLE_BAR_H {
+    return 1
+  }
+  return 0
+}
+
+// Find the topmost window at a point. Returns index or -1.
+fn comp_win_at_point(mx: Int, my: Int) -> Int {
+  let i = comp_count - 1
+  while i >= 0 {
+    let flags = load32(comp_win_base(i) + 20)
+    if (flags & COMP_WIN_VISIBLE) != 0 {
+      if comp_win_contains(i, mx, my) != 0 {
+        return i
+      }
+    }
+    i = i - 1
+  }
+  return -1
+}
+
+// Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp_win_focus(idx: Int) -> void {
+  let i = 0
+  while i < comp_count {
+    let base = comp_win_base(i)
+    let flags = load32(base + 20)
+    if i == idx {
+      store32(base + 20, flags | COMP_WIN_FOCUSED | COMP_WIN_DIRTY)
+    } else {
+      store32(base + 20, (flags & -3) | COMP_WIN_DIRTY)
+    }
+    i = i + 1
+  }
+  comp_focused = idx
+  return
+}
+
+// --- rendering --------------------------------------------------------------
+
+// Draw the desktop background.
+fn comp_render_background() -> void {
+  fb_clear(FB_COLOR_DARK_BLUE)
+  return
+}
+
+// Draw the mouse cursor (a simple arrow shape).
+fn comp_render_cursor() -> void {
+  let x = mouse_x
+  let y = mouse_y
+  // Simple 8x8 cursor using put_pixel (avoid fb_draw_line which hangs)
+  fb_put_pixel(x, y, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 1, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 2, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 3, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 4, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 5, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 6, FB_COLOR_WHITE)
+  fb_put_pixel(x, y + 7, FB_COLOR_WHITE)
+  fb_put_pixel(x + 1, y + 1, FB_COLOR_WHITE)
+  fb_put_pixel(x + 2, y + 2, FB_COLOR_WHITE)
+  fb_put_pixel(x + 3, y + 3, FB_COLOR_WHITE)
+  fb_put_pixel(x + 4, y + 4, FB_COLOR_WHITE)
+  fb_put_pixel(x + 1, y + 2, FB_COLOR_WHITE)
+  fb_put_pixel(x + 2, y + 3, FB_COLOR_WHITE)
+  fb_put_pixel(x + 3, y + 4, FB_COLOR_WHITE)
+  return
+}
+
+// Helper: draw window border (separate function to avoid compiler clobbering locals)
+fn comp_draw_border(base: Int, color: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let bx = x - 2
+  let by = y - 2
+  let bw = w + 4
+  let bh = h + 20
+  // Top edge
+  let i = 0
+  while i < bw {
+    store32(fb_addr + by * fb_pitch + (bx + i) * 4, color)
+    i = i + 1
+  }
+  // Bottom edge
+  let by2 = by + bh - 1
+  let i2 = 0
+  while i2 < bw {
+    store32(fb_addr + by2 * fb_pitch + (bx + i2) * 4, color)
+    i2 = i2 + 1
+  }
+  // Left edge
+  let j = 0
+  while j < bh {
+    store32(fb_addr + (by + j) * fb_pitch + bx * 4, color)
+    j = j + 1
+  }
+  // Right edge
+  let bx2 = bx + bw - 1
+  let j2 = 0
+  while j2 < bh {
+    store32(fb_addr + (by + j2) * fb_pitch + bx2 * 4, color)
+    j2 = j2 + 1
+  }
+  return
+}
+
+// Helper: draw title bar background
+fn comp_draw_titlebar(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let ty = 0
+  while ty < 16 {
+    let tx = 0
+    while tx < w {
+      store32(fb_addr + (y + ty) * fb_pitch + (x + tx) * 4, 0x00222222)
+      tx = tx + 1
+    }
+    ty = ty + 1
+  }
+  return
+}
+
+// Helper: draw content area background
+fn comp_draw_content_bg(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + 16
+  let cy = 0
+  while cy < h {
+    let cx = 0
+    while cx < w {
+      store32(fb_addr + (content_y + cy) * fb_pitch + (x + cx) * 4, 0)
+      cx = cx + 1
+    }
+    cy = cy + 1
+  }
+  return
+}
+
+// Helper: draw content text
+fn comp_draw_content_text(base: Int) -> void {
+  let content = load64(base + 32)
+  if content == 0 {
+    return
+  }
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + 16
+  fb_draw_string(x + 2, content_y + 2, content, FB_COLOR_LIGHT_GRAY)
+  return
+}
+
+// Draw a single window.
+fn comp_render_window(idx: Int) -> void {
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  if (flags & COMP_WIN_VISIBLE) == 0 {
+    return
+  }
+
+  // Draw border
+  comp_draw_border(base, 0x00AAAAAA)
+
+  // Draw title bar
+  comp_draw_titlebar(base)
+
+  // Draw title text
+  let title = load64(base + 24)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  if title != 0 {
+    fb_draw_string(x + 4, y + 4, title, FB_COLOR_WHITE)
+  }
+
+  // Draw content background
+  comp_draw_content_bg(base)
+
+  // Draw content text
+  comp_draw_content_text(base)
+
+  // Clear dirty flag
+  let flags2 = load32(base + 20)
+  store32(base + 20, flags2 & -5)
+  return
+}
+
+// Render the entire desktop: background, all windows, cursor.
+fn comp_render() -> void {
+  comp_render_background()
+  let i = 0
+  while i < comp_count {
+    comp_render_window(i)
+    i = i + 1
+  }
+  // Draw taskbar at the bottom
+  comp_render_taskbar()
+  // Draw cursor on top of everything
+  comp_render_cursor()
+  return
+}
+
+// Draw the taskbar at the bottom of the screen.
+fn comp_render_taskbar() -> void {
+  let bar_h = 20
+  let bar_y = fb_height - bar_h
+  fb_fill_rect(0, bar_y, fb_width, bar_h, 0x00222222)
+  // Top line of taskbar (lighter)
+  let tx2 = 0
+  while tx2 < fb_width {
+    store32(fb_addr + bar_y * fb_pitch + tx2 * 4, 0x00888888)
+    tx2 = tx2 + 1
+  }
+  // Draw "Space OS" label
+  fb_draw_string(4, bar_y + 6, "Space OS", FB_COLOR_WHITE)
+  // Draw mouse coordinates label
+  fb_draw_string(fb_width - 120, bar_y + 6, "mouse:", FB_COLOR_LIGHT_GRAY)
+  // Draw a colored dot for mouse button state
+  if mouse_left_pressed() != 0 {
+    fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_GREEN)
+  } else {
+    fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_DARK_GREEN)
+  }
+  return
+}
+
+// --- input handling ---------------------------------------------------------
+
+// Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
+fn comp_handle_click(mx: Int, my: Int) -> Int {
+  // Check if clicking a title bar to drag
+  let idx = comp_win_at_point(mx, my)
+  if idx < 0 {
+    return 0
+  }
+  // Focus the window
+  comp_win_focus(idx)
+  // Check if clicking the title bar (for dragging)
+  if comp_win_in_titlebar(idx, mx, my) != 0 {
+    let base = comp_win_base(idx)
+    let wx = load32(base + 4)
+    let wy = load32(base + 8)
+    comp_drag_off_x = mx - wx
+    comp_drag_off_y = my - wy
+    comp_dragging = idx
+  }
+  return 1
+}
+
+// Handle mouse movement during drag.
+fn comp_handle_drag(mx: Int, my: Int) -> void {
+  if comp_dragging < 0 {
+    return
+  }
+  let base = comp_win_base(comp_dragging)
+  let new_x = mx - comp_drag_off_x
+  let new_y = my - comp_drag_off_y
+  if new_x < 0 {
+    store32(base + 4, 0)
+  } else {
+    store32(base + 4, new_x)
+  }
+  if new_y < 0 {
+    store32(base + 8, 0)
+  } else {
+    store32(base + 8, new_y)
+  }
+  // Mark dirty
+  let flags = load32(base + 20)
+  store32(base + 20, flags | COMP_WIN_DIRTY)
+  return
+}
+
+// Handle a keyboard event (key press). Returns 1 to exit compositor.
+fn comp_handle_key(key: Int) -> Int {
+  // Escape key (27) exits the compositor
+  if key == 27 {
+    return 1
+  }
+  return 0
+}
+
+// --- compositor main loop ---------------------------------------------------
+
+// Run the compositor. This is a blocking loop that renders the desktop and
+// handles input until the user presses Escape. The serial console is still
+// available for debugging, but the main interaction is via the framebuffer.
+fn comp_run(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  compositor: framebuffer not ready")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "space: compositor running (press ESC to exit)")
+  serial_nl(port)
+
+  // Create default windows
+  let win1_title = "Terminal"
+  let win1 = comp_win_create(win1_title, 40, 40, 320, 200)
+  let term_content = "Space OS Terminal\n\n> help\n> status\n> ls\n> linux\n\nWelcome to Space OS!\nPress ESC to exit desktop."
+  comp_win_set_content(win1, term_content)
+
+  let win2_title = "File Browser"
+  let win2 = comp_win_create(win2_title, 400, 60, 280, 160)
+  let file_content = "Files on disk:\n\n(no files yet)\n\nUse 'format' then\n'write <name> <text>'\nto create files."
+  comp_win_set_content(win2, file_content)
+
+  let win3_title = "System Info"
+  let win3 = comp_win_create(win3_title, 120, 280, 360, 120)
+  let sys_content = "Space OS v0.0.1\nNanokernel + Linux personality\nFramebuffer: active\nMouse: PS/2\nCompositor: Wayland-style"
+  comp_win_set_content(win3, sys_content)
+
+  comp_running = 1
+  let prev_left = 0
+
+  // Main compositor loop
+  while comp_running != 0 {
+    // Poll mouse
+    mouse_poll()
+
+    // Handle dragging
+    let cur_left = mouse_left_pressed()
+    if cur_left != 0 && prev_left == 0 {
+      // Mouse just pressed — check for window click
+      comp_handle_click(mouse_x, mouse_y)
+    }
+    if cur_left != 0 && comp_dragging >= 0 {
+      // Mouse held and dragging
+      comp_handle_drag(mouse_x, mouse_y)
+    }
+    if cur_left == 0 && prev_left != 0 {
+      // Mouse released
+      comp_dragging = -1
+    }
+    prev_left = cur_left
+
+    // Check for keyboard input (non-blocking serial read)
+    if serial_has_byte(com1()) != 0 {
+      let key = inb(com1())
+      if comp_handle_key(key) != 0 {
+        comp_running = 0
+      }
+    }
+
+    // Render the desktop
+    comp_render()
+
+    // Small delay to avoid burning CPU (use hlt with interrupts enabled)
+    sti()
+    hlt()
+  }
+
+  serial_write_cstr(port, "space: compositor exited")
+  serial_nl(port)
+  return
+}
