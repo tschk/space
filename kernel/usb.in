@@ -379,6 +379,7 @@ fn xhci_init() -> Int {
   let pci = xhci_find_pci()
   if pci == 0 {
     serial_write_cstr(port, "space: usb: no xHCI controller on PCI")
+    serial_nl(port)
     return -1
   }
   let bus = (pci >> 16) & 0xFF

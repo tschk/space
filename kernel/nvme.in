@@ -237,6 +237,7 @@ fn nvme_init() -> Int {
   }
   if found == 0 {
     serial_write_cstr(port, "  nvme: no NVMe controller found (class 0x010802)")
+    serial_nl(port)
     return -1
   }
 
