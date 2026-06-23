@@ -1,0 +1,170 @@
+package space.kernel
+
+// Process abstraction layer.
+// Wraps the domain + component + thread subsystems into a unified process
+// concept. Each process has an isolated memory domain, a registered component
+// object in the kernel graph, and a cooperative thread. The process table is a
+// flat array of 64-byte records allocated from the kernel heap.
+//
+// Process record (64 bytes):
+//   [id][domain_id][thread_id][entry_addr][caps][name_addr][status][exit_code]
+// Status: 0=ready, 1=running, 2=blocked, 3=exited, 4=killed
+
+const PROC_SIZE = 64
+const PROC_OFF_ID = 0
+const PROC_OFF_DOMAIN = 8
+const PROC_OFF_THREAD = 16
+const PROC_OFF_ENTRY = 24
+const PROC_OFF_CAPS = 32
+const PROC_OFF_NAME = 40
+const PROC_OFF_STATUS = 48
+const PROC_OFF_EXIT_CODE = 56
+
+const PROC_READY = 0
+const PROC_RUNNING = 1
+const PROC_BLOCKED = 2
+const PROC_EXITED = 3
+const PROC_KILLED = 4
+
+var proc_table: Int = 0
+var proc_count: Int = 0
+var proc_max: Int = 0
+var proc_current: Int = 0
+var proc_entry_arg: Int = 0
+
+// Allocate the process table with room for `max` processes.
+fn proc_init(max: Int) -> void {
+  proc_table = alloc(max * PROC_SIZE)
+  proc_max = max
+  proc_count = 0
+  proc_current = 0
+  let i = 0
+  while i < max {
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_ID, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_DOMAIN, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_THREAD, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_ENTRY, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_CAPS, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_NAME, 0)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_STATUS, PROC_READY)
+    store64(proc_table + i * PROC_SIZE + PROC_OFF_EXIT_CODE, 0)
+    i = i + 1
+  }
+  return
+}
+
+// Create a process: allocate an isolated domain, register the component in the
+// kernel object graph, create a cooperative thread, and return the PID.
+fn proc_create(name: Int, entry: Int, caps: Int) -> Int {
+  if proc_count >= proc_max { return -1 }
+  let pid = proc_count
+  let base = proc_table + pid * PROC_SIZE
+  let domain = domain_create()
+  if domain == 0 { return -1 }
+  component_register(name, entry, caps)
+  proc_entry_arg = pid
+  let tid = thr_create(entry)
+  store64(base + PROC_OFF_ID, pid)
+  store64(base + PROC_OFF_DOMAIN, domain)
+  store64(base + PROC_OFF_THREAD, tid)
+  store64(base + PROC_OFF_ENTRY, entry)
+  store64(base + PROC_OFF_CAPS, caps)
+  store64(base + PROC_OFF_NAME, name)
+  store64(base + PROC_OFF_STATUS, PROC_READY)
+  store64(base + PROC_OFF_EXIT_CODE, 0)
+  proc_count = proc_count + 1
+  return pid
+}
+
+// Mark the current process as exited with `code` and yield back to the
+// scheduler. The underlying thread is marked DONE so it will not be rescheduled.
+fn proc_exit(code: Int) -> void {
+  let base = proc_table + proc_current * PROC_SIZE
+  store64(base + PROC_OFF_STATUS, PROC_EXITED)
+  store64(base + PROC_OFF_EXIT_CODE, code)
+  thr_exit()
+  return
+}
+
+// Mark a process as killed. The thread is left to be reaped by the scheduler.
+fn proc_kill(pid: Int) -> void {
+  if pid >= proc_count { return }
+  let base = proc_table + pid * PROC_SIZE
+  store64(base + PROC_OFF_STATUS, PROC_KILLED)
+  return
+}
+
+// Block the caller until `pid` has exited or been killed, then return its exit
+// code. Uses cooperative yield-polling since .in has no atomics yet.
+fn proc_wait(pid: Int) -> Int {
+  if pid >= proc_count { return -1 }
+  let base = proc_table + pid * PROC_SIZE
+  while load64(base + PROC_OFF_STATUS) != PROC_EXITED && load64(base + PROC_OFF_STATUS) != PROC_KILLED {
+    thr_yield()
+  }
+  return load64(base + PROC_OFF_EXIT_CODE)
+}
+
+// Return the current status of `pid`, or -1 if out of range.
+fn proc_status(pid: Int) -> Int {
+  if pid >= proc_count { return -1 }
+  let base = proc_table + pid * PROC_SIZE
+  return load64(base + PROC_OFF_STATUS)
+}
+
+// Print all processes and their status (for the `ps` shell command).
+fn proc_list(port: Int) -> void {
+  serial_write_cstr(port, "  PID  DOMAIN  THREAD  STATUS   NAME")
+  serial_nl(port)
+  let i = 0
+  while i < proc_count {
+    let base = proc_table + i * PROC_SIZE
+    let id = load64(base + PROC_OFF_ID)
+    let dom = load64(base + PROC_OFF_DOMAIN)
+    let tid = load64(base + PROC_OFF_THREAD)
+    let status = load64(base + PROC_OFF_STATUS)
+    let name = load64(base + PROC_OFF_NAME)
+    serial_write_cstr(port, "  ")
+    serial_write_dec_wide(port, id)
+    serial_write_cstr(port, "  ")
+    serial_write_dec_wide(port, dom)
+    serial_write_cstr(port, "  ")
+    serial_write_dec_wide(port, tid)
+    serial_write_cstr(port, "  ")
+    if status == PROC_READY {
+      serial_write_cstr(port, "ready  ")
+    } else if status == PROC_RUNNING {
+      serial_write_cstr(port, "running")
+    } else if status == PROC_BLOCKED {
+      serial_write_cstr(port, "blocked")
+    } else if status == PROC_EXITED {
+      serial_write_cstr(port, "exited ")
+    } else if status == PROC_KILLED {
+      serial_write_cstr(port, "killed ")
+    } else {
+      serial_write_cstr(port, "unknown")
+    }
+    serial_write_cstr(port, "  ")
+    serial_write_cstr(port, name)
+    serial_nl(port)
+    i = i + 1
+  }
+  serial_write_cstr(port, "  total processes: ")
+  serial_write_dec_wide(port, proc_count)
+  serial_nl(port)
+  return
+}
+
+// Dummy process entry for testing: prints "hello from process N" and exits.
+// The PID is passed via the global proc_entry_arg since thr_create does not
+// support argument passing.
+fn proc_dummy_entry() -> Int {
+  let port = com1()
+  let pid = proc_entry_arg
+  proc_current = pid
+  serial_write_cstr(port, "space:   hello from process ")
+  serial_write_dec_wide(port, pid)
+  serial_nl(port)
+  proc_exit(0)
+  return 0
+}

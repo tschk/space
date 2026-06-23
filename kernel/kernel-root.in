@@ -8,6 +8,12 @@ import "channel.in"
 import "net.in"
 // Memory domain subsystem (Phase 0).
 import "domain.in"
+// ATA/PIO disk driver (primary master IDE).
+import "ata.in"
+// Minimal userspace runtime / libc (string, I/O, memory, conversion utils).
+import "libc.in"
+// Process abstraction layer (domain + component + thread).
+import "process.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -609,6 +615,9 @@ fn interrupts_init() -> void {
   idt_set(6, load64(0x4038))
   idt_set(13, load64(0x4040))
   idt_set(14, load64(0x4048))
+  // Wire the syscall trap (int 0x80) with DPL=3 so user-mode code can invoke it.
+  store64(0x4070, syscall_dispatch)
+  idt_set_user(0x80, load64(0x4068))
   let idtr = alloc(16)
   store16(idtr + 0, 256 * 16 - 1)
   store64(idtr + 2, idt_base)
@@ -616,6 +625,122 @@ fn interrupts_init() -> void {
   pic_remap()
   pit_init()
   sti()
+  return
+}
+
+// --- syscall trap (int 0x80) ------------------------------------------------
+// User programs request kernel services via int 0x80. The assembly stub
+// (isr_syscall) saves all 15 GP registers into a frame on the stack and calls
+// syscall_dispatch with a pointer to that frame. The dispatch function reads
+// the syscall number from RAX (frame offset 112) and the arguments from
+// RDI (72), RSI (80), RDX (88), then writes the return value back into the
+// RAX slot so the stub's iretq delivers it to the caller.
+//
+// Frame layout (matches push order in isr_syscall):
+//   rax=112 rbx=104 rcx=96 rdx=88 rsi=80 rdi=72 rbp=64
+//   r8=56 r9=48 r10=40 r11=32 r12=24 r13=16 r14=8 r15=0
+
+// Syscall 0: sys_write(fd, buf, len) — write to serial console (fd=1 = stdout).
+fn sys_write(fd: Int, buf: Int, len: Int) -> Int {
+  if fd != 1 {
+    return -1
+  }
+  let port = com1()
+  let i = 0
+  while i < len {
+    serial_put(port, load8(buf + i))
+    i = i + 1
+  }
+  return len
+}
+
+// Syscall 1: sys_read(fd, buf, len) — read from serial (fd=0 = stdin, blocking).
+// Reads up to len bytes, stopping at a newline, and returns the byte count.
+fn sys_read(fd: Int, buf: Int, len: Int) -> Int {
+  if fd != 0 {
+    return -1
+  }
+  let port = com1()
+  let i = 0
+  while i < len {
+    let c = serial_read(port)
+    store8(buf + i, c)
+    i = i + 1
+    if c == 10 || c == 13 {
+      return i
+    }
+  }
+  return len
+}
+
+// Syscall 2: sys_exit(code) — exit the current process/component.
+// In kernel context (thread 0) this halts the nanokernel.
+fn sys_exit(code: Int) -> Int {
+  let port = com1()
+  serial_write_cstr(port, "space: sys_exit(code=0x")
+  serial_write_hex(port, code)
+  serial_write_cstr(port, ") from thread 0x")
+  serial_write_hex(port, current_task)
+  serial_nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return 0
+}
+
+// Syscall 3: sys_yield() — yield CPU to scheduler.
+// In kernel context this is a no-op since there is nothing to yield to.
+fn sys_yield() -> Int {
+  return 0
+}
+
+// Syscall 4: sys_getpid() — return current thread ID.
+fn sys_getpid() -> Int {
+  return current_task
+}
+
+// Dispatch a syscall based on the number in the saved RAX slot of the frame.
+// Writes the return value back into the RAX slot (frame offset 112).
+fn syscall_dispatch(frame: Int) -> void {
+  let num = load64(frame + 112)
+  if num == 0 {
+    let fd = load64(frame + 72)
+    let buf = load64(frame + 80)
+    let len = load64(frame + 88)
+    store64(frame + 112, sys_write(fd, buf, len))
+  } else if num == 1 {
+    let fd = load64(frame + 72)
+    let buf = load64(frame + 80)
+    let len = load64(frame + 88)
+    store64(frame + 112, sys_read(fd, buf, len))
+  } else if num == 2 {
+    let code = load64(frame + 72)
+    store64(frame + 112, sys_exit(code))
+  } else if num == 3 {
+    store64(frame + 112, sys_yield())
+  } else if num == 4 {
+    store64(frame + 112, sys_getpid())
+  } else {
+    let port = com1()
+    serial_write_cstr(port, "space: unknown syscall 0x")
+    serial_write_hex(port, num)
+    serial_nl(port)
+    store64(frame + 112, -1)
+  }
+  return
+}
+
+// Install a 64-bit interrupt gate with DPL=3 so user-mode code can invoke it.
+fn idt_set_user(vec: Int, handler: Int) -> void {
+  let e = idt_base + vec * 16
+  store16(e + 0, handler & 0xFFFF)
+  store16(e + 2, 0x08)
+  store8(e + 4, 0)
+  store8(e + 5, 0xEE)             ; present | DPL=3 | interrupt gate
+  store16(e + 6, (handler >> 16) & 0xFFFF)
+  store32(e + 8, (handler >> 32) & 0xFFFFFFFF)
+  store32(e + 12, 0)
   return
 }
 
@@ -1020,6 +1145,27 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   return status
 }
 
+// --- syscall demo -----------------------------------------------------------
+// Demonstrates calling sys_write via the int 0x80 trap from kernel context.
+// The assembly helper syscall_write_demo (published at [0x4078]) rearranges
+// its arguments into the syscall register convention and executes int 0x80,
+// which traps into isr_syscall -> syscall_dispatch -> sys_write.
+fn run_syscall_demo(port: Int) -> void {
+  serial_write_cstr(port, "space: syscall demo -- calling sys_write via int 0x80")
+  serial_nl(port)
+  let demo = load64(0x4078)
+  let msg = "  hello from syscall (int 0x80)!\n"
+  let len = 0
+  while load8(msg + len) != 0 {
+    len = len + 1
+  }
+  let result = invoke2(demo, msg, len)
+  serial_write_cstr(port, "space: sys_write returned 0x")
+  serial_write_hex(port, result)
+  serial_nl(port)
+  return
+}
+
 // --- interactive serial shell ----------------------------------------------
 fn serial_has_byte(port: Int) -> Int {
   return inb(port + 5) & 1
@@ -1129,7 +1275,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> uptime halt")
+        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net disk [lba] snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> proc <name> uptime syscall halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1153,6 +1299,8 @@ fn shell(port: Int) -> void {
       pci_scan(port)
     } else if line_eq("net") != 0 {
       run_net(port)
+    } else if line_eq("disk") != 0 {
+      ata_shell(port, 0)
     } else if line_eq("det") != 0 {
       run_determinism(port)
     } else if line_eq("domain") != 0 {
@@ -1238,10 +1386,7 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, ticks)
       serial_nl(port)
     } else if line_eq("ps") != 0 {
-      serial_write_cstr(port, "  scheduler tasks 0x")
-      serial_write_hex(port, thread_count)
-        serial_write_cstr(port, " (workers)")
-      serial_nl(port)
+      proc_list(port)
     } else if line_eq("test") != 0 {
       serial_write_cstr(port, "  array selftest sum 0x")
       serial_write_hex(port, array_selftest())
@@ -1285,9 +1430,37 @@ fn shell(port: Int) -> void {
             serial_write_cstr(port, "] := 0x")
             serial_write_hex(port, load64(addr))
             serial_nl(port)
-          } else if n != 0 {
-            serial_write_cstr(port, "  unknown command (try 'help')")
-            serial_nl(port)
+          } else {
+            let rest = line_prefix("disk ")
+            if rest >= 0 {
+              let lba = str_to_hex(line + rest)
+              ata_shell(port, lba)
+            } else {
+              let rest = line_prefix("proc ")
+              if rest >= 0 {
+                let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
+                if pid < 0 {
+                  serial_write_cstr(port, "  proc: process table full")
+                  serial_nl(port)
+                } else {
+                  serial_write_cstr(port, "  proc: created process ")
+                  serial_write_dec_wide(port, pid)
+                  serial_write_cstr(port, " (")
+                  serial_write_cstr(port, line + rest)
+                  serial_write_cstr(port, "), running...")
+                  serial_nl(port)
+                  thr_run()
+                  serial_write_cstr(port, "  proc: process ")
+                  serial_write_dec_wide(port, pid)
+                  serial_write_cstr(port, " exited with code ")
+                  serial_write_dec_wide(port, proc_wait(pid))
+                  serial_nl(port)
+                }
+              } else if n != 0 {
+                serial_write_cstr(port, "  unknown command (try 'help')")
+                serial_nl(port)
+              }
+            }
           }
         }
       }
@@ -1376,6 +1549,11 @@ fn kernel_entry(mb_info: Int) -> Int {
   if load64(0x140000) == SCI_MAGIC {
     sci_load(port, 0x140000)
   }
+
+  // Initialize the process abstraction layer.
+  proc_init(16)
+  serial_write_cstr(port, "space: process table initialized (max 16)")
+  serial_nl(port)
 
   // Drop into the interactive serial shell.
   shell(port)
