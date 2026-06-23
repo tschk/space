@@ -1,0 +1,152 @@
+package space.kernel
+
+// PS/2 keyboard driver (polling-based).
+// The PS/2 controller is at port 0x60 (data) and 0x64 (status/command).
+// IRQ1 maps to interrupt vector 33 after PIC remap. This driver uses polling
+// (status port bit 0) for simplicity; the interrupt path can be wired up when
+// an ISR stub is added to the boot trampoline.
+
+const KB_DATA_PORT = 0x60
+const KB_STATUS_PORT = 0x64
+const KB_CMD_PORT = 0x64
+
+var kb_scan_table: Int = 0
+
+// Build the Set 1 scancode-to-ASCII lookup table.
+fn kb_init_table() -> void {
+  kb_scan_table = alloc(256)
+  for i in 0..256 {
+    store8(kb_scan_table + i, 0)
+  }
+  // Special keys
+  store8(kb_scan_table + 0x01, 27)   // Escape
+  store8(kb_scan_table + 0x0E, 8)    // Backspace
+  store8(kb_scan_table + 0x0F, 9)    // Tab
+  store8(kb_scan_table + 0x1C, 10)   // Enter
+  store8(kb_scan_table + 0x39, 32)   // Space
+  // Number row
+  store8(kb_scan_table + 0x02, 49)   // 1
+  store8(kb_scan_table + 0x03, 50)   // 2
+  store8(kb_scan_table + 0x04, 51)   // 3
+  store8(kb_scan_table + 0x05, 52)   // 4
+  store8(kb_scan_table + 0x06, 53)   // 5
+  store8(kb_scan_table + 0x07, 54)   // 6
+  store8(kb_scan_table + 0x08, 55)   // 7
+  store8(kb_scan_table + 0x09, 56)   // 8
+  store8(kb_scan_table + 0x0A, 57)   // 9
+  store8(kb_scan_table + 0x0B, 48)   // 0
+  store8(kb_scan_table + 0x0C, 45)   // -
+  store8(kb_scan_table + 0x0D, 61)   // =
+  // Letters (QWERTY layout, lowercase)
+  store8(kb_scan_table + 0x10, 113)  // q
+  store8(kb_scan_table + 0x11, 119)  // w
+  store8(kb_scan_table + 0x12, 101)  // e
+  store8(kb_scan_table + 0x13, 114)  // r
+  store8(kb_scan_table + 0x14, 116)  // t
+  store8(kb_scan_table + 0x15, 121)  // y
+  store8(kb_scan_table + 0x16, 117)  // u
+  store8(kb_scan_table + 0x17, 105)  // i
+  store8(kb_scan_table + 0x18, 111)  // o
+  store8(kb_scan_table + 0x19, 112)  // p
+  store8(kb_scan_table + 0x1A, 91)   // [
+  store8(kb_scan_table + 0x1B, 93)   // ]
+  store8(kb_scan_table + 0x1E, 97)   // a
+  store8(kb_scan_table + 0x1F, 115)  // s
+  store8(kb_scan_table + 0x20, 100)  // d
+  store8(kb_scan_table + 0x21, 102)  // f
+  store8(kb_scan_table + 0x22, 103)  // g
+  store8(kb_scan_table + 0x23, 104)  // h
+  store8(kb_scan_table + 0x24, 106)  // j
+  store8(kb_scan_table + 0x25, 107)  // k
+  store8(kb_scan_table + 0x26, 108)  // l
+  store8(kb_scan_table + 0x27, 59)   // ;
+  store8(kb_scan_table + 0x28, 39)   // '
+  store8(kb_scan_table + 0x29, 96)   // `
+  store8(kb_scan_table + 0x2B, 92)   // backslash
+  store8(kb_scan_table + 0x2C, 122)  // z
+  store8(kb_scan_table + 0x2D, 120)  // x
+  store8(kb_scan_table + 0x2E, 99)   // c
+  store8(kb_scan_table + 0x2F, 118)  // v
+  store8(kb_scan_table + 0x30, 98)   // b
+  store8(kb_scan_table + 0x31, 110)  // n
+  store8(kb_scan_table + 0x32, 109)  // m
+  store8(kb_scan_table + 0x33, 44)   // ,
+  store8(kb_scan_table + 0x34, 46)   // .
+  store8(kb_scan_table + 0x35, 47)   // /
+  return
+}
+
+// Enable the PS/2 keyboard. IRQ1 is vector 33 after PIC remap. This driver
+// uses polling (status port bit 0) rather than interrupts for simplicity.
+fn keyboard_init() -> void {
+  // Flush any pending scancodes from the output buffer.
+  while (inb(KB_STATUS_PORT) & 1) != 0 {
+    inb(KB_DATA_PORT)
+  }
+  // Enable the first PS/2 port (keyboard) in the controller.
+  outb(KB_CMD_PORT, 0xAE)
+  // Build the scancode lookup table.
+  kb_init_table()
+  return
+}
+
+// Check if keyboard data is available (status port bit 0 = output buffer full).
+fn keyboard_has_data() -> Int {
+  return inb(KB_STATUS_PORT) & 1
+}
+
+// Read one press scancode from port 0x60, skipping release and extended
+// prefixes. For Set 1, release events have bit 7 set. For Set 2, 0xF0 is the
+// release prefix. 0xE0 is the extended key prefix. All are skipped here.
+fn keyboard_read_scancode() -> Int {
+  let found = 0
+  let result = 0
+  while found == 0 {
+    while keyboard_has_data() == 0 {
+    }
+    let sc = inb(KB_DATA_PORT)
+    if sc == 0xE0 {
+      // Extended key prefix: discard the following scancode.
+      while keyboard_has_data() == 0 {
+      }
+      inb(KB_DATA_PORT)
+    } else if sc == 0xF0 {
+      // Set 2 release prefix: discard the following scancode.
+      while keyboard_has_data() == 0 {
+      }
+      inb(KB_DATA_PORT)
+    } else if sc < 0x80 {
+      // Set 1 key press: return it.
+      result = sc
+      found = 1
+    }
+    // Set 1 release (sc >= 0x80, not 0xE0/0xF0): loop and try again.
+  }
+  return result
+}
+
+// Convert a Set 1 scancode to ASCII. Returns 0 for unmapped keys.
+fn scancode_to_ascii(scancode: Int) -> Int {
+  return load8(kb_scan_table + scancode)
+}
+
+// Shell command "key": read one keypress and print its scancode and ASCII value.
+fn keyboard_key_cmd(port: Int) -> void {
+  serial_write_cstr(port, "  press a key (polling PS/2)...")
+  serial_nl(port)
+  let sc = keyboard_read_scancode()
+  let ch = scancode_to_ascii(sc)
+  serial_write_cstr(port, "  scancode 0x")
+  serial_write_hex(port, sc)
+  serial_write_cstr(port, " ascii ")
+  if ch >= 32 && ch < 127 {
+    serial_put(port, ch)
+  } else {
+    serial_write_cstr(port, "(non-printable)")
+  }
+  serial_write_cstr(port, " (0x")
+  serial_write_hex(port, ch)
+  serial_write_cstr(port, ")")
+  serial_nl(port)
+  return
+}

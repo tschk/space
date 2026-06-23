@@ -8,6 +8,10 @@ import "channel.in"
 import "net.in"
 // Memory domain subsystem (Phase 0).
 import "domain.in"
+// PS/2 keyboard driver.
+import "keyboard.in"
+// VGA text mode console.
+import "vga.in"
 // ATA/PIO disk driver (primary master IDE).
 import "ata.in"
 // Minimal userspace runtime / libc (string, I/O, memory, conversion utils).
@@ -1275,7 +1279,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net disk [lba] snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> proc <name> uptime syscall halt")
+        serial_write_cstr(port, "commands: help status mem ticks ps test libc det domain chan pci net disk [lba] snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> proc <name> format ls write <name> <text> read <name> rm <name> key vga uptime syscall halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1392,15 +1396,27 @@ fn shell(port: Int) -> void {
       serial_write_hex(port, array_selftest())
         serial_write_cstr(port, " (expect 0x8C)")
       serial_nl(port)
+    } else if line_eq("libc") != 0 {
+      puts("libc test")
     } else if line_eq("halt") != 0 {
         serial_write_cstr(port, "  halting on request")
       serial_nl(port)
       return
+    } else if line_eq("key") != 0 {
+      keyboard_key_cmd(port)
+    } else if line_eq("vga") != 0 {
+      vga_cmd(port)
     } else if line_eq("uptime") != 0 {
       serial_write_cstr(port, "  ")
       serial_write_dec_wide(port, ticks)
         serial_write_cstr(port, " ticks since boot")
       serial_nl(port)
+    } else if line_eq("format") != 0 {
+      fs_format()
+      serial_write_cstr(port, "  disk formatted (superblock + empty file table written)")
+      serial_nl(port)
+    } else if line_eq("ls") != 0 {
+      fs_list(port)
     } else {
       let rest = line_prefix("echo ")
       if rest >= 0 {
@@ -1456,9 +1472,66 @@ fn shell(port: Int) -> void {
                   serial_write_dec_wide(port, proc_wait(pid))
                   serial_nl(port)
                 }
-              } else if n != 0 {
-                serial_write_cstr(port, "  unknown command (try 'help')")
-                serial_nl(port)
+              } else {
+                let rest = line_prefix("write ")
+                if rest >= 0 {
+                  // Parse "<name> <text>" — find the space separating them
+                  let sp = 0
+                  while load8(line + rest + sp) > 32 {
+                    sp = sp + 1
+                  }
+                  store8(line + rest + sp, 0)
+                  let name_addr = line + rest
+                  let text_addr = line + rest + sp + 1
+                  let tlen = 0
+                  while load8(text_addr + tlen) != 0 {
+                    tlen = tlen + 1
+                  }
+                  let rc = fs_write_file(name_addr, text_addr, tlen)
+                  if rc != 0 {
+                    serial_write_cstr(port, "  write: failed (table full or disk error)")
+                    serial_nl(port)
+                  } else {
+                    serial_write_cstr(port, "  write: wrote ")
+                    serial_write_dec_wide(port, tlen)
+                    serial_write_cstr(port, " bytes to ")
+                    serial_write_cstr(port, name_addr)
+                    serial_nl(port)
+                  }
+                } else {
+                  let rest = line_prefix("read ")
+                  if rest >= 0 {
+                    let rbuf = alloc(4096)
+                    let rsize = fs_read_file(line + rest, rbuf)
+                    if rsize < 0 {
+                      serial_write_cstr(port, "  read: file not found")
+                      serial_nl(port)
+                    } else {
+                      serial_write_cstr(port, "  ")
+                      let ri = 0
+                      while ri < rsize {
+                        serial_put(port, load8(rbuf + ri))
+                        ri = ri + 1
+                      }
+                      serial_nl(port)
+                    }
+                  } else {
+                    let rest = line_prefix("rm ")
+                    if rest >= 0 {
+                      let rc = fs_delete(line + rest)
+                      if rc != 0 {
+                        serial_write_cstr(port, "  rm: file not found")
+                        serial_nl(port)
+                      } else {
+                        serial_write_cstr(port, "  rm: deleted")
+                        serial_nl(port)
+                      }
+                    } else if n != 0 {
+                      serial_write_cstr(port, "  unknown command (try 'help')")
+                      serial_nl(port)
+                    }
+                  }
+                }
               }
             }
           }
@@ -1553,6 +1626,20 @@ fn kernel_entry(mb_info: Int) -> Int {
   // Initialize the process abstraction layer.
   proc_init(16)
   serial_write_cstr(port, "space: process table initialized (max 16)")
+  serial_nl(port)
+
+  // Initialize the flat filesystem (loads file table from disk if formatted).
+  fs_init()
+  serial_write_cstr(port, "space: filesystem initialized")
+  serial_nl(port)
+
+  // Initialize PS/2 keyboard driver and VGA text mode console.
+  keyboard_init()
+  serial_write_cstr(port, "space: PS/2 keyboard driver initialized (polling)")
+  serial_nl(port)
+  vga_clear()
+  vga_puts("Space OS v0.0.1\n")
+  serial_write_cstr(port, "space: VGA text mode console initialized")
   serial_nl(port)
 
   // Drop into the interactive serial shell.
