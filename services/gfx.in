@@ -1,0 +1,180 @@
+package space.services
+
+// Graphics compositor microservice.
+// Manages surfaces, blitting, and input routing over channel IPC.
+component GraphicsService {
+  target "x86_64-space"
+  deterministic false
+  checkpoint none
+
+  export svc: GraphicsApi
+
+  capability serial: DebugConsole(write)
+  // Request MMIO map access to the framebuffer from the kernel
+  capability gpu: Framebuffer(map)
+}
+
+interface GraphicsApi {
+  fn create_surface(w: Int, h: Int, x: Int, y: Int, z_index: Int) -> Int
+  fn draw_rect(surface_id: Int, rect_x: Int, rect_y: Int, w: Int, h: Int, color: Int) -> void
+  fn composite() -> void
+}
+
+struct Surface {
+  Int id
+  Int x
+  Int y
+  Int w
+  Int h
+  Int buf
+  Int z_index
+}
+
+var surfaces: Int = 0
+var surface_count: Int = 0
+var surface_capacity: Int = 128
+var sorted_array: Int = 0
+
+var fb_base: Int = 0
+var fb_width: Int = 1024
+var fb_height: Int = 768
+
+fn create_surface(w: Int, h: Int, x: Int, y: Int, z_index: Int) -> Int {
+  if surfaces == 0 {
+    surfaces = alloc(surface_capacity * 8)
+    sorted_array = alloc(surface_capacity * 8)
+  }
+  if surface_count >= surface_capacity {
+    return -1
+  }
+  let id = surface_count
+  surface_count = surface_count + 1
+
+  let s_ptr = alloc(56) // sizeof Surface
+  store32(s_ptr + 0, id)
+  store32(s_ptr + 8, x)
+  store32(s_ptr + 16, y)
+  store32(s_ptr + 24, w)
+  store32(s_ptr + 32, h)
+  store64(s_ptr + 40, alloc(w * h * 4))
+  store32(s_ptr + 48, z_index)
+
+  store64(surfaces + id * 8, s_ptr)
+  return id
+}
+
+fn draw_rect(surface_id: Int, rect_x: Int, rect_y: Int, w: Int, h: Int, color: Int) -> void {
+  if surface_id < 0 || surface_id >= surface_count {
+    return
+  }
+  let s_ptr = load64(surfaces + surface_id * 8)
+  let s_w = load32(s_ptr + 24)
+  let s_h = load32(s_ptr + 32)
+  let buf = load64(s_ptr + 40)
+
+  let row = 0
+  while row < h {
+    let y_pos = rect_y + row
+    if y_pos >= 0 && y_pos < s_h {
+      let col = 0
+      while col < w {
+        let x_pos = rect_x + col
+        if x_pos >= 0 && x_pos < s_w {
+          let offset = (y_pos * s_w + x_pos) * 4
+          store32(buf + offset, color)
+        }
+        col = col + 1
+      }
+    }
+    row = row + 1
+  }
+  return
+}
+
+fn composite() -> void {
+  if fb_base == 0 {
+    return
+  }
+
+  // Clear fb
+  let total_pixels = fb_width * fb_height
+  let i = 0
+  while i < total_pixels {
+    store32(fb_base + i * 4, 0)
+    i = i + 1
+  }
+
+  // Simple insertion sort array of indices for z-index
+  let k = 0
+  while k < surface_count {
+    store64(sorted_array + k * 8, k)
+    k = k + 1
+  }
+
+  let i_s = 1
+  while i_s < surface_count {
+    let j_s = i_s
+    while j_s > 0 {
+      let id1 = load64(sorted_array + (j_s - 1) * 8)
+      let id2 = load64(sorted_array + j_s * 8)
+      let ptr1 = load64(surfaces + id1 * 8)
+      let ptr2 = load64(surfaces + id2 * 8)
+      let z1 = load32(ptr1 + 48)
+      let z2 = load32(ptr2 + 48)
+      if z1 > z2 {
+        // swap
+        store64(sorted_array + (j_s - 1) * 8, id2)
+        store64(sorted_array + j_s * 8, id1)
+      } else {
+        j_s = 0 // break
+      }
+      if j_s > 0 {
+        j_s = j_s - 1
+      }
+    }
+    i_s = i_s + 1
+  }
+
+  // Blit surfaces
+  let sid = 0
+  while sid < surface_count {
+    let sorted_id = load64(sorted_array + sid * 8)
+    let s_ptr = load64(surfaces + sorted_id * 8)
+    let s_x = load32(s_ptr + 8)
+    let s_y = load32(s_ptr + 16)
+    let s_w = load32(s_ptr + 24)
+    let s_h = load32(s_ptr + 32)
+    let buf = load64(s_ptr + 40)
+
+    let row = 0
+    while row < s_h {
+      let dst_y = s_y + row
+      if dst_y >= 0 && dst_y < fb_height {
+        let col = 0
+        while col < s_w {
+          let dst_x = s_x + col
+          if dst_x >= 0 && dst_x < fb_width {
+            let src_off = (row * s_w + col) * 4
+            let dst_off = (dst_y * fb_width + dst_x) * 4
+            let pixel = load32(buf + src_off)
+            if pixel != 0 {
+              store32(fb_base + dst_off, pixel)
+            }
+          }
+          col = col + 1
+        }
+      }
+      row = row + 1
+    }
+    sid = sid + 1
+  }
+  return
+}
+
+fn gfx_entry() -> Int {
+  fb_base = gpu_map()
+  if fb_base == 0 {
+    return -1
+  }
+  return 0
+}
