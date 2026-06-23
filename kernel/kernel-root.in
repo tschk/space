@@ -1208,11 +1208,11 @@ fn read_line(port: Int) -> Int {
 }
 
 // Parse a hex string at addr into an integer.
-// ponytail: stops at first non-hex char; no overflow check.
+// Stops at first non-hex char or after 16 chars (64-bit max).
 fn str_to_hex(addr: Int) -> Int {
   let result = 0
   let i = 0
-  while true {
+  while i < 16 {
     let c = load8(addr + i)
     if (c >= 48) && (c <= 57) {  // 0-9
       result = result * 16 + c - 48
@@ -1225,7 +1225,7 @@ fn str_to_hex(addr: Int) -> Int {
     }
     i = i + 1
   }
-  return 0
+  return result
 }
 
 // Compare the line buffer against a NUL-terminated command string.
