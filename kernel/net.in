@@ -47,7 +47,8 @@ fn net_print_mac(port: Int) -> void {
 fn e1000_init(port: Int) -> Int {
   let bar0 = pci_find_and_enable_e1000()
   if bar0 == 0 {
-    serial_write_cstr(port, "  net: no e1000 NIC found\n")
+    serial_write_cstr(port, "  net: no e1000 NIC found")
+    serial_nl(port)
     return 0
   }
   serial_write_cstr(port, "  net: e1000 found at BAR0 0x")
