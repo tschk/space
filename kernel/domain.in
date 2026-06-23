@@ -6,8 +6,6 @@
 const MAX_DOMAINS = 64
 const DOMAIN_FREE = 0
 const DOMAIN_ACTIVE = 1
-const DOMAIN_SUSPENDED = 2
-const DOMAIN_DESTROYED = 3
 
 var domain_table: Int = 0
 var domain_count: Int = 0
@@ -64,10 +62,10 @@ fn domain_switch(id: Int) -> void {
   return
 }
 
-fn domain_install_mapping(domain: Int, virt: Int, phys: Int, flags: Int) -> Int {
-  if domain >= domain_count { return 0 }
+fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
+  if domain >= domain_count { return }
   let pml4 = load64(domain_table + domain * 24 + 0)
-  if pml4 == 0 { return 0 }
+  if pml4 == 0 { return }
   let i4 = (virt >> 39) & 0x1FF
   let i3 = (virt >> 30) & 0x1FF
   let i2 = (virt >> 21) & 0x1FF
@@ -94,66 +92,6 @@ fn domain_install_mapping(domain: Int, virt: Int, phys: Int, flags: Int) -> Int 
   }
   let pt = e2 & -4096
   store64(pt + i1 * 8, phys | flags | 1)
-  return 1
-}
-
-fn domain_page_entry(domain: Int, virt: Int) -> Int {
-  if domain >= domain_count { return 0 }
-  let pml4 = load64(domain_table + domain * 24 + 0)
-  if pml4 == 0 { return 0 }
-  let i4 = (virt >> 39) & 0x1FF
-  let i3 = (virt >> 30) & 0x1FF
-  let i2 = (virt >> 21) & 0x1FF
-  let i1 = (virt >> 12) & 0x1FF
-  let e4 = load64(pml4 + i4 * 8)
-  if (e4 & 1) == 0 { return 0 }
-  let e3 = load64((e4 & -4096) + i3 * 8)
-  if (e3 & 1) == 0 { return 0 }
-  let e2 = load64((e3 & -4096) + i2 * 8)
-  if (e2 & 1) == 0 { return 0 }
-  return load64((e2 & -4096) + i1 * 8)
-}
-
-fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
-  if domain >= domain_count { return }
-  domain_install_mapping(domain, virt, phys, flags)
-  return
-}
-
-fn domain_unmap(domain: Int, virt: Int) -> void {
-  if domain >= domain_count { return }
-  let pml4 = load64(domain_table + domain * 24 + 0)
-  if pml4 == 0 { return }
-  let i4 = (virt >> 39) & 0x1FF
-  let i3 = (virt >> 30) & 0x1FF
-  let i2 = (virt >> 21) & 0x1FF
-  let i1 = (virt >> 12) & 0x1FF
-  let e4 = load64(pml4 + i4 * 8)
-  if (e4 & 1) == 0 { return }
-  let e3 = load64((e4 & -4096) + i3 * 8)
-  if (e3 & 1) == 0 { return }
-  let e2 = load64((e3 & -4096) + i2 * 8)
-  if (e2 & 1) == 0 { return }
-  store64((e2 & -4096) + i1 * 8, 0)
-  return
-}
-
-fn domain_translate(domain: Int, virt: Int) -> Int {
-  let entry = domain_page_entry(domain, virt)
-  if entry == 0 { return 0 }
-  return entry & -4096
-}
-
-fn domain_mapping_flags(domain: Int, virt: Int) -> Int {
-  let entry = domain_page_entry(domain, virt)
-  if entry == 0 { return 0 }
-  return entry & 0xFFF
-}
-
-fn domain_destroy(id: Int) -> void {
-  if id > 0 && id < domain_count {
-    store64(domain_table + id * 24 + 8, DOMAIN_DESTROYED)
-  }
   return
 }
 

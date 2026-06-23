@@ -26,11 +26,9 @@ layer.
 
 ## Architecture
 
-- [`architecture.md`](architecture.md) — full system architecture, all five
-  layers, implementation roadmap in 9 phases with dependencies
+- [`architecture.md`](architecture.md) — system architecture and
+  implemented subsystems
 - [`sci-schema.md`](sci-schema.md) — Space Component Image metadata format
-- [`compatibility-personalities.md`](compatibility-personalities.md) — how
-  Linux, Darwin, and Windows programs run as guest components
 - [`AGENTS.md`](AGENTS.md) — repository workflow and boundaries
 
 ## Status: it boots
@@ -57,13 +55,13 @@ space>
 
 ### Running Subsystems
 
-The kernel is 90 declarations in 1517 lines of `.in`, emitting 46,599 bytes of
-x86_64 machine code in a 55,047-byte boot image:
+The kernel is ~80 declarations in ~1300 lines of `.in`, compiled by
+Inauguration into a ~49 KiB boot image:
 
 | Subsystem | Status |
 |-----------|--------|
 | x86_64 long mode boot (Multiboot1) | ✅ |
-| Serial console (COM1, TX buffered) | ✅ |
+| Serial console (COM1) | ✅ |
 | Physical memory discovery | ✅ |
 | Bump heap + 4K frame allocator | ✅ |
 | Kernel 4-level page table management | ✅ |
@@ -76,16 +74,12 @@ x86_64 machine code in a 55,047-byte boot image:
 | Cooperative M:N threading | ✅ |
 | Preemptive multitasking (timer context switch) | ✅ |
 | Typed IPC channels (ring buffer, poll-with-yield) | ✅ |
-| Object graph edges (typed references, DFS walk) | ✅ |
+| Cross-domain shared-page channels | ✅ |
 | Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader demo (domain-mapped virtual component call, manifest/cap validation, lifecycle object) | ✅ |
+| SCI loader (domain-mapped virtual component call, manifest/cap validation) | ✅ |
 | e1000 NIC driver (PCI, ARP, UDP) | ✅ |
-| Deterministic kernel workload + time-service tick source | ✅ |
-| Shell (16 commands: help, uptime, peek, poke, echo, ...) | ✅ |
-| Kernel benchmark script (boot timing, approximate phase breakdown) | ✅ |
-| `free_frame` LIFO reclaim | ✅ |
-| `chan_select` multi-channel poll | ✅ |
-| `cap_revoke` | ✅ |
+| Deterministic execution subsystem | ✅ |
+| Interactive shell (16 commands) | ✅ |
 
 ## Target Architectures
 
@@ -98,67 +92,44 @@ x86_64 machine code in a 55,047-byte boot image:
 The Inauguration compiler emits freestanding x86_64 code with SCI metadata for the verified kernel contract.
 Multi-platform lowering is a target for future phases.
 
-## Implementation Roadmap
-
-The [architecture document](architecture.md) defines 9 phases:
-
-```
-Phase 0: Domain subsystem       ← NOW (multiple memory domains)
-Phase 1: Cross-domain channels  ← NEXT (IPC between domains)
-Phase 2: Core microservices     ← proc.in and time.in exist; mem.in and rand.in planned
-Phase 3: Component loader       ← SCI runtime loads .in components
-Phase 4: Filesystem             ← fs.in as .in microservice
-Phase 5: Networking             ← e1000 ARP + UDP transmit path; TCP/IP stack planned
-Phase 6: Graphics               ← gfx.in compositor
-Phase 7: Compatibility          ← Linux/Darwin/Windows guests
-Phase 8: Distribution           ← remote components, migration
-```
-
-The current Phase 0 blocker is service scheduling: the SCI demo now maps a
-component at a private virtual address in a switched domain and records it as a
-component object, but proc/time/fs services are not scheduled as isolated
-microservices yet.
-
 ## Build and Run
 
-Requirements: `clang`, `make`, `nasm`, `qemu-system-x86_64`, and Inauguration
+Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration
 checked out at `../inauguration`.
 
 ```sh
 # Full boot check (compiles kernel, boots QEMU, asserts boot-critical subsystems)
 bash scripts/check-qemu-boot.sh
 
-# Boot timing benchmark (5 runs)
-bash scripts/bench-boot.sh
-
 # SCI component loading demo
 bash scripts/build-multicomponent.sh
 
 # SCI metadata validation
 bash scripts/check-sci-contract.sh
+
+# Network driver test
+bash scripts/check-network.sh
 ```
 
-Development is cross-platform — macOS (ARM64), Linux (x86_64, glibc and musl).
+Development is cross-platform — macOS (ARM64), Linux (x86_64).
 
 ## Repository Layout
 
 ```
 kernel/
-  kernel-root.in          nanokernel (1510 lines, 90 declarations)
-  domain.in               Phase 0 memory domains
-  channel.in              Phase 1 channel fabric
+  kernel-root.in          nanokernel root component
+  domain.in               memory domain subsystem
+  channel.in              cross-domain channel fabric
   net.in                  e1000 NIC driver
-  pci.in                  PCI configuration space access
-  determinism.in          Deterministic execution subsystem
-  elf-loader.in           ELF64 parser for Phase 7 compatibility
-  guest-service.in        SCI component loading demo
+  pci.in                  PCI bus enumeration
+  guest-service.in        SCI guest component example
 boot/
   multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
 scripts/
   check-qemu-boot.sh      Full boot verification
-  bench-boot.sh           Boot timing benchmark
   build-multicomponent.sh SCI loading demo
   check-sci-contract.sh   Metadata validation
+  check-network.sh        Network driver test
 ```
 
 ## Relationship to Inauguration

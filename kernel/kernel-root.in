@@ -1,7 +1,5 @@
 package space.kernel
 
-// Deterministic-execution subsystem, compiled as a separate `.in` module.
-import "determinism.in"
 // PCI configuration-space access and bus enumeration.
 import "pci.in"
 // Cross-domain channel fabric.
@@ -201,46 +199,6 @@ fn thr_all_done() -> Int {
   return 1
 }
 
-// --- channel wait queues (linked list per channel) --------------------------
-// Blocked-task wait lists for chan0. Each channel has send-blocked and
-// recv-blocked task chains. A fixed-size next[] array links them.
-var chan0_send_wait: Int = -1
-var chan0_recv_wait: Int = -1
-var chan_wait_next: Int = 0
-
-fn wait_init(max: Int) -> void {
-  chan_wait_next = alloc(max * 8)
-  let i = 0
-  while i < max {
-    store64(chan_wait_next + i * 8, -1)
-    i = i + 1
-  }
-  return
-}
-
-fn wait_push(head_addr: Int, tid: Int) -> void {
-  store64(chan_wait_next + tid * 8, load64(head_addr))
-  store64(head_addr, tid)
-  return
-}
-
-fn wait_pop(head_addr: Int) -> Int {
-  let tid = load64(head_addr)
-  if tid < 0 {
-    return -1
-  }
-  store64(head_addr, load64(chan_wait_next + tid * 8))
-  store64(chan_wait_next + tid * 8, -1)
-  return tid
-}
-
-fn wait_has(head_addr: Int) -> Int {
-  if load64(head_addr) >= 0 {
-    return 1
-  }
-  return 0
-}
-
 // --- serial console (COM1) --------------------------------------------------
 const COM1_PORT = 0x3F8
 
@@ -329,6 +287,48 @@ fn serial_write_hex(port: Int, value: Int) -> void {
   return
 }
 
+// --- deterministic execution subsystem --------------------------------------
+// xorshift64 PRNG: same seed reproduces same execution exactly.
+fn det_next(s: Int) -> Int {
+  let x = s
+  x = x ^ (x << 13)
+  x = x ^ (x >> 7)
+  x = x ^ (x << 17)
+  return x
+}
+
+fn det_workload(seed: Int) -> Int {
+  let s = seed
+  let checksum = 0
+  for i in 0..64 {
+    s = det_next(s)
+    let pick = s & 0x7
+    checksum = (checksum * 31 + pick) & 0xFFFFFFFF
+  }
+  return checksum
+}
+
+fn run_determinism(port: Int) -> void {
+  let r1 = det_workload(0x12345678)
+  let r2 = det_workload(0x12345678)
+  let r3 = det_workload(0x12345679)
+  serial_write_cstr(port, "  det run1 (seed 0x12345678) 0x")
+  serial_write_hex(port, r1)
+  serial_put(port, 10)
+  serial_write_cstr(port, "  det run2 (seed 0x12345678) 0x")
+  serial_write_hex(port, r2)
+  serial_put(port, 10)
+  if r1 == r2 {
+    serial_write_cstr(port, "  DETERMINISTIC: identical result for identical seed\n")
+  } else {
+    serial_write_cstr(port, "  NONDETERMINISTIC: results differ\n")
+  }
+  serial_write_cstr(port, "  det altseed (0x12345679) 0x")
+  serial_write_hex(port, r3)
+  serial_write_cstr(port, " (differs, as expected)\n")
+  return
+}
+
 // --- bump heap allocator ----------------------------------------------------
 fn alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
@@ -390,15 +390,6 @@ fn frame_alloc() -> Int {
     store64(p + i * 8, 0)
   }
   return p
-}
-
-// ponytail: simple LIFO free list, no coalescing. Upgrade to buddy allocator
-// when fragmentation matters.
-var free_frame_head = 0
-fn free_frame(p: Int) -> void {
-  store64(p + 0, free_frame_head)
-  free_frame_head = p
-  return
 }
 
 fn pt_index(virt: Int, shift: Int) -> Int {
@@ -474,59 +465,10 @@ fn obj_id(obj: Int) -> Int {
   return load64(obj + 0)
 }
 
-// Object graph reference edges. Each edge is [src_ptr][slot][dst_id] stored in
-// a separate edge arena. Graph walks traverse edges from a root set.
-// ponytail: slot-limited edges (2 per object), grow to dynamic edge store when
-// the graph has objects with arbitrary fan-out.
-fn obj_link(src: Int, slot: Int, dst: Int) -> void {
-  if slot == 0 {
-    store64(src + 16, dst)
-  } else {
-    store64(src + 24, dst)
-  }
+// Object graph edge: single link in slot 1 (ref1). ref0 reserved for future use.
+fn obj_link(src: Int, dst: Int) -> void {
+  store64(src + 24, dst)
   return
-}
-
-fn obj_ref(src: Int, slot: Int) -> Int {
-  if slot == 0 {
-    return load64(src + 16)
-  }
-  return load64(src + 24)
-}
-
-// Walk the object graph from a root, returning the count of reachable objects.
-// ponytail: depth-first, no cycle detection (graph is a DAG for now).
-fn obj_walk(root: Int) -> Int {
-  let visited = alloc(256)  // bitmask of visited objects (up to 2048)
-  let stack = alloc(64 * 8)  // explicit DFS stack
-  let sp = 0
-  let count = 0
-  store64(stack + 0, root)
-  sp = 1
-  while sp > 0 {
-    sp = sp - 1
-    let obj = load64(stack + sp * 8)
-    let id = load64(obj + 0)
-    let bit = id / 64
-    let mask = 1 << (id % 64)
-    if (load64(visited + bit * 8) & mask) != 0 {
-      // Already visited
-    } else {
-      store64(visited + bit * 8, load64(visited + bit * 8) | mask)
-      count = count + 1
-      let r0 = load64(obj + 16)
-      if r0 != 0 {
-        store64(stack + sp * 8, r0)
-        sp = sp + 1
-      }
-      let r1 = load64(obj + 24)
-      if r1 != 0 {
-        store64(stack + sp * 8, r1)
-        sp = sp + 1
-      }
-    }
-  }
-  return count
 }
 
 // --- object-graph checkpoint / restore --------------------------------------
@@ -577,17 +519,6 @@ fn cap_mint(target_obj: Int, rights: Int) -> Int {
   store64(slot + 8, rights)
   cap_count = cap_count + 1
   return idx
-}
-
-// Revoke a capability by zeroing its slot. Does NOT free the object (objects
-// live as long as any reference exists from any realm).
-fn cap_revoke(cap_idx: Int) -> void {
-  let slot = cap_table_base + cap_idx * 16
-  if cap_idx < cap_count {
-    store64(slot + 0, 0)
-    store64(slot + 8, 0)
-  }
-  return
 }
 
 // --- interrupts: IDT, PIC, PIT timer ---------------------------------------
@@ -973,23 +904,6 @@ fn chan_recv(c: Int) -> Int {
   return msg
 }
 
-// Multi-channel select: poll an array of channel pointers for data.
-// Returns the index of the first ready channel, or -1 if none ready.
-// Blocks (yields) until at least one channel is ready.
-fn chan_select(channels: Int, count: Int) -> Int {
-  while true {
-    for i in 0..count {
-      let c = load64(channels + i * 8)
-      if load64(c + 8) > 0 {
-        return i
-      }
-    }
-    thr_yield()
-  }
-  return -1
-}
-
-// --- channel IPC demo (blocking producer / consumer) ------------------------
 // --- channel IPC demo (blocking producer / consumer) ------------------------
 fn task_producer() -> Int {
   let i = 0
@@ -1088,7 +1002,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_cstr(port, " pages, cap check passed")
   serial_nl(port)
   store64(component + 40, domain)
-  obj_link(root_realm, 1, component)
+  obj_link(root_realm, component)
   serial_write_cstr(port, "  SCI: registered component object id 0x")
   serial_write_hex(port, obj_id(component))
   serial_nl(port)
