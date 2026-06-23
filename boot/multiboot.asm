@@ -124,6 +124,12 @@ long_mode:
     mov rbx, 0x4060
     mov rax, cr3_write
     mov [rbx], rax
+    mov rbx, 0x4068
+    mov rax, isr_syscall
+    mov [rbx], rax
+    mov rbx, 0x4078
+    mov rax, syscall_write_demo
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -235,6 +241,62 @@ isr_timer_preempt:
     pop rbx
     pop rax
     iretq
+
+; --- syscall gate (int 0x80) -------------------------------------------------
+; Saves all GP registers into a frame on the stack, passes a pointer to that
+; frame to the `.in` syscall_dispatch function published at [0x4070], then
+; restores all registers and returns via iretq. The dispatch function reads
+; the syscall number from RAX in the frame (offset 112) and the arguments from
+; RDI (72), RSI (80), RDX (88), then writes the return value back into the RAX
+; slot so iretq delivers it to the caller.
+isr_syscall:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, rsp                 ; arg0 = pointer to saved register frame
+    mov rax, [0x4070]            ; syscall_dispatch, published by the .in kernel
+    call rax
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax                      ; picks up return value written by dispatch
+    iretq
+
+; syscall_write_demo(buf, len) -> Int
+; rdi = buf address, rsi = length (passed via invoke2 from .in code).
+; Rearranges registers into the syscall convention (RAX=num, RDI=fd, RSI=buf,
+; RDX=len) and triggers sys_write(1, buf, len) via int 0x80. Returns the
+; syscall result in RAX.
+syscall_write_demo:
+    mov rdx, rsi                 ; rdx = len (arg2)
+    mov rsi, rdi                 ; rsi = buf (arg1)
+    mov rdi, 1                   ; rdi = fd stdout (arg0)
+    mov rax, 0                   ; rax = sys_write syscall number
+    int 0x80
+    ret                          ; rax has the return value
 
 ; --- cooperative context switch --------------------------------------------
 ; context_switch(rdi = pointer to the outgoing task's saved-RSP slot,

@@ -8,10 +8,6 @@ import "channel.in"
 import "net.in"
 // Memory domain subsystem (Phase 0).
 import "domain.in"
-// ATA/PIO disk driver (primary master IDE).
-import "ata.in"
-// Minimal userspace runtime / libc (string, I/O, memory, conversion utils).
-import "libc.in"
 // Process abstraction layer (domain + component + thread).
 import "process.in"
 
