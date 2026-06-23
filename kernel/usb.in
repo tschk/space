@@ -378,7 +378,7 @@ fn xhci_init() -> Int {
   let port = com1()
   let pci = xhci_find_pci()
   if pci == 0 {
-    serial_write_cstr(port, "space: usb: no xHCI controller on PCI\n")
+    serial_write_cstr(port, "space: usb: no xHCI controller on PCI")
     return -1
   }
   let bus = (pci >> 16) & 0xFF
@@ -390,7 +390,7 @@ fn xhci_init() -> Int {
   // Read BAR0 (64-bit MMIO).
   let bar = xhci_read_bar64(bus, dev, func)
   if bar == 0 {
-    serial_write_cstr(port, "space: usb: xHCI BAR0 is zero\n")
+    serial_write_cstr(port, "space: usb: xHCI BAR0 is zero")
     return -1
   }
   serial_write_cstr(port, "space: usb: xHCI at PCI 00:")
@@ -461,7 +461,7 @@ fn usb_kbd_init() -> Int {
     p = p + 1
   }
   if found == 0 {
-    serial_write_cstr(port, "space: usb: no HID keyboard found\n")
+    serial_write_cstr(port, "space: usb: no HID keyboard found")
     return -1
   }
   xhci_kbd_ready = 1

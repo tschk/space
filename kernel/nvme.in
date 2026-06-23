@@ -236,7 +236,7 @@ fn nvme_init() -> Int {
     dev = dev + 1
   }
   if found == 0 {
-    serial_write_cstr(port, "  nvme: no NVMe controller found (class 0x010802)\n")
+    serial_write_cstr(port, "  nvme: no NVMe controller found (class 0x010802)")
     return -1
   }
 
@@ -294,7 +294,7 @@ fn nvme_init() -> Int {
     to_dis = to_dis + 1
   }
   if to_dis >= 2000000 {
-    serial_write_cstr(port, "  nvme: timeout waiting for controller disable\n")
+    serial_write_cstr(port, "  nvme: timeout waiting for controller disable")
     return -1
   }
 
@@ -319,7 +319,7 @@ fn nvme_init() -> Int {
     to_en = to_en + 1
   }
   if to_en >= 2000000 {
-    serial_write_cstr(port, "  nvme: timeout waiting for controller ready\n")
+    serial_write_cstr(port, "  nvme: timeout waiting for controller ready")
     return -1
   }
   serial_write_cstr(port, "  nvme: controller enabled and ready\n")
@@ -433,13 +433,13 @@ fn nvme_dump(port: Int, buf: Int, len: Int) -> void {
 // "nvme" command: scan for NVMe controller, print PCI BDF and MMIO base,
 // initialize, read sector 0, print first 16 bytes as hex.
 fn nvme_shell(port: Int) -> void {
-  serial_write_cstr(port, "  nvme: scanning PCI bus for NVMe controller...\n")
+  serial_write_cstr(port, "  nvme: scanning PCI bus for NVMe controller...")
   let st = nvme_init()
   if st != 0 {
     return
   }
   // Read sector 0 (LBA 0, 1 sector) into the page-aligned buffer.
-  serial_write_cstr(port, "  nvme: reading sector 0...\n")
+  serial_write_cstr(port, "  nvme: reading sector 0...")
   let rst = nvme_read(0, 1, nvme_buf)
   if rst != 0 {
     serial_write_cstr(port, "  nvme: read failed, status 0x")

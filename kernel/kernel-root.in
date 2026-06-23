@@ -154,12 +154,6 @@ fn thr_block() -> void {
   return
 }
 
-// Wake a blocked thread.
-fn thr_wake(tid: Int) -> void {
-  store64(thread_state + tid * 8, THR_RUNNABLE)
-  return
-}
-
 // Run all runnable threads; return when all are DONE (HLT if temporarily idle).
 // Uses fair round-robin: scan from the last dispatched thread.
 var thr_last: Int = 0
