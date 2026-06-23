@@ -8,38 +8,40 @@ PCI, deterministic execution, checkpoint/restore.
 
 ## Phase 1: Storage
 
-- [ ] ATA/PIO disk driver (read sectors from QEMU IDE disk)
-- [ ] Simple flat filesystem (read-only first, then write)
+- [x] ATA/PIO disk driver (read sectors from QEMU IDE disk)
+- [x] Simple flat filesystem (read-only first, then write)
 - [ ] VFS abstraction layer
 - [ ] Load SCI components from disk at runtime
 
 ## Phase 2: Process Abstraction
 
-- [ ] Process struct (domain + caps + entry + lifecycle)
+- [x] Process struct (domain + caps + entry + lifecycle)
 - [ ] Process loader (read SCI image from disk, create domain, map, jump)
-- [ ] Process lifecycle: spawn, exit, wait, kill
-- [ ] Process table and listing (`ps` command upgrade)
+- [x] Process lifecycle: spawn, exit, wait, kill
+- [x] Process table and listing (`ps` command upgrade)
 
 ## Phase 3: Syscall Interface
 
-- [ ] Syscall trap handler (int 0x80 or syscall instruction)
-- [ ] Syscall dispatch table
-- [ ] Core syscalls: write, read, exit, yield, mmap, munmap
+- [x] Syscall trap handler (int 0x80 or syscall instruction)
+- [x] Syscall dispatch table
+- [x] Core syscalls: write, read, exit, yield, getpid
 - [ ] Channel syscalls: send, recv, select
 - [ ] Capability syscalls: mint, revoke, check
 
 ## Phase 4: Userspace Runtime
 
-- [ ] Minimal libc in .in (print, open, read, write, close, exit)
-- [ ] Userspace heap (malloc/free on top of mmap)
-- [ ] String and memory utilities
+- [x] Minimal libc in .in (print, open, read, write, close, exit)
+- [x] Userspace heap (malloc/free on top of mmap)
+- [x] String and memory utilities
 - [ ] Build user programs as SCI components
 
 ## Phase 5: OS Personalities
 
-- [ ] Linux compat layer (.in component translating POSIX syscalls)
-  - [ ] File syscalls: open, read, write, close, stat, lseek
-  - [ ] Process syscalls: fork, exec, wait, exit, getpid
+- [x] Linux compat layer (.in component translating POSIX syscalls)
+  - [x] File syscalls: open, read, write, close, stat, lseek, fstat
+  - [x] Process syscalls: fork, exec, wait, exit, getpid, kill
+  - [x] Memory syscalls: mmap, munmap, brk
+  - [x] Misc syscalls: getcwd, chdir
   - [ ] Socket syscalls: socket, bind, listen, accept, connect, send, recv
   - [ ] Signal handling (minimal: SIGTERM, SIGKILL)
 - [ ] Darwin compat layer (Mach/BSD subset)

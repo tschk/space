@@ -104,6 +104,15 @@ x86_64. It provides:
 - **SCI loader** — loads and validates external component images
 - **e1000 NIC driver** — MMIO register access, TX/RX rings, ARP, UDP
 - **Deterministic execution** — xorshift64 PRNG with seeded workloads
+- **NVMe storage** — PCIe NVMe controller driver with admin/I/O queues
+- **Flat filesystem** — superblock + file table + data area on NVMe disk
+- **Process abstraction** — process table with lifecycle (spawn, exit, wait, kill)
+- **Syscall interface** — int 0x80 trap with DPL=3, dispatch table, core syscalls
+- **Linux personality** — POSIX syscall translation layer (Phase 5)
+- **USB xHCI** — host controller + HID keyboard driver
+- **VBE framebuffer** — Bochs VBE graphics mode, drawing primitives, bitmap font
+- **PS/2 mouse** — polling-based mouse driver with packet parsing
+- **Compositor** — Wayland-style window manager with desktop rendering
 
 ---
 
@@ -162,6 +171,89 @@ both domains' page tables.
 
 ---
 
+## Syscall Interface
+
+User programs request kernel services via `int 0x80`. The assembly stub
+saves all 15 GP registers into a frame on the stack and calls
+`syscall_dispatch` with a pointer to that frame. The dispatch function
+reads the syscall number from RAX and arguments from RDI, RSI, RDX,
+then writes the return value back into the RAX slot for `iretq` to
+deliver to the caller. The IDT entry for vector 0x80 has DPL=3, so
+user-mode code can invoke it directly.
+
+Native Space syscalls (0-4): write, read, exit, yield, getpid.
+
+---
+
+## Linux Personality
+
+The Linux personality (`kernel/linux.in`) translates Linux x86_64
+syscall numbers into Space kernel primitives, providing a POSIX-compatible
+interface on top of the native component model. This is the first OS
+personality (Phase 5), demonstrating that Space can host foreign ABIs
+by mapping their conventions onto the underlying capability/domain/channel
+substrate.
+
+Implemented POSIX syscalls:
+
+| Linux # | Syscall    | Space mapping                          |
+|---------|-----------|----------------------------------------|
+| 0       | read      | serial (fd 0) or filesystem (fd 3+)    |
+| 1       | write     | serial (fd 1/2) or filesystem (fd 3+)  |
+| 2       | open      | fs_find / fs_write_file + FD table     |
+| 3       | close     | FD table entry clear                   |
+| 4       | stat      | fs_find + stat struct fill             |
+| 5       | fstat     | FD table lookup + stat struct fill     |
+| 8       | lseek     | FD table offset update                 |
+| 9       | mmap      | kernel heap alloc + optional file map  |
+| 11      | munmap    | no-op (bump heap)                      |
+| 12      | brk       | program break tracking                 |
+| 39      | getpid    | current_task                           |
+| 57      | fork      | proc_create (simplified)               |
+| 59      | execve    | ENOSYS (not yet implemented)           |
+| 60      | exit      | halt                                   |
+| 61      | wait4     | proc_wait                              |
+| 62      | kill      | proc_kill                              |
+| 79      | getcwd    | linux_cwd                              |
+| 80      | chdir     | linux_cwd update                       |
+
+The FD table maps Linux file descriptors to Space filesystem entries.
+fds 0-2 are pre-opened std streams (serial console); fds 3+ are open
+files on the Space filesystem.
+
+---
+
+## Framebuffer
+
+The VBE framebuffer driver (`kernel/fb.in`) uses Bochs VBE I/O ports
+(0x1CE/0x1CF) to set a 1024x768x32 graphics mode with linear framebuffer.
+The framebuffer address is discovered by scanning PCI for a VGA display
+device (class 0x030000) and reading BAR0. The boot trampoline identity-maps
+the first 4 GiB so the framebuffer MMIO region (typically 0xFD000000) is
+accessible.
+
+Drawing primitives: pixels, rectangles, lines (Bresenham), and bitmap text
+(8x8 font with ASCII subset). The compositor uses these to render windows,
+title bars, taskbar, and mouse cursor.
+
+---
+
+## Compositor
+
+The compositor (`kernel/compositor.in`) is a Wayland-style display server
+that manages windows and renders them to the framebuffer. It provides:
+
+- **Window management** — create, focus, drag, and render windows
+- **Title bars** — clickable, draggable window decorations
+- **Taskbar** — bottom bar with system info and mouse state
+- **Mouse cursor** — arrow cursor rendered on top of all windows
+- **Input handling** — PS/2 mouse polling, keyboard via serial
+
+The `desktop` shell command launches the compositor. Three default windows
+are created: Terminal, File Browser, and System Info. Press ESC to exit.
+
+---
+
 ## Current Status
 
 ### Running Today
@@ -172,10 +264,17 @@ both domains' page tables.
 - Typed in-address-space channel IPC demo
 - Cross-domain shared-page channels
 - SCI manifest loader with capability-mask validation
-- Interactive shell (16 commands)
+- Interactive shell (20+ commands)
 - e1000 NIC driver (UDP transmit, ARP)
 - Deterministic execution subsystem
 - Memory domain isolation (Phase 0)
+- NVMe storage driver and flat filesystem
+- Process abstraction with lifecycle management
+- Syscall interface (int 0x80) with DPL=3 user-mode access
+- Linux personality layer (POSIX syscall translation)
+- VBE framebuffer (1024x768x32 graphics mode)
+- PS/2 mouse driver
+- Wayland-style compositor with desktop environment
 
 ### Repository Layout
 
@@ -186,6 +285,15 @@ kernel/
   channel.in            cross-domain channel fabric
   net.in                e1000 NIC driver
   pci.in                PCI bus enumeration
+  nvme.in               NVMe storage driver
+  usb.in                USB xHCI + HID keyboard driver
+  fs.in                 flat filesystem layer
+  process.in            process abstraction layer
+  libc.in               C standard library equivalent
+  linux.in              Linux personality (POSIX syscalls)
+  fb.in                 VBE framebuffer driver + bitmap font
+  mouse.in              PS/2 mouse driver
+  compositor.in         Wayland-style window manager + desktop
   guest-service.in      SCI guest component example
 boot/
   multiboot.asm         x86_64 CPU bring-up
