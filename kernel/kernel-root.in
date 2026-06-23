@@ -1199,9 +1199,11 @@ fn read_line(port: Int) -> Int {
         serial_put(port, 8)
       }
     } else {
-      serial_put(port, c)
-      store8(line + len, c)
-      len = len + 1
+      if len < 255 {
+        serial_put(port, c)
+        store8(line + len, c)
+        len = len + 1
+      }
     }
   }
   return len
