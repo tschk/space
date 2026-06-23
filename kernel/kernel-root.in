@@ -121,7 +121,7 @@ fn thr_create(entry: Int) -> Int {
 fn thr_exit() -> void {
   store64(thread_state + current_task * 8, THR_DONE)
   invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  // ponytail: unreachable after yield
+  // TODO: unreachable after yield
   return
 }
 
@@ -256,7 +256,7 @@ fn serial_write_cstr(port: Int, addr: Int) -> void {
 }
 
 fn serial_write_dec_wide(port: Int, value: Int) -> void {
-  // ponytail: simple 20-digit buffer approach
+  // TODO: simple 20-digit buffer approach
   let buf = alloc(20)
   let i = 0
   let n = value
@@ -982,7 +982,7 @@ fn run_preemptive(port: Int) -> void {
 // --- typed channels with blocking (CSP-style) ------------------------------
 // Channels are ring buffers with non-busy polling. A thread that tries to send
 // on a full channel or recv from an empty one yields until room/data appears.
-// ponytail: polling with yield is correct for small thread counts; add proper
+// TODO: polling with yield is correct for small thread counts; add proper
 // wait queues with atomic flags when M:N threading is in place.
 var chan0: Int = 0
 
@@ -1003,7 +1003,7 @@ fn chan_count(c: Int) -> Int {
 // IPC wait queues for channel operations. Each channel has a wait queue of
 // blocked threads. Since we don't have atomics (no CAS instruction in .in),
 // we use poll-with-yield as before (wait queues are a struct for future atomics).
-// ponytail: poll-with-yield, upgrade to atomic CAS when .in has inline asm.
+// TODO: poll-with-yield, upgrade to atomic CAS when .in has inline asm.
 
 // Send to channel: poll until room, then write and return.
 fn chan_send(c: Int, msg: Int) -> void {
@@ -1208,7 +1208,7 @@ fn read_line(port: Int) -> Int {
 }
 
 // Parse a hex string at addr into an integer.
-// ponytail: stops at first non-hex char; no overflow check.
+// TODO: stops at first non-hex char; no overflow check.
 fn str_to_hex(addr: Int) -> Int {
   let result = 0
   let i = 0

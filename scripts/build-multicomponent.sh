@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
-# ponytail: use release binary, not in-tree build
+# TODO: use release binary, not in-tree build
 IN="$INAUG_DIR/in-cli/target/release/in"
 
 GUEST_LOAD=$((0x140000))     # physical manifest address in the boot image
