@@ -1077,7 +1077,6 @@ fn run_channels(port: Int) -> void {
 const SCI_MAGIC = 0x5343490000000001
 
 fn sci_load(port: Int, load_addr: Int) -> Int {
-  // ponytail: no bounds check on load_addr — assume caller passes valid range
   if load_addr == 0 || load_addr > 0x200000 {
     serial_write_cstr(port, "  SCI: load address out of range 0x")
     serial_write_hex(port, load_addr)
