@@ -1019,25 +1019,19 @@ fn task_consumer() -> Int {
 }
 
 fn run_channels(port: Int) -> void {
-    serial_flush(port)
     serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
   serial_nl(port)
-  serial_flush(port)
   scheduler_init(8)
   chan0 = chan_new(4)
   thr_create(task_consumer)  // thread 1 = consumer
   thr_create(task_producer)  // thread 2 = producer
-  serial_flush(port)
     serial_write_cstr(port, "space:   running threads...")
   serial_nl(port)
-  serial_flush(port)
   thr_run()
   let cnt = chan_count(chan0)
-  serial_flush(port)
   serial_write_cstr(port, "space: channel demo complete, remaining 0x")
   serial_write_hex(port, cnt)
   serial_nl(port)
-  serial_flush(port)
   return
 }
 
@@ -1098,7 +1092,6 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_cstr(port, "  SCI: registered component object id 0x")
   serial_write_hex(port, obj_id(component))
   serial_nl(port)
-  serial_flush(port)
   // Pack realm cap table info for guest: [cap_count][cap_table_base].
   let cap_info = alloc(16)
   store64(cap_info + 0, cap_count)
@@ -1215,13 +1208,11 @@ fn array_selftest() -> Int {
 
 fn shell(port: Int) -> void {
   line = alloc(256)
-  serial_flush(port)
   serial_nl(port)
     serial_write_cstr(port, "space interactive shell -- type 'help'")
   serial_nl(port)
   while true {
     serial_write_cstr(port, "space> ")
-    serial_flush(port)  // ensure prompt visible before waiting for input
     let n = read_line(port)
     if line_eq("help") != 0 {
         serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> uptime halt")
@@ -1475,13 +1466,11 @@ fn kernel_entry(mb_info: Int) -> Int {
   // Drop into the interactive serial shell.
   shell(port)
 
-  serial_flush(port)
     serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
   serial_nl(port)
     serial_write_cstr(port, "space: halting")
   serial_nl(port)
-  serial_flush(port)
   cli()
   while true {
     hlt()
