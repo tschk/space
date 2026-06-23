@@ -1,0 +1,477 @@
+package space.kernel
+
+// NVMe storage driver: PCIe-based NVMe controller initialization and I/O.
+// Replaces the legacy ATA/PIO approach with modern PCIe NVMe over MMIO.
+// Uses admin queue pair (SQ0/CQ0) for admin commands, one I/O queue pair
+// (SQ1/CQ1) for I/O. PRP1 for single-page transfers. The serial_*, store/load,
+// map_page, frame_alloc, and pci_* helpers live in the importing module
+// (kernel-root.in and pci.in).
+
+// --- NVMe controller MMIO register offsets ---
+const NVME_CAP = 0x00
+const NVME_VS = 0x08
+const NVME_INTMS = 0x0C
+const NVME_INTMC = 0x10
+const NVME_CC = 0x14
+const NVME_CSTS = 0x1C
+const NVME_AQA = 0x24
+const NVME_ASQ = 0x28
+const NVME_ACQ = 0x30
+
+// Doorbell register base (offset from MMIO base)
+const NVME_DB_BASE = 0x1000
+
+// Queue depths (number of entries per queue)
+const NVME_ADMIN_Q = 8
+const NVME_IO_Q = 8
+
+// NVM I/O command opcodes (sent to I/O SQ)
+const NVME_CMD_READ = 0x02
+const NVME_CMD_WRITE = 0x01
+
+// Admin command opcodes (sent to admin SQ)
+const NVME_ADMIN_CREATE_IOSQ = 0x01
+const NVME_ADMIN_CREATE_IOCQ = 0x05
+
+// CC register field values
+const NVME_CC_IOSQES = 6  // 2^6 = 64 bytes per SQ entry
+const NVME_CC_IOCQES = 4  // 2^4 = 16 bytes per CQ entry
+const NVME_CC_MPS = 0     // 2^(12+0) = 4 KB memory page size
+
+// --- driver state ---
+var nvme_mmio: Int = 0       // MMIO base virtual address (= physical, identity-mapped)
+var nvme_bdf: Int = 0        // PCI device number (bus 0, func 0)
+var nvme_dstrd: Int = 0      // CAP.DSTRD (doorbell stride exponent)
+var nvme_db_stride: Int = 4  // doorbell stride in bytes (4 << DSTRD)
+var nvme_ready: Int = 0      // 1 after successful init
+
+// Admin queue state (SQ0/CQ0)
+var nvme_asq: Int = 0        // admin SQ base address (page-aligned, identity-mapped)
+var nvme_acq: Int = 0        // admin CQ base address
+var nvme_sq_tail: Int = 0    // admin SQ tail index
+var nvme_cq_head: Int = 0    // admin CQ head index
+var nvme_cq_phase: Int = 1   // admin CQ expected phase tag
+
+// I/O queue state (SQ1/CQ1)
+var nvme_iosq: Int = 0       // I/O SQ base address
+var nvme_iocq: Int = 0       // I/O CQ base address
+var nvme_io_sq_tail: Int = 0
+var nvme_io_cq_head: Int = 0
+var nvme_io_cq_phase: Int = 1
+var nvme_cid: Int = 0        // command identifier counter
+
+// Page-aligned data buffer (reused for shell commands) and PRP list page
+var nvme_buf: Int = 0
+var nvme_prp_list: Int = 0
+
+// --- MMIO access helpers ---
+// 32-bit read/write for controller registers and doorbells.
+fn nvme_r32(off: Int) -> Int {
+  return load32(nvme_mmio + off)
+}
+
+fn nvme_w32(off: Int, val: Int) -> void {
+  store32(nvme_mmio + off, val)
+  return
+}
+
+// 64-bit read via two 32-bit accesses (low then high).
+fn nvme_r64(off: Int) -> Int {
+  let lo = load32(nvme_mmio + off)
+  let hi = load32(nvme_mmio + off + 4)
+  return lo | (hi << 32)
+}
+
+// 64-bit write via two 32-bit writes (low then high).
+fn nvme_w64(off: Int, val: Int) -> void {
+  store32(nvme_mmio + off, val & 0xFFFFFFFF)
+  store32(nvme_mmio + off + 4, (val >> 32) & 0xFFFFFFFF)
+  return
+}
+
+// --- doorbell offset helpers ---
+// SQ tail doorbell for queue `qid`: DB_BASE + (2*qid) * stride
+fn nvme_sq_db(qid: Int) -> Int {
+  return NVME_DB_BASE + (2 * qid) * nvme_db_stride
+}
+
+// CQ head doorbell for queue `qid`: DB_BASE + (2*qid+1) * stride
+fn nvme_cq_db(qid: Int) -> Int {
+  return NVME_DB_BASE + (2 * qid + 1) * nvme_db_stride
+}
+
+// --- admin command submission ---
+// Submit a 64-byte SQE to the admin submission queue, ring the doorbell, and
+// poll the admin completion queue for a matching entry. Returns 0 on success,
+// the NVMe status code on completion, or -1 on timeout.
+fn nvme_admin_submit(opcode: Int, nsid: Int, prp1: Int, prp2: Int, cdw10: Int, cdw11: Int, cdw12: Int) -> Int {
+  let sqe = nvme_asq + nvme_sq_tail * 64
+  // Zero the 64-byte SQE (16 DWORDs)
+  let i = 0
+  while i < 16 {
+    store32(sqe + i * 4, 0)
+    i = i + 1
+  }
+  // DW0: opcode (bits 7:0)
+  store32(sqe + 0, opcode)
+  // DW1: NSID
+  store32(sqe + 4, nsid)
+  // DW6-7: PRP1 (64-bit)
+  store64(sqe + 24, prp1)
+  // DW8-9: PRP2 (64-bit)
+  store64(sqe + 32, prp2)
+  // DW10-12: command-specific
+  store32(sqe + 40, cdw10)
+  store32(sqe + 44, cdw11)
+  store32(sqe + 48, cdw12)
+
+  // Advance SQ tail and ring the admin SQ doorbell
+  nvme_sq_tail = (nvme_sq_tail + 1) % NVME_ADMIN_Q
+  nvme_w32(nvme_sq_db(0), nvme_sq_tail)
+
+  // Poll admin CQ for completion
+  let to = 0
+  let done = 0
+  let status = 0
+  while to < 5000000 && done == 0 {
+    let cqe = nvme_acq + nvme_cq_head * 16
+    let dw3 = load32(cqe + 12)
+    let phase = (dw3 >> 16) & 1
+    if phase == nvme_cq_phase {
+      status = (dw3 >> 17) & 0x7FFF
+      nvme_cq_head = (nvme_cq_head + 1) % NVME_ADMIN_Q
+      if nvme_cq_head == 0 {
+        nvme_cq_phase = 1 - nvme_cq_phase
+      }
+      nvme_w32(nvme_cq_db(0), nvme_cq_head)
+      done = 1
+    }
+    to = to + 1
+  }
+  if done == 0 {
+    return -1
+  }
+  return status
+}
+
+// --- I/O command submission ---
+// Submit an NVM I/O command to SQ1, ring the doorbell, and poll CQ1.
+// Returns 0 on success, the NVMe status code on completion, or -1 on timeout.
+fn nvme_io_submit(opcode: Int, lba: Int, count: Int, buf: Int) -> Int {
+  let sqe = nvme_iosq + nvme_io_sq_tail * 64
+  // Zero the 64-byte SQE
+  let i = 0
+  while i < 16 {
+    store32(sqe + i * 4, 0)
+    i = i + 1
+  }
+  // DW0: opcode + CID
+  nvme_cid = nvme_cid + 1
+  store32(sqe + 0, opcode | ((nvme_cid & 0xFFFF) << 16))
+  // DW1: NSID = 1 (first namespace)
+  store32(sqe + 4, 1)
+  // DW6-7: PRP1 = buffer physical address (page-aligned, identity-mapped)
+  store64(sqe + 24, buf)
+  // DW8-9: PRP2 = 0 (single-page transfer; buf fits in one 4 KB page)
+  store64(sqe + 32, 0)
+  // DW10: SLBA bits 31:0
+  store32(sqe + 40, lba & 0xFFFFFFFF)
+  // DW11: SLBA bits 63:32
+  store32(sqe + 44, (lba >> 32) & 0xFFFFFFFF)
+  // DW12: NLB (bits 15:0) = count - 1
+  store32(sqe + 48, (count - 1) & 0xFFFF)
+
+  // Advance SQ tail and ring the I/O SQ doorbell
+  nvme_io_sq_tail = (nvme_io_sq_tail + 1) % NVME_IO_Q
+  nvme_w32(nvme_sq_db(1), nvme_io_sq_tail)
+
+  // Poll I/O CQ for completion
+  let to = 0
+  let done = 0
+  let status = 0
+  while to < 5000000 && done == 0 {
+    let cqe = nvme_iocq + nvme_io_cq_head * 16
+    let dw3 = load32(cqe + 12)
+    let phase = (dw3 >> 16) & 1
+    if phase == nvme_io_cq_phase {
+      status = (dw3 >> 17) & 0x7FFF
+      nvme_io_cq_head = (nvme_io_cq_head + 1) % NVME_IO_Q
+      if nvme_io_cq_head == 0 {
+        nvme_io_cq_phase = 1 - nvme_io_cq_phase
+      }
+      nvme_w32(nvme_cq_db(1), nvme_io_cq_head)
+      done = 1
+    }
+    to = to + 1
+  }
+  if done == 0 {
+    return -1
+  }
+  return status
+}
+
+// --- controller initialization ---
+// Find the NVMe controller on PCI bus 0 (class code 0x010802), read BAR0/MMIO
+// base, enable bus mastering and memory space, map the MMIO region, configure
+// admin queues, enable the controller, and create one I/O queue pair.
+// Returns 0 on success, -1 on failure. Idempotent: returns 0 if already ready.
+fn nvme_init() -> Int {
+  if nvme_ready != 0 {
+    return 0
+  }
+  let port = com1()
+
+  // Scan PCI bus 0 for an NVMe controller (class code 0x010802).
+  let dev = 0
+  let found = 0
+  while dev < 32 && found == 0 {
+    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
+    if vendor != 0xFFFF {
+      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
+      if class_code == 0x010802 {
+        found = 1
+        nvme_bdf = dev
+      }
+    }
+    dev = dev + 1
+  }
+  if found == 0 {
+    serial_write_cstr(port, "  nvme: no NVMe controller found (class 0x010802)\n")
+    return -1
+  }
+
+  // Print BDF.
+  serial_write_cstr(port, "  nvme: controller at 00:")
+  serial_write_hex(port, nvme_bdf)
+  serial_write_cstr(port, ".0\n")
+
+  // Read BAR0 (64-bit memory BAR: BAR0 at offset 0x10, BAR1 at 0x14).
+  let bar0_raw = pci_read32(0, nvme_bdf, 0, 0x10)
+  let bar0_lo = bar0_raw & 0xFFFFFFF0
+  let bar0_hi = 0
+  if (bar0_raw & 0x6) == 0x4 {
+    bar0_hi = pci_read32(0, nvme_bdf, 0, 0x14)
+  }
+  let mmio_phys = bar0_lo | (bar0_hi << 32)
+
+  serial_write_cstr(port, "  nvme: MMIO base 0x")
+  serial_write_hex(port, mmio_phys)
+  serial_put(port, 10)
+
+  // Enable PCI bus mastering (bit 2) and memory space (bit 1).
+  let cmd = pci_read32(0, nvme_bdf, 0, 0x04)
+  pci_write32(0, nvme_bdf, 0, 0x04, cmd | 0x6)
+
+  // Map the MMIO region identity-mapped (virt == phys), uncached.
+  // 8 pages (32 KiB) covers controller registers (0x00-0x3F) and doorbells
+  // (0x1000+) for admin + one I/O queue pair.
+  let pg = mmio_phys
+  while pg < mmio_phys + 0x8000 {
+    map_page(pg, pg, 0x1B)
+    pg = pg + 0x1000
+  }
+  nvme_mmio = mmio_phys
+
+  // Read CAP (64-bit) and VS (32-bit).
+  let cap = nvme_r64(NVME_CAP)
+  let vs = nvme_r32(NVME_VS)
+  let mqes = (cap >> 16) & 0xFFFF
+  nvme_dstrd = (cap >> 32) & 0xF
+  nvme_db_stride = 4 << nvme_dstrd
+
+  serial_write_cstr(port, "  nvme: CAP 0x")
+  serial_write_hex(port, cap)
+  serial_write_cstr(port, " VS 0x")
+  serial_write_hex(port, vs)
+  serial_write_cstr(port, " MQES 0x")
+  serial_write_hex(port, mqes)
+  serial_put(port, 10)
+
+  // Disable the controller (CC.EN = 0) and wait for CSTS.RDY = 0.
+  nvme_w32(NVME_CC, 0)
+  let to_dis = 0
+  while (nvme_r32(NVME_CSTS) & 1) != 0 && to_dis < 2000000 {
+    to_dis = to_dis + 1
+  }
+  if to_dis >= 2000000 {
+    serial_write_cstr(port, "  nvme: timeout waiting for controller disable\n")
+    return -1
+  }
+
+  // Allocate admin queues (page-aligned, identity-mapped, zeroed by frame_alloc).
+  nvme_asq = frame_alloc()
+  nvme_acq = frame_alloc()
+
+  // Configure admin queues: AQA (sizes), ASQ (SQ base), ACQ (CQ base).
+  // AQA: ASQS (bits 27:16) = ADMIN_Q-1, ACQS (bits 11:0) = ADMIN_Q-1.
+  nvme_w32(NVME_AQA, ((NVME_ADMIN_Q - 1) << 16) | (NVME_ADMIN_Q - 1))
+  nvme_w64(NVME_ASQ, nvme_asq)
+  nvme_w64(NVME_ACQ, nvme_acq)
+
+  // Configure CC: IOSQES=6, IOCQES=4, MPS=0, CSS=0, AMS=0 (not yet enabled).
+  let cc = (NVME_CC_IOSQES << 24) | (NVME_CC_IOCQES << 20) | (NVME_CC_MPS << 7)
+  nvme_w32(NVME_CC, cc)
+
+  // Enable the controller (CC.EN = 1) and wait for CSTS.RDY = 1.
+  nvme_w32(NVME_CC, cc | 1)
+  let to_en = 0
+  while (nvme_r32(NVME_CSTS) & 1) == 0 && to_en < 2000000 {
+    to_en = to_en + 1
+  }
+  if to_en >= 2000000 {
+    serial_write_cstr(port, "  nvme: timeout waiting for controller ready\n")
+    return -1
+  }
+  serial_write_cstr(port, "  nvme: controller enabled and ready\n")
+
+  // Create I/O completion queue (CQ1): opcode 0x05.
+  // CDW10: QID=1 (bits 15:0) | (QSIZE-1) (bits 31:16).
+  // CDW11: PC=1 (physically contiguous, bit 0).
+  nvme_iocq = frame_alloc()
+  let cq_cdw10 = 1 | ((NVME_IO_Q - 1) << 16)
+  let cq_cdw11 = 1
+  let st_cq = nvme_admin_submit(NVME_ADMIN_CREATE_IOCQ, 0, nvme_iocq, 0, cq_cdw10, cq_cdw11, 0)
+  if st_cq != 0 {
+    serial_write_cstr(port, "  nvme: create I/O CQ failed, status 0x")
+    serial_write_hex(port, st_cq)
+    serial_put(port, 10)
+    return -1
+  }
+
+  // Create I/O submission queue (SQ1): opcode 0x01.
+  // CDW10: QID=1 | (QSIZE-1)<<16.
+  // CDW11: PC=1 (bit 0) | CQID=1 (bits 31:16).
+  nvme_iosq = frame_alloc()
+  let sq_cdw10 = 1 | ((NVME_IO_Q - 1) << 16)
+  let sq_cdw11 = 1 | (1 << 16)
+  let st_sq = nvme_admin_submit(NVME_ADMIN_CREATE_IOSQ, 0, nvme_iosq, 0, sq_cdw10, sq_cdw11, 0)
+  if st_sq != 0 {
+    serial_write_cstr(port, "  nvme: create I/O SQ failed, status 0x")
+    serial_write_hex(port, st_sq)
+    serial_put(port, 10)
+    return -1
+  }
+
+  serial_write_cstr(port, "  nvme: I/O queues (SQ1/CQ1) created\n")
+
+  // Allocate page-aligned data buffer and PRP list page for shell commands.
+  nvme_buf = frame_alloc()
+  nvme_prp_list = frame_alloc()
+
+  nvme_ready = 1
+  serial_write_cstr(port, "  nvme: initialization complete\n")
+  return 0
+}
+
+// --- NVMe I/O ---
+// Read `count` sectors (512 bytes each) starting at `lba` into `buf`.
+// `buf` must be page-aligned and identity-mapped (use frame_alloc).
+// For single-page transfers (count <= 8), PRP1 = buf, PRP2 = 0.
+// Returns 0 on success, non-zero on error.
+fn nvme_read(lba: Int, count: Int, buf: Int) -> Int {
+  if nvme_ready == 0 {
+    if nvme_init() != 0 {
+      return -1
+    }
+  }
+  return nvme_io_submit(NVME_CMD_READ, lba, count, buf)
+}
+
+// Write `count` sectors (512 bytes each) starting at `lba` from `buf`.
+// Returns 0 on success, non-zero on error.
+fn nvme_write(lba: Int, count: Int, buf: Int) -> Int {
+  if nvme_ready == 0 {
+    if nvme_init() != 0 {
+      return -1
+    }
+  }
+  return nvme_io_submit(NVME_CMD_WRITE, lba, count, buf)
+}
+
+// --- hex dump helpers ---
+// Print the first 16 bytes of `buf` as hex, 8 bytes per line.
+fn nvme_dump16(port: Int, buf: Int) -> void {
+  let i = 0
+  while i < 16 {
+    let b = load8(buf + i)
+    if b < 16 {
+      serial_put(port, 48)
+    }
+    serial_write_hex(port, b)
+    serial_put(port, 32)
+    if i == 7 {
+      serial_put(port, 10)
+    }
+    i = i + 1
+  }
+  serial_put(port, 10)
+  return
+}
+
+// Print `len` bytes of `buf` as hex, 16 bytes per line.
+fn nvme_dump(port: Int, buf: Int, len: Int) -> void {
+  let i = 0
+  while i < len {
+    let b = load8(buf + i)
+    if b < 16 {
+      serial_put(port, 48)
+    }
+    serial_write_hex(port, b)
+    serial_put(port, 32)
+    if (i & 0xF) == 0xF {
+      serial_put(port, 10)
+    }
+    i = i + 1
+  }
+  if (len & 0xF) != 0 {
+    serial_put(port, 10)
+  }
+  return
+}
+
+// --- shell entry points ---
+// "nvme" command: scan for NVMe controller, print PCI BDF and MMIO base,
+// initialize, read sector 0, print first 16 bytes as hex.
+fn nvme_shell(port: Int) -> void {
+  serial_write_cstr(port, "  nvme: scanning PCI bus for NVMe controller...\n")
+  let st = nvme_init()
+  if st != 0 {
+    return
+  }
+  // Read sector 0 (LBA 0, 1 sector) into the page-aligned buffer.
+  serial_write_cstr(port, "  nvme: reading sector 0...\n")
+  let rst = nvme_read(0, 1, nvme_buf)
+  if rst != 0 {
+    serial_write_cstr(port, "  nvme: read failed, status 0x")
+    serial_write_hex(port, rst)
+    serial_put(port, 10)
+    return
+  }
+  serial_write_cstr(port, "  nvme: sector 0 first 16 bytes:\n")
+  nvme_dump16(port, nvme_buf)
+  return
+}
+
+// "nvme read <lba>" command: read a sector and print a hex dump.
+fn nvme_shell_read(port: Int, lba: Int) -> void {
+  if nvme_ready == 0 {
+    if nvme_init() != 0 {
+      return
+    }
+  }
+  serial_write_cstr(port, "  nvme: reading sector 0x")
+  serial_write_hex(port, lba)
+  serial_put(port, 10)
+  let rst = nvme_read(lba, 1, nvme_buf)
+  if rst != 0 {
+    serial_write_cstr(port, "  nvme: read failed, status 0x")
+    serial_write_hex(port, rst)
+    serial_put(port, 10)
+    return
+  }
+  serial_write_cstr(port, "  nvme: sector 0x")
+  serial_write_hex(port, lba)
+  serial_write_cstr(port, " first 64 bytes:\n")
+  nvme_dump(port, nvme_buf, 64)
+  return
+}

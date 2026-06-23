@@ -1,0 +1,392 @@
+package space.kernel
+
+// Flat filesystem layer for the Space nanokernel.
+// Stores files on the NVMe disk via the nvme.in driver.
+//
+// Disk layout:
+//   sector 0:      superblock
+//   sectors 1-4:   file table (64 entries x 32 bytes = 2048 bytes)
+//   sector 65+:    data area
+//
+// File table entry (32 bytes):
+//   [0..16]  filename (null-terminated, max 15 chars)
+//   [16..20] start sector (LBA, little-endian u32)
+//   [20..24] size in bytes (u32)
+//   [24..28] flags (0=free, 1=used, 2=directory)
+//   [28..32] reserved
+
+const FS_MAGIC = 0x53504143       // "SPAC"
+const FS_VERSION = 1
+const FS_MAX_FILES = 64
+const FS_FILE_TABLE_OFFSET = 1    // sector 1
+const FS_DATA_OFFSET = 65         // sector 65
+const FS_ENTRY_SIZE = 32          // bytes per file table entry
+const FS_TABLE_SECTORS = 4        // 64 * 32 = 2048 bytes = 4 sectors
+const FS_DEFAULT_TOTAL_SECTORS = 32768  // 16 MB / 512
+
+const FS_FLAG_FREE = 0
+const FS_FLAG_USED = 1
+const FS_FLAG_DIR = 2
+
+// --- filesystem state -------------------------------------------------------
+var fs_table: Int = 0         // in-memory copy of the file table (2048 bytes)
+var fs_total_sectors: Int = 0
+var fs_next_sector: Int = 0   // next free data sector for allocation
+var fs_initialized: Int = 0
+
+// --- NVMe sector wrappers ---------------------------------------------------
+// The filesystem operates on 512-byte sectors. nvme_read/nvme_write handle
+// the PCIe/MMIO transport; these wrappers adapt the single-sector interface
+// used by the filesystem code.
+
+// Read one 512-byte sector from `lba` into `buf`. Returns 0 on success.
+fn ata_read_sector(lba: Int, buf: Int) -> Int {
+  return nvme_read(lba, 1, buf)
+}
+
+// Write one 512-byte sector to `lba` from `buf`. Returns 0 on success.
+fn ata_write_sector(lba: Int, buf: Int) -> Int {
+  return nvme_write(lba, 1, buf)
+}
+
+// --- string helpers ---------------------------------------------------------
+
+// Compare two null-terminated strings. Return 1 if equal, 0 otherwise.
+fn fs_str_eq(a: Int, b: Int) -> Int {
+  let i = 0
+  while true {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      return 0
+    }
+    if ca == 0 {
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Copy at most `max` bytes from src to dst, ensuring null termination.
+fn fs_str_copy(dst: Int, src: Int, max: Int) -> void {
+  let i = 0
+  while i < max {
+    let c = load8(src + i)
+    store8(dst + i, c)
+    if c == 0 {
+      return
+    }
+    i = i + 1
+  }
+  store8(dst + max, 0)
+  return
+}
+
+// --- file table helpers -----------------------------------------------------
+
+// Return the in-memory address of file table entry `idx`.
+fn fs_entry(idx: Int) -> Int {
+  return fs_table + idx * FS_ENTRY_SIZE
+}
+
+// Load the file table from disk (4 sectors) into the in-memory buffer.
+fn fs_load_table() -> void {
+  let buf = alloc(512)
+  let s = 0
+  while s < FS_TABLE_SECTORS {
+    let rc = ata_read_sector(FS_FILE_TABLE_OFFSET + s, buf)
+    if rc != 0 {
+      return
+    }
+    let i = 0
+    while i < 512 {
+      store8(fs_table + s * 512 + i, load8(buf + i))
+      i = i + 1
+    }
+    s = s + 1
+  }
+  return
+}
+
+// Write the in-memory file table back to disk (4 sectors).
+fn fs_flush_table() -> void {
+  let buf = alloc(512)
+  let s = 0
+  while s < FS_TABLE_SECTORS {
+    let i = 0
+    while i < 512 {
+      store8(buf + i, load8(fs_table + s * 512 + i))
+      i = i + 1
+    }
+    ata_write_sector(FS_FILE_TABLE_OFFSET + s, buf)
+    s = s + 1
+  }
+  return
+}
+
+// Scan the file table and advance fs_next_sector past all allocated data.
+fn fs_scan_next_sector() -> void {
+  fs_next_sector = FS_DATA_OFFSET
+  let i = 0
+  while i < FS_MAX_FILES {
+    let entry = fs_entry(i)
+    let flags = load32(entry + 24)
+    if flags == FS_FLAG_USED {
+      let start = load32(entry + 16)
+      let size = load32(entry + 20)
+      let sectors = (size + 511) / 512
+      let end_sector = start + sectors
+      if end_sector > fs_next_sector {
+        fs_next_sector = end_sector
+      }
+    }
+    i = i + 1
+  }
+  return
+}
+
+// Find a file table entry by name. Return entry index or -1.
+fn fs_find(name: Int) -> Int {
+  let i = 0
+  while i < FS_MAX_FILES {
+    let entry = fs_entry(i)
+    let flags = load32(entry + 24)
+    if flags == FS_FLAG_USED {
+      if fs_str_eq(entry, name) != 0 {
+        return i
+      }
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// Find a free file table entry. Return index or -1 if table is full.
+fn fs_find_free() -> Int {
+  let i = 0
+  while i < FS_MAX_FILES {
+    let entry = fs_entry(i)
+    let flags = load32(entry + 24)
+    if flags == FS_FLAG_FREE {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// --- public filesystem API --------------------------------------------------
+
+// Initialize filesystem state. Allocates the in-memory file table and
+// attempts to load the superblock and file table from disk. If the disk
+// is unformatted or absent, sensible defaults are used.
+fn fs_init() -> void {
+  fs_total_sectors = FS_DEFAULT_TOTAL_SECTORS
+  fs_next_sector = FS_DATA_OFFSET
+  fs_initialized = 1
+  return
+}
+
+// Format the disk: write a fresh superblock and an empty file table.
+// Call this from the "format" shell command before using other fs commands.
+fn fs_format() -> void {
+  // Build and write the superblock at sector 0
+  let sbuf = alloc(512)
+  let i = 0
+  while i < 512 {
+    store8(sbuf + i, 0)
+    i = i + 1
+  }
+  store32(sbuf + 0, FS_MAGIC)
+  store32(sbuf + 4, FS_VERSION)
+  store32(sbuf + 8, FS_DEFAULT_TOTAL_SECTORS)
+  store32(sbuf + 12, FS_FILE_TABLE_OFFSET)
+  store32(sbuf + 16, FS_MAX_FILES)
+  store32(sbuf + 20, FS_DATA_OFFSET)
+  ata_write_sector(0, sbuf)
+
+  // Zero the in-memory file table and flush it to disk
+  let j = 0
+  while j < FS_MAX_FILES * FS_ENTRY_SIZE {
+    store8(fs_table + j, 0)
+    j = j + 1
+  }
+  fs_flush_table()
+
+  fs_total_sectors = FS_DEFAULT_TOTAL_SECTORS
+  fs_next_sector = FS_DATA_OFFSET
+  return
+}
+
+// List all files on the disk to the serial port.
+fn fs_list(port: Int) -> void {
+  let count = 0
+  let i = 0
+  while i < FS_MAX_FILES {
+    let entry = fs_entry(i)
+    let flags = load32(entry + 24)
+    if flags == FS_FLAG_USED {
+      let size = load32(entry + 20)
+      let start = load32(entry + 16)
+      serial_write_cstr(port, "  ")
+      serial_write_cstr(port, entry)
+      serial_write_cstr(port, "  size=")
+      serial_write_dec_wide(port, size)
+      serial_write_cstr(port, "  sector=")
+      serial_write_dec_wide(port, start)
+      serial_nl(port)
+      count = count + 1
+    }
+    i = i + 1
+  }
+  if count == 0 {
+    serial_write_cstr(port, "  (no files)")
+    serial_nl(port)
+  }
+  return
+}
+
+// Read a file by name into `buf`. Returns the file size in bytes, or -1
+// if the file is not found or a disk error occurs.
+fn fs_read_file(name: Int, buf: Int) -> Int {
+  let idx = fs_find(name)
+  if idx < 0 {
+    return -1
+  }
+  let entry = fs_entry(idx)
+  let start = load32(entry + 16)
+  let size = load32(entry + 20)
+  let sectors = (size + 511) / 512
+  let sbuf = alloc(512)
+  let s = 0
+  while s < sectors {
+    let rc = ata_read_sector(start + s, sbuf)
+    if rc != 0 {
+      return -1
+    }
+    let off = s * 512
+    let remaining = size - off
+    let to_copy = 512
+    if remaining < 512 {
+      to_copy = remaining
+    }
+    let k = 0
+    while k < to_copy {
+      store8(buf + off + k, load8(sbuf + k))
+      k = k + 1
+    }
+    s = s + 1
+  }
+  return size
+}
+
+// Write a file to disk. If a file with the same name exists, it is replaced.
+// Returns 0 on success, -1 on failure (table full or disk error).
+fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
+  // If the file already exists, free its entry first
+  let existing = fs_find(name)
+  if existing >= 0 {
+    store32(fs_entry(existing) + 24, FS_FLAG_FREE)
+  }
+  let idx = fs_find_free()
+  if idx < 0 {
+    return -1
+  }
+  let entry = fs_entry(idx)
+  let sectors = (size + 511) / 512
+  let start = fs_next_sector
+  // Write data sectors to disk
+  let sbuf = alloc(512)
+  let s = 0
+  while s < sectors {
+    // Zero the sector buffer
+    let k = 0
+    while k < 512 {
+      store8(sbuf + k, 0)
+      k = k + 1
+    }
+    // Copy file data into the sector buffer
+    let off = s * 512
+    let remaining = size - off
+    let to_copy = 512
+    if remaining < 512 {
+      to_copy = remaining
+    }
+    let j = 0
+    while j < to_copy {
+      store8(sbuf + j, load8(buf + off + j))
+      j = j + 1
+    }
+    let rc = ata_write_sector(start + s, sbuf)
+    if rc != 0 {
+      return -1
+    }
+    s = s + 1
+  }
+  // Fill in the file table entry
+  fs_str_copy(entry, name, 15)
+  store32(entry + 16, start)
+  store32(entry + 20, size)
+  store32(entry + 24, FS_FLAG_USED)
+  // Persist the file table
+  fs_flush_table()
+  fs_next_sector = fs_next_sector + sectors
+  return 0
+}
+
+// Delete a file by name. Returns 0 on success, -1 if not found.
+fn fs_delete(name: Int) -> Int {
+  let idx = fs_find(name)
+  if idx < 0 {
+    return -1
+  }
+  let entry = fs_entry(idx)
+  store32(entry + 24, FS_FLAG_FREE)
+  // Zero the filename so it does not appear in listings
+  let i = 0
+  while i < 16 {
+    store8(entry + i, 0)
+    i = i + 1
+  }
+  fs_flush_table()
+  return 0
+}
+
+// --- disk debug helpers -----------------------------------------------------
+
+// Print the first 16 bytes of a sector buffer as hex, 8 bytes per line.
+fn ata_dump16(port: Int, buf: Int) -> void {
+  let i = 0
+  while i < 16 {
+    let b = load8(buf + i)
+    if b < 16 {
+      serial_put(port, 48)
+    }
+    serial_write_hex(port, b)
+    serial_put(port, 32)
+    if i == 7 {
+      serial_put(port, 10)
+    }
+    i = i + 1
+  }
+  serial_put(port, 10)
+  return
+}
+
+// Shell entry point: read a sector and dump its first 16 bytes.
+fn ata_shell(port: Int, lba: Int) -> void {
+  let buf = alloc(512)
+  let rc = ata_read_sector(lba, buf)
+  if rc != 0 {
+    serial_write_cstr(port, "  disk: read error at LBA 0x")
+    serial_write_hex(port, lba)
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  disk: sector 0x")
+  serial_write_hex(port, lba)
+  serial_write_cstr(port, " first 16 bytes:\n")
+  ata_dump16(port, buf)
+  return
+}

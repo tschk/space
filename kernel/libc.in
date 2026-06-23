@@ -1,0 +1,1169 @@
+package space.kernel
+
+// libc.in — comprehensive C standard library equivalent for the Space
+// nanokernel.
+//
+// Provides string, memory, ctype, conversion, I/O, allocation, math, time,
+// and utility functions for programs written in .in.  Imported by
+// kernel-root.in; functions here share the kernel's serial console and bump
+// allocator because the compiler merges imported modules into a single
+// compilation unit.
+
+// ===========================================================================
+// String functions (string.h equivalent)
+// ====================================================================================
+
+// Return the length of a NUL-terminated string.
+fn strlen(s: Int) -> Int {
+  let i = 0
+  while load8(s + i) != 0 {
+    i = i + 1
+  }
+  return i
+}
+
+// Copy a NUL-terminated string from src to dst.  Returns dst.
+fn strcpy(dst: Int, src: Int) -> Int {
+  let i = 0
+  while true {
+    let c = load8(src + i)
+    store8(dst + i, c)
+    if c == 0 {
+      return dst
+    }
+    i = i + 1
+  }
+  return dst
+}
+
+// Copy at most n bytes from src to dst.  If src is shorter than n, dst is
+// padded with NUL bytes up to n.  Returns dst.
+fn strncpy(dst: Int, src: Int, n: Int) -> Int {
+  let i = 0
+  while i < n {
+    let c = load8(src + i)
+    store8(dst + i, c)
+    if c == 0 {
+      i = i + 1
+      while i < n {
+        store8(dst + i, 0)
+        i = i + 1
+      }
+      return dst
+    }
+    i = i + 1
+  }
+  return dst
+}
+
+// Compare two NUL-terminated strings.  Returns 0 if equal, <0 if a < b, >0 if
+// a > b (based on the first differing byte).
+fn strcmp(a: Int, b: Int) -> Int {
+  let i = 0
+  while true {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      if ca < cb {
+        return -1
+      }
+      return 1
+    }
+    if ca == 0 {
+      return 0
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Compare at most n bytes of two strings.  Returns 0 if equal, <0 if a < b,
+// >0 if a > b.
+fn strncmp(a: Int, b: Int, n: Int) -> Int {
+  let i = 0
+  while i < n {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      if ca < cb {
+        return -1
+      }
+      return 1
+    }
+    if ca == 0 {
+      return 0
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Append src to the end of dst (NUL-terminated).  Returns dst.
+fn strcat(dst: Int, src: Int) -> Int {
+  let i = 0
+  while load8(dst + i) != 0 {
+    i = i + 1
+  }
+  let j = 0
+  while true {
+    let c = load8(src + j)
+    store8(dst + i + j, c)
+    if c == 0 {
+      return dst
+    }
+    j = j + 1
+  }
+  return dst
+}
+
+// Append at most n bytes from src to dst.  The result is always NUL-terminated.
+// Returns dst.
+fn strncat(dst: Int, src: Int, n: Int) -> Int {
+  let i = 0
+  while load8(dst + i) != 0 {
+    i = i + 1
+  }
+  let j = 0
+  while j < n {
+    let c = load8(src + j)
+    if c == 0 {
+      break
+    }
+    store8(dst + i + j, c)
+    j = j + 1
+  }
+  store8(dst + i + j, 0)
+  return dst
+}
+
+// Find the first occurrence of ch in s.  Returns a pointer to it, or 0 if not
+// found.  A NUL terminator is searchable.
+fn strchr(s: Int, ch: Int) -> Int {
+  let i = 0
+  while true {
+    let c = load8(s + i)
+    if c == ch {
+      return s + i
+    }
+    if c == 0 {
+      return 0
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Find the last occurrence of ch in s.  Returns a pointer to it, or 0 if not
+// found.  A NUL terminator is searchable.
+fn strrchr(s: Int, ch: Int) -> Int {
+  let found = 0
+  let i = 0
+  while true {
+    let c = load8(s + i)
+    if c == ch {
+      found = s + i
+    }
+    if c == 0 {
+      return found
+    }
+    i = i + 1
+  }
+  return found
+}
+
+// Find the first occurrence of needle in haystack.  Returns a pointer to the
+// match, or 0 if not found.
+fn strstr(haystack: Int, needle: Int) -> Int {
+  let nlen = strlen(needle)
+  if nlen == 0 {
+    return haystack
+  }
+  let hlen = strlen(haystack)
+  let i = 0
+  while i <= hlen - nlen {
+    if strncmp(haystack + i, needle, nlen) == 0 {
+      return haystack + i
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Allocate a new buffer and copy s into it (including NUL).  Returns the new
+// buffer pointer.
+fn strdup(s: Int) -> Int {
+  let len = strlen(s)
+  let p = malloc(len + 1)
+  strcpy(p, s)
+  return p
+}
+
+// Reverse a NUL-terminated string in place.  Returns s.
+fn strrev(s: Int) -> Int {
+  let len = strlen(s)
+  let lo = 0
+  let hi = len - 1
+  while lo < hi {
+    let tmp = load8(s + lo)
+    store8(s + lo, load8(s + hi))
+    store8(s + hi, tmp)
+    lo = lo + 1
+    hi = hi - 1
+  }
+  return s
+}
+
+// ===========================================================================
+// Memory functions (string.h equivalent)
+// ====================================================================================
+
+// Fill n bytes at addr with val.
+fn memset(addr: Int, val: Int, n: Int) -> void {
+  let i = 0
+  while i < n {
+    store8(addr + i, val)
+    i = i + 1
+  }
+  return
+}
+
+// Copy n bytes from src to dst (does not handle overlap).
+fn memcpy(dst: Int, src: Int, n: Int) -> void {
+  let i = 0
+  while i < n {
+    store8(dst + i, load8(src + i))
+    i = i + 1
+  }
+  return
+}
+
+// Copy n bytes from src to dst, handling overlapping regions correctly.
+// If dst < src, copy forward; otherwise copy backward.
+fn memmove(dst: Int, src: Int, n: Int) -> void {
+  if dst == src {
+    return
+  }
+  if dst < src {
+    let i = 0
+    while i < n {
+      store8(dst + i, load8(src + i))
+      i = i + 1
+    }
+  } else {
+    let i = n - 1
+    while i >= 0 {
+      store8(dst + i, load8(src + i))
+      i = i - 1
+    }
+  }
+  return
+}
+
+// Compare n bytes of a and b.  Returns 0 if equal, <0 if a < b, >0 if a > b.
+fn memcmp(a: Int, b: Int, n: Int) -> Int {
+  let i = 0
+  while i < n {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      if ca < cb {
+        return -1
+      }
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// ===========================================================================
+// Character functions (ctype.h equivalent)
+// ====================================================================================
+
+fn isalpha(c: Int) -> Int {
+  if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) {
+    return 1
+  }
+  return 0
+}
+
+fn isdigit(c: Int) -> Int {
+  if c >= 48 && c <= 57 {
+    return 1
+  }
+  return 0
+}
+
+fn isalnum(c: Int) -> Int {
+  if isalpha(c) != 0 || isdigit(c) != 0 {
+    return 1
+  }
+  return 0
+}
+
+fn isspace(c: Int) -> Int {
+  if c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12 {
+    return 1
+  }
+  return 0
+}
+
+fn isupper(c: Int) -> Int {
+  if c >= 65 && c <= 90 {
+    return 1
+  }
+  return 0
+}
+
+fn islower(c: Int) -> Int {
+  if c >= 97 && c <= 122 {
+    return 1
+  }
+  return 0
+}
+
+fn isprint(c: Int) -> Int {
+  if c >= 32 && c <= 126 {
+    return 1
+  }
+  return 0
+}
+
+fn toupper(c: Int) -> Int {
+  if c >= 97 && c <= 122 {
+    return c - 32
+  }
+  return c
+}
+
+fn tolower(c: Int) -> Int {
+  if c >= 65 && c <= 90 {
+    return c + 32
+  }
+  return c
+}
+
+// ===========================================================================
+// Conversion functions (stdlib.h equivalent)
+// ====================================================================================
+
+// Parse a decimal string (optionally signed) into an integer.
+fn atoi(s: Int) -> Int {
+  let result = 0
+  let i = 0
+  let sign = 1
+  // Skip leading whitespace.
+  while isspace(load8(s + i)) != 0 {
+    i = i + 1
+  }
+  let c = load8(s + i)
+  if c == 45 {
+    sign = -1
+    i = i + 1
+  } else if c == 43 {
+    i = i + 1
+  }
+  while true {
+    c = load8(s + i)
+    if c < 48 || c > 57 {
+      return result * sign
+    }
+    result = result * 10 + (c - 48)
+    i = i + 1
+  }
+  return result * sign
+}
+
+// Parse a decimal string into a long integer (same as atoi in this context).
+fn atol(s: Int) -> Int {
+  return atoi(s)
+}
+
+// Convert integer n to a string in the given base (2-16) in buf.
+// Returns the string length (excluding the NUL terminator).
+// buf must be large enough for 67 bytes (sign + 64 binary digits + NUL).
+fn itoa(n: Int, buf: Int, base: Int) -> Int {
+  let i = 0
+  let v = n
+  let negative = 0
+  if v < 0 {
+    negative = 1
+    v = -v
+  }
+  let start = 0
+  if negative != 0 {
+    store8(buf + 0, 45)
+    start = 1
+    i = 1
+  }
+  if v == 0 {
+    store8(buf + i, 48)
+    i = i + 1
+  } else {
+    while v > 0 {
+      let digit = v % base
+      if digit < 10 {
+        store8(buf + i, 48 + digit)
+      } else {
+        store8(buf + i, 65 + digit - 10)
+      }
+      i = i + 1
+      v = v / base
+    }
+  }
+  // Reverse the digit run [start, i).
+  let lo = start
+  let hi = i - 1
+  while lo < hi {
+    let tmp = load8(buf + lo)
+    store8(buf + lo, load8(buf + hi))
+    store8(buf + hi, tmp)
+    lo = lo + 1
+    hi = hi - 1
+  }
+  store8(buf + i, 0)
+  return i
+}
+
+// Convert integer n to a hex string (with "0x" prefix) in buf.  Returns the
+// string length (excluding the NUL terminator).  buf must hold 20 bytes.
+fn htoa(n: Int, buf: Int) -> Int {
+  store8(buf + 0, 48)
+  store8(buf + 1, 120)
+  let i = 2
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (n >> shift) & 0xF
+    if nibble < 10 {
+      store8(buf + i, 48 + nibble)
+    } else {
+      store8(buf + i, 87 + nibble)
+    }
+    i = i + 1
+    shift = shift - 4
+  }
+  store8(buf + i, 0)
+  return i
+}
+
+// Convert unsigned integer n to a decimal string in buf.  Returns the string
+// length (excluding the NUL terminator).  buf must hold 21 bytes.
+fn utoa(n: Int, buf: Int) -> Int {
+  let i = 0
+  let v = n
+  if v < 0 {
+    // Treat as unsigned: negate to get the two's complement magnitude.
+    v = -v
+  }
+  if v == 0 {
+    store8(buf + i, 48)
+    i = i + 1
+  } else {
+    while v > 0 {
+      store8(buf + i, 48 + (v % 10))
+      i = i + 1
+      v = v / 10
+    }
+  }
+  // Reverse the digits.
+  let lo = 0
+  let hi = i - 1
+  while lo < hi {
+    let tmp = load8(buf + lo)
+    store8(buf + lo, load8(buf + hi))
+    store8(buf + hi, tmp)
+    lo = lo + 1
+    hi = hi - 1
+  }
+  store8(buf + i, 0)
+  return i
+}
+
+// ===========================================================================
+// I/O functions (stdio.h equivalent)
+// ====================================================================================
+
+// Print one character to the serial console.
+fn putc(ch: Int) -> void {
+  serial_put(com1(), ch)
+  return
+}
+
+// Alias of putc.
+fn putchar(ch: Int) -> void {
+  serial_put(com1(), ch)
+  return
+}
+
+// Print a NUL-terminated string followed by a newline.
+fn puts(s: Int) -> void {
+  let port = com1()
+  serial_write_cstr(port, s)
+  serial_put(port, 10)
+  return
+}
+
+// Print a NUL-terminated string without a newline.
+fn print(s: Int) -> void {
+  serial_write_cstr(com1(), s)
+  return
+}
+
+// Print a string (alias of print).
+fn printf_str(s: Int) -> void {
+  serial_write_cstr(com1(), s)
+  return
+}
+
+// Print a hex value with "0x" prefix.
+fn printf_hex(n: Int) -> void {
+  let port = com1()
+  serial_put(port, 48)
+  serial_put(port, 120)
+  serial_write_hex(port, n)
+  return
+}
+
+// Print a decimal value.
+fn printf_dec(n: Int) -> void {
+  serial_write_dec_wide(com1(), n)
+  return
+}
+
+// Print a binary value with "0b" prefix.
+fn printf_bin(n: Int) -> void {
+  let port = com1()
+  serial_put(port, 48)
+  serial_put(port, 98)
+  let shift = 63
+  let started = 0
+  while shift >= 0 {
+    let bit = (n >> shift) & 1
+    if bit != 0 || started != 0 || shift == 0 {
+      serial_put(port, 48 + bit)
+      started = 1
+    }
+    shift = shift - 1
+  }
+  return
+}
+
+// Print a single character.
+fn printf_char(c: Int) -> void {
+  serial_put(com1(), c)
+  return
+}
+
+// --- printf helper: format an unsigned number into buf in the given base ---
+// Returns the number of digits written (excluding NUL).  Uses lowercase hex.
+fn fmt_unsigned_base(val: Int, base: Int, buf: Int) -> Int {
+  let v = val
+  let i = 0
+  if v == 0 {
+    store8(buf + 0, 48)
+    store8(buf + 1, 0)
+    return 1
+  }
+  // Handle negative values as unsigned by negating (two's complement wrap).
+  if v < 0 {
+    v = -v
+  }
+  while v > 0 {
+    let digit = v % base
+    if digit < 10 {
+      store8(buf + i, 48 + digit)
+    } else {
+      store8(buf + i, 87 + digit)
+    }
+    i = i + 1
+    v = v / base
+  }
+  // Reverse digits.
+  let lo = 0
+  let hi = i - 1
+  while lo < hi {
+    let tmp = load8(buf + lo)
+    store8(buf + lo, load8(buf + hi))
+    store8(buf + hi, tmp)
+    lo = lo + 1
+    hi = hi - 1
+  }
+  store8(buf + i, 0)
+  return i
+}
+
+// --- printf helper: print a number with optional width padding ---
+fn printf_padded(val: Int, base: Int, width: Int, pad: Int, is_signed: Int) -> void {
+  let port = com1()
+  let buf = malloc(80)
+  let len = 0
+  let negative = 0
+  let v = val
+  if is_signed != 0 && v < 0 {
+    negative = 1
+    v = -v
+  }
+  len = fmt_unsigned_base(v, base, buf)
+  // Calculate how much padding is needed.
+  let total = len
+  if negative != 0 {
+    total = total + 1
+  }
+  let pad_count = 0
+  if width > total {
+    pad_count = width - total
+  }
+  // If pad is '0' and signed, print sign before zeros.
+  if negative != 0 {
+    if pad == 48 {
+      serial_put(port, 45)
+      while pad_count > 0 {
+        serial_put(port, pad)
+        pad_count = pad_count - 1
+      }
+    } else {
+      while pad_count > 0 {
+        serial_put(port, pad)
+        pad_count = pad_count - 1
+      }
+      serial_put(port, 45)
+    }
+  } else {
+    while pad_count > 0 {
+      serial_put(port, pad)
+      pad_count = pad_count - 1
+    }
+  }
+  // Print the digits.
+  let j = 0
+  while j < len {
+    serial_put(port, load8(buf + j))
+    j = j + 1
+  }
+  return
+}
+
+// Full printf: parse fmt character by character, substituting format
+// specifiers.  Supports %s, %d, %x, %b, %c, %u, %% and width padding
+// (e.g. %08x, %8d).  Up to 4 arguments (a0-a3) are consumed left-to-right.
+fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
+  let port = com1()
+  let i = 0
+  let arg = 0
+  while true {
+    let c = load8(fmt + i)
+    if c == 0 {
+      return
+    }
+    if c == 37 {
+      // '%' — parse optional width then specifier.
+      i = i + 1
+      let spec = load8(fmt + i)
+      if spec == 0 {
+        serial_put(port, 37)
+        return
+      }
+      // Parse width: optional '0' flag then digits.
+      let pad = 32
+      let width = 0
+      // Check for leading '0' (zero-pad flag).
+      if spec == 48 {
+        pad = 48
+        i = i + 1
+        spec = load8(fmt + i)
+      }
+      // Parse width digits.
+      while spec >= 48 && spec <= 57 {
+        width = width * 10 + (spec - 48)
+        i = i + 1
+        spec = load8(fmt + i)
+      }
+      if spec == 0 {
+        serial_put(port, 37)
+        return
+      }
+      // Select the next argument.
+      let val = 0
+      if arg == 0 {
+        val = a0
+      } else if arg == 1 {
+        val = a1
+      } else if arg == 2 {
+        val = a2
+      } else {
+        val = a3
+      }
+      if spec == 115 {
+        // 's' — string
+        serial_write_cstr(port, val)
+        arg = arg + 1
+      } else if spec == 100 {
+        // 'd' — signed decimal
+        printf_padded(val, 10, width, pad, 1)
+        arg = arg + 1
+      } else if spec == 117 {
+        // 'u' — unsigned decimal
+        printf_padded(val, 10, width, pad, 0)
+        arg = arg + 1
+      } else if spec == 120 {
+        // 'x' — hexadecimal
+        printf_padded(val, 16, width, pad, 0)
+        arg = arg + 1
+      } else if spec == 98 {
+        // 'b' — binary
+        printf_padded(val, 2, width, pad, 0)
+        arg = arg + 1
+      } else if spec == 99 {
+        // 'c' — character
+        serial_put(port, val)
+        arg = arg + 1
+      } else if spec == 37 {
+        // '%%' — literal percent
+        serial_put(port, 37)
+      } else {
+        // Unknown specifier — print verbatim.
+        serial_put(port, 37)
+        serial_put(port, spec)
+      }
+    } else {
+      serial_put(port, c)
+    }
+    i = i + 1
+  }
+  return
+}
+
+// ===========================================================================
+// Memory allocation (stdlib.h equivalent)
+// ====================================================================================
+
+// Allocate n bytes from the kernel bump allocator, aligned to 8 bytes.
+fn malloc(n: Int) -> Int {
+  let aligned = (n + 7) & -8
+  return alloc(aligned)
+}
+
+// Allocate n * size bytes and zero-fill them.  Returns the buffer pointer.
+fn calloc(n: Int, size: Int) -> Int {
+  let total = n * size
+  let p = malloc(total)
+  memset(p, 0, total)
+  return p
+}
+
+// Reallocate: allocate a new buffer of n bytes, copy the old data, and free
+// the old buffer (no-op with bump allocator).  Returns the new buffer.
+fn realloc(p: Int, n: Int) -> Int {
+  let np = malloc(n)
+  // Copy old data — we don't know the old size, so copy n bytes.
+  // This is safe because the bump allocator never reclaims, so the old
+  // region is still valid.
+  memcpy(np, p, n)
+  free(p)
+  return np
+}
+
+// Free is a no-op: the bump allocator does not reclaim memory.
+fn free(p: Int) -> void {
+  return
+}
+
+// ===========================================================================
+// Math functions (math.h equivalent — integer only)
+// ====================================================================================
+
+fn abs(n: Int) -> Int {
+  if n < 0 {
+    return -n
+  }
+  return n
+}
+
+fn max(a: Int, b: Int) -> Int {
+  if a > b {
+    return a
+  }
+  return b
+}
+
+fn min(a: Int, b: Int) -> Int {
+  if a < b {
+    return a
+  }
+  return b
+}
+
+// Integer power: base^exp.  Returns 1 if exp == 0.
+fn pow(base: Int, exp: Int) -> Int {
+  let result = 1
+  let e = exp
+  while e > 0 {
+    result = result * base
+    e = e - 1
+  }
+  return result
+}
+
+// Greatest common divisor (Euclidean algorithm).
+fn gcd(a: Int, b: Int) -> Int {
+  let x = abs(a)
+  let y = abs(b)
+  while y != 0 {
+    let t = y
+    y = x % y
+    x = t
+  }
+  return x
+}
+
+// Least common multiple.
+fn lcm(a: Int, b: Int) -> Int {
+  if a == 0 || b == 0 {
+    return 0
+  }
+  return abs(a) / gcd(a, b) * abs(b)
+}
+
+// ===========================================================================
+// Time functions (time.h equivalent)
+// ====================================================================================
+
+// Return the PIT tick count.
+fn time_ticks() -> Int {
+  return ticks
+}
+
+// Return uptime in milliseconds (PIT is 100Hz, so ticks * 10).
+fn time_uptime_ms() -> Int {
+  return ticks * 10
+}
+
+// Busy-wait sleep for ms milliseconds (polling the PIT tick counter).
+fn time_sleep_ms(ms: Int) -> void {
+  let start = ticks
+  let target = ms / 10
+  if target == 0 {
+    target = 1
+  }
+  while ticks < start + target {
+    hlt()
+  }
+  return
+}
+
+// ===========================================================================
+// Utility functions
+// ====================================================================================
+
+// Print a panic message and halt the nanokernel.
+fn panic(msg: Int) -> void {
+  let port = com1()
+  serial_nl(port)
+  serial_write_cstr(port, "space: *** PANIC: ")
+  serial_write_cstr(port, msg)
+  serial_nl(port)
+  serial_write_cstr(port, "space: halting")
+  serial_nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return
+}
+
+// Assert that cond is non-zero; if not, panic with msg.
+fn assert(cond: Int, msg: Int) -> void {
+  if cond == 0 {
+    panic(msg)
+  }
+  return
+}
+
+// Print a hex dump of n bytes at addr, with an ASCII column.
+// Format: "0xADDR  XX XX XX XX XX XX XX XX  XX XX XX XX XX XX XX XX  |ASCII|"
+fn hex_dump(addr: Int, n: Int) -> void {
+  let port = com1()
+  let offset = 0
+  while offset < n {
+    // Print address.
+    serial_write_cstr(port, "  0x")
+    serial_write_hex(port, addr + offset)
+    serial_put(port, 32)
+    serial_put(port, 32)
+    // Print 16 hex bytes.
+    let col = 0
+    while col < 16 {
+      if offset + col < n {
+        let byte = load8(addr + offset + col)
+        let hi = (byte >> 4) & 0xF
+        let lo = byte & 0xF
+        if hi < 10 {
+          serial_put(port, 48 + hi)
+        } else {
+          serial_put(port, 87 + hi)
+        }
+        if lo < 10 {
+          serial_put(port, 48 + lo)
+        } else {
+          serial_put(port, 87 + lo)
+        }
+      } else {
+        serial_put(port, 32)
+        serial_put(port, 32)
+      }
+      serial_put(port, 32)
+      // Extra space after 8 bytes.
+      if col == 7 {
+        serial_put(port, 32)
+      }
+      col = col + 1
+    }
+    // Print ASCII column.
+    serial_put(port, 124)
+    col = 0
+    while col < 16 {
+      if offset + col < n {
+        let byte = load8(addr + offset + col)
+        if byte >= 32 && byte <= 126 {
+          serial_put(port, byte)
+        } else {
+          serial_put(port, 46)
+        }
+      } else {
+        serial_put(port, 32)
+      }
+      col = col + 1
+    }
+    serial_put(port, 124)
+    serial_nl(port)
+    offset = offset + 16
+  }
+  return
+}
+
+// ===========================================================================
+// Self-test
+// ===========================================================================
+
+// Internal: print "ok: msg" or "FAIL: msg" and return 1 (pass) or 0 (fail).
+fn libc_check(cond: Int, msg: Int) -> Int {
+  let port = com1()
+  if cond != 0 {
+    serial_write_cstr(port, "  ok: ")
+    serial_write_cstr(port, msg)
+    serial_nl(port)
+    return 1
+  }
+  serial_write_cstr(port, "  FAIL: ")
+  serial_write_cstr(port, msg)
+  serial_nl(port)
+  return 0
+}
+
+// Run a battery of tests for every libc function.  Prints diagnostic output
+// and "libc self-test passed" on success.  Returns 1 on pass, 0 on fail.
+fn libc_selftest() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "libc: running comprehensive self-test")
+  serial_nl(port)
+  let pass = 1
+
+  // --- string functions ---
+  let s1 = "hello"
+  let s2 = malloc(16)
+  strcpy(s2, s1)
+  pass = pass & libc_check(strlen(s1) == 5, "strlen")
+  pass = pass & libc_check(strcmp(s2, s1) == 0, "strcpy/strcmp equal")
+  pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
+  pass = pass & libc_check(strcmp("abd", "abc") > 0, "strcmp greater")
+
+  let s3 = malloc(16)
+  strncpy(s3, "abc", 5)
+  pass = pass & libc_check(strncmp(s3, "abc", 3) == 0, "strncpy/strncmp")
+  pass = pass & libc_check(load8(s3 + 3) == 0, "strncpy NUL pad")
+  pass = pass & libc_check(strncmp("abc", "abd", 3) < 0, "strncmp less")
+  pass = pass & libc_check(strncmp("abc", "abc", 5) == 0, "strncmp equal past NUL")
+
+  let s4 = malloc(32)
+  strcpy(s4, "foo")
+  strcat(s4, "bar")
+  pass = pass & libc_check(strcmp(s4, "foobar") == 0, "strcat")
+
+  let s5 = malloc(32)
+  strcpy(s5, "foo")
+  strncat(s5, "barbaz", 3)
+  pass = pass & libc_check(strcmp(s5, "foobar") == 0, "strncat")
+
+  pass = pass & libc_check(strchr("hello", 101) == "hello" + 1, "strchr 'e'")
+  pass = pass & libc_check(strchr("hello", 122) == 0, "strchr not found")
+  pass = pass & libc_check(strchr("hello", 0) == "hello" + 5, "strchr NUL")
+
+  pass = pass & libc_check(strrchr("hello", 108) == "hello" + 3, "strrchr 'l'")
+  pass = pass & libc_check(strrchr("hello", 122) == 0, "strrchr not found")
+
+  pass = pass & libc_check(strstr("hello world", "world") == "hello world" + 6, "strstr found")
+  pass = pass & libc_check(strstr("hello", "xyz") == 0, "strstr not found")
+  pass = pass & libc_check(strstr("hello", "") == "hello", "strstr empty needle")
+
+  let s6 = strdup("copyme")
+  pass = pass & libc_check(strcmp(s6, "copyme") == 0, "strdup")
+
+  let s7 = malloc(16)
+  strcpy(s7, "reverse")
+  strrev(s7)
+  pass = pass & libc_check(strcmp(s7, "esrever") == 0, "strrev")
+
+  // --- memory functions ---
+  let m1 = malloc(16)
+  memset(m1, 65, 8)
+  pass = pass & libc_check(load8(m1 + 0) == 65 && load8(m1 + 7) == 65, "memset")
+  pass = pass & libc_check(load8(m1 + 8) == 0, "memset bounds")
+
+  let m2 = malloc(16)
+  memset(m2, 0, 16)
+  memcpy(m2, m1, 8)
+  pass = pass & libc_check(memcmp(m2, m1, 8) == 0, "memcpy/memcmp equal")
+  // Set m1[8] to a non-zero value so memcmp at 9 bytes differs.
+  store8(m1 + 8, 66)
+  pass = pass & libc_check(memcmp(m2, m1, 9) != 0, "memcmp differ at 9")
+
+  // memmove overlapping: copy forward (dst < src).
+  let m3 = malloc(16)
+  memset(m3, 0, 16)
+  store8(m3 + 0, 1)
+  store8(m3 + 1, 2)
+  store8(m3 + 2, 3)
+  store8(m3 + 3, 4)
+  memmove(m3 + 1, m3, 3)
+  pass = pass & libc_check(load8(m3 + 1) == 1 && load8(m3 + 2) == 2 && load8(m3 + 3) == 3, "memmove forward overlap")
+
+  // memmove overlapping: copy backward (dst > src).
+  let m4 = malloc(16)
+  memset(m4, 0, 16)
+  store8(m4 + 0, 1)
+  store8(m4 + 1, 2)
+  store8(m4 + 2, 3)
+  store8(m4 + 3, 4)
+  memmove(m4, m4 + 1, 3)
+  pass = pass & libc_check(load8(m4 + 0) == 2 && load8(m4 + 1) == 3 && load8(m4 + 2) == 4, "memmove backward overlap")
+
+  // --- ctype functions ---
+  pass = pass & libc_check(isalpha(65) != 0, "isalpha 'A'")
+  pass = pass & libc_check(isalpha(97) != 0, "isalpha 'a'")
+  pass = pass & libc_check(isalpha(48) == 0, "isalpha '0' false")
+  pass = pass & libc_check(isdigit(48) != 0, "isdigit '0'")
+  pass = pass & libc_check(isdigit(65) == 0, "isdigit 'A' false")
+  pass = pass & libc_check(isalnum(65) != 0, "isalnum 'A'")
+  pass = pass & libc_check(isalnum(48) != 0, "isalnum '0'")
+  pass = pass & libc_check(isalnum(32) == 0, "isalnum ' ' false")
+  pass = pass & libc_check(isspace(32) != 0, "isspace ' '")
+  pass = pass & libc_check(isspace(10) != 0, "isspace newline")
+  pass = pass & libc_check(isspace(65) == 0, "isspace 'A' false")
+  pass = pass & libc_check(isupper(65) != 0, "isupper 'A'")
+  pass = pass & libc_check(isupper(97) == 0, "isupper 'a' false")
+  pass = pass & libc_check(islower(97) != 0, "islower 'a'")
+  pass = pass & libc_check(islower(65) == 0, "islower 'A' false")
+  pass = pass & libc_check(isprint(65) != 0, "isprint 'A'")
+  pass = pass & libc_check(isprint(31) == 0, "isprint 0x1F false")
+  pass = pass & libc_check(toupper(97) == 65, "toupper 'a'->'A'")
+  pass = pass & libc_check(tolower(65) == 97, "tolower 'A'->'a'")
+  pass = pass & libc_check(toupper(65) == 65, "toupper 'A' unchanged")
+
+  // --- conversion functions ---
+  pass = pass & libc_check(atoi("42") == 42, "atoi 42")
+  pass = pass & libc_check(atoi("-7") == -7, "atoi -7")
+  pass = pass & libc_check(atoi("  123") == 123, "atoi whitespace skip")
+  pass = pass & libc_check(atoi("+99") == 99, "atoi +99")
+  pass = pass & libc_check(atol("12345") == 12345, "atol 12345")
+
+  let ibuf = malloc(32)
+  let ilen = itoa(42, ibuf, 10)
+  pass = pass & libc_check(ilen == 2 && strcmp(ibuf, "42") == 0, "itoa 42 base 10")
+
+  let ilen2 = itoa(-7, ibuf, 10)
+  pass = pass & libc_check(ilen2 == 2 && strcmp(ibuf, "-7") == 0, "itoa -7 base 10")
+
+  let ilen3 = itoa(255, ibuf, 16)
+  pass = pass & libc_check(ilen3 == 2 && strcmp(ibuf, "FF") == 0, "itoa 255 base 16")
+
+  let ilen4 = itoa(10, ibuf, 2)
+  pass = pass & libc_check(ilen4 == 4 && strcmp(ibuf, "1010") == 0, "itoa 10 base 2")
+
+  let ilen5 = itoa(0, ibuf, 10)
+  pass = pass & libc_check(ilen5 == 1 && strcmp(ibuf, "0") == 0, "itoa 0 base 10")
+
+  let hbuf = malloc(20)
+  let hlen = htoa(0xDEAD, hbuf)
+  pass = pass & libc_check(hlen == 18 && strcmp(hbuf, "0x000000000000dead") == 0, "htoa 0xDEAD")
+
+  let ubuf = malloc(21)
+  let ulen = utoa(12345, ubuf)
+  pass = pass & libc_check(ulen == 5 && strcmp(ubuf, "12345") == 0, "utoa 12345")
+
+  let ulen2 = utoa(0, ubuf)
+  pass = pass & libc_check(ulen2 == 1 && strcmp(ubuf, "0") == 0, "utoa 0")
+
+  // --- printf tests ---
+  serial_write_cstr(port, "  printf tests (visual check):")
+  serial_nl(port)
+  serial_write_cstr(port, "    ")
+  printf("str=%s dec=%d hex=%x char=%c pct=%%", 42, 42, 255, 65)
+  serial_nl(port)
+  serial_write_cstr(port, "    ")
+  printf("pad: %08x | %8d | %d", 0xCAFE, 42, -7)
+  serial_nl(port)
+  serial_write_cstr(port, "    ")
+  printf("bin=%b u=%u", 10, 100)
+  serial_nl(port)
+
+  // --- math functions ---
+  pass = pass & libc_check(abs(-5) == 5, "abs -5")
+  pass = pass & libc_check(abs(5) == 5, "abs 5")
+  pass = pass & libc_check(max(3, 7) == 7, "max 3 7")
+  pass = pass & libc_check(min(3, 7) == 3, "min 3 7")
+  pass = pass & libc_check(pow(2, 10) == 1024, "pow 2^10")
+  pass = pass & libc_check(pow(3, 0) == 1, "pow 3^0")
+  pass = pass & libc_check(gcd(12, 18) == 6, "gcd 12 18")
+  pass = pass & libc_check(gcd(17, 5) == 1, "gcd 17 5")
+  pass = pass & libc_check(lcm(4, 6) == 12, "lcm 4 6")
+  pass = pass & libc_check(lcm(0, 5) == 0, "lcm 0 5")
+
+  // --- time functions ---
+  let t0 = time_ticks()
+  pass = pass & libc_check(t0 >= 0, "time_ticks non-negative")
+  let up = time_uptime_ms()
+  pass = pass & libc_check(up == t0 * 10, "time_uptime_ms")
+  // Brief sleep test (10ms = 1 tick at 100Hz).
+  time_sleep_ms(10)
+  let t1 = time_ticks()
+  pass = pass & libc_check(t1 > t0, "time_sleep_ms advanced ticks")
+
+  // --- utility functions ---
+  // hex_dump visual test.
+  serial_write_cstr(port, "  hex_dump test (visual check):")
+  serial_nl(port)
+  hex_dump("Hello, World!", 14)
+
+  // --- memory allocation ---
+  let a1 = malloc(100)
+  memset(a1, 0xAB, 100)
+  pass = pass & libc_check(load8(a1 + 50) == 0xAB, "malloc + memset 100 bytes")
+
+  let a2 = calloc(10, 8)
+  pass = pass & libc_check(load8(a2 + 0) == 0 && load8(a2 + 79) == 0, "calloc zeroed")
+
+  let a3 = malloc(8)
+  store64(a3, 0x12345678)
+  let a4 = realloc(a3, 16)
+  pass = pass & libc_check(load64(a4) == 0x12345678, "realloc preserves data")
+
+  // --- result ---
+  if pass != 0 {
+    serial_write_cstr(port, "libc self-test passed")
+    serial_nl(port)
+    return 1
+  }
+  serial_write_cstr(port, "libc self-test FAILED")
+  serial_nl(port)
+  return 0
+}

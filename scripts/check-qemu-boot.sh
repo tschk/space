@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# check-qemu-boot.sh — Build the kernel, boot it in QEMU, verify markers.
-# ponytail: single-file check, no redundant marker lists.
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
@@ -10,23 +7,25 @@ BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
 IN="$INAUG_DIR/in-cli/target/release/in"
 SERIAL="$BUILD_DIR/serial.log"
 mkdir -p "$BUILD_DIR"
-
 echo "[1/3] Building compiler..."
 cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
-
 echo "[2/3] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 [ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 8192 ] || { echo "trampoline size error" >&2; exit 1; }
-
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
-
 echo "[3/3] Booting and checking output..."
 rm -f "$SERIAL"
-qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 256M \
+DISK_IMG="${DISK_IMG:-/tmp/space-nvme.img}"
+if [ ! -f "$DISK_IMG" ]; then
+  dd if=/dev/zero of="$DISK_IMG" bs=1M count=16 status=none
+fi
+qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
+  -drive file="$DISK_IMG",if=none,id=nvme0,format=raw \
+  -device nvme,drive=nvme0,serial=space_nvme \
   -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null &
 QPID=$!
 for _ in $(seq 1 150); do
@@ -36,13 +35,11 @@ for _ in $(seq 1 150); do
 done
 kill "$QPID" 2>/dev/null || true
 wait "$QPID" 2>/dev/null || true
-
-# Core markers that must appear in normal boot
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
          "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
          "channel demo complete" "preemptive scheduler" "preemption ended" \
-         "interactive shell"; do
+         "filesystem initialized" "interactive shell"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
