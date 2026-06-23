@@ -24,6 +24,11 @@ KERNEL_ENTRY equ 0x102100            ; KCODE_BASE + 0x100 (SCI header size)
 PML4 equ 0x1000
 PDPT equ 0x2000
 PD   equ 0x3000
+; Extra page directories for 1-4 GiB identity mapping (framebuffer MMIO).
+; Use addresses above 0x10000 to avoid QEMU multiboot info/mmap in low memory.
+PD2  equ 0x10000   ; 1-2 GiB
+PD3  equ 0x11000   ; 2-3 GiB
+PD4  equ 0x12000   ; 3-4 GiB
 
 mb_header:
     dd MB_MAGIC
@@ -46,19 +51,55 @@ entry32:
     xor eax, eax
     rep stosd
 
-    ; PML4[0] -> PDPT, PDPT[0] -> PD (present + writable).
-    mov dword [PML4], PDPT | 0x3
-    mov dword [PDPT], PD   | 0x3
+    ; Zero PD2/PD3/PD4 (3 pages at 0x5000..0x8000).
+    mov edi, PD2
+    mov ecx, 0x3000 / 4
+    xor eax, eax
+    rep stosd
 
-    ; Fill the page directory: identity-map the first 1 GiB with 2 MiB pages.
+    ; PML4[0] -> PDPT, PDPT[0..3] -> PD/PD2/PD3/PD4 (present + writable).
+    mov dword [PML4], PDPT | 0x3
+    mov dword [PDPT], PD   | 0x3       ; 0-1 GiB
+    mov dword [PDPT + 8], PD2 | 0x3    ; 1-2 GiB
+    mov dword [PDPT + 16], PD3 | 0x3   ; 2-3 GiB
+    mov dword [PDPT + 24], PD4 | 0x3   ; 3-4 GiB
+
+    ; Fill all page directories: identity-map the first 4 GiB with 2 MiB pages.
     mov edi, PD
     mov eax, 0x83                     ; present | writable | page-size(2MiB)
     mov ecx, 512
-.fill_pd:
+.fill_pd1:
     mov [edi], eax
     add eax, 0x200000
     add edi, 8
-    loop .fill_pd
+    loop .fill_pd1
+
+    mov edi, PD2
+    mov eax, 0x40000083               ; 1 GiB base + flags
+    mov ecx, 512
+.fill_pd2:
+    mov [edi], eax
+    add eax, 0x200000
+    add edi, 8
+    loop .fill_pd2
+
+    mov edi, PD3
+    mov eax, 0x80000083               ; 2 GiB base + flags
+    mov ecx, 512
+.fill_pd3:
+    mov [edi], eax
+    add eax, 0x200000
+    add edi, 8
+    loop .fill_pd3
+
+    mov edi, PD4
+    mov eax, 0xC0000083               ; 3 GiB base + flags
+    mov ecx, 512
+.fill_pd4:
+    mov [edi], eax
+    add eax, 0x200000
+    add edi, 8
+    loop .fill_pd4
 
     mov eax, PML4
     mov cr3, eax
