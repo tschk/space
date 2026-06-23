@@ -6,6 +6,7 @@ INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
 IN="$INAUG_DIR/in-cli/target/release/in"
 SERIAL="$BUILD_DIR/serial.log"
+FIFO="$BUILD_DIR/serial_in"
 mkdir -p "$BUILD_DIR"
 echo "[1/3] Building compiler..."
 cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
@@ -18,28 +19,57 @@ NASM="${NASM:-nasm}"
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
 echo "[3/3] Booting and checking output..."
-rm -f "$SERIAL"
+rm -f "$SERIAL" "$FIFO"
+mkfifo "$FIFO"
 DISK_IMG="${DISK_IMG:-/tmp/space-nvme.img}"
 if [ ! -f "$DISK_IMG" ]; then
   dd if=/dev/zero of="$DISK_IMG" bs=1M count=16 status=none
 fi
+# Start QEMU with serial input from the FIFO and output to the log file.
+# Keep fd 3 open for writing to the FIFO so QEMU's stdin does not see EOF.
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
   -drive file="$DISK_IMG",if=none,id=nvme0,format=raw \
   -device nvme,drive=nvme0,serial=space_nvme \
-  -serial stdio -display none -no-reboot >"$SERIAL" 2>/dev/null &
+  -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
 QPID=$!
+exec 3>"$FIFO"
+# Wait for the interactive shell prompt to appear.
 for _ in $(seq 1 150); do
   grep -qF "interactive shell" "$SERIAL" 2>/dev/null && break
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
+# Send the 'linux' command to run the Linux personality demo.
+echo "linux" >&3
+# Wait for the demo to complete.
+for _ in $(seq 1 100); do
+  grep -qF "linux: personality demo complete" "$SERIAL" 2>/dev/null && break
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 0.1
+done
+# Send 'fb' command to show framebuffer info.
+echo "fb" >&3
+sleep 0.5
+# Send 'halt' to cleanly stop the shell.
+echo "halt" >&3
+exec 3>&-
+sleep 0.5
 kill "$QPID" 2>/dev/null || true
 wait "$QPID" 2>/dev/null || true
+rm -f "$FIFO"
+# --- assertions ---
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
          "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
          "channel demo complete" "preemptive scheduler" "preemption ended" \
-         "filesystem initialized" "interactive shell"; do
+         "filesystem initialized" "Linux personality initialized" \
+         "framebuffer initialized" "compositor initialized" \
+         "interactive shell" \
+         "linux: personality demo starting" \
+         "linux: write(1, msg" \
+         "linux: getpid()" \
+         "linux: open(hello.txt" \
+         "linux: personality demo complete"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
