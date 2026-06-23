@@ -182,6 +182,27 @@ fn fs_find_free() -> Int {
 // attempts to load the superblock and file table from disk. If the disk
 // is unformatted or absent, sensible defaults are used.
 fn fs_init() -> void {
+  fs_table = alloc(FS_MAX_FILES * FS_ENTRY_SIZE)
+  // Zero the in-memory table (all entries free)
+  let i = 0
+  while i < FS_MAX_FILES * FS_ENTRY_SIZE {
+    store8(fs_table + i, 0)
+    i = i + 1
+  }
+  // Try reading the superblock from sector 0
+  let sbuf = alloc(512)
+  let rc = ata_read_sector(0, sbuf)
+  if rc == 0 {
+    let magic = load32(sbuf + 0)
+    if magic == FS_MAGIC {
+      fs_total_sectors = load32(sbuf + 8)
+      fs_load_table()
+      fs_scan_next_sector()
+      fs_initialized = 1
+      return
+    }
+  }
+  // Unformatted or no disk — use defaults
   fs_total_sectors = FS_DEFAULT_TOTAL_SECTORS
   fs_next_sector = FS_DATA_OFFSET
   fs_initialized = 1

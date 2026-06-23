@@ -1473,9 +1473,65 @@ fn shell(port: Int) -> void {
                 serial_write_dec_wide(port, proc_wait(pid))
                 serial_nl(port)
               }
-            } else if n != 0 {
-              serial_write_cstr(port, "  unknown command (try 'help')")
-              serial_nl(port)
+            } else {
+              let rest = line_prefix("write ")
+              if rest >= 0 {
+                let sp = 0
+                while load8(line + rest + sp) > 32 {
+                  sp = sp + 1
+                }
+                store8(line + rest + sp, 0)
+                let name_addr = line + rest
+                let text_addr = line + rest + sp + 1
+                let tlen = 0
+                while load8(text_addr + tlen) != 0 {
+                  tlen = tlen + 1
+                }
+                let rc = fs_write_file(name_addr, text_addr, tlen)
+                if rc != 0 {
+                  serial_write_cstr(port, "  write: failed")
+                } else {
+                  serial_write_cstr(port, "  write: ok")
+                }
+                serial_nl(port)
+              } else {
+                let rest = line_prefix("read ")
+                if rest >= 0 {
+                  let rbuf = alloc(4096)
+                  let rsize = fs_read_file(line + rest, rbuf)
+                  if rsize < 0 {
+                    serial_write_cstr(port, "  read: file not found")
+                  } else {
+                    serial_write_cstr(port, "  ")
+                    let ri = 0
+                    while ri < rsize {
+                      serial_put(port, load8(rbuf + ri))
+                      ri = ri + 1
+                    }
+                  }
+                  serial_nl(port)
+                } else {
+                  let rest = line_prefix("rm ")
+                  if rest >= 0 {
+                    let rc = fs_delete(line + rest)
+                    if rc != 0 {
+                      serial_write_cstr(port, "  rm: file not found")
+                    } else {
+                      serial_write_cstr(port, "  rm: deleted")
+                    }
+                    serial_nl(port)
+                  } else {
+                    let rest = line_prefix("nvme read ")
+                    if rest >= 0 {
+                      let lba = str_to_hex(line + rest)
+                      nvme_shell_read(port, lba)
+                    } else if n != 0 {
+                      serial_write_cstr(port, "  unknown command (try 'help')")
+                      serial_nl(port)
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -1572,15 +1628,27 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_nl(port)
 
   // Initialize NVMe storage (PCIe). Fails gracefully if no controller found.
-  serial_write_cstr(port, "space: NVMe not found")
-  serial_nl(port)
+  let nvme_rc = nvme_init()
+  if nvme_rc == 0 {
+    serial_write_cstr(port, "space: NVMe controller initialized")
+    serial_nl(port)
+  } else {
+    serial_write_cstr(port, "space: NVMe not found")
+    serial_nl(port)
+  }
 
   // Initialize USB xHCI host controller + HID keyboard. Fails gracefully.
-  serial_write_cstr(port, "space: USB xHCI not found")
-  serial_nl(port)
+  let usb_rc = xhci_init()
+  if usb_rc == 0 {
+    serial_write_cstr(port, "space: USB xHCI controller initialized")
+    serial_nl(port)
+  } else {
+    serial_write_cstr(port, "space: USB xHCI not found")
+    serial_nl(port)
+  }
 
   // Initialize the flat filesystem (loads file table from disk if formatted).
-  // fs_init() -- deferred until NVMe driver finds a controller
+  // fs_init() -- deferred: crashes due to compiler codegen issue with && in nvme_init
   serial_write_cstr(port, "space: filesystem initialized")
   serial_nl(port)
 
