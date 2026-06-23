@@ -10,12 +10,14 @@ fn pci_addr(bus: Int, dev: Int, func: Int, off: Int) -> Int {
 }
 
 fn pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
-  outl(PCI_CONFIG_ADDR, pci_addr(bus, dev, func, off))
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
   return inl(PCI_CONFIG_DATA)
 }
 
 fn pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
-  outl(PCI_CONFIG_ADDR, pci_addr(bus, dev, func, off))
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
   outl(PCI_CONFIG_DATA, val)
   return
 }

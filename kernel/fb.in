@@ -216,16 +216,58 @@ fn vbe_read(idx: Int) -> Int {
 
 // --- framebuffer initialization ---------------------------------------------
 
+// Enable PCI vendor/device I/O for VGA device.
+fn fb_enable_vga_pci() -> void {
+  let dev = 0
+  while dev < 32 {
+    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
+    if vendor != 0xFFFF {
+      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
+      if class_code == 0x030000 {
+        let cmd = pci_read32(0, dev, 0, 0x04)
+        pci_write32(0, dev, 0, 0x04, cmd | 0x7)
+        return
+      }
+    }
+    dev = dev + 1
+  }
+  return
+}
+
 // Initialize the framebuffer using Bochs VBE I/O ports.
 // Sets a 1024x768x32 graphics mode with linear framebuffer.
+// Falls back to multiboot VBE info if I/O ports don't respond.
 // Returns 0 on success, -1 if VBE is unavailable.
 fn fb_init(mb_info: Int) -> Int {
+  // Enable PCI VGA I/O (needed for VBE ports to work on some QEMU configs).
+  fb_enable_vga_pci()
+
   // Check for Bochs VBE by reading the ID register.
   let vbe_id = vbe_read(0x00)
+
+  // If VBE I/O fails, try multiboot VBE info.
   if vbe_id == 0 {
-    return -1
+    let mb_flags = load32(mb_info + 0)
+    let vbe_avail = (mb_flags >> 11) & 1
+    if vbe_avail == 0 {
+      return -1
+    }
+    let mode_info = load32(mb_info + 76)
+    if mode_info == 0 {
+      return -1
+    }
+    fb_pitch = load16(mode_info + 16)
+    fb_width = load16(mode_info + 18)
+    fb_height = load16(mode_info + 20)
+    fb_bpp = load8(mode_info + 25)
+    fb_addr = load32(mode_info + 40)
+    fb_size = fb_pitch * fb_height
+    fb_font_init()
+    fb_ready = 1
+    return 0
   }
 
+  // VBE I/O ports work — configure mode.
   // Disable VBE while configuring.
   vbe_write(0x04, 0x00)
 

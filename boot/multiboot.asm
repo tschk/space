@@ -13,7 +13,7 @@ BITS 32
 org 0x100000
 
 MB_MAGIC     equ 0x1BADB002
-MB_FLAGS     equ 0x00010000          ; AOUT_KLUDGE: provide load/entry addresses
+MB_FLAGS     equ 0x00010800          ; AOUT_KLUDGE | BIT11 (VBE info)
 MB_CHECKSUM  equ -(MB_MAGIC + MB_FLAGS)
 
 KIMAGE_BASE  equ 0x100000
