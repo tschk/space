@@ -139,13 +139,6 @@ fn thr_yield() -> void {
   return
 }
 
-// Block until woken (mark BLOCKED, switch back to scheduler).
-fn thr_block() -> void {
-  store64(thread_state + current_task * 8, THR_BLOCKED)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  return
-}
-
 // Wake a blocked thread.
 fn thr_wake(tid: Int) -> void {
   store64(thread_state + tid * 8, THR_RUNNABLE)
