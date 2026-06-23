@@ -18,6 +18,8 @@ import "fs.in"
 import "libc.in"
 // Process abstraction layer (domain + component + thread).
 import "process.in"
+// SCI loader.
+import "loader.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -1078,76 +1080,6 @@ fn run_channels(port: Int) -> void {
   return
 }
 
-// --- SCI component loader ---------------------------------------------------
-// Load a separately-compiled component from a binary SCI manifest in memory:
-// [magic][required_caps][entry][reserved] followed by the component's code.
-// The loader validates the declared authority against the realm's grants
-// before transferring control -- the SCI loader rule, applied to real loaded
-// code rather than an in-image component.
-const SCI_MAGIC = 0x5343490000000001
-
-fn sci_load(port: Int, load_addr: Int) -> Int {
-  let magic = load64(load_addr + 0)
-  if magic != SCI_MAGIC {
-    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
-    serial_write_hex(port, load_addr)
-    serial_nl(port)
-    return -1
-  }
-  let required = load64(load_addr + 8)
-  let entry = load64(load_addr + 16)
-  let image_size = load64(load_addr + 24)
-  serial_write_cstr(port, "  SCI: manifest ok, caps 0x")
-  serial_write_hex(port, required)
-  serial_write_cstr(port, " entry 0x")
-  serial_write_hex(port, entry)
-  serial_nl(port)
-  let missing = required & (-1 ^ realm_grants)
-  if missing != 0 {
-    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
-    serial_write_hex(port, missing)
-    serial_nl(port)
-    return -1
-  }
-  // Phase 0: create a domain record for the component
-  let domain = domain_create()
-  if domain == 0 {
-    serial_write_cstr(port, "  SCI: domain_create failed")
-    serial_nl(port)
-    return -1
-  }
-  let component = component_register("sci-guest", entry, required)
-  let virt_load = entry - 32
-  let image_pages = (image_size + 4095) / 4096
-  let i = 0
-  while i < image_pages {
-    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
-    i = i + 1
-  }
-  serial_write_cstr(port, "  SCI: domain 0x")
-  serial_write_hex(port, domain)
-  serial_write_cstr(port, ", mapped 0x")
-  serial_write_hex(port, image_pages)
-  serial_write_cstr(port, " pages, cap check passed")
-  serial_nl(port)
-  store64(component + 40, domain)
-  obj_link(root_realm, component)
-  serial_write_cstr(port, "  SCI: registered component object id 0x")
-  serial_write_hex(port, obj_id(component))
-  serial_nl(port)
-  // Pack realm cap table info for guest: [cap_count][cap_table_base].
-  let cap_info = alloc(16)
-  store64(cap_info + 0, cap_count)
-  store64(cap_info + 8, cap_table_base)
-  domain_switch(domain)
-  let status = invoke1(entry, cap_info)
-  domain_switch(0)
-  store64(component + 48, status)
-  serial_write_cstr(port, "  SCI: component returned status 0x")
-  serial_write_hex(port, status)
-  serial_nl(port)
-  return status
-}
 
 // --- syscall demo -----------------------------------------------------------
 // Demonstrates calling sys_write via the int 0x80 trap from kernel context.

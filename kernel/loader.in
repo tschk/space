@@ -1,0 +1,115 @@
+// SCI loader - loads a compiled component into a domain.
+// Imported into kernel-root.in, not standalone.
+// ponytail: flat binary loader, no ELF parsing. The SCI is a simple header +
+// code+data frames that Inauguration can emit as a sidecar artifact.
+// Builds on Phase 0 domain_map and Phase 1 channels.
+
+const SCI_HEADER_SIZE = 72
+const SCI_CAPS_OFF = 8
+const SCI_ENTRY_OFF = 16
+const SCI_TEXT_OFF = 24
+const SCI_TEXT_SIZE = 32
+const SCI_DATA_OFF = 40
+const SCI_DATA_SIZE = 48
+
+const SCI_MAGIC = 0x5343490000000001
+
+fn sci_load(port: Int, load_addr: Int) -> Int {
+  let magic = load64(load_addr + 0)
+  if magic != SCI_MAGIC {
+    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
+    serial_write_hex(port, load_addr)
+    serial_nl(port)
+    return -1
+  }
+  let required = load64(load_addr + SCI_CAPS_OFF)
+  let entry = load64(load_addr + SCI_ENTRY_OFF)
+  let text_off = load64(load_addr + SCI_TEXT_OFF)
+  let text_size = load64(load_addr + SCI_TEXT_SIZE)
+  let data_off = load64(load_addr + SCI_DATA_OFF)
+  let data_size = load64(load_addr + SCI_DATA_SIZE)
+
+  serial_write_cstr(port, "  SCI: manifest ok, caps 0x")
+  serial_write_hex(port, required)
+  serial_write_cstr(port, " entry 0x")
+  serial_write_hex(port, entry)
+  serial_nl(port)
+
+  let missing = required & (-1 ^ realm_grants)
+  if missing != 0 {
+    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial_write_hex(port, missing)
+    serial_nl(port)
+    return -1
+  }
+
+  // Phase 0: create a domain record for the component
+  let domain = domain_create()
+  if domain == 0 {
+    serial_write_cstr(port, "  SCI: domain_create failed")
+    serial_nl(port)
+    return -1
+  }
+  let component = component_register("sci-guest", entry, required)
+
+  let virt_load = entry - text_off
+  let total_pages = 0
+
+  if text_size > 0 {
+    let text_start_page = text_off / 4096
+    let text_end_page = (text_off + text_size + 4095) / 4096
+    let i = text_start_page
+    while i < text_end_page {
+      domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+      total_pages = total_pages + 1
+      i = i + 1
+    }
+  }
+
+  if data_size > 0 {
+    let data_start_page = data_off / 4096
+    let data_end_page = (data_off + data_size + 4095) / 4096
+    let j = data_start_page
+    while j < data_end_page {
+      domain_map(domain, virt_load + j * 4096, load_addr + j * 4096, 0x7)
+      total_pages = total_pages + 1
+      j = j + 1
+    }
+  }
+
+  // To be perfectly backward compatible with the exact output of build-multicomponent.sh
+  // The test expects: "mapped 0x[image_pages] pages"
+  // Wait, if text_start_page is 0, then we map page 0.
+  // The old code mapped `image_pages = (image_size + 4095) / 4096`. And the `image_size` included the header.
+  // `text_off` is 72, `text_size` = len(guest).
+  // So `text_end_page = (72 + len(guest) + 4095) / 4096`. This perfectly matches old `image_pages`.
+
+  serial_write_cstr(port, "  SCI: domain 0x")
+  serial_write_hex(port, domain)
+  serial_write_cstr(port, ", mapped 0x")
+  serial_write_hex(port, total_pages)
+  serial_write_cstr(port, " pages, cap check passed")
+  serial_nl(port)
+
+  store64(component + 40, domain)
+  obj_link(root_realm, component)
+  serial_write_cstr(port, "  SCI: registered component object id 0x")
+  serial_write_hex(port, obj_id(component))
+  serial_nl(port)
+
+  // Pack realm cap table info for guest: [cap_count][cap_table_base].
+  let cap_info = alloc(16)
+  store64(cap_info + 0, cap_count)
+  store64(cap_info + 8, cap_table_base)
+
+  domain_switch(domain)
+  let status = invoke1(entry, cap_info)
+  domain_switch(0)
+
+  store64(component + 48, status)
+  serial_write_cstr(port, "  SCI: component returned status 0x")
+  serial_write_hex(port, status)
+  serial_nl(port)
+
+  return status
+}

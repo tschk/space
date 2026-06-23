@@ -75,7 +75,7 @@ if [ "$USE_SCI" = "1" ]; then
   echo "  compiling SCI guest component..."
   GUEST_LOAD=$((0x140000))
   GUEST_VIRT_LOAD=$((0x40000000))
-  GUEST_BASE=$((GUEST_VIRT_LOAD + 0x20))
+  GUEST_BASE=$((GUEST_VIRT_LOAD + 0x48))
   SCI_MAGIC=$((0x5343490000000001))
   GUEST_CAPS=1
 
@@ -97,7 +97,7 @@ img_base = 0x100000
 manifest_off = gload - img_base
 out = bytearray(kernel)
 out += b"\x00" * (manifest_off - len(out))
-out += struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest))
+out += struct.pack("<QQQQQQQQQ", magic, caps, gbase, 72, len(guest), 0, 0, 0, 0)
 out += guest
 open(os.path.join(build, "combined.bin"), "wb").write(out)
 print(f"  combined image: {len(out)} bytes, SCI manifest at 0x{gload:x}")
