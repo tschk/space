@@ -18,6 +18,14 @@ import "fs.in"
 import "libc.in"
 // Process abstraction layer (domain + component + thread).
 import "process.in"
+// Linux personality layer (POSIX syscall translation).
+import "linux.in"
+// VBE framebuffer driver (drawing primitives + bitmap font).
+import "fb.in"
+// PS/2 mouse driver (polling).
+import "mouse.in"
+// Wayland-style compositor (window manager + desktop rendering).
+import "compositor.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -1279,7 +1287,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net nvme snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> proc <name> format ls write <name> <text> read <name> rm <name> libc usb syscall uptime halt")
+        serial_write_cstr(port, "commands: help status mem ticks ps test det domain chan pci net nvme snapshot spawn restore map sci fault divzero echo <x> peek <addr> poke <addr> <val> proc <name> format ls write <name> <text> read <name> rm <name> libc usb linux syscall uptime fb desktop halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1423,6 +1431,25 @@ fn shell(port: Int) -> void {
       serial_nl(port)
     } else if line_eq("usb") != 0 {
       usb_kbd_cmd(port)
+    } else if line_eq("linux") != 0 {
+      linux_demo(port)
+    } else if line_eq("desktop") != 0 {
+      comp_run(port)
+    } else if line_eq("fb") != 0 {
+      fb_info(port)
+    } else if line_eq("fbtest") != 0 {
+      fb_test_pattern(port)
+    } else if line_eq("comp") != 0 {
+      comp_init()
+      let w1 = comp_win_create("Terminal", 40, 40, 320, 200)
+      comp_win_set_content(w1, "Space OS Terminal\n\n> help\n> status\n> ls\n> linux\n\nWelcome to Space OS!")
+      let w2 = comp_win_create("File Browser", 400, 60, 280, 160)
+      comp_win_set_content(w2, "Files on disk:\n\n(no files yet)")
+      let w3 = comp_win_create("System Info", 120, 280, 360, 120)
+      comp_win_set_content(w3, "Space OS v0.0.1\nNanokernel + Linux personality\nFramebuffer: active")
+      comp_render()
+      serial_write_cstr(port, "  comp: rendered OK")
+      serial_nl(port)
     } else {
       let rest = line_prefix("echo ")
       if rest >= 0 {
@@ -1648,9 +1675,40 @@ fn kernel_entry(mb_info: Int) -> Int {
   }
 
   // Initialize the flat filesystem (loads file table from disk if formatted).
-  // fs_init() -- deferred: divide-by-zero when nvme_read calls nvme_init
-  // due to uninitialized stack variable in division codegen. Needs compiler fix.
+  fs_init()
   serial_write_cstr(port, "space: filesystem initialized")
+  serial_nl(port)
+
+  // Initialize the Linux personality (POSIX syscall translation layer).
+  linux_init()
+  serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
+  serial_nl(port)
+
+  // Initialize the VBE framebuffer from Bochs VBE I/O ports.
+  let fb_rc = fb_init(mb_info)
+  if fb_rc == 0 {
+    serial_write_cstr(port, "space: framebuffer initialized")
+    fb_info(port)
+  } else {
+    serial_write_cstr(port, "space: framebuffer not available (no VBE info)")
+    serial_nl(port)
+  }
+
+  // Initialize the PS/2 mouse (if framebuffer is ready).
+  if fb_ready != 0 {
+    let mouse_rc = mouse_init()
+    if mouse_rc == 0 {
+      serial_write_cstr(port, "space: PS/2 mouse initialized")
+      serial_nl(port)
+    } else {
+      serial_write_cstr(port, "space: PS/2 mouse not found")
+      serial_nl(port)
+    }
+  }
+
+  // Initialize the compositor.
+  comp_init()
+  serial_write_cstr(port, "space: compositor initialized")
   serial_nl(port)
 
   // Drop into the interactive serial shell.
