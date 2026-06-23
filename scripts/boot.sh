@@ -19,6 +19,9 @@
 #   restore     restore from last checkpoint
 #   map         map a virtual page and read it back
 #   sci         load the SCI guest component (if present in image)
+#   linux       run the Linux personality demo (POSIX syscall layer)
+#   desktop     launch the graphical desktop environment (Wayland-style compositor)
+#   fb          show framebuffer info
 #   fault       trigger a page fault (tests exception handler)
 #   divzero     trigger divide-by-zero (tests exception handler)
 #   echo <x>    echo a string
@@ -28,9 +31,11 @@
 #   halt        stop the kernel
 #
 # Usage:
-#   ./scripts/boot.sh              # plain boot, serial on stdio
+#   ./scripts/boot.sh              # boot with NVMe disk, VGA display, serial on stdio
 #   ./scripts/boot.sh --net        # boot with e1000 NIC (for `net` command)
 #   ./scripts/boot.sh --sci        # boot with SCI guest component loaded
+#   ./scripts/boot.sh --disk       # boot with NVMe disk (default, can be omitted)
+#   ./scripts/boot.sh --no-gui     # boot without VGA display (serial only, no desktop)
 #   ./scripts/boot.sh --net --sci  # both
 #
 # Requirements: nasm, qemu-system-x86_64, ../inauguration checked out
@@ -44,10 +49,15 @@ IN="$INAUG_DIR/in-cli/target/release/in"
 
 USE_NET=0
 USE_SCI=0
+USE_DISK=1
+USE_GUI=1
 for arg in "$@"; do
   case "$arg" in
     --net) USE_NET=1 ;;
     --sci) USE_SCI=1 ;;
+    --disk) USE_DISK=1 ;;
+    --no-disk) USE_DISK=0 ;;
+    --no-gui) USE_GUI=0 ;;
     --help|-h)
       head -40 "$0" | tail -36
       exit 0 ;;
@@ -108,15 +118,37 @@ fi
 BOOT_SIZE=$(wc -c < "$KERNEL_IMAGE")
 echo "  boot image: $BOOT_SIZE bytes"
 
+# Create the NVMe disk image if it does not exist yet.
+DISK_IMG="${DISK_IMG:-/tmp/space-nvme.img}"
+if [ "$USE_DISK" = "1" ]; then
+  if [ ! -f "$DISK_IMG" ]; then
+    echo "  creating NVMe disk image (16 MB)..."
+    dd if=/dev/zero of="$DISK_IMG" bs=1M count=16 status=none
+  fi
+fi
+
 echo "[3/3] Booting in QEMU (Ctrl-A X to quit)..."
 echo
 
 QEMU_ARGS=(
   -kernel "$KERNEL_IMAGE"
   -m 256M
-  -nographic
   -no-reboot
+  -serial stdio
 )
+
+if [ "$USE_GUI" = "1" ]; then
+  QEMU_ARGS+=(-vga std)
+  echo "  VGA: standard display enabled (try 'desktop' command for graphical environment)"
+else
+  QEMU_ARGS+=(-display none)
+fi
+
+if [ "$USE_DISK" = "1" ]; then
+  QEMU_ARGS+=(-drive file="$DISK_IMG",if=none,id=nvme0,format=raw)
+  QEMU_ARGS+=(-device nvme,drive=nvme0,serial=space_nvme)
+  echo "  Disk: NVMe attached (try 'nvme', 'format', 'ls', 'write', 'read' commands)"
+fi
 
 if [ "$USE_NET" = "1" ]; then
   QEMU_ARGS+=(-netdev user,id=net0 -device e1000,netdev=net0)
