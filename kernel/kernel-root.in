@@ -1648,7 +1648,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   }
 
   // Initialize the flat filesystem (loads file table from disk if formatted).
-  // fs_init() -- deferred: crashes due to compiler codegen issue with && in nvme_init
+  // fs_init() -- deferred: divide-by-zero when nvme_read calls nvme_init
+  // due to uninitialized stack variable in division codegen. Needs compiler fix.
   serial_write_cstr(port, "space: filesystem initialized")
   serial_nl(port)
 
