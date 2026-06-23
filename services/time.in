@@ -1,0 +1,16 @@
+// Timekeeping microservice.
+// ponytail: simple tick counter. Add RTC/HPET for wall-clock time.
+
+var time_ticks: Int = 0
+
+fn time_init(port: Int) -> void {
+  time_ticks = 0
+}
+
+fn time_tick() -> void {
+  time_ticks = time_ticks + 1
+}
+
+fn time_read() -> Int {
+  return time_ticks
+}

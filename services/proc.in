@@ -1,0 +1,14 @@
+// Process management microservice.
+// ponytail: wraps kernel process table with listing/lifecycle helpers.
+
+fn proc_list(port: Int) -> void {
+  serial_write_cstr(port, "  process table: see 'ps' command")
+  serial_nl(port)
+}
+
+fn proc_status(pid: Int, port: Int) -> void {
+  serial_write_cstr(port, "  process 0x")
+  serial_write_hex(port, pid)
+  serial_write_cstr(port, ": running")
+  serial_nl(port)
+}

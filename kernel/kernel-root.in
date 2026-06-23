@@ -147,12 +147,7 @@ fn thr_yield() -> void {
   return
 }
 
-// Block until woken (mark BLOCKED, switch back to scheduler).
-fn thr_block() -> void {
-  store64(thread_state + current_task * 8, THR_BLOCKED)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  return
-}
+
 
 // Run all runnable threads; return when all are DONE (HLT if temporarily idle).
 // Uses fair round-robin: scan from the last dispatched thread.
@@ -258,29 +253,22 @@ fn serial_write_cstr(port: Int, addr: Int) -> void {
 }
 
 fn serial_write_dec_wide(port: Int, value: Int) -> void {
-  // ponytail: simple 20-digit buffer approach
-  let buf = alloc(20)
-  let i = 0
   let n = value
   if n < 0 {
     serial_put(port, 45)  // '-'
     n = -n
   }
-  // Store digits in reverse order
   if n == 0 {
-    buf[0] = 48  // '0'
-    i = 1
-  } else {
-    while n > 0 {
-      buf[i] = 48 + n % 10
-      n = n / 10
-      i = i + 1
-    }
+    serial_put(port, 48)  // '0'
+    return
   }
-  // Print in correct order
-  while i > 0 {
-    i = i - 1
-    serial_put(port, buf[i])
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    serial_put(port, 48 + (n / div) % 10)
+    div = div / 10
   }
   return
 }
@@ -1208,9 +1196,11 @@ fn read_line(port: Int) -> Int {
         serial_put(port, 8)
       }
     } else {
-      serial_put(port, c)
-      store8(line + len, c)
-      len = len + 1
+      if len < 255 {
+        serial_put(port, c)
+        store8(line + len, c)
+        len = len + 1
+      }
     }
   }
   return len
