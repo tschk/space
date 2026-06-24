@@ -23,6 +23,14 @@ const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
 const COMP_TITLE_BAR_H = 16
 const COMP_BORDER_W = 2
+const COMP_COLOR_DESKTOP = 0x002A2A2A
+const COMP_COLOR_PANEL = 0x00242424
+const COMP_COLOR_PANEL_LINE = 0x004A4A4A
+const COMP_COLOR_TITLE = 0x002E3436
+const COMP_COLOR_TITLE_FOCUSED = 0x003583E8
+const COMP_COLOR_WINDOW = 0x00F6F5F4
+const COMP_COLOR_BORDER = 0x00BDBDBD
+const COMP_COLOR_TEXT = 0x002E3436
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -160,7 +168,7 @@ fn comp_win_focus(idx: Int) -> void {
 
 // Draw the desktop background.
 fn comp_render_background() -> void {
-  fb_clear(FB_COLOR_DARK_BLUE)
+  fb_clear(COMP_COLOR_DESKTOP)
   return
 }
 
@@ -220,11 +228,16 @@ fn comp_draw_titlebar(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
+  let flags = load32(base + 20)
+  let color = COMP_COLOR_TITLE
+  if (flags & COMP_WIN_FOCUSED) != 0 {
+    color = COMP_COLOR_TITLE_FOCUSED
+  }
   let ty = 0
   while ty < 16 {
     let tx = 0
     while tx < w {
-      store32(fb_addr + (y + ty) * fb_pitch + (x + tx) * 4, 0x00222222)
+      store32(fb_addr + (y + ty) * fb_pitch + (x + tx) * 4, color)
       tx = tx + 1
     }
     ty = ty + 1
@@ -243,7 +256,7 @@ fn comp_draw_content_bg(base: Int) -> void {
   while cy < h {
     let cx = 0
     while cx < w {
-      store32(fb_addr + (content_y + cy) * fb_pitch + (x + cx) * 4, 0)
+      store32(fb_addr + (content_y + cy) * fb_pitch + (x + cx) * 4, COMP_COLOR_WINDOW)
       cx = cx + 1
     }
     cy = cy + 1
@@ -260,7 +273,7 @@ fn comp_draw_content_text(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let content_y = y + 16
-  fb_draw_string(x + 2, content_y + 2, content, FB_COLOR_LIGHT_GRAY)
+  fb_draw_string_bg(x + 8, content_y + 8, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
   return
 }
 
@@ -273,7 +286,7 @@ fn comp_render_window(idx: Int) -> void {
   }
 
   // Draw border
-  comp_draw_border(base, 0x00AAAAAA)
+  comp_draw_border(base, COMP_COLOR_BORDER)
 
   // Draw title bar
   comp_draw_titlebar(base)
@@ -283,7 +296,11 @@ fn comp_render_window(idx: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   if title != 0 {
-    fb_draw_string(x + 4, y + 4, title, FB_COLOR_WHITE)
+    let title_bg = COMP_COLOR_TITLE
+    if (flags & COMP_WIN_FOCUSED) != 0 {
+      title_bg = COMP_COLOR_TITLE_FOCUSED
+    }
+    fb_draw_string_bg(x + 8, y + 4, title, FB_COLOR_WHITE, title_bg)
   }
 
   // Draw content background
@@ -308,8 +325,15 @@ fn comp_clear_cursor() -> void {
   let y = comp_prev_cy
   let cs = 8
   // Redraw background over old cursor area
-  fb_fill_rect(x - cs, y - 1, cs * 2 + 1, 3, FB_COLOR_DARK_BLUE)
-  fb_fill_rect(x - 1, y - cs, 3, cs * 2 + 1, FB_COLOR_DARK_BLUE)
+  fb_fill_rect(x - cs, y - 1, cs * 2 + 1, 3, COMP_COLOR_DESKTOP)
+  fb_fill_rect(x - 1, y - cs, 3, cs * 2 + 1, COMP_COLOR_DESKTOP)
+  let i = 0
+  while i < comp_count {
+    let base = comp_win_base(i)
+    let flags = load32(base + 20)
+    store32(base + 20, flags | COMP_WIN_DIRTY)
+    i = i + 1
+  }
   return
 }
 
@@ -347,17 +371,17 @@ fn comp_render() -> void {
 fn comp_render_taskbar() -> void {
   let bar_h = 20
   let bar_y = fb_height - bar_h
-  fb_fill_rect(0, bar_y, fb_width, bar_h, 0x00222222)
+  fb_fill_rect(0, bar_y, fb_width, bar_h, COMP_COLOR_PANEL)
   // Top line of taskbar (lighter)
   let tx2 = 0
   while tx2 < fb_width {
-    store32(fb_addr + bar_y * fb_pitch + tx2 * 4, 0x00888888)
+    store32(fb_addr + bar_y * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
     tx2 = tx2 + 1
   }
   // Draw "Space OS" label
-  fb_draw_string(4, bar_y + 6, "Space OS", FB_COLOR_WHITE)
+  fb_draw_string_bg(8, bar_y + 6, "Space OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
   // Draw mouse coordinates label
-  fb_draw_string(fb_width - 120, bar_y + 6, "mouse:", FB_COLOR_LIGHT_GRAY)
+  fb_draw_string_bg(fb_width - 120, bar_y + 6, "mouse:", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   // Draw a colored dot for mouse button state
   if mouse_left_pressed() != 0 {
     fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_GREEN)
