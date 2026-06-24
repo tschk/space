@@ -6,7 +6,7 @@
 ; before calling the `.in`-compiled kernel_entry.
 ;
 ; Assembled as a flat binary (`nasm -f bin`) and embedded by the Inauguration
-; compiler at the front of the boot image. It is padded to exactly 0x2000 bytes
+; compiler at the front of the boot image. It is padded to exactly 0x1000 bytes
 ; so that the first compiled `.in` function (kernel_entry) lands at KCODE_BASE.
 
 BITS 32
@@ -17,8 +17,8 @@ MB_FLAGS     equ 0x00010800          ; AOUT_KLUDGE | BIT11 (VBE info)
 MB_CHECKSUM  equ -(MB_MAGIC + MB_FLAGS)
 
 KIMAGE_BASE  equ 0x100000
-KCODE_BASE   equ 0x102000            ; KIMAGE_BASE + 0x2000 (TRAMPOLINE_RESERVE)
-KERNEL_ENTRY equ 0x102100            ; KCODE_BASE + 0x100 (SCI header size)
+KCODE_BASE   equ 0x101000            ; KIMAGE_BASE + 0x1000 (TRAMPOLINE_RESERVE)
+KERNEL_ENTRY equ 0x101100            ; KCODE_BASE + 0x100 (SCI header size)
 
 ; Page-table scratch in low memory (free in QEMU after boot).
 PML4 equ 0x1000
@@ -388,4 +388,4 @@ gdt_desc:
     dw gdt_end - gdt - 1
     dd gdt
 
-times 0x2000 - ($ - $$) db 0        ; pad to TRAMPOLINE_RESERVE
+times 0x1000 - ($ - $$) db 0        ; pad to TRAMPOLINE_RESERVE
