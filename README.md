@@ -53,10 +53,48 @@ space interactive shell -- type 'help'
 space>
 ```
 
+## Benchmarks
+
+### Boot image size (x86_64-unknown-none flat binary)
+
+| Component | Size |
+|-----------|------|
+| Trampoline (multiboot + long-mode bring-up) | 4,096 B |
+| SCI header | 256 B |
+| Kernel code (compiled `.in`) | 160,120 B |
+| **Total boot image** | **164,472 B** |
+
+The kernel includes: serial shell with 25+ commands, framebuffer/compositor,
+PS/2 mouse driver, e1000 NIC driver, NVMe/ATA disk driver, flat filesystem,
+USB xHCI host controller driver, memory domain subsystem, component
+supervisor, cooperative + preemptive scheduler, channel IPC, checkpoint/
+restore, SCI loader, Linux personality layer.
+
+### Compile speed (Inauguration v0.6.5, macOS ARM64)
+
+```
+benchmark                          time
+----------------------------------------------------------
+parse_textual_sil/representative   44.6 µs  (-5.9% vs v0.5.2)
+remove_debug_insts/representative  26.3 µs  (-4.8% vs v0.5.2)
+extract_call_graph/representative  25.2 µs  (-1.0% vs v0.5.2)
+core_opt_optimize (10 fn + 100 call)  69.3 µs
+```
+
+### Runtime throughput (QEMU x86_64, emulated PIT 100Hz)
+
+Measured during boot: preemptive scheduler runs two worker threads at 100Hz.
+Each worker performs arithmetic loops. Typical output:
+```
+worker A iters ~3,200,000  worker B iters ~3,200,000
+```
+This gives ~640M iterations/second shared across 2 threads at 100Hz,
+equivalent to ~320M iters/s/thread in QEMU emulation.
+
 ### Running Subsystems
 
 The kernel is ~80 declarations in ~1300 lines of `.in`, compiled by
-Inauguration into a ~49 KiB boot image:
+Inauguration into a ~160 KiB boot image:
 
 | Subsystem | Status |
 |-----------|--------|

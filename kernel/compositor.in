@@ -299,6 +299,19 @@ fn comp_render_window(idx: Int) -> void {
 }
 
 var comp_bg_drawn: Int = 0  // 1 after first background render
+var comp_prev_cx: Int = 0   // previous cursor x for trail removal
+var comp_prev_cy: Int = 0   // previous cursor y
+
+// Clear old cursor position (restore background).
+fn comp_clear_cursor() -> void {
+  let x = comp_prev_cx
+  let y = comp_prev_cy
+  let cs = 8
+  // Redraw background over old cursor area
+  fb_fill_rect(x - cs, y - 1, cs * 2 + 1, 3, FB_COLOR_DARK_BLUE)
+  fb_fill_rect(x - 1, y - cs, 3, cs * 2 + 1, FB_COLOR_DARK_BLUE)
+  return
+}
 
 // Render the desktop: background once, dirty windows, always redraw cursor.
 // Skips full-screen clear to avoid flashing.
@@ -308,6 +321,8 @@ fn comp_render() -> void {
     comp_render_taskbar()
     comp_bg_drawn = 1
   }
+  // Clear old cursor position before redrawing
+  comp_clear_cursor()
   let i = 0
   while i < comp_count {
     let base = comp_win_base(i)
@@ -321,7 +336,9 @@ fn comp_render() -> void {
     }
     i = i + 1
   }
-  // Redraw cursor every frame (follows mouse)
+  // Redraw cursor every frame (follows mouse) at new position
+  comp_prev_cx = mouse_x
+  comp_prev_cy = mouse_y
   comp_render_cursor()
   return
 }
