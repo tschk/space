@@ -379,9 +379,9 @@ fn comp_render_taskbar() -> void {
     tx2 = tx2 + 1
   }
   // Draw "Space OS" label
-  fb_draw_string_bg(8, bar_y + 6, "Space OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(8, bar_y + 6, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
   // Draw mouse coordinates label
-  fb_draw_string_bg(fb_width - 120, bar_y + 6, "mouse:", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 120, bar_y + 6, "MOUSE:", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   // Draw a colored dot for mouse button state
   if mouse_left_pressed() != 0 {
     fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_GREEN)
@@ -464,19 +464,19 @@ fn comp_run(port: Int) -> void {
   comp_bg_drawn = 0  // force initial background render
 
   // Create default windows
-  let win1_title = "Terminal"
+  let win1_title = "TERMINAL"
   let win1 = comp_win_create(win1_title, 40, 40, 320, 200)
-  let term_content = "Space OS Terminal\n\n> help\n> status\n> ls\n> linux\n\nWelcome to Space OS!\nPress ESC to exit desktop."
+  let term_content = "SPACE OS TERMINAL\n\n> HELP\n> STATUS\n> LS\n> LINUX\n\nWELCOME TO SPACE OS!\nPRESS ESC TO EXIT DESKTOP."
   comp_win_set_content(win1, term_content)
 
-  let win2_title = "File Browser"
+  let win2_title = "FILE BROWSER"
   let win2 = comp_win_create(win2_title, 400, 60, 280, 160)
-  let file_content = "Files on disk:\n\n(no files yet)\n\nUse 'format' then\n'write <name> <text>'\nto create files."
+  let file_content = "FILES ON DISK:\n\n(NO FILES YET)\n\nUSE 'FORMAT' THEN\n'WRITE <NAME> <TEXT>'\nTO CREATE FILES."
   comp_win_set_content(win2, file_content)
 
-  let win3_title = "System Info"
+  let win3_title = "SYSTEM INFO"
   let win3 = comp_win_create(win3_title, 120, 280, 360, 120)
-  let sys_content = "Space OS v0.0.1\nNanokernel + Linux personality\nFramebuffer: active\nMouse: PS/2\nCompositor: Wayland-style"
+  let sys_content = "SPACE OS V0.0.1\nNANOKERNEL + LINUX PERSONALITY\nFRAMEBUFFER: ACTIVE\nMOUSE: PS/2\nCOMPOSITOR: WAYLAND-STYLE"
   comp_win_set_content(win3, sys_content)
 
   comp_running = 1

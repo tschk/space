@@ -87,7 +87,7 @@ fn fs_str_copy(dst: Int, src: Int, max: Int) -> void {
 
 // Return the in-memory address of file table entry `idx`.
 fn fs_entry(idx: Int) -> Int {
-  return fs_table + idx * FS_ENTRY_SIZE
+  return fs_table + idx * 32
 }
 
 // Load the file table from disk (4 sectors) into the in-memory buffer.

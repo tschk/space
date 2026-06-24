@@ -432,7 +432,7 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
     let bits = load8(fb_font + ch * 8 + row)
     let col = 0
     while col < 8 {
-      let bit = (bits >> col) & 1
+      let bit = (bits >> (7 - col)) & 1
       if bit != 0 {
         fb_put_pixel(x + col, y + row, color)
       }

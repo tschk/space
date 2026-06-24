@@ -13,7 +13,7 @@ cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 echo "[2/3] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
-[ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 8192 ] || { echo "trampoline size error" >&2; exit 1; }
+[ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 4096 ] || { echo "trampoline size error" >&2; exit 1; }
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -21,15 +21,9 @@ NASM="${NASM:-nasm}"
 echo "[3/3] Booting and checking output..."
 rm -f "$SERIAL" "$FIFO"
 mkfifo "$FIFO"
-DISK_IMG="${DISK_IMG:-/tmp/space-nvme.img}"
-if [ ! -f "$DISK_IMG" ]; then
-  dd if=/dev/zero of="$DISK_IMG" bs=1M count=16 status=none
-fi
 # Start QEMU with serial input from the FIFO and output to the log file.
 # Keep fd 3 open for writing to the FIFO so QEMU's stdin does not see EOF.
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
-  -drive file="$DISK_IMG",if=none,id=nvme0,format=raw \
-  -device nvme,drive=nvme0,serial=space_nvme \
   -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
 QPID=$!
 exec 3>"$FIFO"
