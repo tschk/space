@@ -396,13 +396,31 @@ fn discover_memory(mb: Int) -> void {
 // The boot trampoline identity-maps the first 1 GiB with 2 MiB pages. These
 // helpers allocate fresh 4 KiB-aligned frames and install new 4 KiB mappings by
 // walking and growing the page tables, the foundation for realm memory domains.
+var free_list: Int = 0  // head of LIFO free list, 0 = empty
+
 fn frame_alloc() -> Int {
+  if free_list != 0 {
+    let p = free_list
+    free_list = load64(p)  // next free frame
+    store64(p, 0)  // clear first qword (was next pointer)
+    return p
+  }
   let p = (heap_next + 4095) & -4096
   heap_next = p + 4096
   for i in 0..512 {
     store64(p + i * 8, 0)
   }
   return p
+}
+
+// Free a 4 KiB frame back to the free list for reuse.
+fn frame_free(p: Int) -> void {
+  if p == 0 {
+    return
+  }
+  store64(p, free_list)  // link to previous head
+  free_list = p
+  return
 }
 
 fn pt_index(virt: Int, shift: Int) -> Int {

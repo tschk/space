@@ -484,15 +484,48 @@ fn linux_sys_fork() -> Int {
 const LINUX_EAGAIN = -11
 
 // sys_execve(path, argv, envp) — replace current process image.
-// ponytail: real execve would load an SCI binary from disk into a new domain
-// and replace the current process. Requires filesystem + domain isolation.
+// Reads an SCI component from the filesystem and loads it via sci_load.
+// Falls back to ENOSYS if the file doesn't exist or isn't a valid SCI binary.
 fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
+  let file_idx = fs_open_path(path)
+  if file_idx < 0 {
+    return LINUX_ENOENT
+  }
+  let entry = fs_entry(file_idx)
+  let file_size = load32(entry + 20)
+  if file_size < 64 {
+    return LINUX_ENOEXEC
+  }
+  let start_sector = load32(entry + 16)
+  let buf = alloc(file_size)
+  let sbuf = alloc(512)
+  let pos = 0
+  while pos < file_size {
+    let sector_idx = pos / 512
+    let sector_off = pos % 512
+    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
+    if rc != 0 {
+      return LINUX_EIO
+    }
+    let chunk = 512 - sector_off
+    let left = file_size - pos
+    if chunk > left { chunk = left }
+    let k = 0
+    while k < chunk {
+      store8(buf + pos + k, load8(sbuf + sector_off + k))
+      k = k + 1
+    }
+    pos = pos + chunk
+  }
+  let magic = load64(buf + 0)
+  if magic != 0x5343490000000001 {
+    return LINUX_ENOEXEC
+  }
   let port = com1()
-  serial_write_cstr(port, "linux: execve(")
+  serial_write_cstr(port, "linux: execve loading SCI from ")
   serial_write_cstr(port, path)
-  serial_write_cstr(port, ") -> ENOSYS")
   serial_nl(port)
-  return LINUX_ENOSYS
+  return sci_load(port, buf)
 }
 
 // sys_wait4(pid, status, options, rusage) — wait for child to change state.
@@ -542,16 +575,21 @@ fn linux_sys_getcwd(buf: Int, size: Int) -> Int {
 }
 
 // sys_chdir(path) — change current working directory.
-// ponytail: flat block-based filesystem has no directory tree. Accepts "/"
-// and "." as root; everything else returns ENOENT until VFS is added.
+// Uses VFS path resolution: accepts "/subdir" as valid if the path resolves
+// to an existing file (flat fs treats dirs as files for now).
 fn linux_sys_chdir(path: Int) -> Int {
   let c = load8(path + 0)
   if c == 47 || c == 0 {
-    // "/" or empty — stay at root
     linux_cwd = "/"
     return 0
   }
-  // No subdirectories in the flat filesystem
+  // Check if a file exists at this path (flat fs: dirs not supported,
+  // but we accept valid file paths as future directory anchors)
+  let found = fs_open_path(path)
+  if found >= 0 {
+    linux_cwd = path
+    return 0
+  }
   return LINUX_ENOENT
 }
 
@@ -623,9 +661,15 @@ fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
 }
 
 // sys_munmap(addr, length) — unmap memory.
-// ponytail: no-op — bump allocator has no free. Real munmap would release
-// pages back to a per-process page cache via domain_unmap.
+// Free each 4K page in the range back to the frame free list.
 fn linux_sys_munmap(addr: Int, length: Int) -> Int {
+  let start = addr
+  let end = addr + length
+  let page = (start + 4095) & -4096
+  while page < end {
+    frame_free(page)
+    page = page + 4096
+  }
   return 0
 }
 

@@ -162,6 +162,40 @@ fn fs_find(name: Int) -> Int {
   return -1
 }
 
+// VFS path resolution: extract the filename from a path, stripping leading
+// directory components. Accepts "/file", "/dir/file", "file", "/", etc.
+// Returns pointer to the filename portion of path (same memory, no copy).
+fn fs_path_filename(path: Int) -> Int {
+  let last_slash = -1
+  let i = 0
+  while true {
+    let c = load8(path + i)
+    if c == 0 {
+      if last_slash >= 0 {
+        if load8(path + last_slash + 1) == 0 {
+          return path + last_slash  // path ends with "/" → return "/" pos
+        }
+        return path + last_slash + 1
+      }
+      return path
+    }
+    if c == 47 {  // '/'
+      last_slash = i
+    }
+    i = i + 1
+  }
+  return path
+}
+
+// VFS file open by path. Resolves directory components and returns the file
+// index, or -1 if not found. This is the primary lookup function for the
+// flat filesystem — directory components are accepted but ignored since the
+// underlying storage is flat.
+fn fs_open_path(path: Int) -> Int {
+  let name = fs_path_filename(path)
+  return fs_find(name)
+}
+
 // Find a free file table entry. Return index or -1 if table is full.
 fn fs_find_free() -> Int {
   let i = 0
