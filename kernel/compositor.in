@@ -312,7 +312,7 @@ fn comp_render_window(idx: Int) -> void {
     if (flags & COMP_WIN_FOCUSED) != 0 {
       title_bg = COMP_COLOR_TITLE_FOCUSED
     }
-    fb_draw_string_bg(x + 12, y + 8, title, COMP_COLOR_TEXT, title_bg)
+    fb_draw_string_bg(x + 12, y + 5, title, COMP_COLOR_TEXT, title_bg)
   }
 
   // Draw content background
@@ -390,10 +390,10 @@ fn comp_render_taskbar() -> void {
     tx2 = tx2 + 1
   }
   // Draw "Space OS" label
-  fb_draw_string_bg(12, bar_y + 8, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(12, bar_y + 4, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
   // Draw mouse coordinates label
-  fb_draw_string_bg(fb_width / 2 - 32, bar_y + 8, "DESKTOP", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 96, bar_y + 8, "QEMU", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 56, bar_y + 4, "DESKTOP", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 120, bar_y + 4, "HELIUM", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   // Draw a colored dot for mouse button state
   if mouse_left_pressed() != 0 {
     fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_GREEN)
@@ -476,20 +476,15 @@ fn comp_run(port: Int) -> void {
   comp_bg_drawn = 0  // force initial background render
 
   // Create default windows
-  let win1_title = "TERMINAL"
-  let win1 = comp_win_create(win1_title, 48, 56, 416, 256)
-  let term_content = "SPACE OS TERMINAL\n\n> HELP\n> STATUS\n> LS\n> LINUX\n\nWELCOME TO SPACE OS!\nPRESS ESC TO EXIT DESKTOP."
-  comp_win_set_content(win1, term_content)
-
   let win2_title = "FILE BROWSER"
   let win2 = comp_win_create(win2_title, 496, 56, 320, 192)
-  let file_content = "FILES ON DISK:\n\n(NO FILES YET)\n\nUSE 'FORMAT' THEN\n'WRITE <NAME> <TEXT>'\nTO CREATE FILES."
-  comp_win_set_content(win2, file_content)
-
   let win3_title = "SYSTEM INFO"
   let win3 = comp_win_create(win3_title, 496, 280, 320, 144)
-  let sys_content = "SPACE OS V0.0.1\nNANOKERNEL + LINUX PERSONALITY\nFRAMEBUFFER: ACTIVE\nMOUSE: PS/2\nCOMPOSITOR: WAYLAND-STYLE"
-  comp_win_set_content(win3, sys_content)
+  let win1_title = "TERMINAL"
+  let win1 = comp_win_create(win1_title, 48, 56, 416, 192)
+  comp_win_set_content(win1, "> HELP\n> STATUS\n> LINUX\n> LINUXELF")
+  comp_win_set_content(win2, "FILES\nNO FILES YET\nFORMAT\nWRITE")
+  comp_win_set_content(win3, "SPACE\nLINUX\nFB ACTIVE")
   comp_win_focus(win3)
 
   comp_running = 1

@@ -51,7 +51,7 @@ const FB_COLOR_PURPLE = 0x00800080
 const FB_COLOR_TEAL = 0x00808000
 
 // --- font (8x8 bitmap) ------------------------------------------------------
-// Each character is 8 bytes (one per row, LSB = leftmost pixel).
+// Each character is 8 bytes (one per row, MSB = leftmost pixel).
 // We store 128 characters x 8 bytes = 1024 bytes in a heap buffer.
 const FB_FONT_WIDTH = 8
 const FB_FONT_HEIGHT = 8
@@ -261,6 +261,12 @@ fn fb_init(mb_info: Int) -> Int {
     fb_height = load16(mode_info + 20)
     fb_bpp = load8(mode_info + 25)
     fb_addr = load32(mode_info + 40)
+    if fb_bpp != 32 {
+      return -1
+    }
+    if fb_pitch < fb_width * 4 {
+      return -1
+    }
     fb_size = fb_pitch * fb_height
     fb_font_init()
     fb_ready = 1
@@ -296,6 +302,12 @@ fn fb_init(mb_info: Int) -> Int {
   }
 
   if fb_width == 0 || fb_height == 0 {
+    return -1
+  }
+  if fb_bpp != 32 {
+    return -1
+  }
+  if fb_pitch < fb_width * 4 {
     return -1
   }
 
@@ -434,7 +446,12 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
     while col < 8 {
       let bit = (bits >> (7 - col)) & 1
       if bit != 0 {
-        fb_put_pixel(x + col, y + row, color)
+        let px = x + col * 2
+        let py = y + row * 2
+        fb_put_pixel(px, py, color)
+        fb_put_pixel(px + 1, py, color)
+        fb_put_pixel(px, py + 1, color)
+        fb_put_pixel(px + 1, py + 1, color)
       }
       col = col + 1
     }
@@ -455,10 +472,10 @@ fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
       i = 256
     } else if ch == 10 {
       cx = x
-      cy = cy + 8
+      cy = cy + 18
     } else {
       fb_draw_char(cx, cy, ch, color)
-      cx = cx + 8
+      cx = cx + 16
     }
     i = i + 1
   }
@@ -476,11 +493,11 @@ fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
       i = 256
     } else if ch == 10 {
       cx = x
-      cy = cy + 8
+      cy = cy + 18
     } else {
-      fb_fill_rect(cx, cy, 8, 8, bg)
+      fb_fill_rect(cx, cy, 16, 16, bg)
       fb_draw_char(cx, cy, ch, fg)
-      cx = cx + 8
+      cx = cx + 16
     }
     i = i + 1
   }
