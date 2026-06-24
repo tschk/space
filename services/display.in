@@ -1,0 +1,202 @@
+// Space Display Server — Wayland-inspired compositor service.
+// Handles SPDP protocol messages over channel IPC. Clients send messages
+// to create surfaces, attach buffers, and receive input events.
+// The server runs on top of the kernel framebuffer.
+
+// Display server state: one surface table, SHM pools, seat state.
+const DSP_MAX_SURFACES = 32
+const DSP_MAX_POOLS = 8
+
+var dsp_surfaces: Int = 0
+var dsp_surface_count: Int = 0
+var dsp_pools: Int = 0
+var dsp_mouse_x: Int = 0
+var dsp_mouse_y: Int = 0
+var dsp_running: Int = 0
+
+// Surface record (48 bytes):
+// [0] id, [8] pool_id, [16] buf_offset, [24] w/h packed, [32] x/y, [40] flags
+fn dsp_surface_size() -> Int { return 48 }
+
+// Initialize the display server.
+fn dsp_init() -> void {
+  dsp_surfaces = alloc(DSP_MAX_SURFACES * dsp_surface_size())
+  dsp_pools = alloc(DSP_MAX_POOLS * 8)  // array of pool addresses
+  let i = 0
+  while i < DSP_MAX_POOLS {
+    store64(dsp_pools + i * 8, 0)
+    i = i + 1
+  }
+  dsp_surface_count = 0
+  dsp_mouse_x = 0
+  dsp_mouse_y = 0
+}
+
+// Create a surface. Returns surface_id or -1.
+fn dsp_create_surface() -> Int {
+  if dsp_surface_count >= DSP_MAX_SURFACES {
+    return -1
+  }
+  let id = dsp_surface_count
+  let base = dsp_surfaces + id * dsp_surface_size()
+  store64(base + 0, id)
+  store64(base + 8, -1)   // no pool attached
+  store64(base + 16, 0)   // no buffer offset
+  store64(base + 24, 0)   // w=0, h=0
+  store64(base + 32, 0)   // x=0, y=0
+  store64(base + 40, 0)   // flags=0
+  dsp_surface_count = dsp_surface_count + 1
+  return id
+}
+
+// Attach a buffer slice from a pool to a surface.
+fn dsp_attach_buffer(surf_id: Int, pool_id: Int, offset: Int, w: Int, h: Int) -> void {
+  if surf_id < 0 || surf_id >= dsp_surface_count {
+    return
+  }
+  let base = dsp_surfaces + surf_id * dsp_surface_size()
+  store64(base + 8, pool_id)
+  store64(base + 16, offset)
+  store64(base + 24, w | (h << 16))
+  return
+}
+
+// Set surface position.
+fn dsp_move_surface(surf_id: Int, x: Int, y: Int) -> void {
+  if surf_id < 0 || surf_id >= dsp_surface_count {
+    return
+  }
+  let base = dsp_surfaces + surf_id * dsp_surface_size()
+  store64(base + 32, x | (y << 16))
+  return
+}
+
+// Render all surfaces to the framebuffer.
+fn dsp_composite() -> void {
+  if fb_ready == 0 {
+    return
+  }
+  // Clear to dark blue
+  fb_fill_rect(0, 0, fb_width, fb_height, 0x00000080)
+
+  // Draw surfaces back-to-front
+  let i = 0
+  while i < dsp_surface_count {
+    let base = dsp_surfaces + i * dsp_surface_size()
+    let flags = load64(base + 40)
+    if (flags & 1) == 0 {  // skip invisible surfaces
+      i = i + 1
+      continue
+    }
+    let pool_id = load64(base + 8)
+    let buf_off = load64(base + 16)
+    let wh = load64(base + 24)
+    let w = wh & 0xFFFF
+    let h = (wh >> 16) & 0xFFFF
+    let xy = load64(base + 32)
+    let sx = xy & 0xFFFF
+    let sy = (xy >> 16) & 0xFFFF
+
+    if w > 0 && h > 0 && pool_id >= 0 && pool_id < DSP_MAX_POOLS {
+      let pool = load64(dsp_pools + pool_id * 8)
+      let buf = pool + buf_off
+      let src_pitch = w * 4
+      // Blit surface to framebuffer with clipping
+      let row = 0
+      while row < h {
+        let dst_y = sy + row
+        if dst_y >= 0 && dst_y < fb_height {
+          let col = 0
+          while col < w {
+            let dst_x = sx + col
+            if dst_x >= 0 && dst_x < fb_width {
+              let pixel = load32(buf + row * src_pitch + col * 4)
+              if pixel != 0 {  // skip transparent pixels
+                store32(fb_addr + dst_y * fb_pitch + dst_x * 4, pixel)
+              }
+            }
+            col = col + 1
+          }
+        }
+        row = row + 1
+      }
+    }
+    i = i + 1
+  }
+
+  // Draw mouse cursor
+  dsp_draw_cursor()
+}
+
+// Draw a simple cross-hair cursor.
+fn dsp_draw_cursor() -> void {
+  let cx = 8
+  let cy = 8
+  let x = dsp_mouse_x
+  let y = dsp_mouse_y
+  // Horizontal line
+  let i = 0
+  while i < cx * 2 + 1 {
+    let px = x - cx + i
+    if px >= 0 && px < fb_width && y >= 0 && y < fb_height {
+      store32(fb_addr + y * fb_pitch + px * 4, 0x00FFFFFF)
+    }
+    i = i + 1
+  }
+  // Vertical line
+  let j = 0
+  while j < cy * 2 + 1 {
+    let py = y - cy + j
+    if py >= 0 && py < fb_height && x >= 0 && x < fb_width {
+      store32(fb_addr + py * fb_pitch + x * 4, 0x00FFFFFF)
+    }
+    j = j + 1
+  }
+}
+
+// Main display server loop. Reads SPDP messages from the channel and processes
+// them. Runs until the channel is closed or an error occurs.
+fn dsp_run(ch: Int, port: Int) -> void {
+  dsp_running = 1
+  serial_write_cstr(port, "  display: server running")
+  serial_nl(port)
+
+  while dsp_running != 0 {
+    // Poll mouse
+    mouse_poll()
+    dsp_mouse_x = mouse_x
+    dsp_mouse_y = mouse_y
+
+    // Process pending messages (non-blocking)
+    let msg = alloc(SPDP_MSG_SIZE)
+    while chan_count(ch) > 0 {
+      let msg_val = chan_recv(ch)
+      store64(msg + 0, msg_val)
+      let msg_val2 = chan_recv(ch)
+      store64(msg + 8, msg_val2)
+      let msg_val3 = chan_recv(ch)
+      store64(msg + 16, msg_val3)
+      let obj_id = load64(msg + 0)
+      let opcode = load64(msg + 8)
+      let arg0 = load64(msg + 16)
+      dsp_handle_msg(obj_id, opcode, arg0, port)
+    }
+
+    // Composite and render
+    dsp_composite()
+
+    // HLT until next event
+    sti()
+    hlt()
+  }
+}
+
+// Handle a single SPDP message.
+fn dsp_handle_msg(obj_id: Int, opcode: Int, arg0: Int, port: Int) -> void {
+  if obj_id == SPDP_OBJ_COMPOSITOR {
+    if opcode == SPDP_COMPOSITOR_CREATE_SURFACE {
+      dsp_create_surface()
+    }
+  }
+  return
+}

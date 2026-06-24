@@ -389,46 +389,31 @@ fn fb_draw_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   return
 }
 
-// Draw a line using Bresenham's algorithm.
+// Draw a line using Bresenham's algorithm (classic formulation).
 fn fb_draw_line(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) -> void {
   let dx = x1 - x0
   let dy = y1 - y0
-  if dx < 0 {
-    dx = -dx
-  }
-  if dy < 0 {
-    dy = -dy
-  }
   let sx = 1
-  if x0 > x1 {
-    sx = -1
-  }
+  if dx < 0 { dx = -dx; sx = -1 }
   let sy = 1
-  if y0 > y1 {
-    sy = -1
-  }
+  if dy < 0 { dy = -dy; sy = -1 }
   let err = dx - dy
   let x = x0
   let y = y0
-  let done = 0
   let e2 = 0
-  while done == 0 {
+  while true {
     fb_put_pixel(x, y, color)
     if x == x1 {
-      if y == y1 {
-        done = 1
-      }
+      if y == y1 { return }
     }
-    if done == 0 {
-      e2 = 2 * err
-      if e2 > -dy {
-        err = err - dy
-        x = x + sx
-      }
-      if e2 < dx {
-        err = err + dx
-        y = y + sy
-      }
+    e2 = 2 * err
+    if e2 > -dy {
+      err = err - dy
+      x = x + sx
+    }
+    if e2 < dx {
+      err = err + dx
+      y = y + sy
     }
   }
   return
@@ -459,18 +444,23 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
 }
 
 // Draw a null-terminated string at (x, y) in the given color.
+// Handles '\n' (newline) by moving to the next row.
 fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
   let i = 0
   let cx = x
+  let cy = y
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
       i = 256
+    } else if ch == 10 {
+      cx = x
+      cy = cy + 8
     } else {
-      fb_draw_char(cx, y, ch, color)
+      fb_draw_char(cx, cy, ch, color)
       cx = cx + 8
-      i = i + 1
     }
+    i = i + 1
   }
   return
 }
@@ -479,21 +469,20 @@ fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
 fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   let i = 0
   let cx = x
+  let cy = y
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
       i = 256
+    } else if ch == 10 {
+      cx = x
+      cy = cy + 8
     } else {
-      if ch == 10 {
-        cx = x
-      } else {
-        // Draw background for this character cell
-        fb_fill_rect(cx, y, 8, 8, bg)
-        fb_draw_char(cx, y, ch, fg)
-        cx = cx + 8
-      }
-      i = i + 1
+      fb_fill_rect(cx, cy, 8, 8, bg)
+      fb_draw_char(cx, cy, ch, fg)
+      cx = cx + 8
     }
+    i = i + 1
   }
   return
 }

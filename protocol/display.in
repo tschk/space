@@ -1,0 +1,54 @@
+// Space Display Protocol — Wayland-inspired compositor wire format.
+// Objects communicate over channels using a fixed-size message format:
+//   [obj_id(8)][opcode(8)][argc(8)][args...]
+// Each message is exactly 32 bytes (header + up to 3 x 8-byte args).
+
+const SPDP_MSG_SIZE = 32
+const SPDP_HEADER_SIZE = 24  // obj_id + opcode + argc
+
+// Object IDs (well-known)
+const SPDP_OBJ_DISPLAY = 1    // global display object
+const SPDP_OBJ_COMPOSITOR = 2 // compositor interface
+const SPDP_OBJ_SHM = 3        // shared memory interface
+const SPDP_OBJ_SEAT = 4       // input seat
+
+// Display object opcodes (client → server)
+const SPDP_GET_REGISTRY = 0   // no args
+const SPDP_REGISTRY_BIND = 1  // arg0: object_id, arg1: interface_version
+
+// Display events (server → client)
+const SPDP_DISPLAY_ERROR = 0    // arg0: error_code, arg1: error_message_addr
+const SPDP_REGISTRY_GLOBAL = 1  // arg0: obj_id, arg1: interface_addr
+
+// Compositor opcodes
+const SPDP_COMPOSITOR_CREATE_SURFACE = 0  // returns surface_id
+const SPDP_SURFACE_ATTACH = 1             // arg0: surface_id, arg1: buffer_id
+const SPDP_SURFACE_DAMAGE = 2             // arg0: surface_id, arg1: x/w packed
+const SPDP_SURFACE_COMMIT = 3             // arg0: surface_id
+const SPDP_SURFACE_DESTROY = 4            // arg0: surface_id
+
+// SHM opcodes
+const SPDP_SHM_CREATE_POOL = 0  // arg0: pool_id, arg1: size
+const SPDP_SHM_POOL_DESTROY = 1 // arg0: pool_id
+
+// Seat opcodes
+const SPDP_SEAT_POINTER_ENTER = 0  // arg0: surface_id, arg1: x/y packed
+const SPDP_SEAT_POINTER_LEAVE = 1  // arg0: surface_id
+const SPDP_SEAT_POINTER_MOTION = 2 // arg0: time, arg1: x/y packed
+const SPDP_SEAT_POINTER_BUTTON = 3 // arg0: time, arg1: button/state packed
+const SPDP_SEAT_KEYBOARD_KEY = 4   // arg0: time, arg1: key/state packed
+
+// Shared memory pool: a contiguous buffer allocated by the client and shared
+// with the compositor. The pool is identified by a pool_id (chosen by client).
+// Clients allocate pixel data within the pool and attach buffer slices to surfaces.
+//
+// Surface life cycle:
+//   1. Client sends COMPOSITOR_CREATE_SURFACE → receives surface_id
+//   2. Client creates an SHM pool via SHM_CREATE_POOL
+//   3. Client sends SURFACE_ATTACH(surface_id, buffer_id) to associate buffer
+//   4. Client sends SURFACE_DAMAGE(surface_id, x, y, w, h) to mark dirty region
+//   5. Client sends SURFACE_COMMIT(surface_id) to present
+//   6. Compositor renders the surface, sends frame callback
+//
+// Buffer format: 32-bit BGRA (byte 0 = B, byte 1 = G, byte 2 = R, byte 3 = A)
+// Pitch = width * 4
