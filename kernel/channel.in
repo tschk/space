@@ -1,9 +1,8 @@
 // Cross-domain channel fabric.
 // Builds on Phase 0 domain_create_shared_page to enable IPC between isolated
 // memory domains. Each cross-domain channel endpoint is a shared physical page
-// mapped into both domains' page tables. The ring buffer protocol uses atomic-
-// free polling (thr_yield) since .in has no CAS yet.
-// ponytail: polling with yield, per-account wait queues when throughput matters.
+// mapped into both domains' page tables. The ring buffer protocol uses the
+// same blocking wait-queue pattern as the kernel-side channels.
 
 // Shared page layout (4096 bytes, all Int = 8 bytes):
 // [head(8)][tail(8)][capacity(8)][msg_size(8)]...[msg data ring(4096-32)]

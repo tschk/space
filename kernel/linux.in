@@ -470,8 +470,8 @@ fn linux_sys_exit(code: Int) -> Int {
 // sys_fork() — create a child process (simplified: creates a new thread).
 // Returns child PID to parent, 0 to child.
 fn linux_sys_fork() -> Int {
-  // ponytail: real fork needs COW page tables; we simulate by creating a
-  // new process thread that shares the parent's code.
+  // ponytail: real fork needs COW page tables + per-process address spaces;
+  // current simulation creates a new thread sharing the parent's code.
   let pid = proc_create("linux-fork", proc_dummy_entry, cap_serial())
   if pid < 0 {
     return LINUX_EAGAIN
@@ -484,14 +484,13 @@ fn linux_sys_fork() -> Int {
 const LINUX_EAGAIN = -11
 
 // sys_execve(path, argv, envp) — replace current process image.
-// ponytail: full execve needs loading a new SCI binary; we acknowledge the
-// call but return ENOSYS for now since there is no ELF/SCI loader for
-// userspace yet.
+// ponytail: real execve would load an SCI binary from disk into a new domain
+// and replace the current process. Requires filesystem + domain isolation.
 fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
   let port = com1()
   serial_write_cstr(port, "linux: execve(")
   serial_write_cstr(port, path)
-  serial_write_cstr(port, ") -> ENOSYS (not yet implemented)")
+  serial_write_cstr(port, ") -> ENOSYS")
   serial_nl(port)
   return LINUX_ENOSYS
 }
@@ -543,8 +542,8 @@ fn linux_sys_getcwd(buf: Int, size: Int) -> Int {
 }
 
 // sys_chdir(path) — change current working directory.
-// ponytail: flat filesystem has no directories, so we accept "/" and "."
-// and reject everything else with ENOENT.
+// ponytail: flat block-based filesystem has no directory tree. Accepts "/"
+// and "." as root; everything else returns ENOENT until VFS is added.
 fn linux_sys_chdir(path: Int) -> Int {
   let c = load8(path + 0)
   if c == 47 || c == 0 {
@@ -573,8 +572,8 @@ fn linux_sys_brk(addr: Int) -> Int {
 }
 
 // sys_mmap(addr, length, prot, flags, fd, offset) — map memory.
-// ponytail: simplified — always allocates from the kernel heap and returns
-// the address. No real virtual memory mapping per-process yet.
+// ponytail: allocates from kernel bump heap — no per-process VM yet.
+// Real mmap would use domain_map for proper process isolation.
 fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset: Int) -> Int {
   let aligned = (length + 4095) & -4096
   let p = alloc(aligned)
@@ -624,7 +623,8 @@ fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
 }
 
 // sys_munmap(addr, length) — unmap memory.
-// ponytail: no-op since alloc is a bump heap (no free). Return 0 (success).
+// ponytail: no-op — bump allocator has no free. Real munmap would release
+// pages back to a per-process page cache via domain_unmap.
 fn linux_sys_munmap(addr: Int, length: Int) -> Int {
   return 0
 }

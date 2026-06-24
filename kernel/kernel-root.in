@@ -147,7 +147,20 @@ fn thr_yield() -> void {
   return
 }
 
+// Block current thread (mark BLOCKED, switch back to scheduler).
+fn thr_block() -> void {
+  store64(thread_state + current_task * 8, THR_BLOCKED)
+  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+  return
+}
 
+// Wake a blocked thread (mark RUNNABLE). Safe to call with tid=-1 or invalid.
+fn thr_wake(tid: Int) -> void {
+  if tid >= 0 && tid < thread_count {
+    store64(thread_state + tid * 8, THR_RUNNABLE)
+  }
+  return
+}
 
 // Run all runnable threads; return when all are DONE (HLT if temporarily idle).
 // Uses fair round-robin: scan from the last dispatched thread.
@@ -970,19 +983,21 @@ fn run_preemptive(port: Int) -> void {
 }
 
 // --- typed channels with blocking (CSP-style) ------------------------------
-// Channels are ring buffers with non-busy polling. A thread that tries to send
-// on a full channel or recv from an empty one yields until room/data appears.
-// ponytail: polling with yield is correct for small thread counts; add proper
-// wait queues with atomic flags when M:N threading is in place.
+// Channels are ring buffers with blocking wait queues. A thread that tries to
+// send on a full channel or recv from an empty one blocks (THR_BLOCKED) and
+// the counterparty wakes it when space/data becomes available. This replaces
+// the old poll-with-yield approach for zero-CPU-waste IPC.
 var chan0: Int = 0
 
 fn chan_new(cap: Int) -> Int {
-  let c = alloc(40 + cap * 8)
+  // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
+  let c = alloc(48 + cap * 8)
   store64(c + 0, cap)
   store64(c + 8, 0)
   store64(c + 16, 0)
   store64(c + 24, 0)
-  store64(c + 32, 0)  // reserved for future wait queue
+  store64(c + 32, -1)  // wait_send: no sender blocked
+  store64(c + 40, -1)  // wait_recv: no receiver blocked
   return c
 }
 
@@ -990,36 +1005,53 @@ fn chan_count(c: Int) -> Int {
   return load64(c + 8)
 }
 
-// IPC wait queues for channel operations. Each channel has a wait queue of
-// blocked threads. Since we don't have atomics (no CAS instruction in .in),
-// we use poll-with-yield as before (wait queues are a struct for future atomics).
-// ponytail: poll-with-yield, upgrade to atomic CAS when .in has inline asm.
+// IPC wait queues for channel operations. Each channel has a wait queue slot
+// for a blocked sender and a blocked receiver. When the channel is full/empty,
+// the calling thread stores its ID in the wait slot and blocks; the
+// counterparty wakes it upon consuming/producing data. This is safe because
+// .in has no preemption between the state check and the wait registration.
 
-// Send to channel: poll until room, then write and return.
+// Send to channel: block until room, then write. Wake a waiting receiver.
 fn chan_send(c: Int, msg: Int) -> void {
   let cap = load64(c + 0)
   while load64(c + 8) >= cap {
-    thr_yield()
+    store64(c + 32, current_task)  // register as blocked sender
+    thr_block()
   }
+  store64(c + 32, -1)  // clear waiter flag
   let wpos = load64(c + 24)
-  let buf = c + 40
+  let buf = c + 48
   buf[wpos] = msg
   store64(c + 24, (wpos + 1) % cap)
   store64(c + 8, load64(c + 8) + 1)
+  // Wake a blocked receiver, if any
+  let rcv = load64(c + 40)
+  if rcv != -1 {
+    store64(c + 40, -1)
+    thr_wake(rcv)
+  }
   return
 }
 
-// Recv from channel: poll until data, then read and return.
+// Recv from channel: block until data, then read. Wake a waiting sender.
 fn chan_recv(c: Int) -> Int {
   while load64(c + 8) == 0 {
-    thr_yield()
+    store64(c + 40, current_task)  // register as blocked receiver
+    thr_block()
   }
+  store64(c + 40, -1)  // clear waiter flag
   let cap = load64(c + 0)
   let rpos = load64(c + 16)
-  let buf = c + 40
+  let buf = c + 48
   let msg = buf[rpos]
   store64(c + 16, (rpos + 1) % cap)
   store64(c + 8, load64(c + 8) - 1)
+  // Wake a blocked sender, if any
+  let snd = load64(c + 32)
+  if snd != -1 {
+    store64(c + 32, -1)
+    thr_wake(snd)
+  }
   return msg
 }
 
