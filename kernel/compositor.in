@@ -462,8 +462,14 @@ fn comp_run(port: Int) -> void {
     }
     prev_left = cur_left
 
-  // Check for keyboard input (non-blocking serial read)
-  if serial_has_byte(com1()) != 0 {
+    // Check for keyboard input (PS/2 keyboard or serial)
+    if kbd_ready != 0 {
+      let key = kbd_read()
+      if key != 0 && key == 27 {
+        comp_running = 0
+      }
+    }
+    if serial_has_byte(com1()) != 0 {
       let key = inb(com1())
       if comp_handle_key(key) != 0 {
         comp_running = 0

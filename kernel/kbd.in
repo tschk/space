@@ -1,0 +1,184 @@
+package space.kernel
+
+// PS/2 keyboard driver (polling).
+// Uses the same controller as the PS/2 mouse (ports 0x60/0x64).
+// Keyboards use the first PS/2 port, mice use the second.
+// Scan code set 1 (XT) — translated by the PS/2 controller from set 2.
+//
+// ponytail: polling only, no IRQ. Simple US layout scancode→ASCII table.
+// Add IRQ-driven ring buffer when keyboard throughput matters.
+
+// --- state ------------------------------------------------------------------
+var kbd_ready: Int = 0
+var kbd_last_key: Int = 0       // last translated ASCII char (0 = none)
+var kbd_shift: Int = 0          // shift state (1 = pressed)
+var kbd_ctrl: Int = 0           // ctrl state
+var kbd_alt: Int = 0            // alt state
+var kbd_release: Int = 0        // 1 when next scancode is a break code
+
+// Initialize the PS/2 keyboard.
+fn kbd_init() -> Int {
+  // Enable the first PS/2 port (keyboard). It's usually already enabled,
+  // but force it in case the mouse init disabled it.
+  outb(PS2_CMD, 0xAE)
+
+  // Flush output buffer
+  while (inb(PS2_STATUS) & 0x01) != 0 {
+    inb(PS2_DATA)
+  }
+
+  // Read controller configuration byte
+  outb(PS2_CMD, 0x20)
+  mouse_wait_output()
+  let config = inb(PS2_DATA)
+
+  // Enable first PS/2 port interrupt (bit 0), keep keyboard enabled (bit 4 clear)
+  let new_config = (config | 0x01) & -0x11
+  outb(PS2_CMD, 0x60)
+  mouse_wait_input()
+  outb(PS2_DATA, new_config)
+
+  kbd_ready = 1
+  kbd_last_key = 0
+  return 0
+}
+
+// Check if a scancode byte is available from the keyboard.
+// Returns 1 if there's data and it's from the keyboard (not mouse).
+fn kbd_has_data() -> Int {
+  if kbd_ready == 0 {
+    return 0
+  }
+  let status = inb(PS2_STATUS)
+  // Bit 0 = output buffer full, bit 5 = mouse data
+  if (status & 0x01) != 0 && (status & 0x20) == 0 {
+    return 1
+  }
+  return 0
+}
+
+// Read and translate one scancode byte.
+// Returns the ASCII character, or 0 if no key is ready.
+fn kbd_read() -> Int {
+  if kbd_has_data() == 0 {
+    return 0
+  }
+  let scancode = inb(PS2_DATA)
+
+  // PS/2 controller in translation mode (set 2 → set 1):
+  // Make codes: 0x01-0x58 (single byte, bit 7 clear = press)
+  // Break codes: 0x80+scancode (bit 7 set = release)
+  // Extended codes: 0xE0 prefix
+
+  if scancode == 0xE0 {
+    // ponytail: extended scancodes ignored (arrows, home, etc.)
+    // Add when shell navigation needs arrow keys.
+    return 0
+  }
+
+  let press: Int = 0
+  let code: Int = scancode
+  if (scancode & 0x80) != 0 {
+    press = 0   // key release
+    code = scancode & 0x7F
+  } else {
+    press = 1   // key press
+  }
+
+  // Update modifier state
+  if code == 0x2A || code == 0x36 {  // left/right shift
+    kbd_shift = press
+    return 0
+  }
+  if code == 0x1D {  // ctrl
+    kbd_ctrl = press
+    return 0
+  }
+  if code == 0x38 {  // alt
+    kbd_alt = press
+    return 0
+  }
+
+  // Only process key presses
+  if press == 0 {
+    return 0
+  }
+
+  // Translate scancode set 1 → ASCII (US layout)
+  let ch = kbd_translate(code)
+  return ch
+}
+
+// Translate scancode set 1 to ASCII.
+fn kbd_translate(code: Int) -> Int {
+  // Lowercase / unshifted
+  if code >= 0x10 && code <= 0x19 {  // 'q' - 'p'
+    let base = 0x10  // scancode for 'q'
+    let chars = "qwertyuiop"
+    return str_at(chars, code - base)
+  }
+  if code >= 0x1E && code <= 0x26 {  // 'a' - 'l' (scancodes 0x1E-0x26)
+    let base = 0x1E
+    let chars = "asdfghjkl"
+    let idx = code - base
+    if idx < str_len(chars) {
+      return str_at(chars, idx)
+    }
+    return 0
+  }
+  if code >= 0x2C && code <= 0x32 {  // 'z' - '/'
+    let base = 0x2C
+    let chars = "zxcvbnm"
+    let idx = code - base
+    if idx < str_len(chars) {
+      return str_at(chars, idx)
+    }
+    return 0
+  }
+
+  // Numbers (row above letters)
+  if code == 0x02 { return 0x31 }   // 1
+  if code == 0x03 { return 0x32 }   // 2
+  if code == 0x04 { return 0x33 }   // 3
+  if code == 0x05 { return 0x34 }   // 4
+  if code == 0x06 { return 0x35 }   // 5
+  if code == 0x07 { return 0x36 }   // 6
+  if code == 0x08 { return 0x37 }   // 7
+  if code == 0x09 { return 0x38 }   // 8
+  if code == 0x0A { return 0x39 }   // 9
+  if code == 0x0B { return 0x30 }   // 0
+
+  // Special keys
+  if code == 0x01 { return 27 }     // Escape
+  if code == 0x0E { return 8 }      // Backspace
+  if code == 0x0F { return 9 }      // Tab
+  if code == 0x1C { return 10 }     // Enter
+  if code == 0x39 { return 0x20 }   // Space
+  if code == 0x0C { return 0x2D }   // - (minus)
+  if code == 0x0D { return 0x3D }   // = (equals)
+  if code == 0x1A { return 0x5B }   // [ (left bracket)
+  if code == 0x1B { return 0x5D }   // ] (right bracket)
+  if code == 0x2B { return 0x5C }   // \ (backslash)
+  if code == 0x27 { return 0x3B }   // ; (semicolon)
+  if code == 0x28 { return 0x27 }   // ' (apostrophe)
+  if code == 0x29 { return 0x60 }   // ` (backtick)
+  if code == 0x33 { return 0x2C }   // , (comma)
+  if code == 0x34 { return 0x2E }   // . (period)
+  if code == 0x35 { return 0x2F }   // / (forward slash)
+
+  return 0
+}
+
+// Helper: get character at index from a string.
+fn str_at(s: Int, idx: Int) -> Int {
+  return load8(s + idx)
+}
+
+// Helper: get string length.
+fn str_len(s: Int) -> Int {
+  let i = 0
+  while load8(s + i) != 0 {
+    i = i + 1
+  }
+  return i
+}

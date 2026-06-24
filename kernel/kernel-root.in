@@ -24,8 +24,12 @@ import "linux.in"
 import "fb.in"
 // PS/2 mouse driver (polling).
 import "mouse.in"
+// PS/2 keyboard driver (polling).
+import "kbd.in"
 // Wayland-style compositor (window manager + desktop rendering).
 import "compositor.in"
+// SPDP display server.
+import "../services/display.in"
 
 // The nanokernel root component. The component, interface, and struct
 // declarations are the Space contract surface the loader and SCI metadata are
@@ -725,6 +729,29 @@ fn sys_getpid() -> Int {
   return current_task
 }
 
+// Syscall 5: sys_chan_create(cap) — create a channel with capacity.
+fn sys_chan_create(cap: Int) -> Int {
+  return chan_new(cap)
+}
+
+// Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
+fn sys_chan_send(ch: Int, msg: Int) -> void {
+  chan_send(ch, msg)
+  return
+}
+
+// Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
+fn sys_chan_recv(ch: Int) -> Int {
+  return chan_recv(ch)
+}
+
+// Syscall 8: sys_chan_close(ch) — close/free a channel.
+fn sys_chan_close(ch: Int) -> Int {
+  // ponytail: no-op — channels live in kernel heap and aren't freed yet.
+  // Add proper heap free when the kernel has a working deallocator.
+  return 0
+}
+
 // Dispatch a syscall based on the number in the saved RAX slot of the frame.
 // Writes the return value back into the RAX slot (frame offset 112).
 fn syscall_dispatch(frame: Int) -> void {
@@ -746,6 +773,20 @@ fn syscall_dispatch(frame: Int) -> void {
     store64(frame + 112, sys_yield())
   } else if num == 4 {
     store64(frame + 112, sys_getpid())
+  } else if num == 5 {
+    let cap = load64(frame + 72)
+    store64(frame + 112, sys_chan_create(cap))
+  } else if num == 6 {
+    let ch = load64(frame + 72)
+    let msg = load64(frame + 80)
+    sys_chan_send(ch, msg)
+    store64(frame + 112, 0)
+  } else if num == 7 {
+    let ch = load64(frame + 72)
+    store64(frame + 112, sys_chan_recv(ch))
+  } else if num == 8 {
+    let ch = load64(frame + 72)
+    store64(frame + 112, sys_chan_close(ch))
   } else {
     let port = com1()
     serial_write_cstr(port, "space: unknown syscall 0x")
@@ -1327,7 +1368,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux syscall uptime fb desktop halt")
+        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux syscall uptime fb desktop display comp halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1475,6 +1516,10 @@ fn shell(port: Int) -> void {
       linux_demo(port)
     } else if line_eq("desktop") != 0 {
       comp_run(port)
+    } else if line_eq("display") != 0 {
+      let ch = chan_new(32)
+      dsp_init()
+      dsp_run(ch, port)
     } else if line_eq("fb") != 0 {
       fb_info(port)
     } else if line_eq("comp") != 0 {
@@ -1742,6 +1787,11 @@ fn kernel_entry(mb_info: Int) -> Int {
       serial_write_cstr(port, "space: PS/2 mouse not found")
       serial_nl(port)
     }
+  }
+
+  // Initialize the PS/2 keyboard (if PS/2 controller is active).
+  if mouse_ready != 0 {
+    kbd_init()
   }
 
   // Initialize the compositor.
