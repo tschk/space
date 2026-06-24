@@ -43,9 +43,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
-INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
-IN="$INAUG_DIR/in-cli/target/release/in"
+IN="${IN:-$(which in 2>/dev/null || echo /Users/undivisible/projects/inauguration/in-cli/target/release/in)}"
 
 USE_NET=0
 USE_SCI=0
@@ -67,10 +66,7 @@ done
 
 mkdir -p "$BUILD_DIR"
 
-echo "[1/3] Building compiler..."
-cargo build --release --manifest-path "$INAUG_DIR/in-cli/Cargo.toml" 2>&1 | grep -E "^(error|Finished)" || true
-
-echo "[2/3] Assembling trampoline and compiling kernel..."
+echo "[1/2] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
@@ -127,7 +123,7 @@ if [ "$USE_DISK" = "1" ]; then
   fi
 fi
 
-echo "[3/3] Booting in QEMU (Ctrl-A X to quit)..."
+echo "[2/2] Booting in QEMU (Ctrl-A X to quit)..."
 echo
 
 QEMU_ARGS=(
