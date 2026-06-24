@@ -164,26 +164,15 @@ fn comp_render_background() -> void {
   return
 }
 
-// Draw the mouse cursor (a simple arrow shape).
+// Draw the mouse cursor as a cross-hair using fb_draw_line.
 fn comp_render_cursor() -> void {
   let x = mouse_x
   let y = mouse_y
-  // Simple 8x8 cursor using put_pixel (avoid fb_draw_line which hangs)
-  fb_put_pixel(x, y, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 1, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 2, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 3, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 4, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 5, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 6, FB_COLOR_WHITE)
-  fb_put_pixel(x, y + 7, FB_COLOR_WHITE)
-  fb_put_pixel(x + 1, y + 1, FB_COLOR_WHITE)
-  fb_put_pixel(x + 2, y + 2, FB_COLOR_WHITE)
-  fb_put_pixel(x + 3, y + 3, FB_COLOR_WHITE)
-  fb_put_pixel(x + 4, y + 4, FB_COLOR_WHITE)
-  fb_put_pixel(x + 1, y + 2, FB_COLOR_WHITE)
-  fb_put_pixel(x + 2, y + 3, FB_COLOR_WHITE)
-  fb_put_pixel(x + 3, y + 4, FB_COLOR_WHITE)
+  let cs = 8  // cursor size (half-arm length)
+  // Horizontal arm
+  fb_draw_line(x - cs, y, x + cs, y, FB_COLOR_WHITE)
+  // Vertical arm
+  fb_draw_line(x, y - cs, x, y + cs, FB_COLOR_WHITE)
   return
 }
 
@@ -309,17 +298,30 @@ fn comp_render_window(idx: Int) -> void {
   return
 }
 
-// Render the entire desktop: background, all windows, cursor.
+var comp_bg_drawn: Int = 0  // 1 after first background render
+
+// Render the desktop: background once, dirty windows, always redraw cursor.
+// Skips full-screen clear to avoid flashing.
 fn comp_render() -> void {
-  comp_render_background()
+  if comp_bg_drawn == 0 {
+    comp_render_background()
+    comp_render_taskbar()
+    comp_bg_drawn = 1
+  }
   let i = 0
   while i < comp_count {
-    comp_render_window(i)
+    let base = comp_win_base(i)
+    let flags = load32(base + 20)
+    if (flags & COMP_WIN_DIRTY) != 0 {
+      comp_render_window(i)
+      // taskbar covers bottom area, redraw it after window changes
+      if i == comp_count - 1 {
+        comp_render_taskbar()
+      }
+    }
     i = i + 1
   }
-  // Draw taskbar at the bottom
-  comp_render_taskbar()
-  // Draw cursor on top of everything
+  // Redraw cursor every frame (follows mouse)
   comp_render_cursor()
   return
 }
@@ -418,6 +420,8 @@ fn comp_run(port: Int) -> void {
   serial_write_cstr(port, "space: compositor running (press ESC to exit)")
   serial_nl(port)
 
+  comp_bg_drawn = 0  // force initial background render
+
   // Create default windows
   let win1_title = "Terminal"
   let win1 = comp_win_create(win1_title, 40, 40, 320, 200)
@@ -458,8 +462,8 @@ fn comp_run(port: Int) -> void {
     }
     prev_left = cur_left
 
-    // Check for keyboard input (non-blocking serial read)
-    if serial_has_byte(com1()) != 0 {
+  // Check for keyboard input (non-blocking serial read)
+  if serial_has_byte(com1()) != 0 {
       let key = inb(com1())
       if comp_handle_key(key) != 0 {
         comp_running = 0
