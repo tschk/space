@@ -21,16 +21,18 @@ package space.kernel
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 16
+const COMP_TITLE_BAR_H = 24
 const COMP_BORDER_W = 2
-const COMP_COLOR_DESKTOP = 0x002A2A2A
-const COMP_COLOR_PANEL = 0x00242424
-const COMP_COLOR_PANEL_LINE = 0x004A4A4A
-const COMP_COLOR_TITLE = 0x002E3436
-const COMP_COLOR_TITLE_FOCUSED = 0x003583E8
-const COMP_COLOR_WINDOW = 0x00F6F5F4
-const COMP_COLOR_BORDER = 0x00BDBDBD
-const COMP_COLOR_TEXT = 0x002E3436
+const COMP_COLOR_DESKTOP = 0x00191C20
+const COMP_COLOR_PANEL = 0x0024272E
+const COMP_COLOR_PANEL_LINE = 0x00383C45
+const COMP_COLOR_TITLE = 0x00E7E8EA
+const COMP_COLOR_TITLE_FOCUSED = 0x00F7F7F5
+const COMP_COLOR_WINDOW = 0x00F7F7F5
+const COMP_COLOR_BORDER = 0x00C9CCD1
+const COMP_COLOR_ACCENT = 0x002EA7D7
+const COMP_COLOR_TEXT = 0x002B2F36
+const COMP_COLOR_MUTED = 0x00717880
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -176,11 +178,14 @@ fn comp_render_background() -> void {
 fn comp_render_cursor() -> void {
   let x = mouse_x
   let y = mouse_y
-  let cs = 8  // cursor size (half-arm length)
-  // Horizontal arm
-  fb_draw_line(x - cs, y, x + cs, y, FB_COLOR_WHITE)
-  // Vertical arm
-  fb_draw_line(x, y - cs, x, y + cs, FB_COLOR_WHITE)
+  fb_fill_rect(x, y, 2, 16, FB_COLOR_BLACK)
+  fb_fill_rect(x + 2, y + 2, 2, 14, FB_COLOR_BLACK)
+  fb_fill_rect(x + 4, y + 4, 2, 10, FB_COLOR_BLACK)
+  fb_fill_rect(x + 6, y + 6, 2, 6, FB_COLOR_BLACK)
+  fb_fill_rect(x + 8, y + 8, 2, 4, FB_COLOR_BLACK)
+  fb_fill_rect(x + 1, y + 2, 2, 10, FB_COLOR_WHITE)
+  fb_fill_rect(x + 3, y + 4, 2, 8, FB_COLOR_WHITE)
+  fb_fill_rect(x + 5, y + 6, 2, 4, FB_COLOR_WHITE)
   return
 }
 
@@ -193,7 +198,7 @@ fn comp_draw_border(base: Int, color: Int) -> void {
   let bx = x - 2
   let by = y - 2
   let bw = w + 4
-  let bh = h + 20
+  let bh = h + COMP_TITLE_BAR_H + 4
   // Top edge
   let i = 0
   while i < bw {
@@ -234,7 +239,7 @@ fn comp_draw_titlebar(base: Int) -> void {
     color = COMP_COLOR_TITLE_FOCUSED
   }
   let ty = 0
-  while ty < 16 {
+  while ty < COMP_TITLE_BAR_H {
     let tx = 0
     while tx < w {
       store32(fb_addr + (y + ty) * fb_pitch + (x + tx) * 4, color)
@@ -251,7 +256,7 @@ fn comp_draw_content_bg(base: Int) -> void {
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
-  let content_y = y + 16
+  let content_y = y + COMP_TITLE_BAR_H
   let cy = 0
   while cy < h {
     let cx = 0
@@ -272,8 +277,8 @@ fn comp_draw_content_text(base: Int) -> void {
   }
   let x = load32(base + 4)
   let y = load32(base + 8)
-  let content_y = y + 16
-  fb_draw_string_bg(x + 8, content_y + 8, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_draw_string_bg(x + 12, content_y + 12, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
   return
 }
 
@@ -286,10 +291,17 @@ fn comp_render_window(idx: Int) -> void {
   }
 
   // Draw border
-  comp_draw_border(base, COMP_COLOR_BORDER)
+  let border = COMP_COLOR_BORDER
+  if (flags & COMP_WIN_FOCUSED) != 0 {
+    border = COMP_COLOR_ACCENT
+  }
+  comp_draw_border(base, border)
 
   // Draw title bar
   comp_draw_titlebar(base)
+  if (flags & COMP_WIN_FOCUSED) != 0 {
+    fb_fill_rect(load32(base + 4), load32(base + 8), load32(base + 12), 3, COMP_COLOR_ACCENT)
+  }
 
   // Draw title text
   let title = load64(base + 24)
@@ -300,7 +312,7 @@ fn comp_render_window(idx: Int) -> void {
     if (flags & COMP_WIN_FOCUSED) != 0 {
       title_bg = COMP_COLOR_TITLE_FOCUSED
     }
-    fb_draw_string_bg(x + 8, y + 4, title, FB_COLOR_WHITE, title_bg)
+    fb_draw_string_bg(x + 12, y + 8, title, COMP_COLOR_TEXT, title_bg)
   }
 
   // Draw content background
@@ -323,10 +335,9 @@ var comp_prev_cy: Int = 0   // previous cursor y
 fn comp_clear_cursor() -> void {
   let x = comp_prev_cx
   let y = comp_prev_cy
-  let cs = 8
+  let cs = 18
   // Redraw background over old cursor area
-  fb_fill_rect(x - cs, y - 1, cs * 2 + 1, 3, COMP_COLOR_DESKTOP)
-  fb_fill_rect(x - 1, y - cs, 3, cs * 2 + 1, COMP_COLOR_DESKTOP)
+  fb_fill_rect(x - 2, y - 2, cs, cs + 4, COMP_COLOR_DESKTOP)
   let i = 0
   while i < comp_count {
     let base = comp_win_base(i)
@@ -369,8 +380,8 @@ fn comp_render() -> void {
 
 // Draw the taskbar at the bottom of the screen.
 fn comp_render_taskbar() -> void {
-  let bar_h = 20
-  let bar_y = fb_height - bar_h
+  let bar_h = 24
+  let bar_y = 0
   fb_fill_rect(0, bar_y, fb_width, bar_h, COMP_COLOR_PANEL)
   // Top line of taskbar (lighter)
   let tx2 = 0
@@ -379,14 +390,15 @@ fn comp_render_taskbar() -> void {
     tx2 = tx2 + 1
   }
   // Draw "Space OS" label
-  fb_draw_string_bg(8, bar_y + 6, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(12, bar_y + 8, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
   // Draw mouse coordinates label
-  fb_draw_string_bg(fb_width - 120, bar_y + 6, "MOUSE:", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 32, bar_y + 8, "DESKTOP", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 96, bar_y + 8, "QEMU", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   // Draw a colored dot for mouse button state
   if mouse_left_pressed() != 0 {
-    fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_GREEN)
+    fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_GREEN)
   } else {
-    fb_fill_rect(fb_width - 40, bar_y + 6, 8, 8, FB_COLOR_DARK_GREEN)
+    fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_DARK_GREEN)
   }
   return
 }
@@ -465,19 +477,20 @@ fn comp_run(port: Int) -> void {
 
   // Create default windows
   let win1_title = "TERMINAL"
-  let win1 = comp_win_create(win1_title, 40, 40, 320, 200)
+  let win1 = comp_win_create(win1_title, 48, 56, 416, 256)
   let term_content = "SPACE OS TERMINAL\n\n> HELP\n> STATUS\n> LS\n> LINUX\n\nWELCOME TO SPACE OS!\nPRESS ESC TO EXIT DESKTOP."
   comp_win_set_content(win1, term_content)
 
   let win2_title = "FILE BROWSER"
-  let win2 = comp_win_create(win2_title, 400, 60, 280, 160)
+  let win2 = comp_win_create(win2_title, 496, 56, 320, 192)
   let file_content = "FILES ON DISK:\n\n(NO FILES YET)\n\nUSE 'FORMAT' THEN\n'WRITE <NAME> <TEXT>'\nTO CREATE FILES."
   comp_win_set_content(win2, file_content)
 
   let win3_title = "SYSTEM INFO"
-  let win3 = comp_win_create(win3_title, 120, 280, 360, 120)
+  let win3 = comp_win_create(win3_title, 496, 280, 320, 144)
   let sys_content = "SPACE OS V0.0.1\nNANOKERNEL + LINUX PERSONALITY\nFRAMEBUFFER: ACTIVE\nMOUSE: PS/2\nCOMPOSITOR: WAYLAND-STYLE"
   comp_win_set_content(win3, sys_content)
+  comp_win_focus(win3)
 
   comp_running = 1
   let prev_left = 0

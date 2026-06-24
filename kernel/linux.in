@@ -64,6 +64,7 @@ const LINUX_EACCES = -13
 const LINUX_EFAULT = -14
 const LINUX_EBUSY = -16
 const LINUX_EEXIST = -17
+const LINUX_ENOEXEC = -8
 const LINUX_ENOSPC = -28
 const LINUX_ENOSYS = -38
 
@@ -483,6 +484,20 @@ fn linux_sys_fork() -> Int {
 
 const LINUX_EAGAIN = -11
 
+fn linux_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
+  if size < 64 {
+    return LINUX_ENOEXEC
+  }
+  let magic = load64(image + 0)
+  if magic != 0x5343490000000001 {
+    return LINUX_ENOEXEC
+  }
+  serial_write_cstr(port, "linux: execve loading SCI from ")
+  serial_write_cstr(port, path)
+  serial_nl(port)
+  return sci_load(port, image)
+}
+
 // sys_execve(path, argv, envp) — replace current process image.
 // Reads an SCI component from the filesystem and loads it via sci_load.
 // Falls back to ENOSYS if the file doesn't exist or isn't a valid SCI binary.
@@ -517,15 +532,32 @@ fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
     }
     pos = pos + chunk
   }
-  let magic = load64(buf + 0)
-  if magic != 0x5343490000000001 {
-    return LINUX_ENOEXEC
-  }
   let port = com1()
-  serial_write_cstr(port, "linux: execve loading SCI from ")
-  serial_write_cstr(port, path)
+  return linux_exec_image(port, buf, file_size, path)
+}
+
+fn linux_elf_probe(port: Int) -> void {
+  let elf = alloc(64)
+  let i = 0
+  while i < 64 {
+    store8(elf + i, 0)
+    i = i + 1
+  }
+  store8(elf + 0, 0x7F)
+  store8(elf + 1, 0x45)
+  store8(elf + 2, 0x4C)
+  store8(elf + 3, 0x46)
+  store8(elf + 4, 2)
+  store8(elf + 5, 1)
+  store8(elf + 6, 1)
+  let rc = linux_exec_image(port, elf, 64, "helium-probe")
+  serial_write_cstr(port, "linux: ELF execve probe = ")
+  serial_write_dec_wide(port, rc)
+  if rc == LINUX_ENOEXEC {
+    serial_write_cstr(port, " (expected before Linux ELF loader)")
+  }
   serial_nl(port)
-  return sci_load(port, buf)
+  return
 }
 
 // sys_wait4(pid, status, options, rusage) — wait for child to change state.

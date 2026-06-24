@@ -1366,7 +1366,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux syscall uptime fb desktop display comp halt")
+        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf syscall uptime fb desktop display comp halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1512,6 +1512,8 @@ fn shell(port: Int) -> void {
       usb_kbd_cmd(port)
     } else if line_eq("linux") != 0 {
       linux_demo(port)
+    } else if line_eq("linuxelf") != 0 {
+      linux_elf_probe(port)
     } else if line_eq("desktop") != 0 {
       comp_run(port)
     } else if line_eq("display") != 0 {
