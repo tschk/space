@@ -462,10 +462,10 @@ fn comp_run(port: Int) -> void {
     }
     prev_left = cur_left
 
-    // Check for keyboard input (PS/2 keyboard or serial)
-    if kbd_ready != 0 {
-      let key = kbd_read()
-      if key != 0 && key == 27 {
+    // Check for keyboard input (USB HID keyboard or serial)
+    if usb_kbd_ready() != 0 {
+      let key = usb_kbd_getchar()
+      if key >= 0 && key == 27 {
         comp_running = 0
       }
     }

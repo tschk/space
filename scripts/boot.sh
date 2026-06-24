@@ -34,9 +34,10 @@
 #   ./scripts/boot.sh              # boot with NVMe disk, VGA display, serial on stdio
 #   ./scripts/boot.sh --net        # boot with e1000 NIC (for `net` command)
 #   ./scripts/boot.sh --sci        # boot with SCI guest component loaded
+#   ./scripts/boot.sh --usb        # boot with USB xHCI + HID keyboard
 #   ./scripts/boot.sh --disk       # boot with NVMe disk (default, can be omitted)
 #   ./scripts/boot.sh --no-gui     # boot without VGA display (serial only, no desktop)
-#   ./scripts/boot.sh --net --sci  # both
+#   ./scripts/boot.sh --net --usb  # both USB and network
 #
 # Requirements: nasm, qemu-system-x86_64, ../inauguration checked out
 set -euo pipefail
@@ -48,12 +49,14 @@ IN="${IN:-$(which in 2>/dev/null || echo /Users/undivisible/projects/inauguratio
 
 USE_NET=0
 USE_SCI=0
+USE_USB=0
 USE_DISK=1
 USE_GUI=1
 for arg in "$@"; do
   case "$arg" in
     --net) USE_NET=1 ;;
     --sci) USE_SCI=1 ;;
+    --usb) USE_USB=1 ;;
     --disk) USE_DISK=1 ;;
     --no-disk) USE_DISK=0 ;;
     --no-gui) USE_GUI=0 ;;
@@ -153,6 +156,11 @@ fi
 
 if [ "$USE_SCI" = "1" ]; then
   echo "  SCI: guest component loaded (try 'sci' command)"
+fi
+
+if [ "$USE_USB" = "1" ]; then
+  QEMU_ARGS+=(-device qemu-xhci,id=xhci -device usb-kbd)
+  echo "  USB: xHCI controller + HID keyboard attached (try 'key', 'desktop' commands)"
 fi
 
 echo

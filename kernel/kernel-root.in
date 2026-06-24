@@ -24,8 +24,6 @@ import "linux.in"
 import "fb.in"
 // PS/2 mouse driver (polling).
 import "mouse.in"
-// PS/2 keyboard driver (polling).
-import "kbd.in"
 // Wayland-style compositor (window manager + desktop rendering).
 import "compositor.in"
 // SPDP display server.
@@ -1789,9 +1787,13 @@ fn kernel_entry(mb_info: Int) -> Int {
     }
   }
 
-  // Initialize the PS/2 keyboard (if PS/2 controller is active).
-  if mouse_ready != 0 {
-    kbd_init()
+  // Initialize USB HID keyboard (only if xHCI controller is active).
+  if usb_rc == 0 {
+    let kbd_rc = usb_kbd_init()
+    if kbd_rc == 0 {
+      serial_write_cstr(port, "space: USB HID keyboard ready")
+      serial_nl(port)
+    }
   }
 
   // Initialize the compositor.

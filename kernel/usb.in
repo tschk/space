@@ -399,16 +399,17 @@ fn xhci_init() -> Int {
   serial_write_cstr(port, ".0 BAR0 0x")
   serial_write_hex(port, bar)
   serial_put(port, 10)
-  // Identity-map a 64 KiB register window.
-  let pg = bar
-  while pg < bar + 0x10000 {
-    map_page(pg, pg, 0x1B)
-    pg = pg + 0x1000
-  }
   xhci_mmio = bar
-  // Capability registers.
-  let caplen = xhci_cap_r32(0) & 0xFF
-  let version = (xhci_cap_r32(0) >> 16) & 0xFFFF
+  // Capability registers — read HK (first 4 bytes) to check MMIO accessibility.
+  let hccparams = load32(bar)
+  if hccparams == 0 {
+    serial_write_cstr(port, "space: usb: xHCI MMIO not accessible (BAR not decoded?)")
+    serial_nl(port)
+    xhci_mmio = 0
+    return -1
+  }
+  let caplen = hccparams & 0xFF
+  let version = (hccparams >> 16) & 0xFFFF
   let hcs1 = xhci_cap_r32(4)
   xhci_max_slots = hcs1 & 0xFF
   xhci_max_ports = (hcs1 >> 24) & 0xFF
