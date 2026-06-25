@@ -33,10 +33,14 @@ const COMP_COLOR_BORDER = 0x00C9CCD1
 const COMP_COLOR_ACCENT = 0x002EA7D7
 const COMP_COLOR_TEXT = 0x002B2F36
 const COMP_COLOR_MUTED = 0x00717880
+const COMP_COLOR_SURFACE = 0x00FFFFFF
+const COMP_COLOR_SURFACE_ALT = 0x00ECEFF3
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
 const COMP_WIN_DIRTY = 4
+const COMP_ROLE_TEXT = 0
+const COMP_ROLE_LINUX_APP = 1
 
 // --- compositor state -------------------------------------------------------
 var comp_windows: Int = 0    // array of window records
@@ -95,6 +99,7 @@ fn comp_win_create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
   store32(base + 20, COMP_WIN_VISIBLE | COMP_WIN_DIRTY)
   store64(base + 24, title)
   store64(base + 32, 0)
+  store64(base + 40, COMP_ROLE_TEXT)
   comp_count = comp_count + 1
   comp_focused = idx
   return idx
@@ -106,6 +111,14 @@ fn comp_win_set_content(idx: Int, buf: Int) -> void {
     return
   }
   store64(comp_win_base(idx) + 32, buf)
+  return
+}
+
+fn comp_win_set_role(idx: Int, role: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  store64(comp_win_base(idx) + 40, role)
   return
 }
 
@@ -323,75 +336,57 @@ fn comp_draw_browser_toolbar(base: Int) -> void {
   return
 }
 
-fn comp_draw_browser_hero(base: Int) -> void {
+fn comp_draw_linux_surface_header(base: Int) -> void {
+  comp_draw_browser_toolbar(base)
+  return
+}
+
+fn comp_draw_linux_surface_tabs(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 24, content_y + 70, w - 48, 112, 0x00FFFFFF)
+  fb_fill_rect(x + 24, content_y + 58, w - 48, 36, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 40, content_y + 70, 96, 12, COMP_COLOR_ACCENT)
+  fb_fill_rect(x + 156, content_y + 70, 128, 12, 0x00C9CCD1)
+  fb_fill_rect(x + 304, content_y + 70, 88, 12, 0x00C9CCD1)
   return
 }
 
-fn comp_draw_browser_rule1(base: Int) -> void {
+fn comp_draw_linux_surface_view(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 48, content_y + 96, 220, 12, COMP_COLOR_ACCENT)
+  let view_h = h - 132
+  if view_h < 120 {
+    return
+  }
+  fb_fill_rect(x + 24, content_y + 110, w - 48, view_h, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 56, content_y + 144, 220, 16, COMP_COLOR_ACCENT)
+  fb_fill_rect(x + 56, content_y + 184, w - 176, 12, 0x00C9CCD1)
+  fb_fill_rect(x + 56, content_y + 212, w - 256, 12, 0x00C9CCD1)
   return
 }
 
-fn comp_draw_browser_rule2(base: Int) -> void {
+fn comp_draw_linux_surface_footer(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 48, content_y + 124, 360, 10, 0x00C9CCD1)
+  fb_fill_rect(x + 24, content_y + h - 44, w - 48, 24, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 40, content_y + h - 36, 8, 8, COMP_COLOR_ACCENT)
+  fb_fill_rect(x + 60, content_y + h - 36, w - 180, 8, 0x00C9CCD1)
   return
 }
 
-fn comp_draw_browser_rule3(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 48, content_y + 146, 280, 10, 0x00C9CCD1)
-  return
-}
-
-fn comp_draw_browser_card1(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 24, content_y + 206, 180, 96, 0x00ECEFF3)
-  fb_draw_string_bg(x + 48, content_y + 224, "PRIVACY", COMP_COLOR_TEXT, 0x00ECEFF3)
-  return
-}
-
-fn comp_draw_browser_card2(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 224, content_y + 206, 180, 96, 0x00ECEFF3)
-  fb_draw_string_bg(x + 248, content_y + 224, "LINUX", COMP_COLOR_TEXT, 0x00ECEFF3)
-  return
-}
-
-fn comp_draw_browser_card3(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 424, content_y + 206, 180, 96, 0x00ECEFF3)
-  fb_draw_string_bg(x + 448, content_y + 224, "SPACE", COMP_COLOR_TEXT, 0x00ECEFF3)
-  return
-}
-
-fn comp_draw_browser_content(base: Int) -> void {
-  comp_draw_browser_toolbar(base)
-  comp_draw_browser_hero(base)
-  comp_draw_browser_rule1(base)
-  comp_draw_browser_rule2(base)
-  comp_draw_browser_rule3(base)
-  comp_draw_browser_card1(base)
-  comp_draw_browser_card2(base)
-  comp_draw_browser_card3(base)
+fn comp_draw_linux_app_content(base: Int) -> void {
+  comp_draw_linux_surface_header(base)
+  comp_draw_linux_surface_tabs(base)
+  comp_draw_linux_surface_view(base)
+  comp_draw_linux_surface_footer(base)
   return
 }
 
@@ -432,8 +427,9 @@ fn comp_render_window(idx: Int) -> void {
   comp_draw_content_bg(base)
 
   // Draw content text
-  if idx == 2 {
-    comp_draw_browser_content(base)
+  let role = load64(base + 40)
+  if role == COMP_ROLE_LINUX_APP {
+    comp_draw_linux_app_content(base)
   } else {
     comp_draw_content_text(base)
   }
@@ -608,8 +604,9 @@ fn comp_run(port: Int) -> void {
   let win3 = comp_win_create(win3_title, 704, 416, 240, 136)
   let win2_title = "HELIUM"
   let win2 = comp_win_create(win2_title, 64, 56, 880, 328)
-  comp_win_set_content(win1, "> LINUXELF\nENOEXEC")
-  comp_win_set_content(win3, "FB ACTIVE\nELF PROBE")
+  comp_win_set_role(win2, COMP_ROLE_LINUX_APP)
+  comp_win_set_content(win1, "> LINUXELF ENOEXEC")
+  comp_win_set_content(win3, "COMPOSITOR SURFACES READY")
   comp_tile_desktop(win2, win1, win3)
   comp_win_focus(win2)
 
