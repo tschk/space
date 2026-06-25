@@ -81,7 +81,7 @@ height = int(parts[2])
 area = width * height
 text_rgb = (43, 47, 54)
 required = {
-    "desktop": ((25, 28, 32), area // 4),
+    "desktop": ((25, 28, 32), area // 7),
     "top bar": ((36, 39, 46), width * 16),
     "window": ((247, 247, 245), area // 6),
     "title": ((231, 232, 234), 15000),
@@ -95,8 +95,8 @@ for label, (rgb, minimum) in required.items():
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
     "browser text": (80, 88, 680, 380, 600),
-    "terminal text": (76, 444, 360, 520, 500),
-    "system text": (716, 444, 920, 520, 500),
+    "terminal text": (76, 480, 620, 540, 500),
+    "system text": (660, 480, 1200, 540, 500),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0

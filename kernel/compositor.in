@@ -166,6 +166,36 @@ fn comp_win_focus(idx: Int) -> void {
   return
 }
 
+fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  let base = comp_win_base(idx)
+  store32(base + 4, x)
+  store32(base + 8, y)
+  store32(base + 12, w)
+  store32(base + 16, h)
+  let flags = load32(base + 20)
+  store32(base + 20, flags | COMP_WIN_DIRTY)
+  return
+}
+
+fn comp_tile_desktop(browser: Int, terminal: Int, system: Int) -> void {
+  let margin = 64
+  let gap = 16
+  let top_y = 56
+  let usable_w = fb_width - margin * 2
+  let usable_h = fb_height - top_y - margin
+  let browser_h = (usable_h * 56) / 100
+  let panel_y = top_y + browser_h + gap
+  let panel_h = usable_h - browser_h - gap
+  let panel_w = (usable_w - gap) / 2
+  comp_win_place(browser, margin, top_y, usable_w, browser_h)
+  comp_win_place(terminal, margin, panel_y, panel_w, panel_h)
+  comp_win_place(system, margin + panel_w + gap, panel_y, panel_w, panel_h)
+  return
+}
+
 // --- rendering --------------------------------------------------------------
 
 // Draw the desktop background.
@@ -580,6 +610,7 @@ fn comp_run(port: Int) -> void {
   let win2 = comp_win_create(win2_title, 64, 56, 880, 328)
   comp_win_set_content(win1, "> LINUXELF\nENOEXEC")
   comp_win_set_content(win3, "FB ACTIVE\nELF PROBE")
+  comp_tile_desktop(win2, win1, win3)
   comp_win_focus(win2)
 
   comp_running = 1
