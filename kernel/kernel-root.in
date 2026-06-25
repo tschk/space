@@ -1357,6 +1357,31 @@ fn array_selftest() -> Int {
   return sum
 }
 
+fn space_fetch(port: Int) -> void {
+  serial_write_cstr(port, "  SpaceOS")
+  serial_nl(port)
+  serial_write_cstr(port, "  kernel      nanokernel")
+  serial_nl(port)
+  serial_write_cstr(port, "  framebuffer ")
+  serial_write_dec_wide(port, fb_width)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_height)
+  serial_nl(port)
+  serial_write_cstr(port, "  files       ")
+  if fs_disk_ready == 0 {
+    serial_write_cstr(port, "ramfs")
+  } else {
+    serial_write_cstr(port, "nvme")
+  }
+  serial_nl(port)
+  serial_write_cstr(port, "  linux       minimal elf")
+  serial_nl(port)
+  serial_write_cstr(port, "  objects     0x")
+  serial_write_hex(port, obj_counter)
+  serial_nl(port)
+  return
+}
+
 fn shell(port: Int) -> void {
   line = alloc(256)
   serial_nl(port)
@@ -1366,7 +1391,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf syscall uptime fb desktop display comp halt")
+        serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb desktop display comp halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -1514,6 +1539,8 @@ fn shell(port: Int) -> void {
       linux_demo(port)
     } else if line_eq("linuxelf") != 0 {
       linux_elf_probe(port)
+    } else if line_eq("fetch") != 0 {
+      space_fetch(port)
     } else if line_eq("desktop") != 0 {
       comp_run(port)
     } else if line_eq("display") != 0 {

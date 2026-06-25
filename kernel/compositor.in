@@ -47,7 +47,7 @@ const COMP_VRO_BUF_SIZE = 512
 const COMP_MIN_WIN_W = 280
 const COMP_MIN_WIN_H = 180
 const COMP_MIN_EDITOR_W = 640
-const COMP_MIN_SIDE_W = 344
+const COMP_MIN_SIDE_W = 520
 
 // --- compositor state -------------------------------------------------------
 var comp_windows: Int = 0    // array of window records
@@ -294,7 +294,7 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
   }
   let utility_h = (usable_h - gap) / 2
   let terminal_h = usable_h - utility_h - gap
-  comp_win_place(editor, margin, top_y, main_w, usable_h)
+  comp_win_place(editor, margin, top_y, main_w, utility_h)
   comp_win_place(utilities, margin + main_w + gap, top_y, side_w, utility_h)
   comp_win_place(terminal, margin + main_w + gap, top_y + utility_h + gap, side_w, terminal_h)
   return
@@ -424,6 +424,8 @@ fn comp_draw_vro_content(base: Int) -> void {
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   fb_fill_rect(x + 16, content_y + 24, 36, h - 72, COMP_COLOR_SURFACE_ALT)
+  fb_draw_string_bg(x + 68, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 68, content_y + 52, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   let max_chars = comp_min((w - 112) / 16, 95)
   let start_idx = 0
   if comp_vro_len > max_chars {
@@ -447,8 +449,10 @@ fn comp_draw_vro_content(base: Int) -> void {
     fb_fill_rect(cursor_x, content_y + 74, 2, 20, COMP_COLOR_ACCENT)
   }
   if comp_vro_dirty != 0 {
+    fb_draw_string_bg(x + 68, content_y + h - 64, "modified", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
     fb_fill_rect(x + 68, content_y + h - 38, 96, 8, COMP_COLOR_ACCENT)
   } else {
+    fb_draw_string_bg(x + 68, content_y + h - 64, "saved", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
     fb_fill_rect(x + 68, content_y + h - 38, 48, 8, COMP_COLOR_ACCENT)
   }
   return
@@ -491,10 +495,12 @@ fn comp_draw_terminal_content(base: Int) -> void {
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   fb_fill_rect(x, content_y, w, 28, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 16, content_y + 36, "> linuxelf", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 70, "ENOEXEC", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 104, "> desktop", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 138, "compositor running", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 36, "> fetch", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 70, "SpaceOS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 104, "kernel nanokernel", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 138, "framebuffer 1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 172, "files ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 16, content_y + 206, "linux minimal elf", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   return
 }
 

@@ -50,6 +50,8 @@ for _ in $(seq 1 100); do
 done
 echo "fb" >&3
 sleep 0.5
+echo "fetch" >&3
+sleep 0.5
 # Send 'halt' to cleanly stop the shell.
 echo "halt" >&3
 exec 3>&-
@@ -70,7 +72,9 @@ for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "linux: getpid()" \
          "linux: open(hello.txt" \
          "linux: personality demo complete" \
-         "linux: ELF execve probe = -8"; do
+         "linux: ELF execve probe = -8" \
+         "SpaceOS" \
+         "framebuffer 1920x1080"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
