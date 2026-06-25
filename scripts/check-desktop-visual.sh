@@ -71,7 +71,7 @@ while len(parts) < 4:
     if line and not line.startswith(b"#"):
         parts.extend(line.split())
 
-if parts[0] != b"P6" or int(parts[1]) < 1024 or int(parts[2]) < 768:
+if parts[0] != b"P6" or int(parts[1]) != 1280 or int(parts[2]) != 800:
     raise SystemExit("unexpected screendump format")
 
 pixels = data[i:]
@@ -83,20 +83,21 @@ text_rgb = (43, 47, 54)
 required = {
     "desktop": ((25, 28, 32), area // 7),
     "top bar": ((36, 39, 46), width * 16),
-    "window": ((247, 247, 245), area // 6),
+    "window": ((247, 247, 245), 75000),
+    "app surface": ((255, 255, 255), 180000),
     "title": ((231, 232, 234), 15000),
     "text": ((43, 47, 54), 1500),
     "accent": ((46, 167, 215), 1000),
-    "browser card": ((236, 239, 243), 20000),
+    "utility surface": ((236, 239, 243), 20000),
+    "terminal surface": ((19, 21, 24), 20000),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
-    "browser text": (80, 88, 680, 380, 600),
-    "terminal text": (76, 480, 620, 540, 500),
-    "system text": (660, 480, 1200, 540, 500),
+    "notepad text": (96, 120, 760, 360, 1200),
+    "utilities text": (880, 120, 1190, 320, 700),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0
@@ -108,6 +109,15 @@ for label, (x0, y0, x1, y1, minimum) in regions.items():
                 found += 1
     if found < minimum:
         raise SystemExit(f"{label} missing: {found} < {minimum}")
+terminal_found = 0
+for y in range(420, 620):
+    row = y * width * 3
+    for x in range(880, 1190):
+        offset = row + x * 3
+        if tuple(pixels[offset:offset + 3]) in ((255, 255, 255), (211, 211, 211)):
+            terminal_found += 1
+if terminal_found < 900:
+    raise SystemExit(f"terminal text missing: {terminal_found} < 900")
 print("PASS: desktop visual pixels present")
 PY
 

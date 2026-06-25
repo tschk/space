@@ -40,7 +40,9 @@ const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
 const COMP_WIN_DIRTY = 4
 const COMP_ROLE_TEXT = 0
-const COMP_ROLE_LINUX_APP = 1
+const COMP_ROLE_NOTEPAD = 1
+const COMP_ROLE_UTILITIES = 2
+const COMP_ROLE_TERMINAL = 3
 
 // --- compositor state -------------------------------------------------------
 var comp_windows: Int = 0    // array of window records
@@ -193,19 +195,19 @@ fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
   return
 }
 
-fn comp_tile_desktop(browser: Int, terminal: Int, system: Int) -> void {
+fn comp_tile_desktop(notepad: Int, terminal: Int, utilities: Int) -> void {
   let margin = 64
   let gap = 16
   let top_y = 56
   let usable_w = fb_width - margin * 2
   let usable_h = fb_height - top_y - margin
-  let browser_h = (usable_h * 56) / 100
-  let panel_y = top_y + browser_h + gap
-  let panel_h = usable_h - browser_h - gap
-  let panel_w = (usable_w - gap) / 2
-  comp_win_place(browser, margin, top_y, usable_w, browser_h)
-  comp_win_place(terminal, margin, panel_y, panel_w, panel_h)
-  comp_win_place(system, margin + panel_w + gap, panel_y, panel_w, panel_h)
+  let side_w = (usable_w * 30) / 100
+  let main_w = usable_w - side_w - gap
+  let utility_h = (usable_h * 48) / 100
+  let terminal_h = usable_h - utility_h - gap
+  comp_win_place(notepad, margin, top_y, main_w, usable_h)
+  comp_win_place(utilities, margin + main_w + gap, top_y, side_w, utility_h)
+  comp_win_place(terminal, margin + main_w + gap, top_y + utility_h + gap, side_w, terminal_h)
   return
 }
 
@@ -325,68 +327,52 @@ fn comp_draw_content_text(base: Int) -> void {
   return
 }
 
-fn comp_draw_browser_toolbar(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 16, content_y + 14, w - 32, 28, 0x00ECEFF3)
-  fb_fill_rect(x + 28, content_y + 22, 16, 12, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 56, content_y + 20, "HELIUM", COMP_COLOR_TEXT, 0x00ECEFF3)
-  return
-}
-
-fn comp_draw_linux_surface_header(base: Int) -> void {
-  comp_draw_browser_toolbar(base)
-  return
-}
-
-fn comp_draw_linux_surface_tabs(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 24, content_y + 58, w - 48, 36, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 40, content_y + 70, 96, 12, COMP_COLOR_ACCENT)
-  fb_fill_rect(x + 156, content_y + 70, 128, 12, 0x00C9CCD1)
-  fb_fill_rect(x + 304, content_y + 70, 88, 12, 0x00C9CCD1)
-  return
-}
-
-fn comp_draw_linux_surface_view(base: Int) -> void {
+fn comp_draw_notepad_content(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  let view_h = h - 132
-  if view_h < 120 {
-    return
-  }
-  fb_fill_rect(x + 24, content_y + 110, w - 48, view_h, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 56, content_y + 144, 220, 16, COMP_COLOR_ACCENT)
-  fb_fill_rect(x + 56, content_y + 184, w - 176, 12, 0x00C9CCD1)
-  fb_fill_rect(x + 56, content_y + 212, w - 256, 12, 0x00C9CCD1)
+  fb_fill_rect(x + 20, content_y + 18, w - 40, h - 44, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 20, content_y + 18, w - 40, 32, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 36, content_y + 30, 8, 8, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 60, content_y + 26, "SPACE NOTE", COMP_COLOR_TEXT, COMP_COLOR_SURFACE_ALT)
+  fb_draw_string_bg(x + 44, content_y + 78, "Windowing, files, and ELF bring-up notes", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 44, content_y + 112, "- compositor: direct framebuffer, tiled", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 44, content_y + 146, "- apps: notepad, utilities, terminal", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 44, content_y + 180, "- linux: minimal ELF loader next", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 44, content_y + h - 64, w - 88, 2, 0x00C9CCD1)
+  fb_draw_string_bg(x + 44, content_y + h - 46, "READY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   return
 }
 
-fn comp_draw_linux_surface_footer(base: Int) -> void {
+fn comp_draw_utilities_content(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x + 24, content_y + h - 44, w - 48, 24, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 40, content_y + h - 36, 8, 8, COMP_COLOR_ACCENT)
-  fb_fill_rect(x + 60, content_y + h - 36, w - 180, 8, 0x00C9CCD1)
+  fb_fill_rect(x + 16, content_y + 16, w - 32, h - 32, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 32, content_y + 34, "SYSTEM", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 32, content_y + 72, w - 64, 24, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 40, content_y + 80, w - 112, 8, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 32, content_y + 118, "FRAMEBUFFER 1280x800", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 32, content_y + 152, "WINDOWS TILED", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 32, content_y + 186, "CREPUS READY", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
-fn comp_draw_linux_app_content(base: Int) -> void {
-  comp_draw_linux_surface_header(base)
-  comp_draw_linux_surface_tabs(base)
-  comp_draw_linux_surface_view(base)
-  comp_draw_linux_surface_footer(base)
+fn comp_draw_terminal_content(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 16, content_y + 16, w - 32, h - 32, 0x00131518)
+  fb_draw_string_bg(x + 32, content_y + 34, "> linuxelf", FB_COLOR_WHITE, 0x00131518)
+  fb_draw_string_bg(x + 32, content_y + 68, "ENOEXEC", FB_COLOR_LIGHT_GRAY, 0x00131518)
+  fb_draw_string_bg(x + 32, content_y + 102, "> desktop", FB_COLOR_WHITE, 0x00131518)
+  fb_draw_string_bg(x + 32, content_y + 136, "compositor running", FB_COLOR_LIGHT_GRAY, 0x00131518)
   return
 }
 
@@ -428,8 +414,12 @@ fn comp_render_window(idx: Int) -> void {
 
   // Draw content text
   let role = load64(base + 40)
-  if role == COMP_ROLE_LINUX_APP {
-    comp_draw_linux_app_content(base)
+  if role == COMP_ROLE_NOTEPAD {
+    comp_draw_notepad_content(base)
+  } else if role == COMP_ROLE_UTILITIES {
+    comp_draw_utilities_content(base)
+  } else if role == COMP_ROLE_TERMINAL {
+    comp_draw_terminal_content(base)
   } else {
     comp_draw_content_text(base)
   }
@@ -510,8 +500,8 @@ fn comp_render_taskbar() -> void {
 fn comp_render_taskbar_text() -> void {
   let bar_y = 0
   fb_draw_string_bg(12, bar_y + 4, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width / 2 - 56, bar_y + 4, "DESKTOP", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 120, bar_y + 4, "HELIUM", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 64, bar_y + 4, "WORKSPACE", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 160, bar_y + 4, "NOTEPAD", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   return
 }
 
@@ -598,17 +588,17 @@ fn comp_run(port: Int) -> void {
   comp_bg_drawn = 0  // force initial background render
 
   // Create default windows
-  let win1_title = "TERMINAL"
-  let win1 = comp_win_create(win1_title, 64, 416, 320, 136)
-  let win3_title = "SYSTEM"
-  let win3 = comp_win_create(win3_title, 704, 416, 240, 136)
-  let win2_title = "HELIUM"
-  let win2 = comp_win_create(win2_title, 64, 56, 880, 328)
-  comp_win_set_role(win2, COMP_ROLE_LINUX_APP)
-  comp_win_set_content(win1, "> LINUXELF ENOEXEC")
-  comp_win_set_content(win3, "COMPOSITOR SURFACES READY")
-  comp_tile_desktop(win2, win1, win3)
-  comp_win_focus(win2)
+  let win1_title = "NOTEPAD"
+  let win1 = comp_win_create(win1_title, 64, 56, 720, 600)
+  let win2_title = "UTILITIES"
+  let win2 = comp_win_create(win2_title, 816, 56, 360, 280)
+  let win3_title = "TERMINAL"
+  let win3 = comp_win_create(win3_title, 816, 376, 360, 280)
+  comp_win_set_role(win1, COMP_ROLE_NOTEPAD)
+  comp_win_set_role(win2, COMP_ROLE_UTILITIES)
+  comp_win_set_role(win3, COMP_ROLE_TERMINAL)
+  comp_tile_desktop(win1, win3, win2)
+  comp_win_focus(win1)
 
   comp_running = 1
   let prev_left = 0
