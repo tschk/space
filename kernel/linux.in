@@ -91,6 +91,8 @@ const LINUX_STAT_OFF_BLOCKS = 64
 
 // S_IFREG = 0100644 (regular file, rw-r--r--)
 const LINUX_S_IFREG = 0x81A4
+const LINUX_ELF_MAGIC = 0x00010102464C457F
+const LINUX_ELF_LOAD_ADDR = 0x140000
 
 // --- personality state ------------------------------------------------------
 var linux_fd_table: Int = 0
@@ -484,11 +486,64 @@ fn linux_sys_fork() -> Int {
 
 const LINUX_EAGAIN = -11
 
+fn linux_load16(addr: Int) -> Int {
+  return load8(addr) | (load8(addr + 1) << 8)
+}
+
+fn linux_elf_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
+  if size < 120 {
+    return LINUX_ENOEXEC
+  }
+  if load64(image + 0) != LINUX_ELF_MAGIC {
+    return LINUX_ENOEXEC
+  }
+  if linux_load16(image + 16) != 2 {
+    return LINUX_ENOEXEC
+  }
+  if linux_load16(image + 18) != 0x3E {
+    return LINUX_ENOEXEC
+  }
+  let entry = load64(image + 24)
+  let phoff = load64(image + 32)
+  let phentsize = linux_load16(image + 54)
+  let phnum = linux_load16(image + 56)
+  if entry == 0 || phoff == 0 || phentsize < 56 || phnum == 0 {
+    return LINUX_ENOEXEC
+  }
+  let i = 0
+  while i < phnum {
+    let ph = image + phoff + i * phentsize
+    if ph + 56 > image + size {
+      return LINUX_ENOEXEC
+    }
+    if load32(ph + 0) == 1 {
+      let off = load64(ph + 8)
+      let vaddr = load64(ph + 16)
+      let filesz = load64(ph + 32)
+      let memsz = load64(ph + 40)
+      if off + filesz > size {
+        return LINUX_ENOEXEC
+      }
+      if entry >= vaddr && entry < vaddr + memsz {
+        serial_write_cstr(port, "linux: execve loading ELF from ")
+        serial_write_cstr(port, path)
+        serial_nl(port)
+        return invoke1(entry, 0)
+      }
+    }
+    i = i + 1
+  }
+  return LINUX_ENOEXEC
+}
+
 fn linux_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if size < 64 {
     return LINUX_ENOEXEC
   }
   let magic = load64(image + 0)
+  if magic == LINUX_ELF_MAGIC {
+    return linux_elf_exec_image(port, image, size, path)
+  }
   if magic != 0x5343490000000001 {
     return LINUX_ENOEXEC
   }
@@ -537,6 +592,13 @@ fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
 }
 
 fn linux_elf_probe(port: Int) -> void {
+  if load64(LINUX_ELF_LOAD_ADDR) == LINUX_ELF_MAGIC {
+    let rc2 = linux_exec_image(port, LINUX_ELF_LOAD_ADDR, 4096, "space-minimal-elf")
+    serial_write_cstr(port, "linux: ELF exec returned ")
+    serial_write_dec_wide(port, rc2)
+    serial_nl(port)
+    return
+  }
   let elf = alloc(64)
   let i = 0
   while i < 64 {

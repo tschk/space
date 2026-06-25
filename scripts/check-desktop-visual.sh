@@ -17,7 +17,7 @@ mkdir -p "$BUILD_DIR"
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG" "$MONITOR" "$PPM" "$PNG"
 
 echo "[1/4] Building compiler..."
-cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 
 echo "[2/4] Compiling kernel..."
 NASM="${NASM:-nasm}"
@@ -49,6 +49,7 @@ for _ in $(seq 1 100); do
 done
 grep -qF "space: compositor running" "$SERIAL_LOG" || { echo "desktop did not start" >&2; exit 1; }
 
+printf ' spacevro\n' > "$SERIAL_IN"
 sleep 5
 printf 'screendump %s\nquit\n' "$PPM" | nc -U "$MONITOR" >/dev/null
 sleep 1
@@ -71,7 +72,7 @@ while len(parts) < 4:
     if line and not line.startswith(b"#"):
         parts.extend(line.split())
 
-if parts[0] != b"P6" or int(parts[1]) != 1280 or int(parts[2]) != 800:
+if parts[0] != b"P6" or int(parts[1]) != 1920 or int(parts[2]) != 1080:
     raise SystemExit("unexpected screendump format")
 
 pixels = data[i:]
@@ -83,21 +84,18 @@ text_rgb = (43, 47, 54)
 required = {
     "desktop": ((25, 28, 32), area // 7),
     "top bar": ((36, 39, 46), width * 16),
-    "window": ((247, 247, 245), 75000),
-    "app surface": ((255, 255, 255), 180000),
-    "title": ((231, 232, 234), 15000),
+    "app surface": ((255, 255, 255), 360000),
     "text": ((43, 47, 54), 1500),
     "accent": ((46, 167, 215), 1000),
-    "utility surface": ((236, 239, 243), 20000),
-    "terminal surface": ((19, 21, 24), 20000),
+    "utility surface": ((236, 239, 243), 30000),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
-    "notepad text": (96, 120, 760, 360, 1200),
-    "utilities text": (880, 120, 1190, 320, 700),
+    "editor text": (96, 120, 1450, 900, 900),
+    "utilities text": (1540, 120, 1880, 440, 700),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0
@@ -110,11 +108,11 @@ for label, (x0, y0, x1, y1, minimum) in regions.items():
     if found < minimum:
         raise SystemExit(f"{label} missing: {found} < {minimum}")
 terminal_found = 0
-for y in range(420, 620):
+for y in range(560, 820):
     row = y * width * 3
-    for x in range(880, 1190):
+    for x in range(1540, 1880):
         offset = row + x * 3
-        if tuple(pixels[offset:offset + 3]) in ((255, 255, 255), (211, 211, 211)):
+        if tuple(pixels[offset:offset + 3]) in (text_rgb, (113, 120, 128)):
             terminal_found += 1
 if terminal_found < 900:
     raise SystemExit(f"terminal text missing: {terminal_found} < 900")

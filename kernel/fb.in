@@ -235,7 +235,7 @@ fn fb_enable_vga_pci() -> void {
 }
 
 // Initialize the framebuffer using Bochs VBE I/O ports.
-// Sets a 1280x800x32 graphics mode with linear framebuffer.
+// Sets a 1920x1080x32 graphics mode with linear framebuffer.
 // Falls back to multiboot VBE info if I/O ports don't respond.
 // Returns 0 on success, -1 if VBE is unavailable.
 fn fb_init(mb_info: Int) -> Int {
@@ -278,8 +278,8 @@ fn fb_init(mb_info: Int) -> Int {
   vbe_write(0x04, 0x00)
 
   // Set X resolution, Y resolution, and BPP.
-  let target_w = 1280
-  let target_h = 800
+  let target_w = 1920
+  let target_h = 1080
   let target_bpp = 32
   vbe_write(0x01, target_w)
   vbe_write(0x02, target_h)

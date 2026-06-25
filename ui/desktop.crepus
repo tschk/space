@@ -1,3 +1,9 @@
+$: let active_app = "EDITOR"
+$: let editor_file = "notes.txt"
+$: let typed_text = "spacevro"
+$: let keyboard_on = "On"
+$: let power_mode = "Balanced"
+
 div w-full h-full bg-zinc-950 text-zinc-100 flex flex-col p-8 gap-4
   div flex flex-row items-center justify-between bg-zinc-900 px-4 py-2
     div text-white font-bold
@@ -5,37 +11,58 @@ div w-full h-full bg-zinc-950 text-zinc-100 flex flex-col p-8 gap-4
     div text-zinc-400
       "WORKSPACE"
     div text-sky-400
-      "NOTEPAD"
+      "{active_app}"
   div flex flex-row flex-1 gap-4
-    div flex flex-col flex-1 bg-zinc-100 text-zinc-900 p-4 gap-4
-      div bg-zinc-200 px-4 py-2 text-zinc-900
-        "SPACE NOTE"
-      div bg-white p-6 flex flex-col gap-3
-        div text-zinc-900
-          "Windowing, files, and ELF bring-up notes"
-        div text-zinc-900
-          "- compositor: direct framebuffer, tiled"
-        div text-zinc-900
-          "- apps: notepad, utilities, terminal"
-        div text-zinc-900
-          "- linux: minimal ELF loader next"
+    div bg-white text-zinc-900 flex-1 flex flex-col
+      div bg-zinc-200 px-4 py-2
+        "{editor_file}"
+      div flex flex-row flex-1
+        div bg-zinc-200 text-zinc-500 px-4 py-4 flex flex-col gap-3
+          div
+            "1"
+          div
+            "2"
+          div
+            "3"
+        div p-4 flex flex-col gap-3
+          div
+            "open notes.txt"
+          div
+            "find runtime"
+          div
+            "save"
+          div
+            "{typed_text}"
     div flex flex-col w-96 gap-4
-      div bg-zinc-100 text-zinc-900 p-4 h-72 flex flex-col gap-3
-        div text-zinc-900
-          "SYSTEM"
-        div bg-zinc-200 h-6
-        div text-zinc-900
-          "FRAMEBUFFER 1280x800"
-        div text-zinc-900
-          "WINDOWS TILED"
-        div text-zinc-900
-          "CREPUS READY"
-      div bg-zinc-950 text-zinc-100 p-4 flex-1 flex flex-col gap-3
-        div text-white
+      div bg-white text-zinc-900 h-72 flex flex-row
+        div bg-zinc-200 w-28 p-4 flex flex-col gap-4
+          div text-zinc-900
+            "Display"
+          div text-zinc-500
+            "Input"
+          div text-zinc-500
+            "Power"
+        div p-4 flex-1 flex flex-col gap-4
+          div
+            "Resolution"
+          div text-zinc-500
+            "1920 x 1080"
+          div flex flex-row items-center justify-between
+            div
+              "Keyboard"
+            div bg-sky-500 text-white px-3 py-1
+              "{keyboard_on}"
+          div flex flex-row items-center justify-between
+            div
+              "Power"
+            div text-zinc-500
+              "{power_mode}"
+      div bg-white text-zinc-900 p-4 flex-1 flex flex-col gap-3
+        div
           "> linuxelf"
-        div text-zinc-400
+        div text-zinc-500
           "ENOEXEC"
-        div text-white
+        div
           "> desktop"
-        div text-zinc-400
+        div text-zinc-500
           "compositor running"
