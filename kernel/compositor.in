@@ -44,6 +44,10 @@ const COMP_ROLE_UTILITIES = 2
 const COMP_ROLE_TERMINAL = 3
 const COMP_ROLE_VRO = 4
 const COMP_VRO_BUF_SIZE = 512
+const COMP_MIN_WIN_W = 280
+const COMP_MIN_WIN_H = 180
+const COMP_MIN_EDITOR_W = 640
+const COMP_MIN_SIDE_W = 344
 
 // --- compositor state -------------------------------------------------------
 var comp_windows: Int = 0    // array of window records
@@ -113,6 +117,14 @@ fn comp_vro_backspace() -> void {
   return
 }
 
+fn comp_vro_save() -> Int {
+  let rc = fs_write_file("notes.txt", comp_vro_buf, comp_vro_len)
+  if rc == 0 {
+    comp_vro_dirty = 0
+  }
+  return rc
+}
+
 fn comp_vro_seed(src: Int) -> void {
   comp_vro_len = 0
   let i = 0
@@ -131,26 +143,11 @@ fn comp_vro_seed(src: Int) -> void {
   return
 }
 
-fn comp_vro_render_line(x: Int, y: Int, line_no: Int, start: Int, len: Int) -> void {
-  let i = 0
-  while i < 95 && i < len {
-    store8(comp_vro_line_buf + i, load8(start + i))
-    i = i + 1
+fn comp_min(a: Int, b: Int) -> Int {
+  if a < b {
+    return a
   }
-  store8(comp_vro_line_buf + i, 0)
-  if line_no == 1 {
-    fb_draw_string_bg(x + 26, y, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  } else if line_no == 2 {
-    fb_draw_string_bg(x + 26, y, "2", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  } else if line_no == 3 {
-    fb_draw_string_bg(x + 26, y, "3", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  } else if line_no == 4 {
-    fb_draw_string_bg(x + 26, y, "4", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  } else if line_no == 5 {
-    fb_draw_string_bg(x + 26, y, "5", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  }
-  fb_draw_string_bg(x + 68, y, comp_vro_line_buf, COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  return
+  return b
 }
 
 // Clear a window slot.
@@ -268,6 +265,12 @@ fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
   if idx < 0 || idx >= comp_count {
     return
   }
+  if w < COMP_MIN_WIN_W {
+    w = COMP_MIN_WIN_W
+  }
+  if h < COMP_MIN_WIN_H {
+    h = COMP_MIN_WIN_H
+  }
   let base = comp_win_base(idx)
   store32(base + 4, x)
   store32(base + 8, y)
@@ -284,8 +287,11 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
   let top_y = 48
   let usable_w = fb_width - margin * 2
   let usable_h = fb_height - top_y - margin
-  let side_w = 344
+  let side_w = COMP_MIN_SIDE_W
   let main_w = usable_w - side_w - gap
+  if main_w < COMP_MIN_EDITOR_W {
+    main_w = COMP_MIN_EDITOR_W
+  }
   let utility_h = (usable_h - gap) / 2
   let terminal_h = usable_h - utility_h - gap
   comp_win_place(editor, margin, top_y, main_w, usable_h)
@@ -418,9 +424,25 @@ fn comp_draw_vro_content(base: Int) -> void {
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   fb_fill_rect(x + 16, content_y + 24, 36, h - 72, COMP_COLOR_SURFACE_ALT)
+  let max_chars = comp_min((w - 112) / 16, 95)
+  let start_idx = 0
+  if comp_vro_len > max_chars {
+    start_idx = comp_vro_len - max_chars
+  }
+  let visible_len = comp_vro_len - start_idx
   fb_draw_string_bg(x + 26, content_y + 76, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 68, content_y + 76, comp_vro_buf, COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  let cursor_x = x + 68 + comp_vro_len * 16
+  let vi = 0
+  while vi < visible_len {
+    let ch = load8(comp_vro_buf + start_idx + vi)
+    if ch == 10 {
+      ch = 32
+    }
+    let tx = x + 68 + vi * 16
+    fb_fill_rect(tx, content_y + 76, 16, 16, COMP_COLOR_SURFACE)
+    fb_draw_char(tx, content_y + 76, ch, COMP_COLOR_TEXT)
+    vi = vi + 1
+  }
+  let cursor_x = x + 68 + visible_len * 16
   if cursor_x < x + w - 28 {
     fb_fill_rect(cursor_x, content_y + 74, 2, 20, COMP_COLOR_ACCENT)
   }
@@ -443,19 +465,21 @@ fn comp_draw_utilities_content(base: Int) -> void {
   fb_fill_rect(x + 18, content_y + 42, 84, 6, COMP_COLOR_ACCENT)
   fb_draw_string_bg(x + 18, content_y + 64, "Display", COMP_COLOR_TEXT, COMP_COLOR_SURFACE_ALT)
   fb_draw_string_bg(x + 18, content_y + 104, "Input", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 18, content_y + 144, "Power", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
+  fb_draw_string_bg(x + 18, content_y + 144, "Files", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
   fb_draw_string_bg(x + 128, content_y + 44, "Resolution", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   if fb_width >= 1920 {
     fb_draw_string_bg(x + 128, content_y + 76, "1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   } else {
     fb_draw_string_bg(x + 128, content_y + 76, "1280 x 800", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   }
-  fb_draw_string_bg(x + 128, content_y + 126, "Keyboard", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + w - 70, content_y + 124, 42, 20, COMP_COLOR_ACCENT)
-  fb_fill_rect(x + w - 42, content_y + 128, 12, 12, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 128, content_y + 176, "Power", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + w - 70, content_y + 174, 42, 20, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + w - 66, content_y + 178, 12, 12, COMP_COLOR_MUTED)
+  fb_draw_string_bg(x + 128, content_y + 120, "Scale", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 220, content_y + 126, w - 250, 6, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 220, content_y + 126, ((w - 250) * 2) / 3, 6, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 128, content_y + 172, "Pointer", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 220, content_y + 178, w - 250, 6, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 220, content_y + 178, (w - 250) / 2, 6, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 128, content_y + 218, "Input serial", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 128, content_y + 252, "Files ramfs", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
@@ -556,7 +580,7 @@ fn comp_render() -> void {
 
 // Draw the taskbar at the bottom of the screen.
 fn comp_render_taskbar() -> void {
-  let bar_h = 24
+  let bar_h = 28
   let bar_y = 0
   fb_fill_rect(0, bar_y, fb_width, bar_h, COMP_COLOR_PANEL)
   // Top line of taskbar (lighter)
@@ -572,9 +596,9 @@ fn comp_render_taskbar() -> void {
 
 fn comp_render_taskbar_text() -> void {
   let bar_y = 0
-  fb_draw_string_bg(12, bar_y + 4, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width / 2 - 64, bar_y + 4, "WORKSPACE", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 136, bar_y + 4, "EDITOR", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(12, bar_y + 7, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 64, bar_y + 7, "WORKSPACE", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 136, bar_y + 7, "EDITOR", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   return
 }
 
@@ -636,12 +660,21 @@ fn comp_handle_drag(mx: Int, my: Int) -> void {
 }
 
 // Handle a keyboard event (key press). Returns 1 to exit compositor.
-fn comp_handle_key(key: Int) -> Int {
+fn comp_handle_key(port: Int, key: Int) -> Int {
   // Escape key (27) exits the compositor
   if key == 27 {
     return 1
   }
-  if key == 8 || key == 127 {
+  if key == 19 {
+    let rc = comp_vro_save()
+    serial_write_cstr(port, "space: VRO save notes.txt ")
+    if rc == 0 {
+      serial_write_cstr(port, "ok")
+    } else {
+      serial_write_cstr(port, "failed")
+    }
+    serial_nl(port)
+  } else if key == 8 || key == 127 {
     comp_vro_backspace()
   } else if key == 13 {
     comp_vro_append(10)
@@ -715,14 +748,14 @@ fn comp_run(port: Int) -> void {
     if usb_kbd_ready() != 0 {
       let key = usb_kbd_getchar()
       if key >= 0 {
-        if comp_handle_key(key) != 0 {
+        if comp_handle_key(port, key) != 0 {
           comp_running = 0
         }
       }
     }
     if serial_has_byte(com1()) != 0 {
       let key = inb(com1())
-      if comp_handle_key(key) != 0 {
+      if comp_handle_key(port, key) != 0 {
         comp_running = 0
       }
     }

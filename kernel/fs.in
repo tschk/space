@@ -33,6 +33,7 @@ var fs_table: Int = 0         // in-memory copy of the file table (2048 bytes)
 var fs_total_sectors: Int = 0
 var fs_next_sector: Int = 0   // next free data sector for allocation
 var fs_initialized: Int = 0
+var fs_disk_ready: Int = 0
 
 // --- NVMe sector wrappers ---------------------------------------------------
 // The filesystem operates on 512-byte sectors. nvme_read/nvme_write handle
@@ -226,8 +227,10 @@ fn fs_init() -> void {
   }
   // Try reading the superblock from sector 0
   let sbuf = alloc(512)
+  fs_disk_ready = 0
   let rc = ata_read_sector(0, sbuf)
   if rc == 0 {
+    fs_disk_ready = 1
     let magic = load32(sbuf + 0)
     if magic == FS_MAGIC {
       fs_total_sectors = load32(sbuf + 8)
@@ -313,6 +316,15 @@ fn fs_read_file(name: Int, buf: Int) -> Int {
   let entry = fs_entry(idx)
   let start = load32(entry + 16)
   let size = load32(entry + 20)
+  if fs_disk_ready == 0 {
+    let src = start
+    let m = 0
+    while m < size {
+      store8(buf + m, load8(src + m))
+      m = m + 1
+    }
+    return size
+  }
   let sectors = (size + 511) / 512
   let sbuf = alloc(512)
   let s = 0
@@ -350,6 +362,20 @@ fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
     return -1
   }
   let entry = fs_entry(idx)
+  if fs_disk_ready == 0 {
+    let mem = alloc(size + 1)
+    let m = 0
+    while m < size {
+      store8(mem + m, load8(buf + m))
+      m = m + 1
+    }
+    store8(mem + size, 0)
+    fs_str_copy(entry, name, 15)
+    store32(entry + 16, mem)
+    store32(entry + 20, size)
+    store32(entry + 24, FS_FLAG_USED)
+    return 0
+  }
   let sectors = (size + 511) / 512
   let start = fs_next_sector
   // Write data sectors to disk

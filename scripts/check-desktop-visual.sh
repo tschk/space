@@ -49,10 +49,24 @@ for _ in $(seq 1 100); do
 done
 grep -qF "space: compositor running" "$SERIAL_LOG" || { echo "desktop did not start" >&2; exit 1; }
 
-printf ' spacevro\n' > "$SERIAL_IN"
+printf ' spacevro\023' > "$SERIAL_IN"
 sleep 5
-printf 'screendump %s\nquit\n' "$PPM" | nc -U "$MONITOR" >/dev/null
+printf 'screendump %s\n' "$PPM" | nc -U "$MONITOR" >/dev/null
 sleep 1
+printf '\033' > "$SERIAL_IN"
+for _ in $(seq 1 100); do
+  grep -qF "space: compositor exited" "$SERIAL_LOG" 2>/dev/null && break
+  sleep 0.1
+done
+grep -qF "space: compositor exited" "$SERIAL_LOG" || { echo "desktop did not exit" >&2; exit 1; }
+printf 'read notes.txt\nhalt\n' > "$SERIAL_IN"
+for _ in $(seq 1 100); do
+  grep -qF "open notes.txt find runtime save spacevro" "$SERIAL_LOG" 2>/dev/null && break
+  sleep 0.1
+done
+grep -qF "space: VRO save notes.txt ok" "$SERIAL_LOG" || { echo "vro save failed" >&2; exit 1; }
+grep -qF "open notes.txt find runtime save spacevro" "$SERIAL_LOG" || { echo "saved VRO buffer missing" >&2; exit 1; }
+printf 'quit\n' | nc -U "$MONITOR" >/dev/null
 kill "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
 
