@@ -473,11 +473,11 @@ fn comp_draw_utilities_content(base: Int) -> void {
     fb_draw_string_bg(x + 128, content_y + 76, "1280 x 800", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   }
   fb_draw_string_bg(x + 128, content_y + 120, "Scale", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 220, content_y + 126, w - 250, 6, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 220, content_y + 126, ((w - 250) * 2) / 3, 6, COMP_COLOR_ACCENT)
+  fb_fill_rect(x + 220, content_y + 126, 96, 6, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 220, content_y + 126, 64, 6, COMP_COLOR_ACCENT)
   fb_draw_string_bg(x + 128, content_y + 172, "Pointer", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 220, content_y + 178, w - 250, 6, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 220, content_y + 178, (w - 250) / 2, 6, COMP_COLOR_ACCENT)
+  fb_fill_rect(x + 220, content_y + 178, 96, 6, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 220, content_y + 178, 48, 6, COMP_COLOR_ACCENT)
   fb_draw_string_bg(x + 128, content_y + 218, "Input serial", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   fb_draw_string_bg(x + 128, content_y + 252, "Files ramfs", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
