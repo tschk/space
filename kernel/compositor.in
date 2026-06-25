@@ -282,6 +282,89 @@ fn comp_draw_content_text(base: Int) -> void {
   return
 }
 
+fn comp_draw_browser_toolbar(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 16, content_y + 14, w - 32, 28, 0x00ECEFF3)
+  fb_fill_rect(x + 28, content_y + 22, 16, 12, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 56, content_y + 20, "HELIUM", COMP_COLOR_TEXT, 0x00ECEFF3)
+  return
+}
+
+fn comp_draw_browser_hero(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 24, content_y + 70, w - 48, 112, 0x00FFFFFF)
+  return
+}
+
+fn comp_draw_browser_rule1(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 48, content_y + 96, 220, 12, COMP_COLOR_ACCENT)
+  return
+}
+
+fn comp_draw_browser_rule2(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 48, content_y + 124, 360, 10, 0x00C9CCD1)
+  return
+}
+
+fn comp_draw_browser_rule3(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 48, content_y + 146, 280, 10, 0x00C9CCD1)
+  return
+}
+
+fn comp_draw_browser_card1(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 24, content_y + 206, 180, 96, 0x00ECEFF3)
+  fb_draw_string_bg(x + 48, content_y + 224, "PRIVACY", COMP_COLOR_TEXT, 0x00ECEFF3)
+  return
+}
+
+fn comp_draw_browser_card2(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 224, content_y + 206, 180, 96, 0x00ECEFF3)
+  fb_draw_string_bg(x + 248, content_y + 224, "LINUX", COMP_COLOR_TEXT, 0x00ECEFF3)
+  return
+}
+
+fn comp_draw_browser_card3(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + 424, content_y + 206, 180, 96, 0x00ECEFF3)
+  fb_draw_string_bg(x + 448, content_y + 224, "SPACE", COMP_COLOR_TEXT, 0x00ECEFF3)
+  return
+}
+
+fn comp_draw_browser_content(base: Int) -> void {
+  comp_draw_browser_toolbar(base)
+  comp_draw_browser_hero(base)
+  comp_draw_browser_rule1(base)
+  comp_draw_browser_rule2(base)
+  comp_draw_browser_rule3(base)
+  comp_draw_browser_card1(base)
+  comp_draw_browser_card2(base)
+  comp_draw_browser_card3(base)
+  return
+}
+
 // Draw a single window.
 fn comp_render_window(idx: Int) -> void {
   let base = comp_win_base(idx)
@@ -319,7 +402,11 @@ fn comp_render_window(idx: Int) -> void {
   comp_draw_content_bg(base)
 
   // Draw content text
-  comp_draw_content_text(base)
+  if idx == 2 {
+    comp_draw_browser_content(base)
+  } else {
+    comp_draw_content_text(base)
+  }
 
   // Clear dirty flag
   let flags2 = load32(base + 20)
@@ -389,12 +476,21 @@ fn comp_render_taskbar() -> void {
     store32(fb_addr + bar_y * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
     tx2 = tx2 + 1
   }
-  // Draw "Space OS" label
+  comp_render_taskbar_text()
+  comp_render_taskbar_dot()
+  return
+}
+
+fn comp_render_taskbar_text() -> void {
+  let bar_y = 0
   fb_draw_string_bg(12, bar_y + 4, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  // Draw mouse coordinates label
   fb_draw_string_bg(fb_width / 2 - 56, bar_y + 4, "DESKTOP", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   fb_draw_string_bg(fb_width - 120, bar_y + 4, "HELIUM", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  // Draw a colored dot for mouse button state
+  return
+}
+
+fn comp_render_taskbar_dot() -> void {
+  let bar_y = 0
   if mouse_left_pressed() != 0 {
     fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_GREEN)
   } else {
@@ -476,16 +572,15 @@ fn comp_run(port: Int) -> void {
   comp_bg_drawn = 0  // force initial background render
 
   // Create default windows
-  let win2_title = "FILE BROWSER"
-  let win2 = comp_win_create(win2_title, 496, 56, 320, 192)
-  let win3_title = "SYSTEM INFO"
-  let win3 = comp_win_create(win3_title, 496, 280, 320, 144)
   let win1_title = "TERMINAL"
-  let win1 = comp_win_create(win1_title, 48, 56, 416, 192)
-  comp_win_set_content(win1, "> HELP\n> STATUS\n> LINUX\n> LINUXELF")
-  comp_win_set_content(win2, "FILES\nNO FILES YET\nFORMAT\nWRITE")
-  comp_win_set_content(win3, "SPACE\nLINUX\nFB ACTIVE")
-  comp_win_focus(win3)
+  let win1 = comp_win_create(win1_title, 64, 416, 320, 136)
+  let win3_title = "SYSTEM"
+  let win3 = comp_win_create(win3_title, 704, 416, 240, 136)
+  let win2_title = "HELIUM"
+  let win2 = comp_win_create(win2_title, 64, 56, 880, 328)
+  comp_win_set_content(win1, "> LINUXELF\nENOEXEC")
+  comp_win_set_content(win3, "FB ACTIVE\nELF PROBE")
+  comp_win_focus(win2)
 
   comp_running = 1
   let prev_left = 0

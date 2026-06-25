@@ -71,29 +71,32 @@ while len(parts) < 4:
     if line and not line.startswith(b"#"):
         parts.extend(line.split())
 
-if parts[0] != b"P6" or int(parts[1]) != 1024 or int(parts[2]) != 768:
+if parts[0] != b"P6" or int(parts[1]) < 1024 or int(parts[2]) < 768:
     raise SystemExit("unexpected screendump format")
 
 pixels = data[i:]
 counts = Counter(tuple(pixels[n:n + 3]) for n in range(0, len(pixels), 3))
 width = int(parts[1])
+height = int(parts[2])
+area = width * height
 text_rgb = (43, 47, 54)
 required = {
-    "desktop": ((25, 28, 32), 400000),
-    "top bar": ((36, 39, 46), 20000),
-    "window": ((247, 247, 245), 150000),
+    "desktop": ((25, 28, 32), area // 4),
+    "top bar": ((36, 39, 46), width * 16),
+    "window": ((247, 247, 245), area // 6),
     "title": ((231, 232, 234), 15000),
-    "text": ((43, 47, 54), 5000),
+    "text": ((43, 47, 54), 1500),
     "accent": ((46, 167, 215), 1000),
+    "browser card": ((236, 239, 243), 20000),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
-    "terminal text": (60, 92, 430, 210, 800),
-    "file browser text": (508, 92, 780, 190, 1000),
-    "system text": (508, 316, 780, 390, 1000),
+    "browser text": (80, 88, 680, 380, 600),
+    "terminal text": (76, 444, 360, 520, 500),
+    "system text": (716, 444, 920, 520, 500),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0
