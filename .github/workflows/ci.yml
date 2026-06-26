@@ -7,9 +7,11 @@ on:
 
 jobs:
   ci:
-    uses: tschk/ci-recipes/.github/workflows/space-ci.yml@master
+    uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
-      inauguration-ref: master
-      qemu-test: true
-      sci-check: true
-      run-network-test: false
+      build-command: |
+        mkdir -p target
+        in build --path kernel/kernel-root.in --module-id SpaceKernel --verbose
+      test-command: |
+        bash scripts/check-qemu-boot.sh
+      install-deps: "qemu-system-x86-64 nasm clang"
