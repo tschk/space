@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  ci:
+    uses: tschk/ci-recipes/.github/workflows/space-ci.yml@master
+    with:
+      inauguration-ref: master
+      qemu-test: true
+      sci-check: true
+      run-network-test: false
