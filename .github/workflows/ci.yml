@@ -9,11 +9,12 @@ jobs:
   ci:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
-      install-deps: "nasm"
+      install-deps: "nasm qemu-system-x86-64"
       build-command: |
         mkdir -p /tmp/space-boot
-        nasm -f bin boot/multiboot.asm -o /tmp/space-boot/trampoline.bin
+        command nasm -f bin boot/multiboot.asm -o /tmp/space-boot/trampoline.bin
         command in compile --path kernel/kernel-root.in --entry kernel_entry --emit boot \
           --trampoline /tmp/space-boot/trampoline.bin \
           --target native --target-triple x86_64-unknown-none --linkage static-lib \
           --out /tmp/space-boot/kernel.bin
+      test-command: "bash scripts/check-qemu-boot.sh"
