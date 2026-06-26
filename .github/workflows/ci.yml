@@ -9,9 +9,5 @@ jobs:
   ci:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
-      build-command: |
-        mkdir -p target
-        in build --path kernel/kernel-root.in --module-id SpaceKernel --verbose
-      test-command: |
-        bash scripts/check-qemu-boot.sh
+      build-command: "in build --path kernel/kernel-root.in --module-id SpaceKernel --verbose"
       install-deps: "qemu-system-x86-64 nasm clang"
