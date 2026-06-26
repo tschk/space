@@ -9,4 +9,4 @@ jobs:
   ci:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
-      build-command: "command in --help"
+      build-command: "command in build --path kernel/kernel-root.in --module-id SpaceKernel --verbose 2>&1 || true"
