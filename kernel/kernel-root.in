@@ -1018,8 +1018,10 @@ fn run_preemptive(port: Int) -> void {
   store64(ptasks + 0, 0)
   let sa = alloc(16384)
   let sb = alloc(16384)
-  store64(ptasks + 8, build_preempt_task(preempt_worker_a, sa + 16384))
-  store64(ptasks + 16, build_preempt_task(preempt_worker_b, sb + 16384))
+  let ctx_a = build_preempt_task(preempt_worker_a, sa + 16384)
+  let ctx_b = build_preempt_task(preempt_worker_b, sb + 16384)
+  store64(ptasks + 8, ctx_a)
+  store64(ptasks + 16, ctx_b)
   preempt_deadline = ticks + 10
   cli()
   store64(0x4028, schedule_tick)
