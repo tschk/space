@@ -79,6 +79,7 @@ fn comp_init() -> void {
   comp_focused = -1
   comp_dragging = -1
   comp_running = 0
+  comp_cur_drawn = 0
   comp_vro_init()
   return
 }
@@ -288,8 +289,10 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
   let margin = 48
   let gap = 12
   let top_y = 48
+  // ponytail: subtract taskbar to prevent window overlap
+  let bar_pad = COMP_TASKBAR_H + 12
   let usable_w = fb_width - margin * 2
-  let usable_h = fb_height - top_y - margin
+  let usable_h = fb_height - top_y - margin - bar_pad
   let side_w = COMP_MIN_SIDE_W
   let main_w = usable_w - side_w - gap
   if main_w < COMP_MIN_EDITOR_W {
@@ -545,10 +548,7 @@ fn comp_render_window(idx: Int) -> void {
   // Draw title bar
   comp_draw_titlebar(base)
 
-  // Draw content background
-  comp_draw_content_bg(base)
-
-  // Draw content text
+  // Draw content (role-specific drawers handle their own backgrounds)
   let role = load64(base + 40)
   if role == COMP_ROLE_UTILITIES {
     comp_draw_utilities_content(base)
@@ -557,6 +557,7 @@ fn comp_render_window(idx: Int) -> void {
   } else if role == COMP_ROLE_VRO {
     comp_draw_vro_content(base)
   } else {
+    comp_draw_content_bg(base)
     comp_draw_content_text(base)
   }
 
@@ -567,53 +568,89 @@ fn comp_render_window(idx: Int) -> void {
 }
 
 var comp_bg_drawn: Int = 0  // 1 after first background render
-var comp_prev_cx: Int = 0   // previous cursor x for trail removal
+var comp_prev_cx: Int = 0   // previous cursor x for restoration
 var comp_prev_cy: Int = 0   // previous cursor y
+var comp_cur_back: Int = 0  // 24x24 pixel save buffer for cursor restore
+var comp_cur_drawn: Int = 0 // 1 if cursor was drawn last frame
 
-// Clear old cursor position (restore background).
-fn comp_clear_cursor() -> void {
+// Save pixels behind cursor before drawing.
+fn comp_cur_save() -> void {
+  if comp_cur_back == 0 {
+    comp_cur_back = alloc(24 * 24 * 4)
+  }
+  let x = mouse_x - 2
+  let y = mouse_y - 2
+  let j = 0
+  while j < 24 {
+    let py = y + j
+    let i = 0
+    while i < 24 {
+      let px = x + i
+      let pix = COMP_COLOR_DESKTOP
+      if px >= 0 && px < fb_width && py >= 0 && py < fb_height {
+        pix = load32(fb_addr + py * fb_pitch + px * 4)
+      }
+      store32(comp_cur_back + j * 24 * 4 + i * 4, pix)
+      i = i + 1
+    }
+    j = j + 1
+  }
+  comp_prev_cx = x
+  comp_prev_cy = y
+  return
+}
+
+// Restore pixels behind old cursor (erases cursor cleanly).
+fn comp_cur_restore() -> void {
+  if comp_cur_drawn == 0 || comp_cur_back == 0 {
+    return
+  }
   let x = comp_prev_cx
   let y = comp_prev_cy
-  let cs = 18
-  // Redraw background over old cursor area
-  fb_fill_rect(x - 2, y - 2, cs, cs + 4, COMP_COLOR_DESKTOP)
-  let i = 0
-  while i < comp_count {
-    let base = comp_win_base(i)
-    let flags = load32(base + 20)
-    store32(base + 20, flags | COMP_WIN_DIRTY)
-    i = i + 1
+  let j = 0
+  while j < 24 {
+    let py = y + j
+    if py >= 0 && py < fb_height {
+      let i = 0
+      while i < 24 {
+        let px = x + i
+        if px >= 0 && px < fb_width {
+          let pix = load32(comp_cur_back + j * 24 * 4 + i * 4)
+          store32(fb_addr + py * fb_pitch + px * 4, pix)
+        }
+        i = i + 1
+      }
+    }
+    j = j + 1
   }
   return
 }
 
-// Render the desktop: background once, dirty windows, always redraw cursor.
-// Skips full-screen clear to avoid flashing.
+// Render the desktop: background once, dirty windows, taskbar always, cursor.
+// Uses save/restore backbuffer for cursor to avoid flickering garbage.
 fn comp_render() -> void {
   if comp_bg_drawn == 0 {
     comp_render_background()
-    comp_render_taskbar()
     comp_bg_drawn = 1
   }
-  // Clear old cursor position before redrawing
-  comp_clear_cursor()
+  // Erase old cursor by restoring saved pixels (no background hole)
+  comp_cur_restore()
+  // Draw dirty windows
   let i = 0
   while i < comp_count {
     let base = comp_win_base(i)
     let flags = load32(base + 20)
     if (flags & COMP_WIN_DIRTY) != 0 {
       comp_render_window(i)
-      // taskbar covers bottom area, redraw it after window changes
-      if i == comp_count - 1 {
-        comp_render_taskbar()
-      }
     }
     i = i + 1
   }
-  // Redraw cursor every frame (follows mouse) at new position
-  comp_prev_cx = mouse_x
-  comp_prev_cy = mouse_y
+  // Always redraw taskbar (covers bottom of screen)
+  comp_render_taskbar()
+  // Save area behind new cursor position, then draw cursor
+  comp_cur_save()
   comp_render_cursor()
+  comp_cur_drawn = 1
   return
 }
 
@@ -801,7 +838,7 @@ fn comp_run(port: Int) -> void {
     // Render the desktop
     comp_render()
 
-    // Small delay to avoid burning CPU (use hlt with interrupts enabled)
+    // ponytail: pause briefly to avoid burning CPU. hlt wakes on interrupt.
     sti()
     hlt()
   }
