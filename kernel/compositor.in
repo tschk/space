@@ -56,7 +56,8 @@ const COMP_MIN_SIDE_W = 520
 var comp_windows: Int = 0    // array of window records
 var comp_count: Int = 0      // number of windows
 var comp_focused: Int = 0    // index of focused window
-var comp_dragging: Int = 0   // index of window being dragged (-1 = none)
+// Track drag mode: 1 = move (title bar), 2 = resize (bottom-right corner)
+var comp_drag_mode: Int = 0   // index of window being dragged (-1 = none)
 var comp_drag_off_x: Int = 0 // drag offset from window origin to mouse
 var comp_drag_off_y: Int = 0
 var comp_running: Int = 0    // 1 when compositor loop is active
@@ -77,6 +78,7 @@ fn comp_init() -> void {
   }
   comp_count = 0
   comp_focused = -1
+  comp_drag_mode = -1
   comp_dragging = -1
   comp_running = 0
   comp_cur_drawn = 0
@@ -801,9 +803,38 @@ fn comp_render_taskbar_text() -> void {
   let bar_y = fb_height - COMP_TASKBAR_H
   let ty = bar_y + (COMP_TASKBAR_H - fb_font_scale * 8) / 2
   fb_draw_string_bg(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width / 2 - 80, ty, "WORKSPACE", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 160, ty, "EDITOR", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  // Draw window titles as clickable buttons
+  let btn_x = fb_width / 2 - 80
+  let i2 = 0
+  while i2 < comp_count {
+    let base = comp_win_base(i2)
+    let title = load64(base + 24)
+    if title != 0 {
+      fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+      btn_x = btn_x + 90
+    }
+    i2 = i2 + 1
+  }
   return
+}
+
+// Handle a taskbar click — focus the window whose title button was clicked.
+fn comp_handle_taskbar_click(mx: Int) -> Int {
+  let btn_x = fb_width / 2 - 80
+  let i2 = 0
+  while i2 < comp_count {
+    let base = comp_win_base(i2)
+    let title = load64(base + 24)
+    if title != 0 {
+      if mx >= btn_x && mx < btn_x + 90 {
+        comp_win_focus(i2)
+        return 1
+      }
+      btn_x = btn_x + 90
+    }
+    i2 = i2 + 1
+  }
+  return 0
 }
 
 fn comp_render_taskbar_dot() -> void {
@@ -822,6 +853,11 @@ fn comp_render_taskbar_dot() -> void {
 fn comp_handle_click(mx: Int, my: Int) -> Int {
   let idx = comp_win_at_point(mx, my)
   if idx < 0 {
+    // Check taskbar click
+    let bar_y = fb_height - COMP_TASKBAR_H
+    if my >= bar_y && my < fb_height {
+      return comp_handle_taskbar_click(mx)
+    }
     return 0
   }
   // Check close button first (before focusing)
@@ -839,34 +875,58 @@ fn comp_handle_click(mx: Int, my: Int) -> Int {
   }
   // Focus the window
   comp_win_focus(idx)
-  // Check if clicking the title bar (for dragging)
+  // Check if clicking the title bar (for dragging or resizing)
   if comp_win_in_titlebar(idx, mx, my) != 0 {
     comp_drag_off_x = mx - wx
     comp_drag_off_y = my - wy
+    // Check resize zone (bottom-right 8px corner of window)
+    let wh = load32(base + 16)
+    if mx >= wx + ww - 8 && my >= wy + wh + COMP_TITLE_BAR_H - 8 {
+      comp_drag_mode = 2  // resize
+    } else {
+      comp_drag_mode = 1  // move
+    }
     comp_dragging = idx
   }
   return 1
 }
 
-// Handle mouse movement during drag.
+// Handle mouse movement during drag or resize.
 fn comp_handle_drag(mx: Int, my: Int) -> void {
-  if comp_dragging < 0 {
+  if comp_drag_mode < 0 {
     return
   }
   let base = comp_win_base(comp_dragging)
   let new_x = mx - comp_drag_off_x
   let new_y = my - comp_drag_off_y
-  if new_x < 0 {
-    store32(base + 4, 0)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  if comp_drag_mode == 1 {
+    // Move mode
+    if new_x < 0 {
+      store32(base + 4, 0)
+    } else {
+      store32(base + 4, new_x)
+    }
+    if new_y < 0 {
+      store32(base + 8, 0)
+    } else {
+      store32(base + 8, new_y)
+    }
   } else {
-    store32(base + 4, new_x)
+    // Resize mode
+    let new_w = mx - wx
+    let new_h = my - wy - COMP_TITLE_BAR_H
+    if new_w < COMP_MIN_WIN_W {
+      new_w = COMP_MIN_WIN_W
+    }
+    if new_h < COMP_MIN_WIN_H {
+      new_h = COMP_MIN_WIN_H
+    }
+    store32(base + 12, new_w)
+    store32(base + 16, new_h)
   }
-  if new_y < 0 {
-    store32(base + 8, 0)
-  } else {
-    store32(base + 8, new_y)
-  }
-  // Mark dirty and trigger full redraw to erase old window position
+  // Mark dirty and trigger full redraw
   let flags = load32(base + 20)
   store32(base + 20, flags | COMP_WIN_DIRTY)
   comp_full_redraw = 1
@@ -948,13 +1008,13 @@ fn comp_run(port: Int) -> void {
       // Mouse just pressed — check for window click
       comp_handle_click(mouse_x, mouse_y)
     }
-    if cur_left != 0 && comp_dragging >= 0 {
+    if cur_left != 0 && comp_drag_mode >= 0 {
       // Mouse held and dragging
       comp_handle_drag(mouse_x, mouse_y)
     }
     if cur_left == 0 && prev_left != 0 {
       // Mouse released
-      comp_dragging = -1
+      comp_drag_mode = -1
     }
     prev_left = cur_left
 
