@@ -11,6 +11,7 @@
 
 BITS 32
 org 0x100000
+default abs  ; explicit (NASM 2.16+ requires this, default rel not safe in 32-bit)
 
 MB_MAGIC     equ 0x1BADB002
 MB_FLAGS     equ 0x00010800          ; AOUT_KLUDGE | BIT11 (VBE info)

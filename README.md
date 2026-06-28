@@ -90,7 +90,7 @@ binary. The compiler itself is written in Rust and compiles in <1s.
 
 | Environment | Wall clock | Notes |
 |-------------|-----------|-------|
-| QEMU TCG (emulated x86_64, macOS ARM64) | ~30 s | Full software emulation, no KVM |
+| QEMU TCG (aarch64 macOS) | ~4 s | Emulated x86_64 on Apple Silicon |
 | QEMU + KVM (Linux x86_64) | ~40 ms | Hardware virtualization |
 | Real hardware (native x86_64) | <1 s | Direct boot, no emulation overhead |
 
