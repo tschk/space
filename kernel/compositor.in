@@ -116,7 +116,7 @@ fn comp_vro_init() -> void {
     store8(comp_vro_buf + i, 0)
     i = i + 1
   }
-  comp_vro_seed("Welcome to Space OS\nType here to edit notes")
+  comp_vro_seed("Welcome to Space OS nanokernel v0.7.2\n\nThis is the built-in text editor.\nType to edit, Ctrl+S to save, Esc to exit.\n\nSystem commands:\n  - Tab: switch between windows\n  - Page Up/Dn: scroll terminal\n  - Close: click X on title bar\n  - Move: drag title bar\n  - Resize: drag bottom-right corner\n  - Minimize: click _ on title bar")
   return
 }
 
@@ -685,31 +685,40 @@ fn comp_draw_utilities_content(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
-  // Dark sidebar on left
-  fb_fill_rect(x, content_y, 96, h, 0x00222B35)
-  // Active nav item indicator
-  fb_fill_rect(x + 2, content_y + 42, 3, 16, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 16, content_y + 42, "Display", FB_COLOR_WHITE, 0x00222B35)
-  fb_draw_string_bg(x + 16, content_y + 82, "Input", 0x008090A0, 0x00222B35)
-  fb_draw_string_bg(x + 16, content_y + 122, "Files", 0x008090A0, 0x00222B35)
-  // Content area
-  fb_draw_string_bg(x + 116, content_y + 36, "RESOLUTION", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  if fb_width >= 1920 {
-    fb_draw_string_bg(x + 116, content_y + 60, "1920 x 1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  } else {
-    fb_draw_string_bg(x + 116, content_y + 60, "1280 x 800", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  }
-  fb_draw_string_bg(x + 116, content_y + 100, "SCALE", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 116, content_y + 120, 120, 4, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 116, content_y + 120, 72, 4, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 116, content_y + 146, "POINTER SPEED", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 116, content_y + 166, 120, 4, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 116, content_y + 166, 56, 4, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 116, content_y + 194, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 116, content_y + 218, "serial console", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 116, content_y + 246, "STORAGE", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 116, content_y + 270, "ramfs", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  // Dark sidebar
+  fb_fill_rect(x, content_y, 96, h, COMP_COLOR_DESKTOP)
+  fb_fill_rect(x + 2, content_y + lh + 20, 3, 16, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 16, content_y + lh + 20, "Display", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  fb_draw_string_bg(x + 16, content_y + lh * 2 + 24, "Input", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
+  fb_draw_string_bg(x + 16, content_y + lh * 3 + 28, "Files", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
+  // Content area — dynamic system info
+  let ty = content_y + lh + 4
+  fb_draw_string_bg(x + 116, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Resolution: 1920x1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Depth: 32bpp BGRx", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  fb_draw_string_bg(x + 116, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Active: double-buffered", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Font: 2x scaled 8x8 bitmap", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  fb_draw_string_bg(x + 116, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Mouse: PS/2 port", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Click to focus windows", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  fb_draw_string_bg(x + 116, ty, "TASKBAR", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Window names: click to focus", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  fb_draw_string_bg(x + 116, ty, "Dimmed = minimized", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
