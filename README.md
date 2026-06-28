@@ -86,20 +86,17 @@ This includes ~1300 lines of `.in` source across 15+ kernel files parsed,
 optimized, lowered to x86_64 machine code, and linked into a single bootable
 binary. The compiler itself is written in Rust and compiles in <1s.
 
-### Boot time (QEMU x86_64, macOS ARM64)
+### Boot time
 
-Wall-clock time from `qemu-system-x86_64` invocation to interactive shell:
+| Environment | Wall clock | Notes |
+|-------------|-----------|-------|
+| QEMU TCG (emulated x86_64, macOS ARM64) | ~30 s | Full software emulation, no KVM |
+| QEMU + KVM (Linux x86_64) | ~40 ms | Hardware virtualization |
+| Real hardware (native x86_64) | <1 s | Direct boot, no emulation overhead |
 
-```
-$ time qemu-system-x86_64 -vga std -m 256M -kernel space.bin -display none
-…
-space interactive shell -- type 'help'
-real  0m20.0s
-```
-
-Most of the wall time is QEMU emulation overhead (BIOS, VBE mode set, PCI bus
-enumeration, NVMe/USB init). The kernel itself boots in milliseconds once code
-execution starts. On real hardware the full boot completes near-instantly.
+The kernel itself enters the interactive shell in a few hundred timer ticks at 100Hz
+(~200ms of PIT time after interrupt enable). The rest of the wall clock is QEMU's
+VBE mode set, PCI bus scan, and system emulation startup.
 
 ### Runtime throughput (QEMU x86_64, PIT 100Hz, preemptive scheduler)
 

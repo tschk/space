@@ -580,15 +580,26 @@ fn comp_draw_content_bg(base: Int) -> void {
   return
 }
 
-// Helper: draw content text
+// Helper: draw content text (or default placeholder for empty windows)
 fn comp_draw_content_text(base: Int) -> void {
-  let content = load64(base + 32)
-  if content == 0 {
-    return
-  }
   let x = load32(base + 4)
   let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
+  let content = load64(base + 32)
+  let title = load64(base + 24)
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
+  if content == 0 {
+    // Show window title and instructions
+    if title != 0 {
+      fb_draw_string_bg(x + 16, content_y + lh + 4, title, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+    }
+    fb_draw_string_bg(x + 16, content_y + lh * 2 + 8, "This window has no content", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    fb_draw_string_bg(x + 16, content_y + lh * 3 + 12, "Load a file or close this window", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    return
+  }
   fb_draw_string_bg(x + 12, content_y + 12, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
   return
 }
@@ -834,10 +845,10 @@ fn comp_cur_restore() -> void {
 // Blit entire backbuffer to real framebuffer (byte-by-byte memcpy for tear-free display).
 fn comp_blit(dst: Int) -> void {
   let src = comp_backbuf
-  let n = fb_size / 4  // copy as 32-bit words
+  let n = fb_size / 8  // copy as 64-bit qwords
   let bi = 0
   while bi < n {
-    store32(dst + bi * 4, load32(src + bi * 4))
+    store64(dst + bi * 8, load64(src + bi * 8))
     bi = bi + 1
   }
 }
@@ -853,7 +864,7 @@ fn comp_render() -> void {
     comp_render_background()
     comp_bg_drawn = 1
     comp_full_redraw = 0
-    // ponytail: redraw all windows when background changed (drag ghost fix)
+    // ponytail: redraw all windows when background changed
     let k = 0
     while k < comp_count {
       let base = comp_win_base(k)
@@ -861,15 +872,19 @@ fn comp_render() -> void {
       store32(base + 20, flags | COMP_WIN_DIRTY)
       k = k + 1
     }
+    // Reset cursor tracking — don't restore stale saved pixels after full redraw
+    comp_cur_drawn = 0
   }
-  // Erase old cursor by restoring saved pixels
-  comp_cur_restore()
-  // Draw shadows before windows
+  // Erase old cursor only if we have fresh saved pixels
+  if comp_cur_drawn != 0 {
+    comp_cur_restore()
+  }
+  // Draw shadows (skip minimized windows)
   let s = 0
   while s < comp_count {
     let base = comp_win_base(s)
     let flags = load32(base + 20)
-    if (flags & COMP_WIN_DIRTY) != 0 {
+    if (flags & COMP_WIN_DIRTY) != 0 && (flags & COMP_WIN_MINIMIZED) == 0 {
       comp_draw_shadow(base)
     }
     s = s + 1
