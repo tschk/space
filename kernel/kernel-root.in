@@ -401,16 +401,12 @@ fn discover_memory(mb: Int) -> void {
 var free_list: Int = 0  // head of LIFO free list, 0 = empty
 
 fn frame_alloc() -> Int {
-  if free_list != 0 {
-    let p = free_list
-    free_list = load64(p)  // next free frame
-    store64(p, 0)  // clear first qword (was next pointer)
-    return p
-  }
   let p = (heap_next + 4095) & -4096
   heap_next = p + 4096
-  for i in 0..512 {
+  let i = 0
+  while i < 512 {
     store64(p + i * 8, 0)
+    i = i + 1
   }
   return p
 }
@@ -450,12 +446,36 @@ fn map_page(virt: Int, phys: Int, flags: Int) -> void {
     store64(pdpt + i3 * 8, np | 3)
     e3 = np | 3
   }
+  if (e3 & 0x80) != 0 {
+    let np = frame_alloc()
+    let base = e3 & -0x40000000
+    store64(pdpt + i3 * 8, np | 3)
+    e3 = np | 3
+    let pt_new = np & -4096
+    let j = 0
+    while j < 512 {
+      store64(pt_new + j * 8, (base + j * 0x200000) | 0x83)
+      j = j + 1
+    }
+  }
   let pd = e3 & -4096
   let e2 = load64(pd + i2 * 8)
   if (e2 & 1) == 0 {
     let np = frame_alloc()
     store64(pd + i2 * 8, np | 3)
     e2 = np | 3
+  }
+  if (e2 & 0x80) != 0 {
+    let np = frame_alloc()
+    let base = e2 & -0x200000
+    store64(pd + i2 * 8, np | 3)
+    e2 = np | 3
+    let pt_new = np & -4096
+    let j = 0
+    while j < 512 {
+      store64(pt_new + j * 8, (base + j * 0x1000) | 0x23)
+      j = j + 1
+    }
   }
   let pt = e2 & -4096
   store64(pt + i1 * 8, phys | flags)
