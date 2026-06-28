@@ -21,9 +21,9 @@ package space.kernel
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = COMP_BAR_H
+const COMP_TITLE_BAR_H = 24
 const COMP_BORDER_W = 1
-const COMP_TASKBAR_H = COMP_TASKBAR_H_GNOME
+const COMP_TASKBAR_H = 28
 const COMP_COLOR_DESKTOP = COMP_GNOME_DESKTOP
 const COMP_COLOR_PANEL = COMP_GNOME_PANEL
 const COMP_COLOR_PANEL_LINE = COMP_GNOME_PANEL_LINE
