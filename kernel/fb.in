@@ -30,6 +30,7 @@ var fb_height: Int = 0     // pixels
 var fb_bpp: Int = 0        // bits per pixel
 var fb_size: Int = 0       // total framebuffer size in bytes
 var fb_ready: Int = 0      // 1 after successful init
+var fb_font_scale: Int = 2  // font scale multiplier (2=16x16, 3=24x24)
 
 // --- colors (32-bit RGBX) ---------------------------------------------------
 const FB_COLOR_BLACK = 0x00000000
@@ -970,6 +971,7 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
   if ch < 0 || ch >= 128 {
     ch = 63  // '?'
   }
+  let scale = fb_font_scale
   let row = 0
   while row < 8 {
     let bits = fb_glyph8(ch, row)
@@ -977,12 +979,17 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
     while col < 8 {
       let bit = (bits >> (7 - col)) & 1
       if bit != 0 {
-        let px = x + col * 2
-        let py = y + row * 2
-        fb_put_pixel(px, py, color)
-        fb_put_pixel(px + 1, py, color)
-        fb_put_pixel(px, py + 1, color)
-        fb_put_pixel(px + 1, py + 1, color)
+        let px = x + col * scale
+        let py = y + row * scale
+        let sy = 0
+        while sy < scale {
+          let sx = 0
+          while sx < scale {
+            fb_put_pixel(px + sx, py + sy, color)
+            sx = sx + 1
+          }
+          sy = sy + 1
+        }
       }
       col = col + 1
     }
@@ -996,16 +1003,18 @@ fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
   let i = 0
   let cx = x
   let cy = y
+  let cw = fb_font_scale * 8
+  let lh = cw + 2
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
       i = 256
     } else if ch == 10 {
       cx = x
-      cy = cy + 18
+      cy = cy + lh
     } else {
       fb_draw_char(cx, cy, ch, color)
-      cx = cx + 16
+      cx = cx + cw
     }
     i = i + 1
   }
@@ -1017,17 +1026,19 @@ fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   let i = 0
   let cx = x
   let cy = y
+  let cw = fb_font_scale * 8
+  let lh = cw + 2
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
       i = 256
     } else if ch == 10 {
       cx = x
-      cy = cy + 18
+      cy = cy + lh
     } else {
-      fb_fill_rect(cx, cy, 16, 16, bg)
+      fb_fill_rect(cx, cy, cw, cw, bg)
       fb_draw_char(cx, cy, ch, fg)
-      cx = cx + 16
+      cx = cx + cw
     }
     i = i + 1
   }

@@ -21,23 +21,23 @@ package space.kernel
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 24
+const COMP_TITLE_BAR_H = COMP_BAR_H
 const COMP_BORDER_W = 1
-const COMP_TASKBAR_H = 28
-const COMP_COLOR_DESKTOP = 0x00222B35
-const COMP_COLOR_PANEL = 0x002A3440
-const COMP_COLOR_PANEL_LINE = 0x003D4A5A
-const COMP_COLOR_TITLE = 0x00333D48
-const COMP_COLOR_TITLE_ACTIVE = 0x00296EB0
+const COMP_TASKBAR_H = COMP_TASKBAR_H_GNOME
+const COMP_COLOR_DESKTOP = COMP_GNOME_DESKTOP
+const COMP_COLOR_PANEL = COMP_GNOME_PANEL
+const COMP_COLOR_PANEL_LINE = COMP_GNOME_PANEL_LINE
+const COMP_COLOR_TITLE = COMP_GNOME_TITLE
+const COMP_COLOR_TITLE_ACTIVE = COMP_GNOME_TITLE_ACTIVE
 const COMP_COLOR_WINDOW = 0x00F0F2F5
-const COMP_COLOR_BORDER = 0x004D5A6A
-const COMP_COLOR_ACCENT = 0x002EA7D7
+const COMP_COLOR_BORDER = COMP_GNOME_BORDER
+const COMP_COLOR_ACCENT = COMP_GNOME_ACCENT
 const COMP_COLOR_TEXT = 0x001C2128
 const COMP_COLOR_MUTED = 0x005C6A7A
 const COMP_COLOR_SURFACE = 0x00FFFFFF
 const COMP_COLOR_SURFACE_ALT = 0x00E4E8ED
-const COMP_COLOR_TERM_BG = 0x001A1E24
-const COMP_COLOR_TERM_TEXT = 0x00C8D4E0
+const COMP_COLOR_TERM_BG = COMP_GNOME_TERM_BG
+const COMP_COLOR_TERM_TEXT = COMP_GNOME_TERM_TEXT
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -80,6 +80,8 @@ fn comp_init() -> void {
   comp_dragging = -1
   comp_running = 0
   comp_cur_drawn = 0
+  comp_cursor_init()
+  fb_font_scale = 3
   comp_vro_init()
   return
 }
@@ -325,22 +327,98 @@ fn comp_render_background() -> void {
   return
 }
 
-// Draw the mouse cursor as an arrow pointer.
+// X11-style arrow cursor bitmap (16x16, top-left hotspot)
+// MSB = leftmost pixel, row-major, 2 bytes per row, 32 bytes total
+var comp_cursor_bits: Int = 0
+
+fn comp_cursor_init() -> void {
+  comp_cursor_bits = alloc(32)
+  store8(comp_cursor_bits + 0, 0x80); store8(comp_cursor_bits + 1, 0x00)
+  store8(comp_cursor_bits + 2, 0xC0); store8(comp_cursor_bits + 3, 0x00)
+  store8(comp_cursor_bits + 4, 0xE0); store8(comp_cursor_bits + 5, 0x00)
+  store8(comp_cursor_bits + 6, 0xF0); store8(comp_cursor_bits + 7, 0x00)
+  store8(comp_cursor_bits + 8, 0xF8); store8(comp_cursor_bits + 9, 0x00)
+  store8(comp_cursor_bits + 10, 0xFC); store8(comp_cursor_bits + 11, 0x00)
+  store8(comp_cursor_bits + 12, 0xFE); store8(comp_cursor_bits + 13, 0x00)
+  store8(comp_cursor_bits + 14, 0xFF); store8(comp_cursor_bits + 15, 0x00)
+  store8(comp_cursor_bits + 16, 0xFF); store8(comp_cursor_bits + 17, 0x80)
+  store8(comp_cursor_bits + 18, 0xFF); store8(comp_cursor_bits + 19, 0xC0)
+  store8(comp_cursor_bits + 20, 0xFF); store8(comp_cursor_bits + 21, 0xE0)
+  store8(comp_cursor_bits + 22, 0xFC); store8(comp_cursor_bits + 23, 0x00)
+  store8(comp_cursor_bits + 24, 0xFC); store8(comp_cursor_bits + 25, 0x60)
+  store8(comp_cursor_bits + 26, 0xFC); store8(comp_cursor_bits + 27, 0x70)
+  store8(comp_cursor_bits + 28, 0xFC); store8(comp_cursor_bits + 29, 0x38)
+  store8(comp_cursor_bits + 30, 0x00); store8(comp_cursor_bits + 31, 0x1C)
+}
+
+// Draw the X11-style arrow cursor with black outline + white fill
 fn comp_render_cursor() -> void {
   let x = mouse_x
   let y = mouse_y
-  // Arrow body (black outline)
-  fb_fill_rect(x, y, 2, 16, FB_COLOR_BLACK)
-  fb_fill_rect(x + 1, y + 1, 2, 16, FB_COLOR_WHITE)
-  fb_fill_rect(x + 2, y + 2, 2, 14, FB_COLOR_BLACK)
-  fb_fill_rect(x + 3, y + 3, 2, 12, FB_COLOR_WHITE)
-  fb_fill_rect(x + 4, y + 4, 2, 10, FB_COLOR_BLACK)
-  fb_fill_rect(x + 5, y + 5, 2, 10, FB_COLOR_WHITE)
-  fb_fill_rect(x + 6, y + 6, 2, 8, FB_COLOR_BLACK)
-  fb_fill_rect(x + 7, y + 7, 2, 6, FB_COLOR_WHITE)
-  fb_fill_rect(x + 8, y + 8, 2, 4, FB_COLOR_BLACK)
-  fb_fill_rect(x + 9, y + 9, 2, 4, FB_COLOR_WHITE)
-  return
+  let row = 0
+  while row < COMP_CURSOR_H {
+    let b0 = load8(comp_cursor_bits + row * 2)
+    let b1 = load8(comp_cursor_bits + row * 2 + 1)
+    let col = 0
+    while col < COMP_CURSOR_W {
+      let bit = 0
+      if col < 8 {
+        bit = (b0 >> (7 - col)) & 1
+      } else {
+        bit = (b1 >> (15 - col)) & 1
+      }
+      if bit != 0 {
+        let px = x + col
+        let py = y + row
+        fb_put_pixel(px - 1, py, FB_COLOR_BLACK)
+        fb_put_pixel(px + 1, py, FB_COLOR_BLACK)
+        fb_put_pixel(px, py - 1, FB_COLOR_BLACK)
+        fb_put_pixel(px, py + 1, FB_COLOR_BLACK)
+        fb_put_pixel(px, py, FB_COLOR_WHITE)
+      }
+      col = col + 1
+    }
+    row = row + 1
+  }
+}
+
+// Window drop shadow (dark band along bottom and right edges)
+fn comp_draw_shadow(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let r = COMP_SHADOW_R
+  let sx = x + r
+  let sy = y + r + COMP_TITLE_BAR_H
+  let sw = w
+  let sh = h
+  let col = 0
+  while col < sw + r {
+    let px = sx + col
+    let j = 0
+    while j < r {
+      let py = sy + sh + j
+      if py < fb_height && px < fb_width {
+        fb_put_pixel(px, py, FB_COLOR_BLACK)
+      }
+      j = j + 1
+    }
+    col = col + 1
+  }
+  let row = 0
+  while row < sh + r {
+    let py = sy + row
+    let i = 0
+    while i < r {
+      let px = sx + sw + i
+      if px < fb_width && py < fb_height {
+        fb_put_pixel(px, py, FB_COLOR_BLACK)
+      }
+      i = i + 1
+    }
+    row = row + 1
+  }
 }
 
 // Helper: draw window border (outline around full window including title bar)
@@ -395,13 +473,13 @@ fn comp_draw_titlebar(base: Int) -> void {
   }
   // Draw title bar background
   fb_fill_rect(x, y, w, COMP_TITLE_BAR_H, bg)
-  // Draw title text
+  let ch = fb_font_scale * 8
   if title != 0 {
-    fb_draw_string_bg(x + 10, y + (COMP_TITLE_BAR_H - 16) / 2, title, fg, bg)
+    fb_draw_string_bg(x + 12, y + (COMP_TITLE_BAR_H - ch) / 2, title, fg, bg)
   }
-  // Draw close button area (square on right)
-  let btn_x = x + w - 24
-  fb_fill_rect(btn_x, y + 4, 20, 16, 0x00CC4444)
+  // Draw close button
+  let btn_x = x + w - 28
+  fb_fill_rect(btn_x, y + 5, 22, COMP_TITLE_BAR_H - 10, COMP_GNOME_BTN_CLOSE)
   return
 }
 
@@ -646,6 +724,16 @@ fn comp_render() -> void {
   }
   // Erase old cursor by restoring saved pixels (no background hole)
   comp_cur_restore()
+  // Draw shadows before windows
+  let s = 0
+  while s < comp_count {
+    let base = comp_win_base(s)
+    let flags = load32(base + 20)
+    if (flags & COMP_WIN_DIRTY) != 0 {
+      comp_draw_shadow(base)
+    }
+    s = s + 1
+  }
   // Draw dirty windows
   let i = 0
   while i < comp_count {
@@ -682,18 +770,19 @@ fn comp_render_taskbar() -> void {
 
 fn comp_render_taskbar_text() -> void {
   let bar_y = fb_height - COMP_TASKBAR_H
-  fb_draw_string_bg(12, bar_y + 8, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width / 2 - 56, bar_y + 8, "WORKSPACE", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 136, bar_y + 8, "EDITOR", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  let ty = bar_y + (COMP_TASKBAR_H - fb_font_scale * 8) / 2
+  fb_draw_string_bg(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 80, ty, "WORKSPACE", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 160, ty, "EDITOR", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   return
 }
 
 fn comp_render_taskbar_dot() -> void {
   let bar_y = fb_height - COMP_TASKBAR_H
   if mouse_left_pressed() != 0 {
-    fb_fill_rect(fb_width - 24, bar_y + 10, 8, 8, FB_COLOR_GREEN)
+    fb_fill_rect(fb_width - 30, bar_y + 12, 10, 10, FB_COLOR_GREEN)
   } else {
-    fb_fill_rect(fb_width - 24, bar_y + 10, 8, 8, FB_COLOR_DARK_GREEN)
+    fb_fill_rect(fb_width - 30, bar_y + 12, 10, 10, FB_COLOR_DARK_GREEN)
   }
   return
 }

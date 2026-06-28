@@ -1187,6 +1187,23 @@ fn run_channels(port: Int) -> void {
 // code rather than an in-image component.
 const SCI_MAGIC = 0x5343490000000001
 
+// GNOME-style compositor colors (in kernel-root so the optimizer doesn't misbehave)
+const COMP_GNOME_DESKTOP = 0x001E1E2E
+const COMP_GNOME_PANEL = 0x00181825
+const COMP_GNOME_PANEL_LINE = 0x00333040
+const COMP_GNOME_TITLE = 0x002A2A3A
+const COMP_GNOME_TITLE_ACTIVE = 0x003584E4
+const COMP_GNOME_BORDER = 0x003D3846
+const COMP_GNOME_ACCENT = 0x003584E4
+const COMP_GNOME_TERM_BG = 0x00121015
+const COMP_GNOME_TERM_TEXT = 0x00C8D4E0
+const COMP_GNOME_BTN_CLOSE = 0x00C01C28
+const COMP_SHADOW_R = 6
+const COMP_CURSOR_H = 16
+const COMP_CURSOR_W = 16
+const COMP_BAR_H = 30
+const COMP_TASKBAR_H_GNOME = 34
+
 fn sci_load(port: Int, load_addr: Int) -> Int {
   if load_addr == 0 || load_addr > 0x200000 {
     serial_write_cstr(port, "  SCI: load address out of range 0x")
