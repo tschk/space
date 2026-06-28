@@ -250,6 +250,33 @@ fn comp_win_at_point(mx: Int, my: Int) -> Int {
 }
 
 // Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp_win_close(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  // Shift remaining windows down
+  let i = idx
+  while i < comp_count - 1 {
+    let src = comp_win_base(i + 1)
+    let dst = comp_win_base(i)
+    let j = 0
+    while j < COMP_WIN_SIZE {
+      store8(dst + j, load8(src + j))
+      j = j + 1
+    }
+    i = i + 1
+  }
+  comp_win_clear(comp_count - 1)
+  comp_count = comp_count - 1
+  // Adjust focused index
+  if comp_focused >= comp_count {
+    comp_focused = comp_count - 1
+  }
+  // Mark full redraw (window removed)
+  comp_full_redraw = 1
+  return
+}
+// Focus a window (bring to front conceptually — we just update the focused flag).
 fn comp_win_focus(idx: Int) -> void {
   let i = 0
   while i < comp_count {
@@ -519,20 +546,23 @@ fn comp_draw_vro_content(base: Int) -> void {
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
+  let cw = fb_font_scale * 8 + 2  // match fb_draw_string spacing
+  let lh = cw + 3
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   // Line number gutter
-  fb_fill_rect(x + 16, content_y + 24, 28, h - 48, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 60, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 60, content_y + 52, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  let max_chars = comp_min((w - 108) / 16, 95)
+  fb_fill_rect(x + 16, content_y + 24, 24, h - 48, COMP_COLOR_SURFACE_ALT)
+  fb_draw_string_bg(x + 56, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 56, content_y + 30 + lh, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  let max_chars = comp_min((w - 108) / cw, 80)
   let start_idx = 0
   if comp_vro_len > max_chars {
     start_idx = comp_vro_len - max_chars
   }
   let visible_len = comp_vro_len - start_idx
   // Line number
-  fb_draw_string_bg(x + 22, content_y + 76, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
+  let text_y = content_y + 30 + lh * 2 + 4  // 2 lines header + gap
+  fb_draw_string_bg(x + 22, text_y, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
   // Text content
   let vi = 0
   while vi < visible_len {
@@ -540,15 +570,15 @@ fn comp_draw_vro_content(base: Int) -> void {
     if ch == 10 {
       ch = 32
     }
-    let tx = x + 60 + vi * 16
-    fb_fill_rect(tx, content_y + 76, 16, 16, COMP_COLOR_SURFACE)
-    fb_draw_char(tx, content_y + 76, ch, COMP_COLOR_TEXT)
+    let tx = x + 56 + vi * cw
+    fb_fill_rect(tx, text_y, cw, cw, COMP_COLOR_SURFACE)
+    fb_draw_char(tx, text_y, ch, COMP_COLOR_TEXT)
     vi = vi + 1
   }
   // Cursor
-  let cursor_x = x + 60 + visible_len * 16
+  let cursor_x = x + 56 + visible_len * cw
   if cursor_x < x + w - 28 {
-    fb_fill_rect(cursor_x, content_y + 74, 2, 20, COMP_COLOR_ACCENT)
+    fb_fill_rect(cursor_x, text_y - 2, 2, cw + 4, COMP_COLOR_ACCENT)
   }
   // Status bar at bottom
   fb_fill_rect(x, content_y + h - 36, w, 36, COMP_COLOR_SURFACE_ALT)
@@ -790,18 +820,27 @@ fn comp_render_taskbar_dot() -> void {
 
 // Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
 fn comp_handle_click(mx: Int, my: Int) -> Int {
-  // Check if clicking a title bar to drag
   let idx = comp_win_at_point(mx, my)
   if idx < 0 {
     return 0
+  }
+  // Check close button first (before focusing)
+  let base = comp_win_base(idx)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let btn_x = wx + ww - 28
+  let btn_y = wy + 5
+  let btn_w = 22
+  let btn_h = COMP_TITLE_BAR_H - 10
+  if mx >= btn_x && mx < btn_x + btn_w && my >= btn_y && my < btn_y + btn_h {
+    comp_win_close(idx)
+    return 1
   }
   // Focus the window
   comp_win_focus(idx)
   // Check if clicking the title bar (for dragging)
   if comp_win_in_titlebar(idx, mx, my) != 0 {
-    let base = comp_win_base(idx)
-    let wx = load32(base + 4)
-    let wy = load32(base + 8)
     comp_drag_off_x = mx - wx
     comp_drag_off_y = my - wy
     comp_dragging = idx

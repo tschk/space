@@ -999,12 +999,13 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
 }
 // Draw a null-terminated string at (x, y) in the given color.
 // Handles '\n' (newline) by moving to the next row.
+// ponytail: 2px padding between chars and 3px between lines for readability.
 fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
   let i = 0
   let cx = x
   let cy = y
-  let cw = fb_font_scale * 8
-  let lh = cw + 2
+  let cw = fb_font_scale * 8 + 2  // 2px inter-char spacing
+  let lh = cw + 3                   // 3px inter-line spacing
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
@@ -1026,8 +1027,8 @@ fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   let i = 0
   let cx = x
   let cy = y
-  let cw = fb_font_scale * 8
-  let lh = cw + 2
+  let cw = fb_font_scale * 8 + 2  // 2px inter-char spacing
+  let lh = cw + 3                   // 3px inter-line spacing
   while i < 256 {
     let ch = load8(str + i)
     if ch == 0 {
