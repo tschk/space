@@ -278,6 +278,32 @@ fn comp_win_close(idx: Int) -> void {
   comp_full_redraw = 1
   return
 }
+
+// Minimize window — clear VISIBLE flag, set MINIMIZED.
+fn comp_win_minimize(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags | COMP_WIN_MINIMIZED | COMP_WIN_DIRTY) & -2)
+  comp_full_redraw = 1
+  return
+}
+
+// Restore a minimized window — set VISIBLE, clear MINIMIZED.
+fn comp_win_restore(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags & -9) | COMP_WIN_VISIBLE | COMP_WIN_DIRTY)
+  comp_win_focus(idx)
+  comp_full_redraw = 1
+  return
+}
+
 // Focus a window (bring to front conceptually — we just update the focused flag).
 fn comp_win_focus(idx: Int) -> void {
   let i = 0
@@ -507,7 +533,25 @@ fn comp_draw_titlebar(base: Int) -> void {
   }
   // Draw close button
   let btn_x = x + w - 28
+  // Draw minimize button
+  let min_x = x + w - 52
+  fb_fill_rect(min_x, y + 5, 22, COMP_TITLE_BAR_H - 10, 0x00555555)
+  let min_bar_y = y + 5 + (COMP_TITLE_BAR_H - 10) / 2
+  let mi = 0
+  while mi < 14 {
+    store32(fb_addr + min_bar_y * fb_pitch + (min_x + 4 + mi) * 4, FB_COLOR_WHITE)
+    mi = mi + 1
+  }
+  // Draw close button with X symbol
   fb_fill_rect(btn_x, y + 5, 22, COMP_TITLE_BAR_H - 10, COMP_GNOME_BTN_CLOSE)
+  let cx = btn_x + 11
+  let cy = y + 5 + (COMP_TITLE_BAR_H - 10) / 2
+  let xi = -3
+  while xi <= 3 {
+    store32(fb_addr + (cy + xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
+    store32(fb_addr + (cy - xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
+    xi = xi + 1
+  }
   return
 }
 
@@ -589,6 +633,32 @@ fn comp_draw_vro_content(base: Int) -> void {
   } else {
     fb_draw_string_bg(x + 16, content_y + h - 28, "saved", FB_COLOR_GREEN, COMP_COLOR_SURFACE_ALT)
   }
+  // Scrollbar track on right side
+  let scroll_x = x + w - 10
+  let scroll_top = content_y + 24
+  let scroll_bot = content_y + h - 40
+  let scroll_ht = scroll_bot - scroll_top
+  let si = 0
+  while si < scroll_ht {
+    store32(fb_addr + (scroll_top + si) * fb_pitch + scroll_x * 4, COMP_COLOR_SURFACE_ALT)
+    store32(fb_addr + (scroll_top + si) * fb_pitch + (scroll_x + 1) * 4, COMP_COLOR_SURFACE_ALT)
+    si = si + 1
+  }
+  // Scrollbar thumb (proportional to content length)
+  let total_ch = comp_vro_len
+  if total_ch > max_chars && total_ch > 0 {
+    let thumb_h = scroll_ht * max_chars / total_ch
+    if thumb_h < 8 {
+      thumb_h = 8
+    }
+    let thumb_pos = scroll_ht * visible_len / total_ch
+    let tj = 0
+    while tj < thumb_h {
+      store32(fb_addr + (scroll_top + thumb_pos + tj) * fb_pitch + scroll_x * 4, COMP_COLOR_ACCENT)
+      store32(fb_addr + (scroll_top + thumb_pos + tj) * fb_pitch + (scroll_x + 1) * 4, COMP_COLOR_ACCENT)
+      tj = tj + 1
+    }
+  }
   return
 }
 
@@ -647,7 +717,7 @@ fn comp_draw_terminal_content(base: Int) -> void {
 fn comp_render_window(idx: Int) -> void {
   let base = comp_win_base(idx)
   let flags = load32(base + 20)
-  if (flags & COMP_WIN_VISIBLE) == 0 {
+  if (flags & COMP_WIN_VISIBLE) == 0 || (flags & COMP_WIN_MINIMIZED) != 0 {
     return
   }
 
@@ -765,15 +835,24 @@ fn comp_render() -> void {
     }
     s = s + 1
   }
-  // Draw dirty windows
+  // Draw dirty windows (focused window last for visual z-order)
   let i = 0
   while i < comp_count {
-    let base = comp_win_base(i)
-    let flags = load32(base + 20)
-    if (flags & COMP_WIN_DIRTY) != 0 {
-      comp_render_window(i)
+    if i != comp_focused {
+      let base = comp_win_base(i)
+      let flags = load32(base + 20)
+      if (flags & COMP_WIN_DIRTY) != 0 {
+        comp_render_window(i)
+      }
     }
     i = i + 1
+  }
+  if comp_focused >= 0 && comp_focused < comp_count {
+    let base = comp_win_base(comp_focused)
+    let flags = load32(base + 20)
+    if (flags & COMP_WIN_DIRTY) != 0 {
+      comp_render_window(comp_focused)
+    }
   }
   // Always redraw taskbar (covers bottom of screen)
   comp_render_taskbar()
@@ -809,8 +888,13 @@ fn comp_render_taskbar_text() -> void {
   while i2 < comp_count {
     let base = comp_win_base(i2)
     let title = load64(base + 24)
+    let flags3 = load32(base + 20)
     if title != 0 {
-      fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+      if (flags3 & COMP_WIN_MINIMIZED) != 0 {
+        fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_MUTED, COMP_COLOR_PANEL)
+      } else {
+        fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+      }
       btn_x = btn_x + 90
     }
     i2 = i2 + 1
@@ -818,16 +902,21 @@ fn comp_render_taskbar_text() -> void {
   return
 }
 
-// Handle a taskbar click — focus the window whose title button was clicked.
+// Handle a taskbar click — focus/restore the window whose title button was clicked.
 fn comp_handle_taskbar_click(mx: Int) -> Int {
   let btn_x = fb_width / 2 - 80
   let i2 = 0
   while i2 < comp_count {
     let base = comp_win_base(i2)
     let title = load64(base + 24)
+    let flags3 = load32(base + 20)
     if title != 0 {
       if mx >= btn_x && mx < btn_x + 90 {
-        comp_win_focus(i2)
+        if (flags3 & COMP_WIN_MINIMIZED) != 0 {
+          comp_win_restore(i2)
+        } else {
+          comp_win_focus(i2)
+        }
         return 1
       }
       btn_x = btn_x + 90
@@ -869,6 +958,13 @@ fn comp_handle_click(mx: Int, my: Int) -> Int {
   let btn_y = wy + 5
   let btn_w = 22
   let btn_h = COMP_TITLE_BAR_H - 10
+  // Check minimize button
+  let min_x = wx + ww - 52
+  if mx >= min_x && mx < min_x + btn_w && my >= btn_y && my < btn_y + btn_h {
+    comp_win_minimize(idx)
+    return 1
+  }
+  // Check close button
   if mx >= btn_x && mx < btn_x + btn_w && my >= btn_y && my < btn_y + btn_h {
     comp_win_close(idx)
     return 1
