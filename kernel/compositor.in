@@ -572,6 +572,7 @@ var comp_prev_cx: Int = 0   // previous cursor x for restoration
 var comp_prev_cy: Int = 0   // previous cursor y
 var comp_cur_back: Int = 0  // 24x24 pixel save buffer for cursor restore
 var comp_cur_drawn: Int = 0 // 1 if cursor was drawn last frame
+var comp_full_redraw: Int = 0 // 1 to force full redraw (window moved)
 
 // Save pixels behind cursor before drawing.
 fn comp_cur_save() -> void {
@@ -628,10 +629,20 @@ fn comp_cur_restore() -> void {
 
 // Render the desktop: background once, dirty windows, taskbar always, cursor.
 // Uses save/restore backbuffer for cursor to avoid flickering garbage.
+// On full_redraw (window dragged), repaints everything top-to-bottom.
 fn comp_render() -> void {
-  if comp_bg_drawn == 0 {
+  if comp_bg_drawn == 0 || comp_full_redraw != 0 {
     comp_render_background()
     comp_bg_drawn = 1
+    comp_full_redraw = 0
+    // ponytail: redraw all windows when background changed (drag ghost fix)
+    let k = 0
+    while k < comp_count {
+      let base = comp_win_base(k)
+      let flags = load32(base + 20)
+      store32(base + 20, flags | COMP_WIN_DIRTY)
+      k = k + 1
+    }
   }
   // Erase old cursor by restoring saved pixels (no background hole)
   comp_cur_restore()
@@ -728,9 +739,10 @@ fn comp_handle_drag(mx: Int, my: Int) -> void {
   } else {
     store32(base + 8, new_y)
   }
-  // Mark dirty
+  // Mark dirty and trigger full redraw to erase old window position
   let flags = load32(base + 20)
   store32(base + 20, flags | COMP_WIN_DIRTY)
+  comp_full_redraw = 1
   return
 }
 
