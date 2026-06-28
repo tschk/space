@@ -21,20 +21,23 @@ package space.kernel
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 0
-const COMP_BORDER_W = 0
-const COMP_COLOR_DESKTOP = 0x00191C20
-const COMP_COLOR_PANEL = 0x0024272E
-const COMP_COLOR_PANEL_LINE = 0x00383C45
-const COMP_COLOR_TITLE = 0x00E7E8EA
-const COMP_COLOR_TITLE_FOCUSED = 0x00F7F7F5
-const COMP_COLOR_WINDOW = 0x00F7F7F5
-const COMP_COLOR_BORDER = 0x00C9CCD1
+const COMP_TITLE_BAR_H = 24
+const COMP_BORDER_W = 1
+const COMP_TASKBAR_H = 28
+const COMP_COLOR_DESKTOP = 0x00222B35
+const COMP_COLOR_PANEL = 0x002A3440
+const COMP_COLOR_PANEL_LINE = 0x003D4A5A
+const COMP_COLOR_TITLE = 0x00333D48
+const COMP_COLOR_TITLE_ACTIVE = 0x00296EB0
+const COMP_COLOR_WINDOW = 0x00F0F2F5
+const COMP_COLOR_BORDER = 0x004D5A6A
 const COMP_COLOR_ACCENT = 0x002EA7D7
-const COMP_COLOR_TEXT = 0x002B2F36
-const COMP_COLOR_MUTED = 0x00717880
+const COMP_COLOR_TEXT = 0x001C2128
+const COMP_COLOR_MUTED = 0x005C6A7A
 const COMP_COLOR_SURFACE = 0x00FFFFFF
-const COMP_COLOR_SURFACE_ALT = 0x00ECEFF3
+const COMP_COLOR_SURFACE_ALT = 0x00E4E8ED
+const COMP_COLOR_TERM_BG = 0x001A1E24
+const COMP_COLOR_TERM_TEXT = 0x00C8D4E0
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -103,7 +106,7 @@ fn comp_vro_init() -> void {
     store8(comp_vro_buf + i, 0)
     i = i + 1
   }
-  comp_vro_seed("open notes.txt find runtime save")
+  comp_vro_seed("Welcome to Space OS\nType here to edit notes")
   return
 }
 
@@ -302,85 +305,100 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
 
 // --- rendering --------------------------------------------------------------
 
-// Draw the desktop background.
+// Draw the desktop background with subtle gradient stripes.
 fn comp_render_background() -> void {
   fb_clear(COMP_COLOR_DESKTOP)
+  // Draw subtle horizontal stripes (dark separator lines)
+  let i = 1
+  while i < 20 {
+    let sy = i * (fb_height / 20)
+    let j = 0
+    while j < fb_width {
+      store32(fb_addr + sy * fb_pitch + j * 4, COMP_COLOR_PANEL)
+      j = j + 1
+    }
+    i = i + 1
+  }
   return
 }
 
-// Draw the mouse cursor as a cross-hair using fb_draw_line.
+// Draw the mouse cursor as an arrow pointer.
 fn comp_render_cursor() -> void {
   let x = mouse_x
   let y = mouse_y
+  // Arrow body (black outline)
   fb_fill_rect(x, y, 2, 16, FB_COLOR_BLACK)
+  fb_fill_rect(x + 1, y + 1, 2, 16, FB_COLOR_WHITE)
   fb_fill_rect(x + 2, y + 2, 2, 14, FB_COLOR_BLACK)
+  fb_fill_rect(x + 3, y + 3, 2, 12, FB_COLOR_WHITE)
   fb_fill_rect(x + 4, y + 4, 2, 10, FB_COLOR_BLACK)
-  fb_fill_rect(x + 6, y + 6, 2, 6, FB_COLOR_BLACK)
+  fb_fill_rect(x + 5, y + 5, 2, 10, FB_COLOR_WHITE)
+  fb_fill_rect(x + 6, y + 6, 2, 8, FB_COLOR_BLACK)
+  fb_fill_rect(x + 7, y + 7, 2, 6, FB_COLOR_WHITE)
   fb_fill_rect(x + 8, y + 8, 2, 4, FB_COLOR_BLACK)
-  fb_fill_rect(x + 1, y + 2, 2, 10, FB_COLOR_WHITE)
-  fb_fill_rect(x + 3, y + 4, 2, 8, FB_COLOR_WHITE)
-  fb_fill_rect(x + 5, y + 6, 2, 4, FB_COLOR_WHITE)
+  fb_fill_rect(x + 9, y + 9, 2, 4, FB_COLOR_WHITE)
   return
 }
 
-// Helper: draw window border (separate function to avoid compiler clobbering locals)
+// Helper: draw window border (outline around full window including title bar)
 fn comp_draw_border(base: Int, color: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
-  let bx = x - 2
-  let by = y - 2
-  let bw = w + 4
-  let bh = h + COMP_TITLE_BAR_H + 4
-  // Top edge
+  let bw = w + COMP_BORDER_W * 2
+  let bh = h + COMP_TITLE_BAR_H + COMP_BORDER_W * 2
+  let bx = x - COMP_BORDER_W
+  let by = y - COMP_BORDER_W
+  // Top
   let i = 0
   while i < bw {
     store32(fb_addr + by * fb_pitch + (bx + i) * 4, color)
     i = i + 1
   }
-  // Bottom edge
-  let by2 = by + bh - 1
+  // Bottom
   let i2 = 0
   while i2 < bw {
-    store32(fb_addr + by2 * fb_pitch + (bx + i2) * 4, color)
+    store32(fb_addr + (by + bh - 1) * fb_pitch + (bx + i2) * 4, color)
     i2 = i2 + 1
   }
-  // Left edge
+  // Left
   let j = 0
   while j < bh {
     store32(fb_addr + (by + j) * fb_pitch + bx * 4, color)
     j = j + 1
   }
-  // Right edge
-  let bx2 = bx + bw - 1
+  // Right
   let j2 = 0
   while j2 < bh {
-    store32(fb_addr + (by + j2) * fb_pitch + bx2 * 4, color)
+    store32(fb_addr + (by + j2) * fb_pitch + (bx + bw - 1) * 4, color)
     j2 = j2 + 1
   }
   return
 }
 
-// Helper: draw title bar background
+// Helper: draw title bar background with text
 fn comp_draw_titlebar(base: Int) -> void {
   let x = load32(base + 4)
   let y = load32(base + 8)
   let w = load32(base + 12)
+  let title = load64(base + 24)
   let flags = load32(base + 20)
-  let color = COMP_COLOR_TITLE
+  let bg = COMP_COLOR_TITLE
+  let fg = COMP_COLOR_MUTED
   if (flags & COMP_WIN_FOCUSED) != 0 {
-    color = COMP_COLOR_TITLE_FOCUSED
+    bg = COMP_COLOR_TITLE_ACTIVE
+    fg = FB_COLOR_WHITE
   }
-  let ty = 0
-  while ty < COMP_TITLE_BAR_H {
-    let tx = 0
-    while tx < w {
-      store32(fb_addr + (y + ty) * fb_pitch + (x + tx) * 4, color)
-      tx = tx + 1
-    }
-    ty = ty + 1
+  // Draw title bar background
+  fb_fill_rect(x, y, w, COMP_TITLE_BAR_H, bg)
+  // Draw title text
+  if title != 0 {
+    fb_draw_string_bg(x + 10, y + (COMP_TITLE_BAR_H - 16) / 2, title, fg, bg)
   }
+  // Draw close button area (square on right)
+  let btn_x = x + w - 24
+  fb_fill_rect(btn_x, y + 4, 20, 16, 0x00CC4444)
   return
 }
 
@@ -423,37 +441,41 @@ fn comp_draw_vro_content(base: Int) -> void {
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 16, content_y + 24, 36, h - 72, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 68, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 68, content_y + 52, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  let max_chars = comp_min((w - 112) / 16, 95)
+  // Line number gutter
+  fb_fill_rect(x + 16, content_y + 24, 28, h - 48, COMP_COLOR_SURFACE_ALT)
+  fb_draw_string_bg(x + 60, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 60, content_y + 52, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  let max_chars = comp_min((w - 108) / 16, 95)
   let start_idx = 0
   if comp_vro_len > max_chars {
     start_idx = comp_vro_len - max_chars
   }
   let visible_len = comp_vro_len - start_idx
-  fb_draw_string_bg(x + 26, content_y + 76, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
+  // Line number
+  fb_draw_string_bg(x + 22, content_y + 76, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
+  // Text content
   let vi = 0
   while vi < visible_len {
     let ch = load8(comp_vro_buf + start_idx + vi)
     if ch == 10 {
       ch = 32
     }
-    let tx = x + 68 + vi * 16
+    let tx = x + 60 + vi * 16
     fb_fill_rect(tx, content_y + 76, 16, 16, COMP_COLOR_SURFACE)
     fb_draw_char(tx, content_y + 76, ch, COMP_COLOR_TEXT)
     vi = vi + 1
   }
-  let cursor_x = x + 68 + visible_len * 16
+  // Cursor
+  let cursor_x = x + 60 + visible_len * 16
   if cursor_x < x + w - 28 {
     fb_fill_rect(cursor_x, content_y + 74, 2, 20, COMP_COLOR_ACCENT)
   }
+  // Status bar at bottom
+  fb_fill_rect(x, content_y + h - 36, w, 36, COMP_COLOR_SURFACE_ALT)
   if comp_vro_dirty != 0 {
-    fb_draw_string_bg(x + 68, content_y + h - 64, "modified", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-    fb_fill_rect(x + 68, content_y + h - 38, 96, 8, COMP_COLOR_ACCENT)
+    fb_draw_string_bg(x + 16, content_y + h - 28, "modified", COMP_COLOR_ACCENT, COMP_COLOR_SURFACE_ALT)
   } else {
-    fb_draw_string_bg(x + 68, content_y + h - 64, "saved", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-    fb_fill_rect(x + 68, content_y + h - 38, 48, 8, COMP_COLOR_ACCENT)
+    fb_draw_string_bg(x + 16, content_y + h - 28, "saved", FB_COLOR_GREEN, COMP_COLOR_SURFACE_ALT)
   }
   return
 }
@@ -465,25 +487,30 @@ fn comp_draw_utilities_content(base: Int) -> void {
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
-  fb_fill_rect(x, content_y, 104, h, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 18, content_y + 42, 84, 6, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 18, content_y + 64, "Display", COMP_COLOR_TEXT, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 18, content_y + 104, "Input", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 18, content_y + 144, "Files", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 128, content_y + 44, "Resolution", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  // Dark sidebar on left
+  fb_fill_rect(x, content_y, 96, h, 0x00222B35)
+  // Active nav item indicator
+  fb_fill_rect(x + 2, content_y + 42, 3, 16, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 16, content_y + 42, "Display", FB_COLOR_WHITE, 0x00222B35)
+  fb_draw_string_bg(x + 16, content_y + 82, "Input", 0x008090A0, 0x00222B35)
+  fb_draw_string_bg(x + 16, content_y + 122, "Files", 0x008090A0, 0x00222B35)
+  // Content area
+  fb_draw_string_bg(x + 116, content_y + 36, "RESOLUTION", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   if fb_width >= 1920 {
-    fb_draw_string_bg(x + 128, content_y + 76, "1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+    fb_draw_string_bg(x + 116, content_y + 60, "1920 x 1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   } else {
-    fb_draw_string_bg(x + 128, content_y + 76, "1280 x 800", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+    fb_draw_string_bg(x + 116, content_y + 60, "1280 x 800", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   }
-  fb_draw_string_bg(x + 128, content_y + 120, "Scale", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 220, content_y + 126, 96, 6, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 220, content_y + 126, 64, 6, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 128, content_y + 172, "Pointer", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_fill_rect(x + 220, content_y + 178, 96, 6, COMP_COLOR_SURFACE_ALT)
-  fb_fill_rect(x + 220, content_y + 178, 48, 6, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 128, content_y + 218, "Input serial", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 128, content_y + 252, "Files ramfs", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 116, content_y + 100, "SCALE", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 116, content_y + 120, 120, 4, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 116, content_y + 120, 72, 4, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 116, content_y + 146, "POINTER SPEED", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_fill_rect(x + 116, content_y + 166, 120, 4, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 116, content_y + 166, 56, 4, COMP_COLOR_ACCENT)
+  fb_draw_string_bg(x + 116, content_y + 194, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 116, content_y + 218, "serial console", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 116, content_y + 246, "STORAGE", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_draw_string_bg(x + 116, content_y + 270, "ramfs", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
@@ -493,24 +520,30 @@ fn comp_draw_terminal_content(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
-  fb_fill_rect(x, content_y, w, 28, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 16, content_y + 36, "> fetch", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 70, "SpaceOS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 104, "kernel nanokernel", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 138, "framebuffer 1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 172, "files ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 16, content_y + 206, "linux minimal elf", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
+  fb_fill_rect(x, content_y, w, 28, 0x00222830)
+  fb_draw_string_bg(x + 16, content_y + 36, "> fetch", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  fb_draw_string_bg(x + 16, content_y + 70, "SpaceOS", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  fb_draw_string_bg(x + 16, content_y + 104, "kernel nanokernel", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+  fb_draw_string_bg(x + 16, content_y + 138, "framebuffer 1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+  fb_draw_string_bg(x + 16, content_y + 172, "files ramfs", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+  fb_draw_string_bg(x + 16, content_y + 206, "linux minimal elf", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
   return
 }
 
-// Draw a single window.
+// Draw a single window (border + title bar + content).
 fn comp_render_window(idx: Int) -> void {
   let base = comp_win_base(idx)
   let flags = load32(base + 20)
   if (flags & COMP_WIN_VISIBLE) == 0 {
     return
   }
+
+  // Draw border
+  comp_draw_border(base, COMP_COLOR_BORDER)
+
+  // Draw title bar
+  comp_draw_titlebar(base)
 
   // Draw content background
   comp_draw_content_bg(base)
@@ -586,10 +619,9 @@ fn comp_render() -> void {
 
 // Draw the taskbar at the bottom of the screen.
 fn comp_render_taskbar() -> void {
-  let bar_h = 28
-  let bar_y = 0
-  fb_fill_rect(0, bar_y, fb_width, bar_h, COMP_COLOR_PANEL)
-  // Top line of taskbar (lighter)
+  let bar_y = fb_height - COMP_TASKBAR_H
+  fb_fill_rect(0, bar_y, fb_width, COMP_TASKBAR_H, COMP_COLOR_PANEL)
+  // Separator line at top of taskbar
   let tx2 = 0
   while tx2 < fb_width {
     store32(fb_addr + bar_y * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
@@ -601,19 +633,19 @@ fn comp_render_taskbar() -> void {
 }
 
 fn comp_render_taskbar_text() -> void {
-  let bar_y = 0
-  fb_draw_string_bg(12, bar_y + 7, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width / 2 - 64, bar_y + 7, "WORKSPACE", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-  fb_draw_string_bg(fb_width - 136, bar_y + 7, "EDITOR", FB_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  let bar_y = fb_height - COMP_TASKBAR_H
+  fb_draw_string_bg(12, bar_y + 8, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width / 2 - 56, bar_y + 8, "WORKSPACE", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+  fb_draw_string_bg(fb_width - 136, bar_y + 8, "EDITOR", COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
   return
 }
 
 fn comp_render_taskbar_dot() -> void {
-  let bar_y = 0
+  let bar_y = fb_height - COMP_TASKBAR_H
   if mouse_left_pressed() != 0 {
-    fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_GREEN)
+    fb_fill_rect(fb_width - 24, bar_y + 10, 8, 8, FB_COLOR_GREEN)
   } else {
-    fb_fill_rect(fb_width - 24, bar_y + 8, 8, 8, FB_COLOR_DARK_GREEN)
+    fb_fill_rect(fb_width - 24, bar_y + 10, 8, 8, FB_COLOR_DARK_GREEN)
   }
   return
 }
@@ -713,13 +745,13 @@ fn comp_run(port: Int) -> void {
 
   comp_bg_drawn = 0  // force initial background render
 
-  // Create default windows
+  // Create default windows with modern layout (accounting for bottom taskbar)
   let win4_title = "EDITOR"
-  let win4 = comp_win_create(win4_title, 64, 56, 720, 600)
+  let win4 = comp_win_create(win4_title, 60, 40, 720, 580)
   let win2_title = "UTILITIES"
-  let win2 = comp_win_create(win2_title, 816, 56, 360, 280)
+  let win2 = comp_win_create(win2_title, 800, 40, 360, 260)
   let win3_title = "TERMINAL"
-  let win3 = comp_win_create(win3_title, 816, 376, 360, 280)
+  let win3 = comp_win_create(win3_title, 800, 320, 360, 300)
   comp_win_set_role(win2, COMP_ROLE_UTILITIES)
   comp_win_set_role(win3, COMP_ROLE_TERMINAL)
   comp_win_set_role(win4, COMP_ROLE_VRO)
