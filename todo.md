@@ -4,28 +4,30 @@
 
 Working today: x86_64 boot, serial shell, memory domains, capabilities,
 cooperative + preemptive scheduling, channels, SCI loader, e1000 NIC,
-PCI, deterministic execution, checkpoint/restore.
+PCI, NVMe, USB xHCI, deterministic execution, checkpoint/restore, framebuffer
+compositor (GNOME-style), display server service, VRO editor.
 
 ## Phase 1: Storage
 
 - [x] ATA/PIO disk driver (read sectors from QEMU IDE disk)
-- [x] Simple flat filesystem (read-only first, then write)
+- [x] Simple flat filesystem (read-only, then write)
+- [x] NVMe driver with MMIO
 - [ ] VFS abstraction layer
 - [ ] Load SCI components from disk at runtime
 
 ## Phase 2: Process Abstraction
 
 - [x] Process struct (domain + caps + entry + lifecycle)
-- [ ] Process loader (read SCI image from disk, create domain, map, jump)
 - [x] Process lifecycle: spawn, exit, wait, kill
-- [x] Process table and listing (`ps` command upgrade)
+- [x] Process table and listing (`ps` command)
+- [ ] Process loader (read SCI image from disk, create domain, map, jump)
 
 ## Phase 3: Syscall Interface
 
 - [x] Syscall trap handler (int 0x80 or syscall instruction)
 - [x] Syscall dispatch table
 - [x] Core syscalls: write, read, exit, yield, getpid
-- [ ] Channel syscalls: send, recv, select
+- [x] Channel syscalls: create, send, recv, close
 - [ ] Capability syscalls: mint, revoke, check
 
 ## Phase 4: Userspace Runtime
@@ -45,19 +47,21 @@ PCI, deterministic execution, checkpoint/restore.
   - [ ] Socket syscalls: socket, bind, listen, accept, connect, send, recv
   - [ ] Signal handling (minimal: SIGTERM, SIGKILL)
 - [ ] Darwin compat layer (Mach/BSD subset)
-  - [ ] Mach port IPC mapping to Space channels
-  - [ ] BSD syscall table
 - [ ] Windows compat layer (Win32 subset)
-  - [ ] Handle-based IPC mapping to capabilities
-  - [ ] Win32 API table (CreateFile, ReadFile, WriteFile, etc.)
-- [ ] Personality loader (select personality at process spawn time)
 
 ## Phase 6: Interactive Usability
 
-- [ ] VGA framebuffer console (text mode at minimum)
-- [ ] PS/2 keyboard driver
+- [x] VBE framebuffer console (1920×1080×32)
+- [x] GNOME-style desktop compositor
+- [x] X11-style arrow cursor
+- [x] Window close, minimize, resize, drag, z-order
+- [x] Taskbar window buttons (click to focus/restore)
+- [x] USB HID keyboard (replaces PS/2)
+- [x] Display server service (SPDP protocol)
+- [x] VRO text editor
 - [ ] Shell upgrade: pipe support, background processes, redirection
 - [ ] Multi-terminal support
+- [ ] Scrollable terminal content
 
 ## Phase 7: Networking Stack
 
@@ -65,9 +69,3 @@ PCI, deterministic execution, checkpoint/restore.
 - [ ] Socket API for user programs
 - [ ] DHCP client
 - [ ] DNS resolver
-
-## Phase 8: Distribution
-
-- [ ] Remote component loading (network → domain)
-- [ ] Migration (checkpoint process, transfer, restore on another node)
-- [ ] Distributed scheduling

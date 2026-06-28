@@ -702,14 +702,33 @@ fn comp_draw_terminal_content(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
-  fb_fill_rect(x, content_y, w, 28, 0x00222830)
-  fb_draw_string_bg(x + 16, content_y + 36, "> fetch", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  fb_draw_string_bg(x + 16, content_y + 70, "SpaceOS", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  fb_draw_string_bg(x + 16, content_y + 104, "kernel nanokernel", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
-  fb_draw_string_bg(x + 16, content_y + 138, "framebuffer 1920 x 1080", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
-  fb_draw_string_bg(x + 16, content_y + 172, "files ramfs", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
-  fb_draw_string_bg(x + 16, content_y + 206, "linux minimal elf", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+  // Terminal header bar
+  fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
+  fb_draw_string_bg(x + 12, content_y + 6, "$ fetch", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  // Terminal output
+  let ty = content_y + 30 + lh
+  fb_draw_string_bg(x + 16, ty, "user@space:~$ neofetch", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "OS: SpaceOS nanokernel v0.0.1", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Kernel: x86_64 long mode 6.6", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Display: 1920x1080 @ 32bpp", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Filesystem: ramfs", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Uptime: 0 minutes", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Packages: 6 components", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh
+  fb_draw_string_bg(x + 16, ty, "Shell: .in 0.7.1", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  ty = ty + lh + lh
+  fb_draw_string_bg(x + 16, ty, "user@space:~$ ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  // Cursor block at prompt
+  fb_fill_rect(x + 16 + 13 * cw, ty, cw - 2, cw, FB_COLOR_GREEN)
   return
 }
 
