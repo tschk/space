@@ -70,6 +70,12 @@ var comp_vro_dirty: Int = 0
 
 // Initialize the compositor.
 fn comp_init() -> void {
+  // ponytail: backbuffer at top of heap avoids alloc/heap_next (optimizer crash).
+  if fb_width > 0 && fb_height > 0 {
+    let heap_top = 0x0FFE0000
+    let sz = fb_width * fb_height * 4
+    comp_backbuf = heap_top - ((sz + 4095) & -4096)
+  }
   comp_windows = alloc(COMP_MAX_WINDOWS * COMP_WIN_SIZE)
   let i = 0
   while i < COMP_MAX_WINDOWS {
@@ -825,10 +831,24 @@ fn comp_cur_restore() -> void {
   return
 }
 
-// Render the desktop: background once, dirty windows, taskbar always, cursor.
-// Uses save/restore backbuffer for cursor to avoid flickering garbage.
-// On full_redraw (window dragged), repaints everything top-to-bottom.
+// Blit entire backbuffer to real framebuffer (byte-by-byte memcpy for tear-free display).
+fn comp_blit(dst: Int) -> void {
+  let src = comp_backbuf
+  let n = fb_size / 4  // copy as 32-bit words
+  let bi = 0
+  while bi < n {
+    store32(dst + bi * 4, load32(src + bi * 4))
+    bi = bi + 1
+  }
+}
+
+// Render the desktop with double-buffering for tear-free display.
 fn comp_render() -> void {
+  // Swap to backbuffer
+  let saved_addr = fb_addr
+  if comp_backbuf != 0 {
+    fb_addr = comp_backbuf
+  }
   if comp_bg_drawn == 0 || comp_full_redraw != 0 {
     comp_render_background()
     comp_bg_drawn = 1
@@ -842,7 +862,7 @@ fn comp_render() -> void {
       k = k + 1
     }
   }
-  // Erase old cursor by restoring saved pixels (no background hole)
+  // Erase old cursor by restoring saved pixels
   comp_cur_restore()
   // Draw shadows before windows
   let s = 0
@@ -873,12 +893,17 @@ fn comp_render() -> void {
       comp_render_window(comp_focused)
     }
   }
-  // Always redraw taskbar (covers bottom of screen)
+  // Always redraw taskbar
   comp_render_taskbar()
   // Save area behind new cursor position, then draw cursor
   comp_cur_save()
   comp_render_cursor()
   comp_cur_drawn = 1
+  // Blit entire backbuffer to real framebuffer (tear-free)
+  if comp_backbuf != 0 {
+    comp_blit(saved_addr)
+    fb_addr = saved_addr
+  }
   return
 }
 
