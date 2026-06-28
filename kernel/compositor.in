@@ -81,7 +81,6 @@ fn comp_init() -> void {
   comp_running = 0
   comp_cur_drawn = 0
   comp_cursor_init()
-  fb_font_scale = 3
   comp_vro_init()
   return
 }
