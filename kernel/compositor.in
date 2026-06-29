@@ -454,35 +454,14 @@ fn comp_draw_border(base: Int, color: Int) -> void {
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
-  let bw = w + COMP_BORDER_W * 2
-  let bh = h + COMP_TITLE_BAR_H + COMP_BORDER_W * 2
-  let bx = x - COMP_BORDER_W
-  let by = y - COMP_BORDER_W
-  // Top
-  let i = 0
-  while i < bw {
-    store32(fb_addr + by * fb_pitch + (bx + i) * 4, color)
-    i = i + 1
-  }
-  // Bottom
-  let i2 = 0
-  while i2 < bw {
-    store32(fb_addr + (by + bh - 1) * fb_pitch + (bx + i2) * 4, color)
-    i2 = i2 + 1
-  }
-  // Left
-  let j = 0
-  while j < bh {
-    store32(fb_addr + (by + j) * fb_pitch + bx * 4, color)
-    j = j + 1
-  }
-  // Right
-  let j2 = 0
-  while j2 < bh {
-    store32(fb_addr + (by + j2) * fb_pitch + (bx + bw - 1) * 4, color)
-    j2 = j2 + 1
-  }
-  return
+  let bw = w + 2
+  let bh = h + COMP_TITLE_BAR_H + 2
+  let bx = x - 1
+  let by = y - 1
+  fb_fill_rect(bx, by, bw, 1, color)      // top
+  fb_fill_rect(bx, by + bh - 1, bw, 1, color)  // bottom
+  fb_fill_rect(bx, by + 1, 1, bh - 2, color)   // left
+  fb_fill_rect(bx + bw - 1, by + 1, 1, bh - 2, color)  // right
 }
 
 // Helper: draw title bar background with text
@@ -535,16 +514,7 @@ fn comp_draw_content_bg(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  let cy = 0
-  while cy < h {
-    let cx = 0
-    while cx < w {
-      store32(fb_addr + (content_y + cy) * fb_pitch + (x + cx) * 4, COMP_COLOR_WINDOW)
-      cx = cx + 1
-    }
-    cy = cy + 1
-  }
-  return
+  fb_fill_rect(x, content_y, w, h, COMP_COLOR_WINDOW)
 }
 
 // Helper: draw content text (or default placeholder for empty windows)
