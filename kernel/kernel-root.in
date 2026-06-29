@@ -422,18 +422,14 @@ fn frame_free(p: Int) -> void {
   return
 }
 
-fn pt_index(virt: Int, shift: Int) -> Int {
-  return (virt >> shift) & 0x1FF
-}
-
-// Walk PML4 -> PDPT -> PD -> PT, creating tables as needed, then map one 4 KiB
-// page. The active PML4 is at physical 0x1000 (set up by the trampoline).
-fn map_page(virt: Int, phys: Int, flags: Int) -> void {
-  let pml4 = 0x1000
-  let i4 = pt_index(virt, 39)
-  let i3 = pt_index(virt, 30)
-  let i2 = pt_index(virt, 21)
-  let i1 = pt_index(virt, 12)
+// Walk x86-64 page tables: PML4 -> PDPT -> PD -> PT.
+// Creates intermediate tables and splits huge pages as needed.
+// Returns the address of the PTE slot for the given virtual address.
+fn pt_ensure_pte(pml4: Int, virt: Int) -> Int {
+  let i4 = (virt >> 39) & 0x1FF
+  let i3 = (virt >> 30) & 0x1FF
+  let i2 = (virt >> 21) & 0x1FF
+  let i1 = (virt >> 12) & 0x1FF
   let e4 = load64(pml4 + i4 * 8)
   if (e4 & 1) == 0 {
     let np = frame_alloc()
@@ -478,10 +474,16 @@ fn map_page(virt: Int, phys: Int, flags: Int) -> void {
       j = j + 1
     }
   }
-  let pt = e2 & -4096
-  store64(pt + i1 * 8, phys | flags)
+  return (e2 & -4096) + i1 * 8
+}
+
+// Map one 4 KiB page via pt_ensure_pte. Kernel PML4 is at 0x1000.
+fn map_page(virt: Int, phys: Int, flags: Int) -> void {
+  let pte = pt_ensure_pte(0x1000, virt)
+  store64(pte, phys | flags)
   invlpg(virt)
   return
+}
 }
 
 // --- object graph v0 --------------------------------------------------------

@@ -66,32 +66,8 @@ fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
   if domain >= domain_count { return }
   let pml4 = load64(domain_table + domain * 24 + 0)
   if pml4 == 0 { return }
-  let i4 = (virt >> 39) & 0x1FF
-  let i3 = (virt >> 30) & 0x1FF
-  let i2 = (virt >> 21) & 0x1FF
-  let i1 = (virt >> 12) & 0x1FF
-  let e4 = load64(pml4 + i4 * 8)
-  if (e4 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pml4 + i4 * 8, np | 3)
-    e4 = np | 3
-  }
-  let pdpt = e4 & -4096
-  let e3 = load64(pdpt + i3 * 8)
-  if (e3 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pdpt + i3 * 8, np | 3)
-    e3 = np | 3
-  }
-  let pd = e3 & -4096
-  let e2 = load64(pd + i2 * 8)
-  if (e2 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pd + i2 * 8, np | 3)
-    e2 = np | 3
-  }
-  let pt = e2 & -4096
-  store64(pt + i1 * 8, phys | flags | 1)
+  let pte = pt_ensure_pte(pml4, virt)
+  store64(pte, phys | flags | 1)
   return
 }
 
