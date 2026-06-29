@@ -746,6 +746,9 @@ fn malloc(n: Int) -> Int {
 // Allocate n * size bytes and zero-fill them.  Returns the buffer pointer.
 fn calloc(n: Int, size: Int) -> Int {
   let total = n * size
+  if n != 0 {
+    assert(total / n == size, "calloc: integer overflow")
+  }
   let p = malloc(total)
   memset(p, 0, total)
   return p
