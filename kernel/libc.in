@@ -971,9 +971,13 @@ fn libc_selftest() -> Int {
   // --- string functions ---
   let s1 = "hello"
   let s2 = malloc(16)
-  strcpy(s2, s1)
+  memset(s2, 0x55, 16)
+  let ret_s2 = strcpy(s2, s1)
+  pass = pass & libc_check(ret_s2 == s2, "strcpy return value")
   pass = pass & libc_check(strlen(s1) == 5, "strlen")
   pass = pass & libc_check(strcmp(s2, s1) == 0, "strcpy/strcmp equal")
+  pass = pass & libc_check(load8(s2 + 5) == 0, "strcpy NUL terminator")
+  pass = pass & libc_check(load8(s2 + 6) == 0x55, "strcpy bounds check")
   pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
   pass = pass & libc_check(strcmp("abd", "abc") > 0, "strcmp greater")
 
