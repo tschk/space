@@ -739,6 +739,9 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
 
 // Allocate n bytes from the kernel bump allocator, aligned to 8 bytes.
 fn malloc(n: Int) -> Int {
+  if n < 0 || n > 0x7FFFFFFFFFFFFFF0 {
+    return 0
+  }
   let aligned = (n + 7) & -8
   return alloc(aligned)
 }
@@ -1148,6 +1151,8 @@ fn libc_selftest() -> Int {
   let a1 = malloc(100)
   memset(a1, 0xAB, 100)
   pass = pass & libc_check(load8(a1 + 50) == 0xAB, "malloc + memset 100 bytes")
+  pass = pass & libc_check(malloc(-1) == 0, "malloc bounds check negative")
+  pass = pass & libc_check(malloc(0x7FFFFFFFFFFFFFF1) == 0, "malloc bounds check overflow")
 
   let a2 = calloc(10, 8)
   pass = pass & libc_check(load8(a2 + 0) == 0 && load8(a2 + 79) == 0, "calloc zeroed")
