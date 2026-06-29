@@ -210,15 +210,10 @@ fn nvme_io_submit(opcode: Int, lba: Int, count: Int, buf: Int) -> Int {
   return status
 }
 
-// --- controller initialization ---
-// Find the NVMe controller on PCI bus 0 (class code 0x010802), read BAR0/MMIO
-// base, enable bus mastering and memory space, map the MMIO region, configure
-// admin queues, enable the controller, and create one I/O queue pair.
-// Returns 0 on success, -1 on failure. Idempotent: returns 0 if already ready.
-fn nvme_init() -> Int {
-  if nvme_ready != 0 {
-    return 0
-  }
+// --- PCI initialization ---
+// Scan PCI bus 0 for an NVMe controller (class code 0x010802), read BAR0/MMIO
+// base, enable bus mastering and memory space, and map the MMIO region.
+fn nvme_pci_init() -> Int {
   let port = com1()
 
   // Scan PCI bus 0 for an NVMe controller (class code 0x010802).
@@ -272,6 +267,21 @@ fn nvme_init() -> Int {
     pg = pg + 0x1000
   }
   nvme_mmio = mmio_phys
+  return 0
+}
+
+// --- controller initialization ---
+// Configure admin queues, enable the controller, and create one I/O queue pair.
+// Returns 0 on success, -1 on failure. Idempotent: returns 0 if already ready.
+fn nvme_init() -> Int {
+  if nvme_ready != 0 {
+    return 0
+  }
+  let port = com1()
+
+  if nvme_pci_init() != 0 {
+    return -1
+  }
 
   // Read CAP (64-bit) and VS (32-bit).
   let cap = nvme_r64(NVME_CAP)
