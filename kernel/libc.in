@@ -960,12 +960,8 @@ fn libc_check(cond: Int, msg: Int) -> Int {
   return 0
 }
 
-// Run a battery of tests for every libc function.  Prints diagnostic output
-// and "libc self-test passed" on success.  Returns 1 on pass, 0 on fail.
-fn libc_selftest() -> Int {
-  let port = com1()
-  serial_write_cstr(port, "libc: running comprehensive self-test")
-  serial_nl(port)
+
+fn libc_selftest_string() -> Int {
   let pass = 1
 
   // --- string functions ---
@@ -1013,6 +1009,12 @@ fn libc_selftest() -> Int {
   strrev(s7)
   pass = pass & libc_check(strcmp(s7, "esrever") == 0, "strrev")
 
+  return pass
+}
+
+fn libc_selftest_memory() -> Int {
+  let pass = 1
+
   // --- memory functions ---
   let m1 = malloc(16)
   memset(m1, 65, 8)
@@ -1047,6 +1049,12 @@ fn libc_selftest() -> Int {
   memmove(m4, m4 + 1, 3)
   pass = pass & libc_check(load8(m4 + 0) == 2 && load8(m4 + 1) == 3 && load8(m4 + 2) == 4, "memmove backward overlap")
 
+  return pass
+}
+
+fn libc_selftest_ctype() -> Int {
+  let pass = 1
+
   // --- ctype functions ---
   pass = pass & libc_check(isalpha(65) != 0, "isalpha 'A'")
   pass = pass & libc_check(isalpha(97) != 0, "isalpha 'a'")
@@ -1068,6 +1076,12 @@ fn libc_selftest() -> Int {
   pass = pass & libc_check(toupper(97) == 65, "toupper 'a'->'A'")
   pass = pass & libc_check(tolower(65) == 97, "tolower 'A'->'a'")
   pass = pass & libc_check(toupper(65) == 65, "toupper 'A' unchanged")
+
+  return pass
+}
+
+fn libc_selftest_conversion() -> Int {
+  let pass = 1
 
   // --- conversion functions ---
   pass = pass & libc_check(atoi("42") == 42, "atoi 42")
@@ -1103,6 +1117,11 @@ fn libc_selftest() -> Int {
   let ulen2 = utoa(0, ubuf)
   pass = pass & libc_check(ulen2 == 1 && strcmp(ubuf, "0") == 0, "utoa 0")
 
+  return pass
+}
+
+fn libc_selftest_printf() -> Int {
+  let port = com1()
   // --- printf tests ---
   serial_write_cstr(port, "  printf tests (visual check):")
   serial_nl(port)
@@ -1115,6 +1134,11 @@ fn libc_selftest() -> Int {
   serial_write_cstr(port, "    ")
   printf("bin=%b u=%u", 10, 100)
   serial_nl(port)
+  return 1
+}
+
+fn libc_selftest_math() -> Int {
+  let pass = 1
 
   // --- math functions ---
   pass = pass & libc_check(abs(-5) == 5, "abs -5")
@@ -1128,6 +1152,12 @@ fn libc_selftest() -> Int {
   pass = pass & libc_check(lcm(4, 6) == 12, "lcm 4 6")
   pass = pass & libc_check(lcm(0, 5) == 0, "lcm 0 5")
 
+  return pass
+}
+
+fn libc_selftest_time() -> Int {
+  let pass = 1
+
   // --- time functions ---
   let t0 = time_ticks()
   pass = pass & libc_check(t0 >= 0, "time_ticks non-negative")
@@ -1138,11 +1168,21 @@ fn libc_selftest() -> Int {
   let t1 = time_ticks()
   pass = pass & libc_check(t1 > t0, "time_sleep_ms advanced ticks")
 
+  return pass
+}
+
+fn libc_selftest_utility() -> Int {
+  let port = com1()
   // --- utility functions ---
   // hex_dump visual test.
   serial_write_cstr(port, "  hex_dump test (visual check):")
   serial_nl(port)
   hex_dump("Hello, World!", 14)
+  return 1
+}
+
+fn libc_selftest_malloc() -> Int {
+  let pass = 1
 
   // --- memory allocation ---
   let a1 = malloc(100)
@@ -1156,6 +1196,27 @@ fn libc_selftest() -> Int {
   store64(a3, 0x12345678)
   let a4 = realloc(a3, 16)
   pass = pass & libc_check(load64(a4) == 0x12345678, "realloc preserves data")
+
+  return pass
+}
+
+// Run a battery of tests for every libc function.  Prints diagnostic output
+// and "libc self-test passed" on success.  Returns 1 on pass, 0 on fail.
+fn libc_selftest() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "libc: running comprehensive self-test")
+  serial_nl(port)
+  let pass = 1
+
+  pass = pass & libc_selftest_string()
+  pass = pass & libc_selftest_memory()
+  pass = pass & libc_selftest_ctype()
+  pass = pass & libc_selftest_conversion()
+  pass = pass & libc_selftest_printf()
+  pass = pass & libc_selftest_math()
+  pass = pass & libc_selftest_time()
+  pass = pass & libc_selftest_utility()
+  pass = pass & libc_selftest_malloc()
 
   // --- result ---
   if pass != 0 {
