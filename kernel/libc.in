@@ -981,6 +981,19 @@ fn libc_selftest() -> Int {
   strncpy(s3, "abc", 5)
   pass = pass & libc_check(strncmp(s3, "abc", 3) == 0, "strncpy/strncmp")
   pass = pass & libc_check(load8(s3 + 3) == 0, "strncpy NUL pad")
+
+  // strncpy edge cases
+  let s3_zero = malloc(16)
+  memset(s3_zero, 65, 16)
+  strncpy(s3_zero, "abc", 0)
+  pass = pass & libc_check(load8(s3_zero) == 65, "strncpy zero length")
+
+  let s3_trunc = malloc(16)
+  memset(s3_trunc, 65, 16)
+  strncpy(s3_trunc, "abcdef", 3)
+  pass = pass & libc_check(strncmp(s3_trunc, "abc", 3) == 0, "strncpy truncate")
+  pass = pass & libc_check(load8(s3_trunc + 3) == 65, "strncpy truncate no NUL")
+
   pass = pass & libc_check(strncmp("abc", "abd", 3) < 0, "strncmp less")
   pass = pass & libc_check(strncmp("abc", "abc", 5) == 0, "strncmp equal past NUL")
 
