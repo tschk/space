@@ -4,3 +4,5 @@ kernel/target/
 
 # macOS
 .DS_Store
+
+build/
