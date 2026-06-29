@@ -739,6 +739,9 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
 
 // Allocate n bytes from the kernel bump allocator, aligned to 8 bytes.
 fn malloc(n: Int) -> Int {
+  if n < 0 || n > 0x7FFFFFFFFFFFFFF0 {
+    return 0
+  }
   let aligned = (n + 7) & -8
   return alloc(aligned)
 }
