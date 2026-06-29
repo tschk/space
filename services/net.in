@@ -1,6 +1,0 @@
-// Networking microservice (UDP/IP over e1000).
-// ponytail: see kernel/net.in for the full driver. This service
-// wraps it as a component-local API for use by other components.
-
-// Placeholder for UDP send/recv API.
-// Real implementation reuses kernel/net.in ARP+UDP stack.
