@@ -1076,6 +1076,64 @@ fn fb_info(port: Int) -> void {
 }
 
 // Test pattern: fill screen with colored stripes to verify rendering.
-// ponytail: test pattern removed — ~3KB of pixel-loop code that was only
-// used for framebuffer bring-up debugging. Restore when display bring-up
-// needs pixel-level verification.
+fn fb_test_pattern(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  fb: not initialized")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  fb: drawing test pattern...")
+  serial_nl(port)
+
+  // Fill rows 0-255 with red
+  let y = 0
+  while y < 256 {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x00FF0000)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: red stripe done (rows 0-255)")
+  serial_nl(port)
+
+  // Fill rows 256-511 with green
+  while y < 512 {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x0000FF00)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: green stripe done (rows 256-511)")
+  serial_nl(port)
+
+  // Fill rows 512-767 with blue
+  while y < fb_height {
+    let x = 0
+    while x < fb_width {
+      store32(fb_addr + y * fb_pitch + x * 4, 0x000000FF)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  serial_write_cstr(port, "  fb: blue stripe done (rows 512-767)")
+  serial_nl(port)
+
+  // Read back a few pixels to verify
+  serial_write_cstr(port, "  fb: readback (0,0)=0x")
+  serial_write_hex(port, load32(fb_addr + 0))
+  serial_write_cstr(port, " (128,128)=0x")
+  serial_write_hex(port, load32(fb_addr + 128 * fb_pitch + 128 * 4))
+  serial_write_cstr(port, " (384,384)=0x")
+  serial_write_hex(port, load32(fb_addr + 384 * fb_pitch + 384 * 4))
+  serial_write_cstr(port, " (640,640)=0x")
+  serial_write_hex(port, load32(fb_addr + 640 * fb_pitch + 640 * 4))
+  serial_write_cstr(port, " (1023,767)=0x")
+  serial_write_hex(port, load32(fb_addr + 767 * fb_pitch + 1023 * 4))
+  serial_nl(port)
+
+  return
+}
