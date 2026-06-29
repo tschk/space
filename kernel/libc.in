@@ -483,76 +483,7 @@ fn utoa(n: Int, buf: Int) -> Int {
 // I/O functions (stdio.h equivalent)
 // ====================================================================================
 
-// Print one character to the serial console.
-fn putc(ch: Int) -> void {
-  serial_put(com1(), ch)
-  return
-}
 
-// Alias of putc.
-fn putchar(ch: Int) -> void {
-  serial_put(com1(), ch)
-  return
-}
-
-// Print a NUL-terminated string followed by a newline.
-fn puts(s: Int) -> void {
-  let port = com1()
-  serial_write_cstr(port, s)
-  serial_put(port, 10)
-  return
-}
-
-// Print a NUL-terminated string without a newline.
-fn print(s: Int) -> void {
-  serial_write_cstr(com1(), s)
-  return
-}
-
-// Print a string (alias of print).
-fn printf_str(s: Int) -> void {
-  serial_write_cstr(com1(), s)
-  return
-}
-
-// Print a hex value with "0x" prefix.
-fn printf_hex(n: Int) -> void {
-  let port = com1()
-  serial_put(port, 48)
-  serial_put(port, 120)
-  serial_write_hex(port, n)
-  return
-}
-
-// Print a decimal value.
-fn printf_dec(n: Int) -> void {
-  serial_write_dec_wide(com1(), n)
-  return
-}
-
-// Print a binary value with "0b" prefix.
-fn printf_bin(n: Int) -> void {
-  let port = com1()
-  serial_put(port, 48)
-  serial_put(port, 98)
-  let shift = 63
-  let started = 0
-  while shift >= 0 {
-    let bit = (n >> shift) & 1
-    if bit != 0 || started != 0 || shift == 0 {
-      serial_put(port, 48 + bit)
-      started = 1
-    }
-    shift = shift - 1
-  }
-  return
-}
-
-// Print a single character.
-fn printf_char(c: Int) -> void {
-  serial_put(com1(), c)
-  return
-}
 
 // --- printf helper: format an unsigned number into buf in the given base ---
 // Returns the number of digits written (excluding NUL).  Uses lowercase hex.
@@ -871,13 +802,7 @@ fn panic(msg: Int) -> void {
   return
 }
 
-// Assert that cond is non-zero; if not, panic with msg.
-fn assert(cond: Int, msg: Int) -> void {
-  if cond == 0 {
-    panic(msg)
-  }
-  return
-}
+
 
 // Print a hex dump of n bytes at addr, with an ASCII column.
 // Format: "0xADDR  XX XX XX XX XX XX XX XX  XX XX XX XX XX XX XX XX  |ASCII|"
