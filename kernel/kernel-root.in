@@ -132,7 +132,6 @@ fn thr_exit() -> void {
   store64(thread_state + current_task * 8, THR_DONE)
   invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
   // ponytail: unreachable after yield
-  return
 }
 
 // Thread callback: switch to and run this thread.
