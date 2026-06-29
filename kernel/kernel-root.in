@@ -28,6 +28,8 @@ import "mouse.in"
 import "compositor.in"
 // SPDP display server.
 import "../services/display.in"
+// Cooperative scheduler (must immediately precede shell.in).
+import "sched.in"
 // Interactive serial shell.
 import "shell.in"
 
@@ -65,7 +67,6 @@ interface DebugConsole {
 
 // --- nanokernel state -------------------------------------------------------
 var heap_next: Int = 0
-var heap_free_list: Int = 0
 var heap_end: Int = 0
 var total_ram: Int = 0
 var region_count: Int = 0
@@ -76,151 +77,12 @@ var root_realm: Int = 0
 var ticks: Int = 0
 var idt_base: Int = 0
 var realm_grants: Int = 0
-var ctxsw: Int = 0
-var kernel_slot: Int = 0
 var ptasks: Int = 0
 var pcount: Int = 0
 var pcurrent: Int = 0
 var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
-
-// --- thread system (M:N cooperative threading, goroutine-like) --------------
-// Threads are lightweight, stackful execution contexts switched via ctxsw.
-// Unlike the old task model, threads support blocking (wait queues), waking,
-// and automatic round-robin scheduling. The main kernel context is thread 0.
-const THR_RUNNABLE = 0
-const THR_BLOCKED = 1
-const THR_DONE = 2
-
-var thread_sp: Int = 0      // array[t]: saved stack pointer
-var thread_state: Int = 0   // array[t]: state (RUNNABLE/BLOCKED/DONE)
-var thread_count: Int = 0
-var current_task: Int = 0
-
-fn thr_init(max: Int) -> void {
-  thread_sp = alloc(max * 8)
-  thread_state = alloc(max * 8)
-  thread_count = 1  // thread 0 = main kernel context
-  for i in 0..max {
-    store64(thread_state + i * 8, THR_DONE)
-    store64(thread_sp + i * 8, 0)
-  }
-  store64(thread_state + 0, THR_RUNNABLE)
-  return
-}
-
-fn thr_create(entry: Int) -> Int {
-  let t = thread_count
-  let stack = alloc(16384)
-  let sp = stack + 16384 - 64  // 6 callee-saved regs + entry + exit cleanup
-  store64(sp + 0, 0)       // RBX
-  store64(sp + 8, 0)       // RBP
-  store64(sp + 16, 0)      // R12
-  store64(sp + 24, 0)      // R13
-  store64(sp + 32, 0)      // R14
-  store64(sp + 40, 0)      // R15
-  store64(sp + 48, entry)  // ret addr → first function
-  store64(sp + 56, thr_exit)  // entry's ret → cleanup
-  store64(thread_sp + t * 8, sp)
-  store64(thread_state + t * 8, THR_RUNNABLE)
-  thread_count = thread_count + 1
-  return t
-}
-
-// Called when a thread's entry function returns. Marks as DONE and yields back
-// to the kernel scheduler, which will skip it in thr_next().
-fn thr_exit() -> void {
-  store64(thread_state + current_task * 8, THR_DONE)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  // ponytail: unreachable after yield — ctxsw does not return
-}
-
-// Thread callback: switch to and run this thread.
-fn thr_switch(t: Int) -> void {
-  current_task = t
-  invoke2(ctxsw, kernel_slot, load64(thread_sp + t * 8))
-  return
-}
-
-// Yield voluntarily (mark RUNNABLE, switch back to scheduler).
-fn thr_yield() -> void {
-  store64(thread_state + current_task * 8, THR_RUNNABLE)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  return
-}
-
-// Block current thread (mark BLOCKED, switch back to scheduler).
-fn thr_block() -> void {
-  store64(thread_state + current_task * 8, THR_BLOCKED)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  return
-}
-
-// Wake a blocked thread (mark RUNNABLE). Safe to call with tid=-1 or invalid.
-fn thr_wake(tid: Int) -> void {
-  if tid >= 0 && tid < thread_count {
-    store64(thread_state + tid * 8, THR_RUNNABLE)
-  }
-  return
-}
-
-// Run all runnable threads; return when all are DONE (HLT if temporarily idle).
-// Uses fair round-robin: scan from the last dispatched thread.
-var thr_last: Int = 0
-
-fn thr_run() -> void {
-  thr_last = 1
-  while true {
-    let t = thr_next(thr_last)
-    if t >= 0 {
-      thr_last = (t + 1) % thread_count
-      thr_switch(t)
-    } else if thr_all_done() != 0 {
-      return
-    } else {
-      sti()
-      while thr_next(thr_last) < 0 && thr_all_done() == 0 {
-        hlt()
-      }
-      cli()
-    }
-  }
-  return
-}
-
-fn thr_next(start: Int) -> Int {
-  let n = start
-  let tries = 0
-  while tries < thread_count {
-    if n == 0 {
-      n = 1
-    }
-    if n < thread_count {
-      if load64(thread_state + n * 8) == THR_RUNNABLE {
-        return n
-      }
-    }
-    n = n + 1
-    if n >= thread_count {
-      n = 0
-    }
-    tries = tries + 1
-  }
-  return -1
-}
-
-// Returns 1 when all non-main threads are THR_DONE.
-fn thr_all_done() -> Int {
-  let t = 1
-  while t < thread_count {
-    if load64(thread_state + t * 8) != THR_DONE {
-      return 0
-    }
-    t = t + 1
-  }
-  return 1
-}
 
 // --- serial console (COM1) --------------------------------------------------
 const COM1_PORT = 0x3F8
@@ -345,47 +207,16 @@ fn run_determinism(port: Int) -> void {
   return
 }
 
-// --- heap allocator (bump + free list) --------------------------------------
+// --- heap allocator (bump) --------------------------------------------------
 fn alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
-  let size = aligned + 16
-
-  let prev = 0
-  let curr = heap_free_list
-  while curr != 0 {
-    let block_size = load64(curr)
-    if block_size >= size {
-      let next_block = load64(curr + 8)
-      if prev == 0 {
-        heap_free_list = next_block
-      } else {
-        store64(prev + 8, next_block)
-      }
-      return curr + 16
-    }
-    prev = curr
-    curr = load64(curr + 8)
-  }
-
   let p = heap_next
-  let next = heap_next + size
+  let next = heap_next + aligned
   if next > heap_end {
     panic("heap exhausted")
   }
   heap_next = next
-  store64(p, size)
-  store64(p + 8, 0)
-  return p + 16
-}
-
-fn heap_free(ptr: Int) -> void {
-  if ptr == 0 {
-    return
-  }
-  let block = ptr - 16
-  store64(block + 8, heap_free_list)
-  heap_free_list = block
-  return
+  return p
 }
 
 // --- physical memory discovery (Multiboot1 memory map) ----------------------
@@ -808,7 +639,7 @@ fn sys_chan_recv(ch: Int) -> Int {
 
 // Syscall 8: sys_chan_close(ch) — close/free a channel.
 fn sys_chan_close(ch: Int) -> Int {
-  heap_free(ch)
+  chan_heap_free(ch)
   return 0
 }
 
@@ -956,72 +787,6 @@ fn run_supervisor(port: Int) -> void {
   return
 }
 
-// --- thread-based cooperative scheduler (M:N goroutine-like) ----------------
-// Threads replace the old flat task array. Each thread has its own stack and
-// is scheduled round-robin via ctxsw. Threads can block on channels (wait
-// queues) and be woken by other threads. The main kernel context is thread 0.
-fn scheduler_init(max_tasks: Int) -> void {
-  ctxsw = load64(0x4018)
-  if kernel_slot == 0 {
-    kernel_slot = alloc(8)
-  }
-  thr_init(max_tasks)
-  return
-}
-
-// --- worker threads ---------------------------------------------------------
-fn worker_a() -> Int {
-  let round = 0
-  while round < 3 {
-    let port = com1()
-    serial_write_cstr(port, "space:   <worker A> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
-    round = round + 1
-    thr_yield()
-  }
-  return 0
-}
-
-fn worker_b() -> Int {
-  let round = 0
-  while round < 3 {
-    let port = com1()
-    serial_write_cstr(port, "space:   <worker B> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
-    round = round + 1
-    thr_yield()
-  }
-  return 0
-}
-
-fn worker_c() -> Int {
-  let round = 0
-  while round < 3 {
-    let port = com1()
-    serial_write_cstr(port, "space:   <worker C> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
-    round = round + 1
-    thr_yield()
-  }
-  return 0
-}
-
-fn run_scheduler(port: Int) -> void {
-  scheduler_init(8)
-  thr_create(worker_a)
-  thr_create(worker_b)
-  thr_create(worker_c)
-    serial_write_cstr(port, "space: scheduler running 3 threads, round-robin")
-  serial_nl(port)
-  thr_run()
-    serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
-  serial_nl(port)
-  return
-}
-
 // --- preemptive scheduler ---------------------------------------------------
 // Build a full interrupt-frame for a new task: 15 saved GP registers followed
 // by the iretq frame (RIP, CS, RFLAGS with IF set, RSP, SS).
@@ -1113,7 +878,7 @@ var comp_backbuf: Int = 0  // double-buffer for tear-free compositor
 
 fn chan_new(cap: Int) -> Int {
   // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
-  let c = alloc(48 + cap * 8)
+  let c = chan_alloc(48 + cap * 8)
   store64(c + 0, cap)
   store64(c + 8, 0)
   store64(c + 16, 0)
@@ -1175,51 +940,6 @@ fn chan_recv(c: Int) -> Int {
     thr_wake(snd)
   }
   return msg
-}
-
-// --- channel IPC demo (blocking producer / consumer) ------------------------
-fn task_producer() -> Int {
-  let i = 0
-  while i < 8 {
-    chan_send(chan0, 0x100 + i)
-    let port = com1()
-    serial_write_cstr(port, "space:   <producer> sent 0x")
-    serial_write_hex(port, 0x100 + i)
-    serial_nl(port)
-    i = i + 1
-    thr_yield()
-  }
-  return 0
-}
-
-fn task_consumer() -> Int {
-  let m = 0
-  while m < 8 {
-    let v = chan_recv(chan0)
-    let port = com1()
-    serial_write_cstr(port, "space:   <consumer> recv 0x")
-    serial_write_hex(port, v)
-    serial_nl(port)
-    m = m + 1
-  }
-  return 0
-}
-
-fn run_channels(port: Int) -> void {
-    serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
-  serial_nl(port)
-  scheduler_init(8)
-  chan0 = chan_new(4)
-  thr_create(task_consumer)  // thread 1 = consumer
-  thr_create(task_producer)  // thread 2 = producer
-    serial_write_cstr(port, "space:   running threads...")
-  serial_nl(port)
-  thr_run()
-  let cnt = chan_count(chan0)
-  serial_write_cstr(port, "space: channel demo complete, remaining 0x")
-  serial_write_hex(port, cnt)
-  serial_nl(port)
-  return
 }
 
 // --- SCI component loader ---------------------------------------------------

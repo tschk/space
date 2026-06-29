@@ -712,12 +712,8 @@ fn realloc(p: Int, n: Int) -> Int {
   return np
 }
 
-// Free a malloc block. User pointers sit 8 bytes past the alloc() return value.
+// Free a malloc block. Bump allocator — reclamation is a no-op for now.
 fn free(p: Int) -> void {
-  if p == 0 {
-    return
-  }
-  heap_free(p - 8)
   return
 }
 
