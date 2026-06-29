@@ -738,9 +738,13 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
 // ====================================================================================
 
 // Allocate n bytes from the kernel bump allocator, aligned to 8 bytes.
+// We allocate an extra 8 bytes to store the size of the allocation,
+// which is required for a safe `realloc`.
 fn malloc(n: Int) -> Int {
   let aligned = (n + 7) & -8
-  return alloc(aligned)
+  let p = alloc(aligned + 8)
+  store64(p, n)
+  return p + 8
 }
 
 // Allocate n * size bytes and zero-fill them.  Returns the buffer pointer.
@@ -754,11 +758,20 @@ fn calloc(n: Int, size: Int) -> Int {
 // Reallocate: allocate a new buffer of n bytes, copy the old data, and free
 // the old buffer (no-op with bump allocator).  Returns the new buffer.
 fn realloc(p: Int, n: Int) -> Int {
+  if p == 0 {
+    return malloc(n)
+  }
+  if n == 0 {
+    free(p)
+    return 0
+  }
   let np = malloc(n)
-  // Copy old data — we don't know the old size, so copy n bytes.
-  // This is safe because the bump allocator never reclaims, so the old
-  // region is still valid.
-  memcpy(np, p, n)
+  let old_size = load64(p - 8)
+  let copy_size = old_size
+  if n < old_size {
+    copy_size = n
+  }
+  memcpy(np, p, copy_size)
   free(p)
   return np
 }
@@ -1156,6 +1169,16 @@ fn libc_selftest() -> Int {
   store64(a3, 0x12345678)
   let a4 = realloc(a3, 16)
   pass = pass & libc_check(load64(a4) == 0x12345678, "realloc preserves data")
+
+  let a5 = malloc(16)
+  store64(a5, 0x11223344)
+  store64(a5 + 8, 0x55667788)
+  let a6 = realloc(a5, 8)
+  pass = pass & libc_check(load64(a6) == 0x11223344, "realloc truncates data")
+
+  let a7 = realloc(0, 8)
+  store64(a7, 0x99AABBCC)
+  pass = pass & libc_check(load64(a7) == 0x99AABBCC, "realloc from null acts as malloc")
 
   // --- result ---
   if pass != 0 {
