@@ -132,8 +132,7 @@ fn thr_create(entry: Int) -> Int {
 fn thr_exit() -> void {
   store64(thread_state + current_task * 8, THR_DONE)
   invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
-  // ponytail: unreachable after yield
-  return
+  // ponytail: unreachable after yield — ctxsw does not return
 }
 
 // Thread callback: switch to and run this thread.
@@ -349,7 +348,11 @@ fn run_determinism(port: Int) -> void {
 fn alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
   let p = heap_next
-  heap_next = heap_next + aligned
+  let next = heap_next + aligned
+  if next > heap_end {
+    panic("heap exhausted")
+  }
+  heap_next = next
   return p
 }
 
@@ -484,7 +487,6 @@ fn map_page(virt: Int, phys: Int, flags: Int) -> void {
   invlpg(virt)
   return
 }
-}
 
 // --- object graph v0 --------------------------------------------------------
 // The object graph lives in a dedicated arena so it can be checkpointed and
@@ -492,17 +494,23 @@ fn map_page(virt: Int, phys: Int, flags: Int) -> void {
 var obj_arena: Int = 0
 var obj_arena_next: Int = 0
 var obj_arena_size: Int = 0
+var obj_arena_end: Int = 0
 
 fn obj_arena_init(size: Int) -> void {
   obj_arena = alloc(size)
   obj_arena_next = obj_arena
   obj_arena_size = size
+  obj_arena_end = obj_arena + size
   return
 }
 
 fn obj_bump(n: Int) -> Int {
   let p = obj_arena_next
-  obj_arena_next = obj_arena_next + ((n + 15) & -16)
+  let next = obj_arena_next + ((n + 15) & -16)
+  if next > obj_arena_end {
+    panic("obj arena exhausted")
+  }
+  obj_arena_next = next
   return p
 }
 

@@ -103,20 +103,25 @@ fn e1000_init(port: Int) -> Int {
 
 // Poll the next RX descriptor; return its buffer address and set nic_rx_len
 // if a frame arrived, else 0. Recycles the descriptor back to the NIC.
-// ponytail: only e1000_rx_wait is called; e1000_rx_poll removed.
+fn e1000_rx_poll() -> Int {
+  let rdh = mmio_r32(0x2810)
+  if rdh != nic_rx_head {
+    let d = nic_rx_ring + nic_rx_head * 16
+    nic_rx_len = load16(d + 8)
+    let buf = load64(d + 0)
+    store8(d + 12, 0)
+    mmio_w32(0x2818, nic_rx_head)
+    nic_rx_head = (nic_rx_head + 1) % RX_NDESC
+    return buf
+  }
+  return 0
+}
+
 fn e1000_rx_wait() -> Int {
   let tries = 0
   while tries < 3000000 {
-    // Read RDH via MMIO each iteration: this both detects reception (RDH moves
-    // past our consumer index) and pumps QEMU's device/network emulation.
-    let rdh = mmio_r32(0x2810)
-    if rdh != nic_rx_head {
-      let d = nic_rx_ring + nic_rx_head * 16
-      nic_rx_len = load16(d + 8)
-      let buf = load64(d + 0)
-      store8(d + 12, 0)
-      mmio_w32(0x2818, nic_rx_head)
-      nic_rx_head = (nic_rx_head + 1) % RX_NDESC
+    let buf = e1000_rx_poll()
+    if buf != 0 {
       return buf
     }
     tries = tries + 1
