@@ -22,18 +22,24 @@ fn strlen(s: Int) -> Int {
   return i
 }
 
-// Copy a NUL-terminated string from src to dst.  Returns dst.
-fn strcpy(dst: Int, src: Int) -> Int {
-  let i = 0
-  while true {
-    let c = load8(src + i)
-    store8(dst + i, c)
-    if c == 0 {
-      return dst
+// Copy a NUL-terminated string from src to dst, with bounds checking.
+// It will copy at most size - 1 characters from src to dst, NUL-terminating the
+// result if size > 0. Returns the length of src.
+fn strlcpy(dst: Int, src: Int, size: Int) -> Int {
+  let srclen = strlen(src)
+  if size > 0 {
+    let copylen = srclen
+    if copylen >= size {
+      copylen = size - 1
     }
-    i = i + 1
+    let i = 0
+    while i < copylen {
+      store8(dst + i, load8(src + i))
+      i = i + 1
+    }
+    store8(dst + copylen, 0)
   }
-  return dst
+  return srclen
 }
 
 // Copy at most n bytes from src to dst.  If src is shorter than n, dst is
@@ -194,7 +200,7 @@ fn strstr(haystack: Int, needle: Int) -> Int {
 fn strdup(s: Int) -> Int {
   let len = strlen(s)
   let p = malloc(len + 1)
-  strcpy(p, s)
+  strlcpy(p, s, len + 1)
   return p
 }
 
@@ -971,9 +977,9 @@ fn libc_selftest() -> Int {
   // --- string functions ---
   let s1 = "hello"
   let s2 = malloc(16)
-  strcpy(s2, s1)
+  strlcpy(s2, s1, 16)
   pass = pass & libc_check(strlen(s1) == 5, "strlen")
-  pass = pass & libc_check(strcmp(s2, s1) == 0, "strcpy/strcmp equal")
+  pass = pass & libc_check(strcmp(s2, s1) == 0, "strlcpy/strcmp equal")
   pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
   pass = pass & libc_check(strcmp("abd", "abc") > 0, "strcmp greater")
 
@@ -985,12 +991,12 @@ fn libc_selftest() -> Int {
   pass = pass & libc_check(strncmp("abc", "abc", 5) == 0, "strncmp equal past NUL")
 
   let s4 = malloc(32)
-  strcpy(s4, "foo")
+  strlcpy(s4, "foo", 32)
   strcat(s4, "bar")
   pass = pass & libc_check(strcmp(s4, "foobar") == 0, "strcat")
 
   let s5 = malloc(32)
-  strcpy(s5, "foo")
+  strlcpy(s5, "foo", 32)
   strncat(s5, "barbaz", 3)
   pass = pass & libc_check(strcmp(s5, "foobar") == 0, "strncat")
 
@@ -1009,7 +1015,7 @@ fn libc_selftest() -> Int {
   pass = pass & libc_check(strcmp(s6, "copyme") == 0, "strdup")
 
   let s7 = malloc(16)
-  strcpy(s7, "reverse")
+  strlcpy(s7, "reverse", 16)
   strrev(s7)
   pass = pass & libc_check(strcmp(s7, "esrever") == 0, "strrev")
 
