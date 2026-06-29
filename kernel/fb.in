@@ -550,6 +550,36 @@ fn fb_info(port: Int) -> void {
 }
 
 // Test pattern: fill screen with colored stripes to verify rendering.
-// ponytail: test pattern removed — ~3KB of pixel-loop code that was only
-// used for framebuffer bring-up debugging. Restore when display bring-up
-// needs pixel-level verification.
+fn fb_test_pattern(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  fb: not initialized")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  fb: drawing test pattern...")
+  serial_nl(port)
+
+  fb_fill_rect(0, 0, fb_width, 256, 0x00FF0000)
+  serial_write_cstr(port, "  fb: red stripe done (rows 0-255)")
+  serial_nl(port)
+
+  fb_fill_rect(0, 256, fb_width, 256, 0x0000FF00)
+  serial_write_cstr(port, "  fb: green stripe done (rows 256-511)")
+  serial_nl(port)
+
+  let blue_h = fb_height - 512
+  if blue_h > 0 {
+    fb_fill_rect(0, 512, fb_width, blue_h, 0x000000FF)
+  }
+  serial_write_cstr(port, "  fb: blue stripe done (rows 512+)")
+  serial_nl(port)
+
+  serial_write_cstr(port, "  fb: readback (0,0)=0x")
+  serial_write_hex(port, load32(fb_addr + 0))
+  serial_write_cstr(port, " (128,128)=0x")
+  serial_write_hex(port, load32(fb_addr + 128 * fb_pitch + 128 * 4))
+  serial_write_cstr(port, " (384,384)=0x")
+  serial_write_hex(port, load32(fb_addr + 384 * fb_pitch + 384 * 4))
+  serial_nl(port)
+  return
+}

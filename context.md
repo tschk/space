@@ -9,7 +9,8 @@ kernel/linux.in:707:      // ponytail: allocates from kernel bump heap — no pe
 kernel/fb.in:476:         // ponytail: 2px padding between chars and 3px between lines for readability.
 kernel/fb.in:553:         // ponytail: test pattern removed — ~3KB of pixel-loop code that was only
 kernel/kernel-root.in:135: // ponytail: unreachable after yield — ctxsw does not return
-kernel/kernel-root.in:771: // ponytail: no-op — channels live in kernel heap and aren't freed yet.
+kernel/kernel-root.in:771: — (resolved) sys_chan_close calls heap_free via channel deallocation PR #23
+kernel/fb.in:553:         — (resolved) fb_test_pattern restored; shell command `fb test`
 kernel/net.in:106:        — (resolved) e1000_rx_poll restored; e1000_rx_wait delegates to poll
 kernel/compositor.in:69:  // ponytail: backbuffer at top of heap avoids alloc/heap_next (optimizer crash).
 kernel/compositor.in:282: // ponytail: subtract taskbar to prevent window overlap

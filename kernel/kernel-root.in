@@ -65,6 +65,7 @@ interface DebugConsole {
 
 // --- nanokernel state -------------------------------------------------------
 var heap_next: Int = 0
+var heap_free_list: Int = 0
 var heap_end: Int = 0
 var total_ram: Int = 0
 var region_count: Int = 0
@@ -344,16 +345,47 @@ fn run_determinism(port: Int) -> void {
   return
 }
 
-// --- bump heap allocator ----------------------------------------------------
+// --- heap allocator (bump + free list) --------------------------------------
 fn alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
+  let size = aligned + 16
+
+  let prev = 0
+  let curr = heap_free_list
+  while curr != 0 {
+    let block_size = load64(curr)
+    if block_size >= size {
+      let next_block = load64(curr + 8)
+      if prev == 0 {
+        heap_free_list = next_block
+      } else {
+        store64(prev + 8, next_block)
+      }
+      return curr + 16
+    }
+    prev = curr
+    curr = load64(curr + 8)
+  }
+
   let p = heap_next
-  let next = heap_next + aligned
+  let next = heap_next + size
   if next > heap_end {
     panic("heap exhausted")
   }
   heap_next = next
-  return p
+  store64(p, size)
+  store64(p + 8, 0)
+  return p + 16
+}
+
+fn heap_free(ptr: Int) -> void {
+  if ptr == 0 {
+    return
+  }
+  let block = ptr - 16
+  store64(block + 8, heap_free_list)
+  heap_free_list = block
+  return
 }
 
 // --- physical memory discovery (Multiboot1 memory map) ----------------------
@@ -776,8 +808,7 @@ fn sys_chan_recv(ch: Int) -> Int {
 
 // Syscall 8: sys_chan_close(ch) — close/free a channel.
 fn sys_chan_close(ch: Int) -> Int {
-  // ponytail: no-op — channels live in kernel heap and aren't freed yet.
-  // Add proper heap free when the kernel has a working deallocator.
+  heap_free(ch)
   return 0
 }
 

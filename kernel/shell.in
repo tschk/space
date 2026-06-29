@@ -143,7 +143,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb desktop display comp halt")
+      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb fb test desktop display comp halt")
       serial_nl(port)
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
@@ -296,6 +296,8 @@ fn shell(port: Int) -> void {
       let ch = chan_new(32)
       dsp_init()
       dsp_run(ch, port)
+    } else if line_eq("fb test") != 0 {
+      fb_test_pattern(port)
     } else if line_eq("fb") != 0 {
       fb_info(port)
     } else if line_eq("comp") != 0 {
