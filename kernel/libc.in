@@ -972,7 +972,15 @@ fn libc_selftest() -> Int {
   let s1 = "hello"
   let s2 = malloc(16)
   strcpy(s2, s1)
-  pass = pass & libc_check(strlen(s1) == 5, "strlen")
+  pass = pass & libc_check(strlen(s1) == 5, "strlen basic")
+  pass = pass & libc_check(strlen("") == 0, "strlen empty string")
+  pass = pass & libc_check(strlen("a b c") == 5, "strlen with spaces")
+
+  let dyn_str = malloc(8)
+  store8(dyn_str, 65)     // 'A'
+  store8(dyn_str + 1, 66) // 'B'
+  store8(dyn_str + 2, 0)  // NUL
+  pass = pass & libc_check(strlen(dyn_str) == 2, "strlen dynamic buffer")
   pass = pass & libc_check(strcmp(s2, s1) == 0, "strcpy/strcmp equal")
   pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
   pass = pass & libc_check(strcmp("abd", "abc") > 0, "strcmp greater")
