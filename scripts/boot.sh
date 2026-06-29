@@ -50,7 +50,7 @@ IN="${IN:-$(which in 2>/dev/null || echo /Users/undivisible/projects/inauguratio
 USE_NET=0
 USE_SCI=0
 USE_USB=0
-USE_DISK=1
+USE_DISK="${USE_DISK:-1}"
 USE_GUI=1
 for arg in "$@"; do
   case "$arg" in
