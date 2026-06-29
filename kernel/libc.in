@@ -98,24 +98,6 @@ fn strncmp(a: Int, b: Int, n: Int) -> Int {
   return 0
 }
 
-// Append src to the end of dst (NUL-terminated).  Returns dst.
-fn strcat(dst: Int, src: Int) -> Int {
-  let i = 0
-  while load8(dst + i) != 0 {
-    i = i + 1
-  }
-  let j = 0
-  while true {
-    let c = load8(src + j)
-    store8(dst + i + j, c)
-    if c == 0 {
-      return dst
-    }
-    j = j + 1
-  }
-  return dst
-}
-
 // Append at most n bytes from src to dst.  The result is always NUL-terminated.
 // Returns dst.
 fn strncat(dst: Int, src: Int, n: Int) -> Int {
@@ -983,11 +965,6 @@ fn libc_selftest() -> Int {
   pass = pass & libc_check(load8(s3 + 3) == 0, "strncpy NUL pad")
   pass = pass & libc_check(strncmp("abc", "abd", 3) < 0, "strncmp less")
   pass = pass & libc_check(strncmp("abc", "abc", 5) == 0, "strncmp equal past NUL")
-
-  let s4 = malloc(32)
-  strcpy(s4, "foo")
-  strcat(s4, "bar")
-  pass = pass & libc_check(strcmp(s4, "foobar") == 0, "strcat")
 
   let s5 = malloc(32)
   strcpy(s5, "foo")
