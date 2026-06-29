@@ -370,21 +370,9 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
 
 // --- rendering --------------------------------------------------------------
 
-// Draw the desktop background with subtle gradient stripes.
+// Draw the desktop background (flat color, no stripes — ponytail: stripes were 20 loops per frame).
 fn comp_render_background() -> void {
   fb_clear(COMP_COLOR_DESKTOP)
-  // Draw subtle horizontal stripes (dark separator lines)
-  let i = 1
-  while i < 20 {
-    let sy = i * (fb_height / 20)
-    let j = 0
-    while j < fb_width {
-      store32(fb_addr + sy * fb_pitch + j * 4, COMP_COLOR_PANEL)
-      j = j + 1
-    }
-    i = i + 1
-  }
-  return
 }
 
 // X11-style arrow cursor bitmap (16x16, top-left hotspot)
@@ -411,7 +399,7 @@ fn comp_cursor_init() -> void {
   store8(comp_cursor_bits + 30, 0x00); store8(comp_cursor_bits + 31, 0x1C)
 }
 
-// Draw the X11-style arrow cursor with black outline + white fill
+// Draw the X11-style arrow cursor (white, no outline — ponytail: outline was 256 extra pixel calls per frame).
 fn comp_render_cursor() -> void {
   let x = mouse_x
   let y = mouse_y
@@ -430,10 +418,6 @@ fn comp_render_cursor() -> void {
       if bit != 0 {
         let px = x + col
         let py = y + row
-        fb_put_pixel(px - 1, py, FB_COLOR_BLACK)
-        fb_put_pixel(px + 1, py, FB_COLOR_BLACK)
-        fb_put_pixel(px, py - 1, FB_COLOR_BLACK)
-        fb_put_pixel(px, py + 1, FB_COLOR_BLACK)
         fb_put_pixel(px, py, FB_COLOR_WHITE)
       }
       col = col + 1
@@ -453,31 +437,14 @@ fn comp_draw_shadow(base: Int) -> void {
   let sy = y + r + COMP_TITLE_BAR_H
   let sw = w
   let sh = h
-  let col = 0
-  while col < sw + r {
-    let px = sx + col
-    let j = 0
-    while j < r {
-      let py = sy + sh + j
-      if py < fb_height && px < fb_width {
-        fb_put_pixel(px, py, FB_COLOR_BLACK)
-      }
-      j = j + 1
-    }
-    col = col + 1
+  // Bottom shadow band
+  if sy + sh < fb_height {
+    let bh = r
+    fb_fill_rect(sx, sy + sh, sw, bh, FB_COLOR_BLACK)
   }
-  let row = 0
-  while row < sh + r {
-    let py = sy + row
-    let i = 0
-    while i < r {
-      let px = sx + sw + i
-      if px < fb_width && py < fb_height {
-        fb_put_pixel(px, py, FB_COLOR_BLACK)
-      }
-      i = i + 1
-    }
-    row = row + 1
+  // Right shadow band
+  if sx + sw < fb_width {
+    fb_fill_rect(sx + sw, sy, r, sh + r, FB_COLOR_BLACK)
   }
 }
 
@@ -862,71 +829,83 @@ fn comp_blit(dst: Int) -> void {
   }
 }
 
-// Render the desktop with double-buffering for tear-free display.
+// Render the desktop with double-buffering + cursor-only fast path.
 fn comp_render() -> void {
-  // Swap to backbuffer
-  let saved_addr = fb_addr
-  if comp_backbuf != 0 {
-    fb_addr = comp_backbuf
-  }
-  if comp_bg_drawn == 0 || comp_full_redraw != 0 {
-    comp_render_background()
-    comp_bg_drawn = 1
-    comp_full_redraw = 0
-    // ponytail: redraw all windows when background changed
-    let k = 0
-    while k < comp_count {
-      let base = comp_win_base(k)
-      let flags = load32(base + 20)
-      store32(base + 20, flags | COMP_WIN_DIRTY)
-      k = k + 1
+  // Check if any window needs to be redrawn.
+  let any_dirty = 0
+  let di = 0
+  while di < comp_count {
+    if (load32(comp_win_base(di) + 20) & (COMP_WIN_DIRTY | COMP_WIN_MINIMIZED)) == COMP_WIN_DIRTY {
+      any_dirty = 1
+      di = comp_count
     }
-    // Reset cursor tracking — don't restore stale saved pixels after full redraw
-    comp_cur_drawn = 0
+    di = di + 1
   }
-  // Erase old cursor only if we have fresh saved pixels
-  if comp_cur_drawn != 0 {
-    comp_cur_restore()
-  }
-  // Draw shadows (skip minimized windows)
-  let s = 0
-  while s < comp_count {
-    let base = comp_win_base(s)
-    let flags = load32(base + 20)
-    if (flags & COMP_WIN_DIRTY) != 0 && (flags & COMP_WIN_MINIMIZED) == 0 {
-      comp_draw_shadow(base)
+
+  if any_dirty != 0 || comp_full_redraw != 0 || comp_bg_drawn == 0 {
+    // Full render to backbuffer + blit
+    let saved_addr = fb_addr
+    if comp_backbuf != 0 {
+      fb_addr = comp_backbuf
     }
-    s = s + 1
-  }
-  // Draw dirty windows (focused window last for visual z-order)
-  let i = 0
-  while i < comp_count {
-    if i != comp_focused {
-      let base = comp_win_base(i)
-      let flags = load32(base + 20)
-      if (flags & COMP_WIN_DIRTY) != 0 {
-        comp_render_window(i)
+    if comp_bg_drawn == 0 || comp_full_redraw != 0 {
+      comp_render_background()
+      comp_bg_drawn = 1
+      comp_full_redraw = 0
+      let k = 0
+      while k < comp_count {
+        store32(comp_win_base(k) + 20, load32(comp_win_base(k) + 20) | COMP_WIN_DIRTY)
+        k = k + 1
+      }
+      comp_cur_drawn = 0
+    }
+    if comp_cur_drawn != 0 {
+      comp_cur_restore()
+    }
+    let s = 0
+    while s < comp_count {
+      let base = comp_win_base(s)
+      let fl = load32(base + 20)
+      if (fl & COMP_WIN_DIRTY) != 0 && (fl & COMP_WIN_MINIMIZED) == 0 {
+        comp_draw_shadow(base)
+      }
+      s = s + 1
+    }
+    let i = 0
+    while i < comp_count {
+      if i != comp_focused {
+        let fl = load32(comp_win_base(i) + 20)
+        if (fl & COMP_WIN_DIRTY) != 0 {
+          comp_render_window(i)
+        }
+      }
+      i = i + 1
+    }
+    if comp_focused >= 0 && comp_focused < comp_count {
+      let fl = load32(comp_win_base(comp_focused) + 20)
+      if (fl & COMP_WIN_DIRTY) != 0 {
+        comp_render_window(comp_focused)
       }
     }
-    i = i + 1
-  }
-  if comp_focused >= 0 && comp_focused < comp_count {
-    let base = comp_win_base(comp_focused)
-    let flags = load32(base + 20)
-    if (flags & COMP_WIN_DIRTY) != 0 {
-      comp_render_window(comp_focused)
+    comp_render_taskbar()
+    comp_cur_save()
+    comp_render_cursor()
+    comp_cur_drawn = 1
+    // Blit backbuffer to real framebuffer
+    if comp_backbuf != 0 {
+      comp_blit(saved_addr)
+      fb_addr = saved_addr
     }
-  }
-  // Always redraw taskbar
-  comp_render_taskbar()
-  // Save area behind new cursor position, then draw cursor
-  comp_cur_save()
-  comp_render_cursor()
-  comp_cur_drawn = 1
-  // Blit entire backbuffer to real framebuffer (tear-free)
-  if comp_backbuf != 0 {
-    comp_blit(saved_addr)
-    fb_addr = saved_addr
+  } else if comp_cur_drawn != 0 {
+    // Fast path: no changes, just update cursor on real framebuffer
+    comp_cur_restore()
+    comp_cur_save()
+    comp_render_cursor()
+  } else {
+    // First frame with no windows: init cursor
+    comp_cur_save()
+    comp_render_cursor()
+    comp_cur_drawn = 1
   }
   return
 }
