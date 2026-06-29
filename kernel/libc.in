@@ -640,6 +640,7 @@ fn printf_padded(val: Int, base: Int, width: Int, pad: Int, is_signed: Int) -> v
     serial_put(port, load8(buf + j))
     j = j + 1
   }
+  free(buf)
   return
 }
 
