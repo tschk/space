@@ -217,11 +217,10 @@ fn fs_find_free() -> Int {
 // attempts to load the superblock and file table from disk. If the disk
 // is unformatted or absent, sensible defaults are used.
 fn fs_init() -> void {
-  // ponytail: 64 * 32 = 2048 — const-folding can't resolve global const names
-  fs_table = alloc(2048)
+  fs_table = alloc(FS_MAX_FILES * FS_ENTRY_SIZE)
   // Zero the in-memory table (all entries free)
   let i = 0
-  while i < 2048 {
+  while i < (FS_MAX_FILES * FS_ENTRY_SIZE) {
     store8(fs_table + i, 0)
     i = i + 1
   }
