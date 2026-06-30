@@ -110,6 +110,8 @@ fn array_selftest() -> Int {
 
 fn space_fetch(port: Int) -> void {
   serial_write_cstr(port, "  SpaceOS")
+  serial_write_cstr(port, " 0.2.")
+  serial_write_dec_wide(port, SPACE_VERSION_PATCH)
   serial_nl(port)
   serial_write_cstr(port, "  kernel      nanokernel")
   serial_nl(port)
@@ -117,6 +119,8 @@ fn space_fetch(port: Int) -> void {
   serial_write_dec_wide(port, fb_width)
   serial_write_cstr(port, "x")
   serial_write_dec_wide(port, fb_height)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_bpp)
   serial_nl(port)
   serial_write_cstr(port, "  files       ")
   if fs_disk_ready == 0 {
@@ -125,7 +129,13 @@ fn space_fetch(port: Int) -> void {
     serial_write_cstr(port, "nvme")
   }
   serial_nl(port)
-  serial_write_cstr(port, "  linux       minimal elf")
+  serial_write_cstr(port, "  linux       personality")
+  serial_nl(port)
+  serial_write_cstr(port, "  processes   ")
+  serial_write_dec_wide(port, proc_count)
+  serial_nl(port)
+  serial_write_cstr(port, "  domains     ")
+  serial_write_dec_wide(port, domain_count)
   serial_nl(port)
   serial_write_cstr(port, "  objects     0x")
   serial_write_hex(port, obj_counter)

@@ -86,6 +86,9 @@ var work_b: Int = 0
 
 // --- serial console (COM1) --------------------------------------------------
 const COM1_PORT = 0x3F8
+const SPACE_VERSION_MAJOR = 0
+const SPACE_VERSION_MINOR = 2
+const SPACE_VERSION_PATCH = 74
 
 fn com1() -> Int {
   return COM1_PORT
@@ -1192,6 +1195,10 @@ fn kernel_entry(mb_info: Int) -> Int {
       serial_nl(port)
     } else {
       serial_write_cstr(port, "space: PS/2 mouse not found")
+      serial_nl(port)
+    }
+    if ps2_kbd_init() == 0 {
+      serial_write_cstr(port, "space: PS/2 keyboard initialized")
       serial_nl(port)
     }
   }

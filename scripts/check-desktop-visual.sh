@@ -42,7 +42,7 @@ for _ in $(seq 1 200); do
 done
 grep -qF "space interactive shell" "$SERIAL_LOG" || { echo "shell did not start" >&2; exit 1; }
 
-printf 'desktop SPACETERM\n' > "$SERIAL_IN"
+printf 'desktop\n' > "$SERIAL_IN"
 for _ in $(seq 1 100); do
   grep -qF "space: compositor running" "$SERIAL_LOG" 2>/dev/null && break
   sleep 0.1
@@ -55,6 +55,10 @@ for _ in $(seq 1 200); do
 done
 grep -qF "space: compositor frame ready" "$SERIAL_LOG" || { echo "desktop did not paint" >&2; exit 1; }
 
+for key in f e t c h ret; do
+  printf 'sendkey %s\n' "$key" | nc -U "$MONITOR" >/dev/null
+  sleep 0.2
+done
 sleep 5
 printf 'screendump %s\n' "$PPM" | nc -U "$MONITOR" >/dev/null
 sleep 1
@@ -109,7 +113,7 @@ for label, (rgb, minimum) in required.items():
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
     "terminal text": (80, 80, 900, 390, 1400),
-    "terminal input": (180, 330, 700, 390, 180),
+    "terminal fetch": (80, 80, 700, 360, 1600),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0
@@ -121,15 +125,15 @@ for label, (x0, y0, x1, y1, minimum) in regions.items():
                 found += 1
     if found < minimum:
         raise SystemExit(f"{label} missing: {found} < {minimum}")
-input_white = 0
-for y in range(330, 390):
+fetch_value = 0
+for y in range(95, 340):
     row = y * width * 3
-    for x in range(180, 420):
+    for x in range(160, 520):
         offset = row + x * 3
-        if tuple(pixels[offset:offset + 3]) == (255, 255, 255):
-            input_white += 1
-if input_white < 180:
-    raise SystemExit(f"terminal input glyphs missing: {input_white} < 180")
+        if tuple(pixels[offset:offset + 3]) in (term_rgb, (255, 255, 255)):
+            fetch_value += 1
+if fetch_value < 100:
+    raise SystemExit(f"terminal fetch value glyphs missing: {fetch_value} < 100")
 print("PASS: desktop visual pixels present")
 PY
 

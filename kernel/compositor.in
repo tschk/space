@@ -462,6 +462,45 @@ fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   return
 }
 
+fn comp_draw_dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
+  let n = value
+  let cx = x
+  if n == 0 {
+    fb_fill_rect(cx, y, 18, 18, bg)
+    fb_draw_char(cx, y, 48, fg)
+    return cx + 18
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    let q = n / div
+    let digit = q - (q / 10) * 10
+    fb_fill_rect(cx, y, 18, 18, bg)
+    fb_draw_char(cx, y, 48 + digit, fg)
+    cx = cx + 18
+    div = div / 10
+  }
+  return cx
+}
+
+fn comp_term_line_eq(str: Int) -> Int {
+  let i = 0
+  while i < 64 {
+    let a = load8(comp_vro_buf + i)
+    let b = load8(str + i)
+    if a != b {
+      return 0
+    }
+    if a == 0 {
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
 // Helper: draw content text (or default placeholder for empty windows)
 fn comp_draw_content_text(base: Int) -> void {
   let x = load32(base + 4)
@@ -539,16 +578,37 @@ fn comp_draw_terminal_content(base: Int) -> void {
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
   fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
   comp_draw_label(x + 12, content_y + 6, "TERMINAL", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
-  comp_draw_label(x + 16, content_y + 54, "SPACEOS", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 84, "NANOKERNEL", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 114, "TERMINAL OK", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 144, "1920 x 1080", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 174, "RAMFS", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 204, "LINUX ELF", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 234, "CREPUS SURFACE", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16, content_y + 294, "space> ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16 + 7 * 18, content_y + 294, comp_vro_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
-  fb_fill_rect(x + 16 + 7 * 18 + comp_vro_len * 18, content_y + 294, 12, 18, FB_COLOR_GREEN)
+  let prompt_y = content_y + 54
+  if comp_vro_dirty > 1 {
+    comp_draw_label(x + 16, content_y + 54, "SPACEOS", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 220, content_y + 54, "0.2.", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 292, content_y + 54, SPACE_VERSION_PATCH, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 84, "KERNEL", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 220, content_y + 84, "NANOKERNEL", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 114, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    let dx = comp_draw_dec(x + 220, content_y + 114, fb_width, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(dx, content_y + 114, " x ", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    let dx2 = comp_draw_dec(dx + 54, content_y + 114, fb_height, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(dx2, content_y + 114, " x ", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_dec(dx2 + 54, content_y + 114, fb_bpp, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 144, "FILES", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    if fs_disk_ready == 0 {
+      comp_draw_label(x + 220, content_y + 144, "RAMFS", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    } else {
+      comp_draw_label(x + 220, content_y + 144, "NVME", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    }
+    comp_draw_label(x + 16, content_y + 174, "LINUX", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 220, content_y + 174, "PERSONALITY", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 204, "PROCESSES", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 220, content_y + 204, proc_count, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 234, "DOMAINS", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 220, content_y + 234, domain_count, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 264, "OBJECTS", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 220, content_y + 264, obj_counter, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    prompt_y = content_y + 324
+  }
+  comp_draw_label(x + 16, prompt_y, "space> ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16 + 7 * 18, prompt_y, comp_vro_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
   return
 }
 
@@ -881,10 +941,22 @@ fn comp_handle_key(port: Int, key: Int) -> Int {
   if comp_focused >= 0 {
     role = load64(comp_win_base(comp_focused) + 40)
   }
-  if role == COMP_ROLE_TERMINAL {
+  if role == COMP_ROLE_TERMINAL || comp_count == 1 {
     if key == 8 || key == 127 {
       comp_vro_backspace()
+    } else if key == 13 || key == 10 {
+      if comp_term_line_eq("fetch") != 0 {
+        comp_vro_seed("")
+        comp_vro_dirty = 2
+      } else {
+        comp_vro_seed("")
+        comp_vro_dirty = 0
+      }
     } else if key >= 32 && key <= 126 {
+      if comp_vro_dirty == 2 {
+        comp_vro_dirty = 0
+        comp_vro_seed("")
+      }
       comp_vro_append(key)
     }
   } else {
@@ -912,6 +984,14 @@ fn comp_handle_key(port: Int, key: Int) -> Int {
     let flags = load32(base + 20)
     store32(base + 20, flags | COMP_WIN_DIRTY)
   }
+  let ki = 0
+  while ki < comp_count {
+    let kbase = comp_win_base(ki)
+    let kflags = load32(kbase + 20)
+    store32(kbase + 20, kflags | COMP_WIN_DIRTY)
+    ki = ki + 1
+  }
+  comp_full_redraw = 1
   return 0
 }
 
@@ -946,6 +1026,27 @@ fn comp_run(port: Int) -> void {
 
   // Main compositor loop
   while comp_running != 0 {
+    if usb_kbd_ready() != 0 {
+      let key = usb_kbd_getchar()
+      if key >= 0 {
+        if comp_handle_key(port, key) != 0 {
+          comp_running = 0
+        }
+      }
+    }
+    let pkey = ps2_kbd_getchar()
+    if pkey >= 0 {
+      if comp_handle_key(port, pkey) != 0 {
+        comp_running = 0
+      }
+    }
+    if serial_has_byte(com1()) != 0 {
+      let key = inb(com1())
+      if comp_handle_key(port, key) != 0 {
+        comp_running = 0
+      }
+    }
+
     // Poll mouse
     mouse_poll()
 
@@ -964,22 +1065,6 @@ fn comp_run(port: Int) -> void {
       comp_drag_mode = -1
     }
     prev_left = cur_left
-
-    // Check for keyboard input (USB HID keyboard or serial)
-    if usb_kbd_ready() != 0 {
-      let key = usb_kbd_getchar()
-      if key >= 0 {
-        if comp_handle_key(port, key) != 0 {
-          comp_running = 0
-        }
-      }
-    }
-    if serial_has_byte(com1()) != 0 {
-      let key = inb(com1())
-      if comp_handle_key(port, key) != 0 {
-        comp_running = 0
-      }
-    }
 
     // Render the desktop
     comp_render()

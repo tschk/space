@@ -120,7 +120,11 @@ fn mouse_init() -> Int {
 
 // Check if mouse data is available (output buffer full and mouse data).
 fn mouse_has_data() -> Int {
-  return inb(PS2_STATUS) & 0x01
+  let st = inb(PS2_STATUS)
+  if (st & 0x01) != 0 && (st & 0x20) != 0 {
+    return 1
+  }
+  return 0
 }
 
 // Process one byte of mouse data. Returns 1 when a complete packet is received.
@@ -201,4 +205,89 @@ fn mouse_left_pressed() -> Int {
 // Check if right mouse button is currently pressed.
 fn mouse_right_pressed() -> Int {
   return mouse_buttons & 0x02
+}
+
+fn ps2_kbd_init() -> Int {
+  ps2_cmd(0xAE)
+  mouse_wait_input()
+  outb(PS2_DATA, 0xF4)
+  return 0
+}
+
+fn ps2_kbd_has_data() -> Int {
+  let st = inb(PS2_STATUS)
+  if (st & 0x01) != 0 && (st & 0x20) == 0 {
+    return 1
+  }
+  return 0
+}
+
+fn ps2_scancode_ascii(sc: Int) -> Int {
+  if sc == 0x01 { return 27 }
+  if sc == 0x0E { return 8 }
+  if sc == 0x1C { return 10 }
+  if sc == 0x39 { return 32 }
+  if sc == 0x02 { return 49 }
+  if sc == 0x03 { return 50 }
+  if sc == 0x04 { return 51 }
+  if sc == 0x05 { return 52 }
+  if sc == 0x06 { return 53 }
+  if sc == 0x07 { return 54 }
+  if sc == 0x08 { return 55 }
+  if sc == 0x09 { return 56 }
+  if sc == 0x0A { return 57 }
+  if sc == 0x0B { return 48 }
+  if sc == 0x10 { return 113 }
+  if sc == 0x11 { return 119 }
+  if sc == 0x12 { return 101 }
+  if sc == 0x13 { return 114 }
+  if sc == 0x14 { return 116 }
+  if sc == 0x15 { return 121 }
+  if sc == 0x16 { return 117 }
+  if sc == 0x17 { return 105 }
+  if sc == 0x18 { return 111 }
+  if sc == 0x19 { return 112 }
+  if sc == 0x1E { return 97 }
+  if sc == 0x1F { return 115 }
+  if sc == 0x20 { return 100 }
+  if sc == 0x21 { return 102 }
+  if sc == 0x22 { return 103 }
+  if sc == 0x23 { return 104 }
+  if sc == 0x24 { return 106 }
+  if sc == 0x25 { return 107 }
+  if sc == 0x26 { return 108 }
+  if sc == 0x2C { return 122 }
+  if sc == 0x2D { return 120 }
+  if sc == 0x2E { return 99 }
+  if sc == 0x2F { return 118 }
+  if sc == 0x30 { return 98 }
+  if sc == 0x31 { return 110 }
+  if sc == 0x32 { return 109 }
+  if sc == 0x0C { return 45 }
+  if sc == 0x0D { return 61 }
+  if sc == 0x1A { return 91 }
+  if sc == 0x1B { return 93 }
+  if sc == 0x27 { return 59 }
+  if sc == 0x28 { return 39 }
+  if sc == 0x29 { return 96 }
+  if sc == 0x2B { return 92 }
+  if sc == 0x33 { return 44 }
+  if sc == 0x34 { return 46 }
+  if sc == 0x35 { return 47 }
+  return -1
+}
+
+fn ps2_kbd_getchar() -> Int {
+  if ps2_kbd_has_data() == 0 {
+    return -1
+  }
+  let sc = inb(PS2_DATA)
+  if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
+    return -1
+  }
+  if (sc & 0x80) != 0 {
+    return -1
+  }
+  let ch = ps2_scancode_ascii(sc)
+  return ch
 }
