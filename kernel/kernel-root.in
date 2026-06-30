@@ -88,7 +88,7 @@ var work_b: Int = 0
 const COM1_PORT = 0x3F8
 const SPACE_VERSION_MAJOR = 0
 const SPACE_VERSION_MINOR = 2
-const SPACE_VERSION_PATCH = 74
+const SPACE_VERSION_PATCH = 75
 
 fn com1() -> Int {
   return COM1_PORT
