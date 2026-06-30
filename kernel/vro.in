@@ -34,7 +34,7 @@ fn comp_vro_init() -> void {
     store8(comp_vro_buf + i, 0)
     i = i + 1
   }
-  comp_vro_seed("open notes.txt find runtime save")
+  comp_vro_seed("")
   return
 }
 
@@ -84,42 +84,29 @@ fn comp_draw_vro_content(base: Int) -> void {
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   // Line number gutter
-  fb_fill_rect(x + 16, content_y + 24, 24, h - 48, COMP_COLOR_SURFACE_ALT)
-  fb_draw_string_bg(x + 56, content_y + 30, "notes.txt", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
-  fb_draw_string_bg(x + 56, content_y + 30 + lh, "ramfs", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  fb_fill_rect(x, content_y, w, 54, COMP_COLOR_SURFACE_ALT)
+  comp_draw_label(x + 24, content_y + 18, "FETCH", COMP_COLOR_TEXT, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 78, w - 64, 2, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 116, w - 128, 2, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 154, w - 96, 2, COMP_COLOR_SURFACE_ALT)
   let max_chars = (w - 108) / cw
   if max_chars > 80 { max_chars = 80 }
   let start_idx = 0
   if comp_vro_len > max_chars {
     start_idx = comp_vro_len - max_chars
   }
-  let visible_len = comp_vro_len - start_idx
+  let visible_len = 0
   // Line number
   let text_y = content_y + 30 + lh * 2 + 4  // 2 lines header + gap
-  fb_draw_string_bg(x + 22, text_y, "1", COMP_COLOR_MUTED, COMP_COLOR_SURFACE_ALT)
   // Text content
-  let vi = 0
-  while vi < visible_len {
-    let ch = load8(comp_vro_buf + start_idx + vi)
-    if ch == 10 {
-      ch = 32
-    }
-    let tx = x + 56 + vi * cw
-    fb_fill_rect(tx, text_y, cw, cw, COMP_COLOR_SURFACE)
-    fb_draw_char(tx, text_y, ch, COMP_COLOR_TEXT)
-    vi = vi + 1
-  }
   // Cursor
   let cursor_x = x + 56 + visible_len * cw
-  if cursor_x < x + w - 28 {
-    fb_fill_rect(cursor_x, text_y - 2, 2, cw + 4, COMP_COLOR_ACCENT)
-  }
   // Status bar at bottom
   fb_fill_rect(x, content_y + h - 36, w, 36, COMP_COLOR_SURFACE_ALT)
   if comp_vro_dirty != 0 {
-    fb_draw_string_bg(x + 16, content_y + h - 28, "modified", COMP_COLOR_ACCENT, COMP_COLOR_SURFACE_ALT)
+    comp_draw_label(x + 16, content_y + h - 28, "EDITING", COMP_COLOR_ACCENT, COMP_COLOR_SURFACE_ALT)
   } else {
-    fb_draw_string_bg(x + 16, content_y + h - 28, "saved", FB_COLOR_GREEN, COMP_COLOR_SURFACE_ALT)
+    comp_draw_label(x + 16, content_y + h - 28, "OK", FB_COLOR_GREEN, COMP_COLOR_SURFACE_ALT)
   }
   // Scrollbar track on right side
   let scroll_x = x + w - 10
@@ -127,11 +114,6 @@ fn comp_draw_vro_content(base: Int) -> void {
   let scroll_bot = content_y + h - 40
   let scroll_ht = scroll_bot - scroll_top
   let si = 0
-  while si < scroll_ht {
-    store32(fb_addr + (scroll_top + si) * fb_pitch + scroll_x * 4, COMP_COLOR_SURFACE_ALT)
-    store32(fb_addr + (scroll_top + si) * fb_pitch + (scroll_x + 1) * 4, COMP_COLOR_SURFACE_ALT)
-    si = si + 1
-  }
   // Scrollbar thumb (proportional to content length)
   let total_ch = comp_vro_len
   if total_ch > max_chars && total_ch > 0 {

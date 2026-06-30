@@ -290,7 +290,7 @@ fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
   }
   let utility_h = (usable_h - gap) / 2
   let terminal_h = usable_h - utility_h - gap
-  comp_win_place(editor, margin, top_y, main_w, utility_h)
+  comp_win_place(editor, margin, top_y, main_w, usable_h)
   comp_win_place(utilities, margin + main_w + gap, top_y, side_w, utility_h)
   comp_win_place(terminal, margin + main_w + gap, top_y + utility_h + gap, side_w, terminal_h)
   return
@@ -453,9 +453,9 @@ fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
     if ch == 0 {
       i = 96
     } else {
-      fb_fill_rect(cx, y, 16, 16, bg)
+      fb_fill_rect(cx, y, 18, 18, bg)
       fb_draw_char(cx, y, ch, fg)
-      cx = cx + 16
+      cx = cx + 18
     }
     i = i + 1
   }
@@ -498,36 +498,33 @@ fn comp_draw_utilities_content(base: Int) -> void {
   let lh = cw + 3
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
   // Dark sidebar
-  fb_fill_rect(x, content_y, 96, h, COMP_COLOR_DESKTOP)
+  fb_fill_rect(x, content_y, 136, h, COMP_COLOR_DESKTOP)
   fb_fill_rect(x + 2, content_y + lh + 20, 3, 16, COMP_COLOR_ACCENT)
-  comp_draw_label(x + 16, content_y + lh + 20, "Display", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
-  comp_draw_label(x + 16, content_y + lh * 2 + 24, "Input", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
-  comp_draw_label(x + 16, content_y + lh * 3 + 28, "Files", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
   // Content area — dynamic system info
   let ty = content_y + lh + 4
-  comp_draw_label(x + 116, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Resolution: 1920x1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "1920 x 1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Depth: 32bpp BGRx", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "32 BPP", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  comp_draw_label(x + 116, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Active: double-buffered", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "BUFFERED", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Font: 2x scaled 8x8 bitmap", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "BORDERLESS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  comp_draw_label(x + 116, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Mouse: PS/2 port", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "MOUSE", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Click to focus windows", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "KEYBOARD", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  comp_draw_label(x + 116, ty, "TASKBAR", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "PANEL", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Window names: click to focus", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "BOTTOM", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  comp_draw_label(x + 116, ty, "Dimmed = minimized", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 160, ty, "CLICK FOCUS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
@@ -540,30 +537,18 @@ fn comp_draw_terminal_content(base: Int) -> void {
   let cw = fb_font_scale * 8 + 2
   let lh = cw + 3
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
-  // Terminal header bar
   fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
-  comp_draw_label(x + 12, content_y + 6, "$ fetch", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
-  // Terminal output
-  let ty = content_y + 30 + lh
-  comp_draw_label(x + 16, ty, "user@space:~$ neofetch", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "OS: SpaceOS nanokernel v0.0.1", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Kernel: x86_64 long mode 6.6", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Display: 1920x1080 @ 32bpp", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Filesystem: ramfs", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Uptime: 0 minutes", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Packages: 6 components", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh
-  comp_draw_label(x + 16, ty, "Shell: .in 0.7.1", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
-  ty = ty + lh + lh
-  comp_draw_label(x + 16, ty, "user@space:~$ ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  // Cursor block at prompt
-  fb_fill_rect(x + 16 + 13 * cw, ty, cw - 2, cw, FB_COLOR_GREEN)
+  comp_draw_label(x + 12, content_y + 6, "TERMINAL", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 16, content_y + 54, "SPACEOS", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 84, "NANOKERNEL", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 114, "TERMINAL OK", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 144, "1920 x 1080", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 174, "RAMFS", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 204, "LINUX ELF", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 234, "CREPUS SURFACE", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, content_y + 294, "space> ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16 + 7 * 18, content_y + 294, comp_vro_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
+  fb_fill_rect(x + 16 + 7 * 18 + comp_vro_len * 18, content_y + 294, 12, 18, FB_COLOR_GREEN)
   return
 }
 
@@ -698,15 +683,6 @@ fn comp_render() -> void {
     if comp_cur_drawn != 0 {
       comp_cur_restore()
     }
-    let s = 0
-    while s < comp_count {
-      let base = comp_win_base(s)
-      let fl = load32(base + 20)
-      if (fl & COMP_WIN_DIRTY) != 0 && (fl & COMP_WIN_MINIMIZED) == 0 {
-        comp_draw_shadow(base)
-      }
-      s = s + 1
-    }
     let i = 0
     while i < comp_count {
       if i != comp_focused {
@@ -765,23 +741,6 @@ fn comp_render_taskbar_text() -> void {
   let bar_y = fb_height - COMP_TASKBAR_H
   let ty = bar_y + (COMP_TASKBAR_H - fb_font_scale * 8) / 2
   comp_draw_label(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
-  // Draw window titles as clickable buttons
-  let btn_x = fb_width / 2 - 80
-  let i2 = 0
-  while i2 < comp_count {
-    let base = comp_win_base(i2)
-    let title = load64(base + 24)
-    let flags3 = load32(base + 20)
-    if title != 0 {
-      if (flags3 & COMP_WIN_MINIMIZED) != 0 {
-        comp_draw_label(btn_x, ty, title, COMP_COLOR_MUTED, COMP_COLOR_PANEL)
-      } else {
-        comp_draw_label(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
-      }
-      btn_x = btn_x + 90
-    }
-    i2 = i2 + 1
-  }
   return
 }
 
@@ -918,23 +877,35 @@ fn comp_handle_key(port: Int, key: Int) -> Int {
   if key == 27 {
     return 1
   }
-  if key == 19 {
-    let rc = comp_vro_save()
-    serial_write_cstr(port, "space: VRO save notes.txt ")
-    if rc == 0 {
-      serial_write_cstr(port, "ok")
-    } else {
-      serial_write_cstr(port, "failed")
+  let role = COMP_ROLE_TEXT
+  if comp_focused >= 0 {
+    role = load64(comp_win_base(comp_focused) + 40)
+  }
+  if role == COMP_ROLE_TERMINAL {
+    if key == 8 || key == 127 {
+      comp_vro_backspace()
+    } else if key >= 32 && key <= 126 {
+      comp_vro_append(key)
     }
-    serial_nl(port)
-  } else if key == 8 || key == 127 {
-    comp_vro_backspace()
-  } else if key == 13 {
-    comp_vro_append(10)
-  } else if key == 10 {
-    comp_vro_append(10)
-  } else if key >= 32 && key <= 126 {
-    comp_vro_append(key)
+  } else {
+    if key == 19 {
+      let rc = comp_vro_save()
+      serial_write_cstr(port, "space: VRO save notes.txt ")
+      if rc == 0 {
+        serial_write_cstr(port, "ok")
+      } else {
+        serial_write_cstr(port, "failed")
+      }
+      serial_nl(port)
+    } else if key == 8 || key == 127 {
+      comp_vro_backspace()
+    } else if key == 13 {
+      comp_vro_append(10)
+    } else if key == 10 {
+      comp_vro_append(10)
+    } else if key >= 32 && key <= 126 {
+      comp_vro_append(key)
+    }
   }
   if comp_focused >= 0 {
     let base = comp_win_base(comp_focused)
@@ -961,20 +932,17 @@ fn comp_run(port: Int) -> void {
   comp_bg_drawn = 0  // force initial background render
 
   // Create default windows with modern layout (accounting for bottom taskbar)
-  let win4_title = "EDITOR"
-  let win4 = comp_win_create(win4_title, 60, 40, 720, 580)
-  let win2_title = "UTILITIES"
-  let win2 = comp_win_create(win2_title, 800, 40, 360, 260)
   let win3_title = "TERMINAL"
   let win3 = comp_win_create(win3_title, 800, 320, 360, 300)
-  comp_win_set_role(win2, COMP_ROLE_UTILITIES)
   comp_win_set_role(win3, COMP_ROLE_TERMINAL)
-  comp_win_set_role(win4, COMP_ROLE_VRO)
-  comp_tile_desktop(win4, win3, win2)
-  comp_win_focus(win4)
+  comp_win_place(win3, 48, 48, fb_width - 96, fb_height - 48 - COMP_TASKBAR_H - 48)
+  comp_win_focus(win3)
 
   comp_running = 1
   let prev_left = 0
+  comp_render()
+  serial_write_cstr(port, "space: compositor frame ready")
+  serial_nl(port)
 
   // Main compositor loop
   while comp_running != 0 {
@@ -1018,7 +986,7 @@ fn comp_run(port: Int) -> void {
 
     // ponytail: pause briefly to avoid burning CPU. hlt wakes on interrupt.
     sti()
-    hlt()
+    pause()
   }
 
   serial_write_cstr(port, "space: compositor exited")

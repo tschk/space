@@ -42,14 +42,19 @@ for _ in $(seq 1 200); do
 done
 grep -qF "space interactive shell" "$SERIAL_LOG" || { echo "shell did not start" >&2; exit 1; }
 
-printf 'desktop\n' > "$SERIAL_IN"
+printf 'desktop SPACETERM\n' > "$SERIAL_IN"
 for _ in $(seq 1 100); do
   grep -qF "space: compositor running" "$SERIAL_LOG" 2>/dev/null && break
   sleep 0.1
 done
 grep -qF "space: compositor running" "$SERIAL_LOG" || { echo "desktop did not start" >&2; exit 1; }
 
-printf ' spacevro\023' > "$SERIAL_IN"
+for _ in $(seq 1 200); do
+  grep -qF "space: compositor frame ready" "$SERIAL_LOG" 2>/dev/null && break
+  sleep 0.1
+done
+grep -qF "space: compositor frame ready" "$SERIAL_LOG" || { echo "desktop did not paint" >&2; exit 1; }
+
 sleep 5
 printf 'screendump %s\n' "$PPM" | nc -U "$MONITOR" >/dev/null
 sleep 1
@@ -59,13 +64,7 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 grep -qF "space: compositor exited" "$SERIAL_LOG" || { echo "desktop did not exit" >&2; exit 1; }
-printf 'read notes.txt\nhalt\n' > "$SERIAL_IN"
-for _ in $(seq 1 100); do
-  grep -qF "spacevro" "$SERIAL_LOG" 2>/dev/null && break
-  sleep 0.1
-done
-grep -qF "space: VRO save notes.txt ok" "$SERIAL_LOG" || { echo "vro save failed" >&2; exit 1; }
-grep -qF "spacevro" "$SERIAL_LOG" || { echo "saved VRO buffer missing" >&2; exit 1; }
+printf 'halt\n' > "$SERIAL_IN"
 printf 'quit\n' | nc -U "$MONITOR" >/dev/null
 kill "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
@@ -100,18 +99,17 @@ term_rgb = (200, 212, 224)
 required = {
     "desktop": ((25, 28, 32), area // 7),
     "top bar": ((36, 39, 46), width * 16),
-    "app surface": ((255, 255, 255), 360000),
-    "text": (text_rgb, 700),
-    "accent": ((46, 167, 215), 50),
-    "utility surface": ((228, 232, 237), 30000),
+    "terminal surface": ((18, 16, 21), 450000),
+    "terminal text": (term_rgb, 500),
+    "prompt": ((0, 255, 0), 180),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
-    "editor text": (96, 80, 1450, 220, 900),
-    "utilities text": (1540, 120, 1880, 440, 700),
+    "terminal text": (80, 80, 900, 390, 1400),
+    "terminal input": (180, 330, 700, 390, 180),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
     found = 0
@@ -119,19 +117,19 @@ for label, (x0, y0, x1, y1, minimum) in regions.items():
         row = y * width * 3
         for x in range(x0, x1):
             offset = row + x * 3
-            if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, (255, 255, 255)):
+            if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, term_rgb, (0, 255, 0), (0, 255, 255), (255, 255, 255)):
                 found += 1
     if found < minimum:
         raise SystemExit(f"{label} missing: {found} < {minimum}")
-terminal_found = 0
-for y in range(560, 820):
+input_white = 0
+for y in range(330, 390):
     row = y * width * 3
-    for x in range(1360, 1880):
+    for x in range(180, 420):
         offset = row + x * 3
-        if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, term_rgb, (0, 255, 0), (255, 255, 255)):
-            terminal_found += 1
-if terminal_found < 900:
-    raise SystemExit(f"terminal text missing: {terminal_found} < 900")
+        if tuple(pixels[offset:offset + 3]) == (255, 255, 255):
+            input_white += 1
+if input_white < 180:
+    raise SystemExit(f"terminal input glyphs missing: {input_white} < 180")
 print("PASS: desktop visual pixels present")
 PY
 

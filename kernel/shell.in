@@ -312,110 +312,116 @@ fn shell(port: Int) -> void {
       serial_write_cstr(port, "  comp: rendered OK")
       serial_nl(port)
     } else {
-      let rest = line_prefix("echo ")
+      let rest = line_prefix("desktop ")
       if rest >= 0 {
-        serial_write_cstr(port, line + rest)
-        serial_nl(port)
+        comp_vro_seed(line + rest)
+        comp_run(port)
       } else {
-        let rest = line_prefix("peek ")
+        let rest = line_prefix("echo ")
         if rest >= 0 {
-          let addr = str_to_hex(line + rest)
-          serial_write_cstr(port, "  [0x")
-          serial_write_hex(port, addr)
-          serial_write_cstr(port, "] = 0x")
-          serial_write_hex(port, load64(addr))
+          serial_write_cstr(port, line + rest)
           serial_nl(port)
         } else {
-          let rest = line_prefix("poke ")
+          let rest = line_prefix("peek ")
           if rest >= 0 {
-            let space_pos = 0
-            while load8(line + rest + space_pos) > 32 {
-              space_pos = space_pos + 1
-            }
             let addr = str_to_hex(line + rest)
-            let val = str_to_hex(line + rest + space_pos + 1)
-            store64(addr, val)
             serial_write_cstr(port, "  [0x")
             serial_write_hex(port, addr)
-            serial_write_cstr(port, "] := 0x")
+            serial_write_cstr(port, "] = 0x")
             serial_write_hex(port, load64(addr))
             serial_nl(port)
           } else {
-            let rest = line_prefix("proc ")
+            let rest = line_prefix("poke ")
             if rest >= 0 {
-              let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
-              if pid < 0 {
-                serial_write_cstr(port, "  proc: process table full")
-                serial_nl(port)
-              } else {
-                serial_write_cstr(port, "  proc: created process ")
-                serial_write_dec_wide(port, pid)
-                serial_write_cstr(port, " (")
-                serial_write_cstr(port, line + rest)
-                serial_write_cstr(port, "), running...")
-                serial_nl(port)
-                thr_run()
-                serial_write_cstr(port, "  proc: process ")
-                serial_write_dec_wide(port, pid)
-                serial_write_cstr(port, " exited with code ")
-                serial_write_dec_wide(port, proc_wait(pid))
-                serial_nl(port)
+              let space_pos = 0
+              while load8(line + rest + space_pos) > 32 {
+                space_pos = space_pos + 1
               }
+              let addr = str_to_hex(line + rest)
+              let val = str_to_hex(line + rest + space_pos + 1)
+              store64(addr, val)
+              serial_write_cstr(port, "  [0x")
+              serial_write_hex(port, addr)
+              serial_write_cstr(port, "] := 0x")
+              serial_write_hex(port, load64(addr))
+              serial_nl(port)
             } else {
-              let rest = line_prefix("write ")
+              let rest = line_prefix("proc ")
               if rest >= 0 {
-                let sp = 0
-                while load8(line + rest + sp) > 32 {
-                  sp = sp + 1
-                }
-                store8(line + rest + sp, 0)
-                let name_addr = line + rest
-                let text_addr = line + rest + sp + 1
-                let tlen = 0
-                while load8(text_addr + tlen) != 0 {
-                  tlen = tlen + 1
-                }
-                let rc = fs_write_file(name_addr, text_addr, tlen)
-                if rc != 0 {
-                  serial_write_cstr(port, "  write: failed")
+                let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
+                if pid < 0 {
+                  serial_write_cstr(port, "  proc: process table full")
+                  serial_nl(port)
                 } else {
-                  serial_write_cstr(port, "  write: ok")
+                  serial_write_cstr(port, "  proc: created process ")
+                  serial_write_dec_wide(port, pid)
+                  serial_write_cstr(port, " (")
+                  serial_write_cstr(port, line + rest)
+                  serial_write_cstr(port, "), running...")
+                  serial_nl(port)
+                  thr_run()
+                  serial_write_cstr(port, "  proc: process ")
+                  serial_write_dec_wide(port, pid)
+                  serial_write_cstr(port, " exited with code ")
+                  serial_write_dec_wide(port, proc_wait(pid))
+                  serial_nl(port)
                 }
-                serial_nl(port)
               } else {
-                let rest = line_prefix("read ")
+                let rest = line_prefix("write ")
                 if rest >= 0 {
-                  let rbuf = alloc(4096)
-                  let rsize = fs_read_file(line + rest, rbuf)
-                  if rsize < 0 {
-                    serial_write_cstr(port, "  read: file not found")
+                  let sp = 0
+                  while load8(line + rest + sp) > 32 {
+                    sp = sp + 1
+                  }
+                  store8(line + rest + sp, 0)
+                  let name_addr = line + rest
+                  let text_addr = line + rest + sp + 1
+                  let tlen = 0
+                  while load8(text_addr + tlen) != 0 {
+                    tlen = tlen + 1
+                  }
+                  let rc = fs_write_file(name_addr, text_addr, tlen)
+                  if rc != 0 {
+                    serial_write_cstr(port, "  write: failed")
                   } else {
-                    serial_write_cstr(port, "  ")
-                    let ri = 0
-                    while ri < rsize {
-                      serial_put(port, load8(rbuf + ri))
-                      ri = ri + 1
-                    }
+                    serial_write_cstr(port, "  write: ok")
                   }
                   serial_nl(port)
                 } else {
-                  let rest = line_prefix("rm ")
+                  let rest = line_prefix("read ")
                   if rest >= 0 {
-                    let rc = fs_delete(line + rest)
-                    if rc != 0 {
-                      serial_write_cstr(port, "  rm: file not found")
+                    let rbuf = alloc(4096)
+                    let rsize = fs_read_file(line + rest, rbuf)
+                    if rsize < 0 {
+                      serial_write_cstr(port, "  read: file not found")
                     } else {
-                      serial_write_cstr(port, "  rm: deleted")
+                      serial_write_cstr(port, "  ")
+                      let ri = 0
+                      while ri < rsize {
+                        serial_put(port, load8(rbuf + ri))
+                        ri = ri + 1
+                      }
                     }
                     serial_nl(port)
                   } else {
-                    let rest = line_prefix("nvme read ")
+                    let rest = line_prefix("rm ")
                     if rest >= 0 {
-                      let lba = str_to_hex(line + rest)
-                      nvme_shell_read(port, lba)
-                    } else if n != 0 {
-                      serial_write_cstr(port, "  unknown command (try 'help')")
+                      let rc = fs_delete(line + rest)
+                      if rc != 0 {
+                        serial_write_cstr(port, "  rm: file not found")
+                      } else {
+                        serial_write_cstr(port, "  rm: deleted")
+                      }
                       serial_nl(port)
+                    } else {
+                      let rest = line_prefix("nvme read ")
+                      if rest >= 0 {
+                        let lba = str_to_hex(line + rest)
+                        nvme_shell_read(port, lba)
+                      } else if n != 0 {
+                        serial_write_cstr(port, "  unknown command (try 'help')")
+                        serial_nl(port)
+                      }
                     }
                   }
                 }
