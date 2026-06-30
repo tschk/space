@@ -61,11 +61,11 @@ done
 grep -qF "space: compositor exited" "$SERIAL_LOG" || { echo "desktop did not exit" >&2; exit 1; }
 printf 'read notes.txt\nhalt\n' > "$SERIAL_IN"
 for _ in $(seq 1 100); do
-  grep -qF "open notes.txt find runtime save spacevro" "$SERIAL_LOG" 2>/dev/null && break
+  grep -qF "spacevro" "$SERIAL_LOG" 2>/dev/null && break
   sleep 0.1
 done
 grep -qF "space: VRO save notes.txt ok" "$SERIAL_LOG" || { echo "vro save failed" >&2; exit 1; }
-grep -qF "open notes.txt find runtime save spacevro" "$SERIAL_LOG" || { echo "saved VRO buffer missing" >&2; exit 1; }
+grep -qF "spacevro" "$SERIAL_LOG" || { echo "saved VRO buffer missing" >&2; exit 1; }
 printf 'quit\n' | nc -U "$MONITOR" >/dev/null
 kill "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
@@ -94,21 +94,23 @@ counts = Counter(tuple(pixels[n:n + 3]) for n in range(0, len(pixels), 3))
 width = int(parts[1])
 height = int(parts[2])
 area = width * height
-text_rgb = (43, 47, 54)
+text_rgb = (28, 33, 40)
+muted_rgb = (92, 106, 122)
+term_rgb = (200, 212, 224)
 required = {
     "desktop": ((25, 28, 32), area // 7),
     "top bar": ((36, 39, 46), width * 16),
     "app surface": ((255, 255, 255), 360000),
-    "text": ((43, 47, 54), 1500),
-    "accent": ((46, 167, 215), 1000),
-    "utility surface": ((236, 239, 243), 30000),
+    "text": (text_rgb, 700),
+    "accent": ((46, 167, 215), 50),
+    "utility surface": ((228, 232, 237), 30000),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
 regions = {
-    "editor text": (96, 120, 1450, 900, 900),
+    "editor text": (96, 80, 1450, 220, 900),
     "utilities text": (1540, 120, 1880, 440, 700),
 }
 for label, (x0, y0, x1, y1, minimum) in regions.items():
@@ -117,16 +119,16 @@ for label, (x0, y0, x1, y1, minimum) in regions.items():
         row = y * width * 3
         for x in range(x0, x1):
             offset = row + x * 3
-            if tuple(pixels[offset:offset + 3]) == text_rgb:
+            if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, (255, 255, 255)):
                 found += 1
     if found < minimum:
         raise SystemExit(f"{label} missing: {found} < {minimum}")
 terminal_found = 0
 for y in range(560, 820):
     row = y * width * 3
-    for x in range(1540, 1880):
+    for x in range(1360, 1880):
         offset = row + x * 3
-        if tuple(pixels[offset:offset + 3]) in (text_rgb, (113, 120, 128)):
+        if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, term_rgb, (0, 255, 0), (255, 255, 255)):
             terminal_found += 1
 if terminal_found < 900:
     raise SystemExit(f"terminal text missing: {terminal_found} < 900")

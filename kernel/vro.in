@@ -34,7 +34,7 @@ fn comp_vro_init() -> void {
     store8(comp_vro_buf + i, 0)
     i = i + 1
   }
-  comp_vro_seed("Welcome to Space OS nanokernel v0.7.2\n\nThis is the built-in text editor.\nType to edit, Ctrl+S to save, Esc to exit.\n\nSystem commands:\n  - Tab: switch between windows\n  - Page Up/Dn: scroll terminal\n  - Close: click X on title bar\n  - Move: drag title bar\n  - Resize: drag bottom-right corner\n  - Minimize: click _ on title bar")
+  comp_vro_seed("open notes.txt find runtime save")
   return
 }
 

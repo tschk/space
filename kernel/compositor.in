@@ -23,23 +23,23 @@ import "vro.in"
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 24
-const COMP_BORDER_W = 1
+const COMP_TITLE_BAR_H = 0
+const COMP_BORDER_W = 0
 const COMP_TASKBAR_H = 28
-const COMP_COLOR_DESKTOP = COMP_GNOME_DESKTOP
-const COMP_COLOR_PANEL = COMP_GNOME_PANEL
-const COMP_COLOR_PANEL_LINE = COMP_GNOME_PANEL_LINE
-const COMP_COLOR_TITLE = COMP_GNOME_TITLE
-const COMP_COLOR_TITLE_ACTIVE = COMP_GNOME_TITLE_ACTIVE
-const COMP_COLOR_WINDOW = 0x00F0F2F5
-const COMP_COLOR_BORDER = COMP_GNOME_BORDER
-const COMP_COLOR_ACCENT = COMP_GNOME_ACCENT
+const COMP_COLOR_DESKTOP = 0x00191C20
+const COMP_COLOR_PANEL = 0x0024272E
+const COMP_COLOR_PANEL_LINE = 0x00383C45
+const COMP_COLOR_TITLE = 0x00E7E8EA
+const COMP_COLOR_TITLE_ACTIVE = 0x00F7F7F5
+const COMP_COLOR_WINDOW = 0x00F7F7F5
+const COMP_COLOR_BORDER = 0x00C9CCD1
+const COMP_COLOR_ACCENT = 0x002EA7D7
 const COMP_COLOR_TEXT = 0x001C2128
 const COMP_COLOR_MUTED = 0x005C6A7A
 const COMP_COLOR_SURFACE = 0x00FFFFFF
 const COMP_COLOR_SURFACE_ALT = 0x00E4E8ED
-const COMP_COLOR_TERM_BG = COMP_GNOME_TERM_BG
-const COMP_COLOR_TERM_TEXT = COMP_GNOME_TERM_TEXT
+const COMP_COLOR_TERM_BG = 0x00121015
+const COMP_COLOR_TERM_TEXT = 0x00C8D4E0
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -409,7 +409,7 @@ fn comp_draw_titlebar(base: Int) -> void {
   fb_fill_rect(x, y, w, COMP_TITLE_BAR_H, bg)
   let ch = fb_font_scale * 8
   if title != 0 {
-    fb_draw_string_bg(x + 12, y + (COMP_TITLE_BAR_H - ch) / 2, title, fg, bg)
+    comp_draw_label(x + 12, y + (COMP_TITLE_BAR_H - ch) / 2, title, fg, bg)
   }
   // Draw close button
   let btn_x = x + w - 28
@@ -445,6 +445,23 @@ fn comp_draw_content_bg(base: Int) -> void {
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_WINDOW)
 }
 
+fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let cx = x
+  let i = 0
+  while i < 96 {
+    let ch = load8(str + i)
+    if ch == 0 {
+      i = 96
+    } else {
+      fb_fill_rect(cx, y, 16, 16, bg)
+      fb_draw_char(cx, y, ch, fg)
+      cx = cx + 16
+    }
+    i = i + 1
+  }
+  return
+}
+
 // Helper: draw content text (or default placeholder for empty windows)
 fn comp_draw_content_text(base: Int) -> void {
   let x = load32(base + 4)
@@ -459,13 +476,13 @@ fn comp_draw_content_text(base: Int) -> void {
   if content == 0 {
     // Show window title and instructions
     if title != 0 {
-      fb_draw_string_bg(x + 16, content_y + lh + 4, title, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+      comp_draw_label(x + 16, content_y + lh + 4, title, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
     }
-    fb_draw_string_bg(x + 16, content_y + lh * 2 + 8, "This window has no content", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
-    fb_draw_string_bg(x + 16, content_y + lh * 3 + 12, "Load a file or close this window", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    comp_draw_label(x + 16, content_y + lh * 2 + 8, "This window has no content", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    comp_draw_label(x + 16, content_y + lh * 3 + 12, "Load a file or close this window", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
     return
   }
-  fb_draw_string_bg(x + 12, content_y + 12, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+  comp_draw_label(x + 12, content_y + 12, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
   return
 }
 
@@ -483,34 +500,34 @@ fn comp_draw_utilities_content(base: Int) -> void {
   // Dark sidebar
   fb_fill_rect(x, content_y, 96, h, COMP_COLOR_DESKTOP)
   fb_fill_rect(x + 2, content_y + lh + 20, 3, 16, COMP_COLOR_ACCENT)
-  fb_draw_string_bg(x + 16, content_y + lh + 20, "Display", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
-  fb_draw_string_bg(x + 16, content_y + lh * 2 + 24, "Input", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
-  fb_draw_string_bg(x + 16, content_y + lh * 3 + 28, "Files", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 16, content_y + lh + 20, "Display", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 16, content_y + lh * 2 + 24, "Input", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 16, content_y + lh * 3 + 28, "Files", COMP_COLOR_MUTED, COMP_COLOR_DESKTOP)
   // Content area — dynamic system info
   let ty = content_y + lh + 4
-  fb_draw_string_bg(x + 116, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Resolution: 1920x1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Resolution: 1920x1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Depth: 32bpp BGRx", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Depth: 32bpp BGRx", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  fb_draw_string_bg(x + 116, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Active: double-buffered", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Active: double-buffered", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Font: 2x scaled 8x8 bitmap", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Font: 2x scaled 8x8 bitmap", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  fb_draw_string_bg(x + 116, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Mouse: PS/2 port", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Mouse: PS/2 port", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Click to focus windows", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Click to focus windows", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh + lh / 2
-  fb_draw_string_bg(x + 116, ty, "TASKBAR", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "TASKBAR", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Window names: click to focus", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Window names: click to focus", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   ty = ty + lh
-  fb_draw_string_bg(x + 116, ty, "Dimmed = minimized", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  comp_draw_label(x + 116, ty, "Dimmed = minimized", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
   return
 }
 
@@ -525,26 +542,26 @@ fn comp_draw_terminal_content(base: Int) -> void {
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
   // Terminal header bar
   fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
-  fb_draw_string_bg(x + 12, content_y + 6, "$ fetch", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 12, content_y + 6, "$ fetch", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
   // Terminal output
   let ty = content_y + 30 + lh
-  fb_draw_string_bg(x + 16, ty, "user@space:~$ neofetch", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "user@space:~$ neofetch", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "OS: SpaceOS nanokernel v0.0.1", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "OS: SpaceOS nanokernel v0.0.1", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Kernel: x86_64 long mode 6.6", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Kernel: x86_64 long mode 6.6", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Display: 1920x1080 @ 32bpp", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Display: 1920x1080 @ 32bpp", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Filesystem: ramfs", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Filesystem: ramfs", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Uptime: 0 minutes", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Uptime: 0 minutes", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Packages: 6 components", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Packages: 6 components", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh
-  fb_draw_string_bg(x + 16, ty, "Shell: .in 0.7.1", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "Shell: .in 0.7.1", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
   ty = ty + lh + lh
-  fb_draw_string_bg(x + 16, ty, "user@space:~$ ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16, ty, "user@space:~$ ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
   // Cursor block at prompt
   fb_fill_rect(x + 16 + 13 * cw, ty, cw - 2, cw, FB_COLOR_GREEN)
   return
@@ -557,12 +574,6 @@ fn comp_render_window(idx: Int) -> void {
   if (flags & COMP_WIN_VISIBLE) == 0 || (flags & COMP_WIN_MINIMIZED) != 0 {
     return
   }
-
-  // Draw border
-  comp_draw_border(base, COMP_COLOR_BORDER)
-
-  // Draw title bar
-  comp_draw_titlebar(base)
 
   // Draw content (role-specific drawers handle their own backgrounds)
   let role = load64(base + 40)
@@ -753,7 +764,7 @@ fn comp_render_taskbar() -> void {
 fn comp_render_taskbar_text() -> void {
   let bar_y = fb_height - COMP_TASKBAR_H
   let ty = bar_y + (COMP_TASKBAR_H - fb_font_scale * 8) / 2
-  fb_draw_string_bg(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  comp_draw_label(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
   // Draw window titles as clickable buttons
   let btn_x = fb_width / 2 - 80
   let i2 = 0
@@ -763,9 +774,9 @@ fn comp_render_taskbar_text() -> void {
     let flags3 = load32(base + 20)
     if title != 0 {
       if (flags3 & COMP_WIN_MINIMIZED) != 0 {
-        fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_MUTED, COMP_COLOR_PANEL)
+        comp_draw_label(btn_x, ty, title, COMP_COLOR_MUTED, COMP_COLOR_PANEL)
       } else {
-        fb_draw_string_bg(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
+        comp_draw_label(btn_x, ty, title, COMP_COLOR_LIGHT_GRAY, COMP_COLOR_PANEL)
       }
       btn_x = btn_x + 90
     }
