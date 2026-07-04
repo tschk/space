@@ -8,24 +8,35 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-net}"
-IN="$INAUG_DIR/in-cli/in"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
 mkdir -p "$BUILD_DIR"
 
 echo "[1/3] Building compiler, trampoline, kernel..."
-make -C "$INAUG_DIR/in-cli" >/dev/null
+[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 nasm -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry \
   --emit boot --trampoline "$BUILD_DIR/trampoline.bin" \
   --out "$BUILD_DIR/kernel.bin" >/dev/null
 
 echo "[2/3] Booting with e1000 + pcap capture, sending ARP + UDP..."
-rm -f "$BUILD_DIR/net.pcap" "$BUILD_DIR/serial.log"
-printf 'help\rnet\rhalt\r' | perl -e 'alarm 12; exec @ARGV' qemu-system-x86_64 \
+rm -f "$BUILD_DIR/net.pcap" "$BUILD_DIR/serial.log" "$BUILD_DIR/net.in"
+printf 'help\rnet\rhalt\r' > "$BUILD_DIR/net.in"
+qemu-system-x86_64 \
   -kernel "$BUILD_DIR/kernel.bin" -m 256M \
   -netdev user,id=n0 -device e1000,netdev=n0 \
   -object filter-dump,id=d0,netdev=n0,file="$BUILD_DIR/net.pcap" \
-  -serial stdio -display none -no-reboot >"$BUILD_DIR/serial.log" 2>/dev/null || true
+  -serial stdio -display none -no-reboot < "$BUILD_DIR/net.in" > "$BUILD_DIR/serial.log" 2>/dev/null &
+QPID=$!
+for _ in $(seq 1 150); do
+  [ -s "$BUILD_DIR/net.pcap" ] && grep -qF "net: UDP datagram transmitted" "$BUILD_DIR/serial.log" 2>/dev/null && break
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 0.1
+done
+sleep 0.5
+kill "$QPID" 2>/dev/null || true
+wait "$QPID" 2>/dev/null || true
+rm -f "$BUILD_DIR/net.in"
 
 echo "--- driver serial output ---"
 sed -n '/space> net/,/space>/p' "$BUILD_DIR/serial.log" 2>/dev/null || true

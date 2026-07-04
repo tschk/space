@@ -11,8 +11,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
+INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
-IN="${IN:-$(which in 2>/dev/null || echo /Users/undivisible/projects/inauguration/in-cli/target/release/in)}"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
 GUEST_LOAD=$((0x140000))     # physical manifest address in the boot image
 GUEST_VIRT_LOAD=$((0x40000000))
@@ -24,7 +25,7 @@ GUEST_DENIED_CAPS=4
 mkdir -p "$BUILD_DIR"
 
 echo "[1/5] Building the compiler and trampoline..."
-cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
