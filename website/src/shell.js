@@ -1,4 +1,3 @@
-import "@fontsource/geist-mono/400.css";
 import { init, Terminal, FitAddon } from "ghostty-web";
 
 const bootStatus = document.getElementById("boot_status");
@@ -6,8 +5,6 @@ const bootMessage = document.getElementById("boot_message");
 const bootProgress = document.getElementById("boot_progress");
 const screen = document.getElementById("screen_container");
 const legacyPre = document.getElementById("terminal");
-const commandForm = document.getElementById("command_form");
-const commandInput = document.getElementById("command_input");
 
 let buildId = "dev";
 try {
@@ -86,15 +83,6 @@ function computeTerminalMetrics() {
   return { cols, rows, fontSize, pad };
 }
 
-function terminalSize() {
-  const { cols, rows } = computeTerminalMetrics();
-  return { cols, rows };
-}
-
-function terminalFontSize() {
-  return computeTerminalMetrics().fontSize;
-}
-
 function applyTerminalScale() {
   if (!term || !fitAddon) return;
   const { fontSize } = computeTerminalMetrics();
@@ -123,7 +111,7 @@ async function mountTerminal() {
   }
 
   term = new Terminal({
-    fontSize: terminalFontSize(),
+    fontSize: computeTerminalMetrics().fontSize,
     fontFamily: '"Geist Mono", ui-monospace, monospace',
     cursorBlink: true,
     scrollback: 10000,
@@ -135,6 +123,22 @@ async function mountTerminal() {
       cursorAccent: "#000000",
       selectionBackground: "#3f3f46",
       selectionForeground: "#fafafa",
+      black: "#18181b",
+      red: "#f87171",
+      green: "#4ade80",
+      yellow: "#facc15",
+      blue: "#60a5fa",
+      magenta: "#c084fc",
+      cyan: "#22d3ee",
+      white: "#e4e4e7",
+      brightBlack: "#52525b",
+      brightRed: "#fca5a5",
+      brightGreen: "#86efac",
+      brightYellow: "#fde047",
+      brightBlue: "#93c5fd",
+      brightMagenta: "#d8b4fe",
+      brightCyan: "#67e8f9",
+      brightWhite: "#fafafa",
     },
   });
 
@@ -145,24 +149,10 @@ async function mountTerminal() {
   if (fitAddon.observeResize) fitAddon.observeResize();
   window.addEventListener("resize", () => applyTerminalScale());
 
-  term.writeln("Space loading…");
   term.focus();
   term.onData(sendInput);
   host.addEventListener("pointerdown", () => term.focus());
   return true;
-}
-
-function wireCommandBar() {
-  if (!commandForm || !commandInput) return;
-  commandForm.classList.remove("hidden");
-  commandInput.disabled = false;
-  commandForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const line = commandInput.value ?? "";
-    commandInput.value = "";
-    await sendInput(`${line}\r`);
-    commandInput.focus();
-  });
 }
 
 function wireLegacyKeyboard() {
@@ -171,32 +161,28 @@ function wireLegacyKeyboard() {
   legacyPre.style.display = "block";
   legacyPre.textContent = "Space loading…\n";
   legacyPre.focus();
-}
 
-function printWelcome() {
-  if (!term) return;
-  const lines = [
-    "",
-    "Space is a component-based operating system.",
-    "Native model: component + capability + object + execution graph.",
-    "",
-    "Architecture:",
-    "       .in          ← native language",
-    "       ↑",
-    " Inauguration       ← compiler — the real OS contract",
-    "       ↑",
-    "      SCI           ← component image format (replaces ELF)",
-    "       ↑",
-    "    Space           ← operating system, component runtime",
-    "       ↑",
-    " Nanokernel         ← hardware enforcement layer",
-    "",
-    "Commands: help, info, halt",
-    "",
-  ];
-  for (const line of lines) {
-    term.writeln(line);
-  }
+  legacyPre.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.altKey) return;
+    if (event.ctrlKey) {
+      const key = event.key.toLowerCase();
+      if (key >= "a" && key <= "z") {
+        sendInput(String.fromCharCode(key.charCodeAt(0) - 96));
+        event.preventDefault();
+      }
+      return;
+    }
+    const keys = { Enter: "\r", Backspace: "\x7F", Tab: "\t" };
+    if (keys[event.key]) {
+      sendInput(keys[event.key]);
+      event.preventDefault();
+      return;
+    }
+    if (event.key.length === 1) {
+      sendInput(event.key);
+      event.preventDefault();
+    }
+  });
 }
 
 if (!screen) {
@@ -218,19 +204,19 @@ try {
   });
   window.spaceEmulator = emulator;
 
-  let serialOutCount = 0;
   emulator.add_listener("serial0-output-byte", (byte) => {
-    serialOutCount++;
-    window.serialOutCount = serialOutCount;
+    if (byte === 0xff) return;
     const ch = String.fromCharCode(byte);
-    if (term) term.write(ch);
+    if (term) {
+      term.write(ch);
+      return;
+    }
     if (legacyPre) {
       legacyPre.textContent += ch;
       legacyPre.scrollTop = legacyPre.scrollHeight;
     }
   });
 
-  wireCommandBar();
   if (!useXterm) wireLegacyKeyboard();
 
   emulator.add_listener("download-progress", (event) => {
@@ -251,11 +237,13 @@ try {
     finishStatus("booting Space (serial + VGA if kernel enables it)");
     applyTerminalScale();
     term?.focus();
-    printWelcome();
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   setStatus(`failed: ${message}`, bootProgress?.value || 0);
   term?.writeln(`\r\nSpace failed to start: ${message}`);
+  if (legacyPre) {
+    legacyPre.textContent += `\nSpace failed to start: ${message}\n`;
+  }
   throw error;
 }
