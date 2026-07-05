@@ -264,35 +264,6 @@ fn fb_draw_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   return
 }
 
-// Draw a line using Bresenham's algorithm (classic formulation).
-fn fb_draw_line(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) -> void {
-  let dx = x1 - x0
-  let dy = y1 - y0
-  let sx = 1
-  if dx < 0 { dx = -dx; sx = -1 }
-  let sy = 1
-  if dy < 0 { dy = -dy; sy = -1 }
-  let err = dx - dy
-  let x = x0
-  let y = y0
-  let e2 = 0
-  while true {
-    fb_put_pixel(x, y, color)
-    if x == x1 {
-      if y == y1 { return }
-    }
-    e2 = 2 * err
-    if e2 > -dy {
-      err = err - dy
-      x = x + sx
-    }
-    if e2 < dx {
-      err = err + dx
-      y = y + sy
-    }
-  }
-  return
-}
 // fb_glyph8 moved to font.in
 
 // Draw a single character at (x, y) in the given color.
