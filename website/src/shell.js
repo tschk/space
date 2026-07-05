@@ -175,8 +175,6 @@ try {
   emulator = new V86({
     wasm_path: asset("/v86/v86.wasm"),
     screen_container: screen,
-    bios: { url: asset("/v86/seabios.bin") },
-    vga_bios: { url: asset("/v86/vgabios.bin") },
     multiboot: { url: asset("/v86/space-multiboot.bin") },
     memory_size: 512 * 1024 * 1024,
     autostart: true,
@@ -186,7 +184,6 @@ try {
     const ch = String.fromCharCode(byte);
     if (term) {
       term.write(ch);
-      return;
     }
     if (legacyPre) {
       legacyPre.textContent += ch;

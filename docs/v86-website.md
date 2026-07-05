@@ -1,6 +1,6 @@
 # Space browser demo (v86)
 
-`website/` is an Alpenglow-style Astro shell: ghostty-web serial console + [v86](https://github.com/copy/v86) with a **multiboot** image built from this repo (`scripts/check-qemu-boot.sh` same kernel).
+`website/` is an Alpenglow-style Astro shell: ghostty-web serial console + [v86](https://github.com/copy/v86) with a 32-bit multiboot image built from this repo.
 
 ## Build
 
@@ -11,20 +11,25 @@ bun run build:kernel   # needs nasm + ../inauguration `in` release
 bun run dev
 ```
 
-## 32-bit (`i386`) vs current image
+`build:kernel` now runs `scripts/build-space-v86-32.sh`, which:
 
-| Piece | QEMU (today) | v86 browser |
-|-------|----------------|-------------|
-| CPU mode | x86_64 long mode (trampoline in `boot/multiboot.asm`) | 32-bit protected mode unless long mode works in v86 |
-| Kernel codegen | `x86_64-unknown-none` | Same multiboot blob today |
-| Alpenglow pattern | N/A | i686 Linux `bzimage` + initrd |
+1. Assembles `boot/multiboot32.asm` (32-bit protected-mode trampoline, no long-mode hop).
+2. Compiles `kernel/v86-kernel.in` with `--target-triple i386-unknown-none`.
+3. Copies the resulting boot image to `public/v86/space-multiboot.bin`.
 
-A **true** `i386-unknown-none` Space kernel for v86 needs generic work in **Inauguration** (not Space-branded):
+## Architecture
 
-1. 32-bit multiboot trampoline (no long-mode hop) + boot link layout
-2. x86 encoder without REX.W / 64-bit addresses in lowering
-3. ELF32 relocatable objects (`EM_386`) — partial registry exists (`i386-unknown-none`)
+| Piece | Value |
+|-------|-------|
+| CPU mode | 32-bit protected mode (trampoline in `boot/multiboot32.asm`) |
+| Kernel codegen | `i386-unknown-none` via Inauguration |
+| Boot image | 4096-byte trampoline + 256-byte SCI header + `.in`-compiled kernel |
+| Serial | COM1 (`0x3F8`) shell with `help`, `info`, and `halt` commands |
 
-`TL_IS_32BIT` in `native_emit/x86_64.rs` is the hook; wiring from `emit_native_object` and finishing opcode patches is still open.
+## Verification
 
-Until that lands, treat the website as **integration smoke**: UI + artifact pipeline. Confirm boot in your browser; v86 long-mode support may still block full kernel bring-up.
+- QEMU smoke test: `qemu-system-i386 -kernel public/v86/space-multiboot.bin -m 256M -serial stdio`
+- Website build: `bun run build` (Astro static site with `astro check`)
+- Browser test: `bun run dev`, then open the local URL and wait for the serial banner
+
+See [`next-agent-32bit-v86.md`](next-agent-32bit-v86.md) for the original task breakdown and file references.

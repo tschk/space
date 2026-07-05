@@ -2,9 +2,9 @@
   "name": "space-v86",
   "private": true,
   "scripts": {
-    "build:kernel": "sh scripts/build-space-v86.sh",
-    "dev": "sh scripts/build-space-v86.sh && astro dev",
-    "build": "sh scripts/build-space-v86.sh && astro check --minimumSeverity error && astro build",
+    "build:kernel": "sh scripts/build-space-v86-32.sh",
+    "dev": "sh scripts/build-space-v86-32.sh && astro dev",
+    "build": "sh scripts/build-space-v86-32.sh && astro check --minimumSeverity error && astro build",
     "preview": "astro preview"
   },
   "dependencies": {

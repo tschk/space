@@ -1,0 +1,156 @@
+package space.kernel
+
+// Minimal 32-bit v86 kernel: serial shell on COM1.
+
+const COM1_PORT = 0x3F8
+
+fn kernel_entry(mb_info: Int) -> Int {
+  let port = COM1_PORT
+  serial_init(port)
+
+  serial_write_cstr(port, "Space 32-bit v86")
+  serial_nl(port)
+  serial_write_cstr(port, "type 'help' for commands")
+  serial_nl(port)
+
+  let running = true
+  while running {
+    let len = read_line(port)
+    if len == 0 {
+      continue
+    }
+    if match_command("help") {
+      serial_write_cstr(port, "help  - this message")
+      serial_nl(port)
+      serial_write_cstr(port, "info  - show boot info")
+      serial_nl(port)
+      serial_write_cstr(port, "halt  - stop the cpu")
+      serial_nl(port)
+    } else if match_command("info") {
+      serial_write_cstr(port, "v86 32-bit protected mode")
+      serial_nl(port)
+      serial_write_cstr(port, "mb_info: 0x")
+      serial_write_hex32(port, mb_info)
+      serial_nl(port)
+    } else if match_command("halt") {
+      serial_write_cstr(port, "halting")
+      serial_nl(port)
+      cli()
+      while true {
+        hlt()
+      }
+    } else {
+      serial_write_cstr(port, "unknown command")
+      serial_nl(port)
+    }
+  }
+  return 0
+}
+
+// Line buffer in low bss-free scratch (trampoline reserves 0..0x1000; use 0x5000).
+const LINE_BUF = 0x5000
+var line_len: Int = 0
+
+fn read_line(port: Int) -> Int {
+  line_len = 0
+  while true {
+    let ch = serial_get(port)
+    if ch == 13 || ch == 10 {
+      serial_nl(port)
+      return line_len
+    }
+    if ch == 8 || ch == 127 {
+      if line_len > 0 {
+        line_len = line_len - 1
+        serial_put(port, 8)
+        serial_put(port, 32)
+        serial_put(port, 8)
+      }
+    } else if ch >= 32 && ch < 127 && line_len < 79 {
+      store8(LINE_BUF + line_len, ch)
+      line_len = line_len + 1
+      serial_put(port, ch)
+    }
+  }
+  return 0
+}
+
+fn match_command(cmd: Int) -> Bool {
+  let i = 0
+  while true {
+    let c = load8(cmd + i)
+    let b = load8(LINE_BUF + i)
+    if c == 0 {
+      return b == 0 || b == 32 || b == 10 || b == 13
+    }
+    if c != b {
+      return false
+    }
+    i = i + 1
+  }
+  return false
+}
+
+fn serial_init(port: Int) -> void {
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x80)
+  outb(port + 0, 0x03)
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x03)
+  outb(port + 2, 0xC7)
+  outb(port + 4, 0x0B)
+  return
+}
+
+fn serial_wait_tx(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn serial_wait_rx(port: Int) -> void {
+  while (inb(port + 5) & 0x01) == 0 {
+  }
+  return
+}
+
+fn serial_put(port: Int, ch: Int) -> void {
+  serial_wait_tx(port)
+  outb(port, ch)
+  return
+}
+
+fn serial_get(port: Int) -> Int {
+  serial_wait_rx(port)
+  return inb(port)
+}
+
+fn serial_nl(port: Int) -> void {
+  serial_put(port, 10)
+  return
+}
+
+fn serial_write_cstr(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    serial_put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn serial_write_hex32(port: Int, value: Int) -> void {
+  let shift = 28
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      serial_put(port, 48 + nibble)
+    } else {
+      serial_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
