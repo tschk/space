@@ -82,7 +82,8 @@ KERNEL_IMAGE="$BUILD_DIR/kernel.bin"
 
 if [ "$USE_SCI" = "1" ]; then
   echo "  compiling SCI guest component..."
-  GUEST_LOAD=$((0x140000))
+  GUEST_LOAD=$((0x180000))
+
   GUEST_VIRT_LOAD=$((0x40000000))
   GUEST_BASE=$((GUEST_VIRT_LOAD + 0x20))
   SCI_MAGIC=$((0x5343490000000001))

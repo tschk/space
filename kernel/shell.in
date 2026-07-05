@@ -165,8 +165,9 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb fb test desktop display comp halt")
+      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb fb test desktop display comp halt")
       serial_nl(port)
+
     } else if line_eq("snapshot") != 0 {
       checkpoint_save()
       serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
@@ -229,7 +230,8 @@ fn shell(port: Int) -> void {
         serial_nl(port)
       }
     } else if line_eq("sci") != 0 {
-      sci_load(port, 0x140000)
+      sci_load(port, 0x180000)
+
     } else if line_eq("map") != 0 {
       let frame = frame_alloc()
       map_page(0x40000000, frame, 3)
@@ -368,28 +370,33 @@ fn shell(port: Int) -> void {
               serial_write_hex(port, load64(addr))
               serial_nl(port)
             } else {
-              let rest = line_prefix("proc ")
+              let rest = line_prefix("load_sci ")
               if rest >= 0 {
-                let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
-                if pid < 0 {
-                  serial_write_cstr(port, "  proc: process table full")
-                  serial_nl(port)
-                } else {
-                  serial_write_cstr(port, "  proc: created process ")
-                  serial_write_dec_wide(port, pid)
-                  serial_write_cstr(port, " (")
-                  serial_write_cstr(port, line + rest)
-                  serial_write_cstr(port, "), running...")
-                  serial_nl(port)
-                  thr_run()
-                  serial_write_cstr(port, "  proc: process ")
-                  serial_write_dec_wide(port, pid)
-                  serial_write_cstr(port, " exited with code ")
-                  serial_write_dec_wide(port, proc_wait(pid))
-                  serial_nl(port)
-                }
+                sci_load_file(port, line + rest)
               } else {
-                let rest = line_prefix("write ")
+                let rest = line_prefix("proc ")
+                if rest >= 0 {
+                  let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
+                  if pid < 0 {
+                    serial_write_cstr(port, "  proc: process table full")
+                    serial_nl(port)
+                  } else {
+                    serial_write_cstr(port, "  proc: created process ")
+                    serial_write_dec_wide(port, pid)
+                    serial_write_cstr(port, " (")
+                    serial_write_cstr(port, line + rest)
+                    serial_write_cstr(port, "), running...")
+                    serial_nl(port)
+                    thr_run()
+                    serial_write_cstr(port, "  proc: process ")
+                    serial_write_dec_wide(port, pid)
+                    serial_write_cstr(port, " exited with code ")
+                    serial_write_dec_wide(port, proc_wait(pid))
+                    serial_nl(port)
+                  }
+                } else {
+                  let rest = line_prefix("write ")
+
                 if rest >= 0 {
                   let sp = 0
                   while load8(line + rest + sp) > 32 {
@@ -453,6 +460,7 @@ fn shell(port: Int) -> void {
         }
       }
     }
+  }
   }
   return
 }

@@ -5,8 +5,8 @@
 #
 # Memory layout of the combined image (loaded at 0x100000 by QEMU multiboot):
 #   0x100000  boot trampoline + nanokernel (the normal boot image)
-#   0x140000  32-byte SCI manifest: [magic][required_caps][virtual_entry][image_size]
-#   0x140020  guest-service component code, mapped at 0x40000020 in its domain
+#   0x180000  32-byte SCI manifest: [magic][required_caps][virtual_entry][image_size]
+#   0x180020  guest-service component code, mapped at 0x40000020 in its domain
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,8 @@ INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
-GUEST_LOAD=$((0x140000))     # physical manifest address in the boot image
+GUEST_LOAD=$((0x180000))     # physical manifest address in the boot image
+
 GUEST_VIRT_LOAD=$((0x40000000))
 GUEST_BASE=$((GUEST_VIRT_LOAD + 0x20))
 SCI_MAGIC=$((0x5343490000000001))
