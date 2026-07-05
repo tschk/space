@@ -250,20 +250,6 @@ fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   return
 }
 
-// Draw a rectangle outline (1-pixel border). Clips to screen bounds.
-fn fb_draw_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
-  if fb_ready == 0 {
-    return
-  }
-  // Top and bottom edges
-  fb_fill_rect(x, y, w, 1, color)
-  fb_fill_rect(x, y + h - 1, w, 1, color)
-  // Left and right edges
-  fb_fill_rect(x, y, 1, h, color)
-  fb_fill_rect(x + w - 1, y, 1, h, color)
-  return
-}
-
 // Draw a line using Bresenham's algorithm (classic formulation).
 fn fb_draw_line(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) -> void {
   let dx = x1 - x0
