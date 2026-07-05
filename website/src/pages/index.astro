@@ -9,7 +9,7 @@
   </head>
   <body class="m-0 h-full overflow-hidden bg-black text-white antialiased">
     <header class="boot-top-bar" aria-label="Space links">
-      <a href="https://github.com/tachk/space" target="_blank" rel="noopener noreferrer">tachk/space</a>
+      <a href="https://github.com/tschk/space" target="_blank" rel="noopener noreferrer">tschk/space</a>
       <span class="boot-top-sep" aria-hidden="true">·</span>
       <a href="https://tsc.hk" target="_blank" rel="noopener noreferrer">tsc.hk</a>
     </header>
@@ -98,6 +98,12 @@
     display: block;
     width: 100% !important;
     height: 100% !important;
+  }
+
+  @media (max-width: 640px) {
+    #xterm_host {
+      padding: 48px 0 0 0;
+    }
   }
 
   /* ghostty/xterm hidden input caret at (0,0) */
