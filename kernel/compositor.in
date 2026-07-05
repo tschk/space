@@ -275,27 +275,6 @@ fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
   return
 }
 
-fn comp_tile_desktop(editor: Int, terminal: Int, utilities: Int) -> void {
-  let margin = 48
-  let gap = 12
-  let top_y = 48
-  // ponytail: subtract taskbar to prevent window overlap
-  let bar_pad = COMP_TASKBAR_H + 12
-  let usable_w = fb_width - margin * 2
-  let usable_h = fb_height - top_y - margin - bar_pad
-  let side_w = COMP_MIN_SIDE_W
-  let main_w = usable_w - side_w - gap
-  if main_w < COMP_MIN_EDITOR_W {
-    main_w = COMP_MIN_EDITOR_W
-  }
-  let utility_h = (usable_h - gap) / 2
-  let terminal_h = usable_h - utility_h - gap
-  comp_win_place(editor, margin, top_y, main_w, usable_h)
-  comp_win_place(utilities, margin + main_w + gap, top_y, side_w, utility_h)
-  comp_win_place(terminal, margin + main_w + gap, top_y + utility_h + gap, side_w, terminal_h)
-  return
-}
-
 // --- rendering --------------------------------------------------------------
 
 // Draw the desktop background (flat color, no stripes — ponytail: stripes were 20 loops per frame).
