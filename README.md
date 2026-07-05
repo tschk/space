@@ -45,8 +45,8 @@ code and linked into a single bootable binary.
 ### Performance notes
 
 - Most of the cold compile wall time is `in` process startup; the actual parse +
-  lower + link is a few milliseconds. A compiler daemon or persistent server would
-  drop this to the warm-cache level.
+  lower + link is a few milliseconds. `in daemon start` in the Inauguration repo
+  removes that startup cost for repeated builds.
 - The warm path is already cached by source hash, so repeated edits of the same
   file are fast.
 - Next low-hanging fruit: reduce the number of separate files merged into the
