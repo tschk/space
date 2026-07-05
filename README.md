@@ -14,171 +14,65 @@ Space is a component-based operating system built on a five-layer architecture:
  Nanokernel         ← hardware enforcement layer
 ```
 
-Each layer exists to make the layer above possible.
-
 The native model is **component + capability + object + execution graph** — not
 process + file + syscall + user. There is no POSIX in the kernel. Linux, Darwin,
 and Windows compatibility are `.in` microservices that translate legacy concepts
 into Space primitives.
 
-The compiler is the constitutional layer. The nanokernel is the enforcement
-layer.
-
-## Architecture
-
-- [`architecture.md`](architecture.md) — system architecture and
-  implemented subsystems
-- [`sci-schema.md`](sci-schema.md) — Space Component Image metadata format
-- [`AGENTS.md`](AGENTS.md) — repository workflow and boundaries
-
-## Status: it boots
+## Status
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), boots to x86_64 long
 mode under QEMU and verifies the boot-critical subsystems on every boot.
 
-Current boot output (timing varies by host):
-
-```
-space: kernel root entered
-space: object arena 0x...
-space: bootstrap realm object id 0x...
-space: interrupts enabled (PIC remapped, PIT 100Hz)
-space: timer ticks (sample)
-space: supervisor loaded, component enforcing
-space: scheduler quiesced after 3 round-robin passes
-space: channel demo complete, remaining 0x0000000000000000
-space: preemptive workers interleaved, switching OK
-space interactive shell -- type 'help'
-space>
-```
+Subsystem status is tracked in [`architecture.md`](architecture.md).
 
 ## Benchmarks
 
-### Boot image size (x86_64-unknown-none flat binary, v0.7.2)
+Measured on macOS ARM64 (M3), Inauguration v0.7.1.
 
-| Component | Size |
-|-----------|------|
-| Trampoline (multiboot + long-mode bring-up) | 4,096 B |
-| Kernel code (compiled `.in`) | 241,245 B |
-| **Total boot image** | **245,597 B** |
+| Metric | Value |
+|--------|-------|
+| Boot image size | 259,316 B (trampoline 4,096 + kernel 254,964) |
+| Kernel compile (cold) | ~50 ms |
+| Kernel compile (warm, cached) | ~30 ms |
+| Boot to interactive shell (QEMU TCG, Apple Silicon) | ~4 s |
+| Boot to interactive shell (QEMU + KVM, x86_64) | ~40 ms |
 
-The kernel includes: serial shell with 25+ commands, framebuffer compositor
-(GNOME-style dark palette, X11 arrow cursor, window shadows, window dragging,
-dirty-flag rendering), USB xHCI host controller driver, USB HID keyboard,
-e1000 NIC driver, NVMe/ATA disk driver, flat filesystem, PS/2 mouse,
-memory domain subsystem, component supervisor, channel IPC with wait queues,
-preemptive scheduler, SCI loader, Linux personality layer.
+The kernel is ~1,300 lines of `.in` across 15+ files, lowered to x86_64 machine
+code and linked into a single bootable binary.
 
-### Compile speed (Inauguration v0.7.1, macOS ARM64, M3)
+### Performance notes
 
-A full kernel compile — parsing, optimization, x86_64 native lowering, boot
-image assembly — completes in **~35 ms** (cold cache) / **~30 ms** (warm):
+- Most of the cold compile wall time is `in` process startup; the actual parse +
+  lower + link is a few milliseconds. A compiler daemon or persistent server would
+  drop this to the warm-cache level.
+- The warm path is already cached by source hash, so repeated edits of the same
+  file are fast.
+- Next low-hanging fruit: reduce the number of separate files merged into the
+  kernel root, and avoid re-allocating the string table across cache hits.
 
-```
-$ time in compile --path kernel/kernel-root.in \
-    --entry kernel_entry --emit boot --target x86_64-unknown-none
-boot image: 245597 bytes (trampoline: 4096 + kernel: 241245)
-real  0m0.035s
-```
+## Target architectures
 
-This includes ~1300 lines of `.in` source across 15+ kernel files parsed,
-optimized, lowered to x86_64 machine code, and linked into a single bootable
-binary. The compiler itself is written in Rust and compiles in <1s.
+| Arch | Compiler status | Kernel status |
+|------|-----------------|---------------|
+| x86_64 | Native lowering, boot image, ELF object | Boots verified subsystems |
+| ARM64 | Planned (SCI table) | — |
+| RISC-V | Planned | — |
 
-### Boot time
+## Build and run
 
-| Environment | Wall clock | Notes |
-|-------------|-----------|-------|
-| QEMU TCG (aarch64 macOS) | ~4 s | Emulated x86_64 on Apple Silicon |
-| QEMU + KVM (Linux x86_64) | ~40 ms | Hardware virtualization |
-| Real hardware (native x86_64) | <1 s | Direct boot, no emulation overhead |
-
-The kernel itself enters the interactive shell in a few hundred timer ticks at 100Hz
-(~200ms of PIT time after interrupt enable). The rest of the wall clock is QEMU's
-VBE mode set, PCI bus scan, and system emulation startup.
-
-### Runtime throughput (QEMU x86_64, PIT 100Hz, preemptive scheduler)
-
-The preemptive scheduler runs two arithmetic worker threads at 100Hz,
-interleaving ~6.4M iterations per timer tick shared across both threads:
-
-```
-worker A iters 0x0efee98218cd1b6b  worker B iters 0x0efe97600f1f7e87
-```
-
-This gives ~640M iterations/second at 100Hz in QEMU emulation.
-
-### Running Subsystems
-
-The kernel is compiled from ~1300 lines of `.in` into a ~245 KB boot image:
-
-| Subsystem | Status |
-|-----------|--------|
-| x86_64 long mode boot (Multiboot1) | ✅ |
-| Serial console (COM1) | ✅ |
-| Physical memory discovery | ✅ |
-| Bump heap + 4K frame allocator | ✅ |
-| Kernel 4-level page table management | ✅ |
-| CR3-backed domain switching + private low page-table roots | ✅ |
-| Object graph arena (typed objects, stable IDs) | ✅ |
-| Capability table (minting, runtime check) | ✅ |
-| IDT (256-entry), PIC remap, PIT 100Hz | ✅ |
-| CPU exception handling (PF, #DE, #GP, #UD) | ✅ |
-| Component supervisor (SCI loader rule) | ✅ |
-| VBE framebuffer (1920×1080×32) | ✅ |
-| PS/2 mouse driver | ✅ |
-| USB xHCI host controller + HID keyboard | ✅ |
-| e1000 NIC driver (PCI, ARP, UDP) | ✅ |
-| NVMe/ATA disk driver | ✅ |
-| Flat filesystem (ramfs) | ✅ |
-| Framebuffer compositor (GNOME-style, X11 cursor, shadows) | ✅ |
-| Window dragging (title bar) | ✅ |
-| Window close button (drawn) | ❌ not wired |
-| Cooperative M:N threading | ✅ |
-| Preemptive multitasking (timer context switch) | ✅ |
-| Channel IPC (blocking wait queues) | ✅ |
-| Cross-domain shared-page channels | ✅ |
-| Checkpoint / restore (object graph + memory) | ✅ |
-| SCI loader (domain-mapped virtual component call, manifest/cap validation) | ✅ |
-| Linux personality layer | ✅ |
-| Interactive shell (25+ commands) | ✅ |
-| Display server service (SPDP protocol) | ✅ |
-| VRO editor | ✅ partial |
-
-## Target Architectures
-
-| Arch | Compiler Status | Kernel Status |
-|------|----------------|---------------|
-| x86_64 | ✅ Native lowering, boot image, ELF object | ✅ Boots verified subsystems |
-| ARM64 | ⬜ Planned (SCI table) | ⬜ |
-| RISC-V | ⬜ | ⬜ |
-
-The Inauguration compiler emits freestanding x86_64 code with SCI metadata for the verified kernel contract.
-Multi-platform lowering is a target for future phases.
-
-## Build and Run
-
-Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration
-checked out at `../inauguration`.
+Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration checked
+out at `../inauguration`.
 
 ```sh
-# Full boot check (compiles kernel, boots QEMU, asserts boot-critical subsystems)
-bash scripts/check-qemu-boot.sh
-
-# SCI component loading demo
-bash scripts/build-multicomponent.sh
-
-# SCI metadata validation
-bash scripts/check-sci-contract.sh
-
-# Network driver test
-bash scripts/check-network.sh
+bash scripts/check-qemu-boot.sh      # full boot verification
+bash scripts/build-multicomponent.sh # SCI component loading demo
+bash scripts/check-sci-contract.sh   # metadata validation
+bash scripts/check-network.sh        # e1000 ARP/UDP test
 ```
 
-Development is cross-platform — macOS (ARM64), Linux (x86_64).
-
-## Repository Layout
+## Repository layout
 
 ```
 kernel/
@@ -191,57 +85,25 @@ kernel/
 boot/
   multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
 scripts/
-  check-qemu-boot.sh      Full boot verification
+  check-qemu-boot.sh      full boot verification
   build-multicomponent.sh SCI loading demo
-  check-sci-contract.sh   Metadata validation
-  check-network.sh        Network driver test
+  check-sci-contract.sh   metadata validation
+  check-network.sh        network driver test
 ```
 
 ## Relationship to Inauguration
 
-Per [AGENTS.md](AGENTS.md), Space owns the OS contracts, examples, SCI profile,
-and boot plan.
-
-The [Inauguration](https://github.com/tschk/inauguration) compiler owns generic
-compiler capabilities:
+Per [`AGENTS.md`](AGENTS.md), Space owns the OS contracts, examples, SCI profile,
+and boot plan. Inauguration owns the generic compiler capabilities:
 
 - freestanding target support (`x86_64-unknown-none`)
 - SCI-compatible component metadata emission
 - native x86_64 lowering, instruction encoding, boot image assembly
-- Core IR optimization (inlining, constant folding, DCE, dead func elim)
-- multi-frontend support (.in, Rust, Go, V, OCaml, Tree-sitter polyglot)
+- Core IR optimization
+- multi-frontend support (.in, Rust, Go, V, Tree-sitter polyglot)
 
 Inauguration does not depend on this repository. Space does not add
 Space-branded targets to Inauguration.
-
-### The Compiler Contract
-
-```text
-  .in source
-       │
-       ▼
-  Inauguration
-       │
-       ├── code (machine code, data)
-       ├── capabilities (required and exported)
-       ├── object schemas
-       ├── imports / exports
-       ├── scheduling hints
-       ├── checkpoint policy
-       ├── determinism flags
-       ├── migration metadata
-       └── provenance
-       │
-       ▼
-  SCI (Space Component Image)
-       │
-       ▼
-  Space runtime → nanokernel enforcement
-```
-
-The compiler emits machine code plus component metadata for authority, imports,
-exports, and policy fields. Runtime enforcement is currently limited to the
-verified loader checks.
 
 ## License
 
