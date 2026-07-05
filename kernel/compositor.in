@@ -376,22 +376,6 @@ fn comp_draw_shadow(base: Int) -> void {
   }
 }
 
-// Helper: draw window border (outline around full window including title bar)
-fn comp_draw_border(base: Int, color: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let h = load32(base + 16)
-  let bw = w + 2
-  let bh = h + COMP_TITLE_BAR_H + 2
-  let bx = x - 1
-  let by = y - 1
-  fb_fill_rect(bx, by, bw, 1, color)      // top
-  fb_fill_rect(bx, by + bh - 1, bw, 1, color)  // bottom
-  fb_fill_rect(bx, by + 1, 1, bh - 2, color)   // left
-  fb_fill_rect(bx + bw - 1, by + 1, 1, bh - 2, color)  // right
-}
-
 // Helper: draw title bar background with text
 fn comp_draw_titlebar(base: Int) -> void {
   let x = load32(base + 4)
