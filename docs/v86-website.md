@@ -26,10 +26,23 @@ bun run dev
 | Boot image | 4096-byte trampoline + 256-byte SCI header + `.in`-compiled kernel |
 | Serial | COM1 (`0x3F8`) shell with `help`, `info`, and `halt` commands |
 
+## Deploy
+
+The site is configured for Cloudflare Pages via Wrangler:
+
+```bash
+cd website
+bun run deploy
+```
+
+- Project name: `space`
+- Domain: `https://space.tsc.hk`
+
 ## Verification
 
 - QEMU smoke test: `qemu-system-i386 -kernel public/v86/space-multiboot.bin -m 256M -serial stdio`
 - Website build: `bun run build` (Astro static site with `astro check`)
 - Browser test: `bun run dev`, then open the local URL and wait for the serial banner
+- Live site: `https://space.tsc.hk`
 
 See [`next-agent-32bit-v86.md`](next-agent-32bit-v86.md) for the original task breakdown and file references.
