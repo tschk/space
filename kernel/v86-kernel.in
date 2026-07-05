@@ -1,75 +1,153 @@
 package space.kernel
 
-// Minimal 32-bit v86 kernel: serial shell on COM1.
+// Minimal 32-bit v86 kernel: serial shell on COM1, keyboard input via PS/2.
 
 const COM1_PORT = 0x3F8
+const KBD_TABLE = 0x3000
 
 fn kernel_entry(mb_info: Int) -> Int {
-  let port = COM1_PORT
-  serial_init(port)
+  keyboard_init()
+  serial_init()
 
-  serial_write_cstr(port, "Space 32-bit v86")
-  serial_nl(port)
-  serial_write_cstr(port, "type 'help' for commands")
-  serial_nl(port)
+  serial_write_cstr("Space 32-bit v86")
+  serial_nl()
+  serial_write_cstr("type 'help' for commands")
+  serial_nl()
 
   let running = true
   while running {
-    let len = read_line(port)
+    let len = read_line()
     if len == 0 {
       continue
     }
     if match_command("help") {
-      serial_write_cstr(port, "help  - this message")
-      serial_nl(port)
-      serial_write_cstr(port, "info  - show boot info")
-      serial_nl(port)
-      serial_write_cstr(port, "halt  - stop the cpu")
-      serial_nl(port)
+      serial_write_cstr("help  - this message")
+      serial_nl()
+      serial_write_cstr("info  - show boot info")
+      serial_nl()
+      serial_write_cstr("halt  - stop the cpu")
+      serial_nl()
     } else if match_command("info") {
-      serial_write_cstr(port, "v86 32-bit protected mode")
-      serial_nl(port)
-      serial_write_cstr(port, "mb_info: 0x")
-      serial_write_hex32(port, mb_info)
-      serial_nl(port)
+      serial_write_cstr("v86 32-bit protected mode")
+      serial_nl()
+      serial_write_cstr("mb_info: 0x")
+      serial_write_hex32(mb_info)
+      serial_nl()
     } else if match_command("halt") {
-      serial_write_cstr(port, "halting")
-      serial_nl(port)
+      serial_write_cstr("halting")
+      serial_nl()
       cli()
       while true {
         hlt()
       }
     } else {
-      serial_write_cstr(port, "unknown command")
-      serial_nl(port)
+      serial_write_cstr("unknown command")
+      serial_nl()
     }
   }
   return 0
 }
 
+// PS/2 keyboard scancode set 1 -> ASCII lookup table.
+fn keyboard_init() -> void {
+  // Enable keyboard scanning on the PS/2 controller and discard the 0xFA ACK.
+  outb(0x60, 0xF4)
+  while (inb(0x64) & 0x01) == 0 {
+    outb(0x80, 0)
+  }
+  inb(0x60)
+
+  let i = 0
+  while i < 128 {
+    store8(KBD_TABLE + i, 0)
+    i = i + 1
+  }
+  store8(KBD_TABLE + 0x02, 49)
+  store8(KBD_TABLE + 0x03, 50)
+  store8(KBD_TABLE + 0x04, 51)
+  store8(KBD_TABLE + 0x05, 52)
+  store8(KBD_TABLE + 0x06, 53)
+  store8(KBD_TABLE + 0x07, 54)
+  store8(KBD_TABLE + 0x08, 55)
+  store8(KBD_TABLE + 0x09, 56)
+  store8(KBD_TABLE + 0x0A, 57)
+  store8(KBD_TABLE + 0x0B, 48)
+  store8(KBD_TABLE + 0x0C, 45)
+  store8(KBD_TABLE + 0x0D, 61)
+  store8(KBD_TABLE + 0x10, 113)
+  store8(KBD_TABLE + 0x11, 119)
+  store8(KBD_TABLE + 0x12, 101)
+  store8(KBD_TABLE + 0x13, 114)
+  store8(KBD_TABLE + 0x14, 116)
+  store8(KBD_TABLE + 0x15, 121)
+  store8(KBD_TABLE + 0x16, 117)
+  store8(KBD_TABLE + 0x17, 105)
+  store8(KBD_TABLE + 0x18, 111)
+  store8(KBD_TABLE + 0x19, 112)
+  store8(KBD_TABLE + 0x1E, 97)
+  store8(KBD_TABLE + 0x1F, 115)
+  store8(KBD_TABLE + 0x20, 100)
+  store8(KBD_TABLE + 0x21, 102)
+  store8(KBD_TABLE + 0x22, 103)
+  store8(KBD_TABLE + 0x23, 104)
+  store8(KBD_TABLE + 0x24, 106)
+  store8(KBD_TABLE + 0x25, 107)
+  store8(KBD_TABLE + 0x26, 108)
+  store8(KBD_TABLE + 0x2C, 122)
+  store8(KBD_TABLE + 0x2D, 120)
+  store8(KBD_TABLE + 0x2E, 99)
+  store8(KBD_TABLE + 0x2F, 118)
+  store8(KBD_TABLE + 0x30, 98)
+  store8(KBD_TABLE + 0x31, 110)
+  store8(KBD_TABLE + 0x32, 109)
+  store8(KBD_TABLE + 0x33, 44)
+  store8(KBD_TABLE + 0x34, 46)
+  store8(KBD_TABLE + 0x35, 47)
+  store8(KBD_TABLE + 0x39, 32)
+  store8(KBD_TABLE + 0x1C, 13)
+  store8(KBD_TABLE + 0x0E, 8)
+  return
+}
+
+fn keyboard_get() -> Int {
+  while (inb(0x64) & 0x01) == 0 {
+    outb(0x80, 0)
+  }
+  let scancode = inb(0x60)
+  if scancode >= 128 {
+    return 0
+  }
+  return load8(KBD_TABLE + scancode)
+}
+
 // Line buffer in low bss-free scratch (trampoline reserves 0..0x1000; use 0x5000).
 const LINE_BUF = 0x5000
-var line_len: Int = 0
 
-fn read_line(port: Int) -> Int {
-  line_len = 0
+fn read_line() -> Int {
+  let line_len = 0
   while true {
-    let ch = serial_get(port)
+    let ch = keyboard_get()
+    if ch == 0 {
+      continue
+    }
     if ch == 13 || ch == 10 {
-      serial_nl(port)
+      store8(LINE_BUF + line_len, 0)
+      serial_nl()
       return line_len
     }
     if ch == 8 || ch == 127 {
       if line_len > 0 {
         line_len = line_len - 1
-        serial_put(port, 8)
-        serial_put(port, 32)
-        serial_put(port, 8)
+        serial_put(8)
+        serial_put(32)
+        serial_put(8)
       }
-    } else if ch >= 32 && ch < 127 && line_len < 79 {
-      store8(LINE_BUF + line_len, ch)
-      line_len = line_len + 1
-      serial_put(port, ch)
+    } else if ch >= 32 && ch < 127 {
+      if line_len < 79 {
+        store8(LINE_BUF + line_len, ch)
+        line_len = line_len + 1
+        serial_put(ch)
+      }
     }
   }
   return 0
@@ -91,64 +169,54 @@ fn match_command(cmd: Int) -> Bool {
   return false
 }
 
-fn serial_init(port: Int) -> void {
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x80)
-  outb(port + 0, 0x03)
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x03)
-  outb(port + 2, 0xC7)
-  outb(port + 4, 0x0B)
+fn serial_init() -> void {
+  outb(COM1_PORT + 1, 0x00)
+  outb(COM1_PORT + 3, 0x80)
+  outb(COM1_PORT + 0, 0x03)
+  outb(COM1_PORT + 1, 0x00)
+  outb(COM1_PORT + 3, 0x03)
+  outb(COM1_PORT + 2, 0x07)
+  outb(COM1_PORT + 4, 0x0B)
   return
 }
 
-fn serial_wait_tx(port: Int) -> void {
-  while (inb(port + 5) & 0x20) == 0 {
+fn serial_wait_tx() -> void {
+  while (inb(COM1_PORT + 5) & 0x20) == 0 {
+    pause()
   }
   return
 }
 
-fn serial_wait_rx(port: Int) -> void {
-  while (inb(port + 5) & 0x01) == 0 {
-  }
+fn serial_put(ch: Int) -> void {
+  serial_wait_tx()
+  outb(COM1_PORT, ch)
   return
 }
 
-fn serial_put(port: Int, ch: Int) -> void {
-  serial_wait_tx(port)
-  outb(port, ch)
+fn serial_nl() -> void {
+  serial_put(10)
   return
 }
 
-fn serial_get(port: Int) -> Int {
-  serial_wait_rx(port)
-  return inb(port)
-}
-
-fn serial_nl(port: Int) -> void {
-  serial_put(port, 10)
-  return
-}
-
-fn serial_write_cstr(port: Int, addr: Int) -> void {
+fn serial_write_cstr(addr: Int) -> void {
   let i = 0
   let c = load8(addr + i)
   while c != 0 {
-    serial_put(port, c)
+    serial_put(c)
     i = i + 1
     c = load8(addr + i)
   }
   return
 }
 
-fn serial_write_hex32(port: Int, value: Int) -> void {
+fn serial_write_hex32(value: Int) -> void {
   let shift = 28
   while shift >= 0 {
     let nibble = (value >> shift) & 0xF
     if nibble < 10 {
-      serial_put(port, 48 + nibble)
+      serial_put(48 + nibble)
     } else {
-      serial_put(port, 87 + nibble)
+      serial_put(87 + nibble)
     }
     shift = shift - 4
   }

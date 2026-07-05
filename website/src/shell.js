@@ -45,8 +45,31 @@ function finishStatus(message) {
   }, 700);
 }
 
-function sendSerial(data) {
-  emulator?.serial0_send(data);
+const scancodeSet1 = {
+  a: 0x1e, b: 0x30, c: 0x2e, d: 0x20, e: 0x12, f: 0x21, g: 0x22, h: 0x23,
+  i: 0x17, j: 0x24, k: 0x25, l: 0x26, m: 0x32, n: 0x31, o: 0x18, p: 0x19,
+  q: 0x10, r: 0x13, s: 0x1f, t: 0x14, u: 0x16, v: 0x2f, w: 0x11, x: 0x2d,
+  y: 0x15, z: 0x2c,
+  "0": 0x0b, "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06,
+  "6": 0x07, "7": 0x08, "8": 0x09, "9": 0x0a,
+  "-": 0x0c, "=": 0x0d, ",": 0x33, ".": 0x34, "/": 0x35,
+  " ": 0x39,
+};
+
+async function sendInput(data) {
+  if (!emulator) return;
+  const ps2 = emulator.v86?.cpu?.devices?.ps2;
+  if (!ps2) return;
+  ps2.enable_keyboard_stream = true;
+  window.sendInputCount = (window.sendInputCount || 0) + 1;
+  for (const ch of data) {
+    if (ch === "\r" || ch === "\n") {
+      ps2.kbd_send_code(0x1c);
+      continue;
+    }
+    const make = scancodeSet1[ch];
+    if (make) ps2.kbd_send_code(make);
+  }
 }
 
 function computeTerminalMetrics() {
@@ -73,9 +96,7 @@ function terminalFontSize() {
 }
 
 function applyTerminalScale() {
-  if (!term || !fitAddon) {
-    return;
-  }
+  if (!term || !fitAddon) return;
   const { fontSize } = computeTerminalMetrics();
   if (term.options && term.options.fontSize !== fontSize) {
     term.options.fontSize = fontSize;
@@ -87,15 +108,8 @@ function applyTerminalScale() {
 }
 
 async function mountTerminal() {
-  if (!screen) {
-    return false;
-  }
-  if (legacyPre) {
-    legacyPre.hidden = true;
-  }
-  if (commandForm) {
-    commandForm.hidden = true;
-  }
+  if (!screen) return false;
+  if (legacyPre) legacyPre.hidden = true;
 
   await init();
 
@@ -128,38 +142,61 @@ async function mountTerminal() {
   term.loadAddon(fitAddon);
   term.open(host);
   applyTerminalScale();
-  if (fitAddon.observeResize) {
-    fitAddon.observeResize();
-  }
-  window.addEventListener("resize", () => {
-    applyTerminalScale();
-  });
+  if (fitAddon.observeResize) fitAddon.observeResize();
+  window.addEventListener("resize", () => applyTerminalScale());
 
   term.writeln("Space loading…");
   term.focus();
-  term.onData(sendSerial);
+  term.onData(sendInput);
   host.addEventListener("pointerdown", () => term.focus());
   return true;
 }
 
+function wireCommandBar() {
+  if (!commandForm || !commandInput) return;
+  commandForm.classList.remove("hidden");
+  commandInput.disabled = false;
+  commandForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const line = commandInput.value ?? "";
+    commandInput.value = "";
+    await sendInput(`${line}\r`);
+    commandInput.focus();
+  });
+}
+
 function wireLegacyKeyboard() {
-  if (!legacyPre) {
-    return;
-  }
+  if (!legacyPre) return;
   legacyPre.hidden = false;
   legacyPre.style.display = "block";
   legacyPre.textContent = "Space loading…\n";
   legacyPre.focus();
+}
 
-  commandForm?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const line = commandInput?.value ?? "";
-    if (commandInput) {
-      commandInput.value = "";
-    }
-    sendSerial(`${line}\r`);
-    legacyPre.focus();
-  });
+function printWelcome() {
+  if (!term) return;
+  const lines = [
+    "",
+    "Space is a component-based operating system.",
+    "Native model: component + capability + object + execution graph.",
+    "",
+    "Architecture:",
+    "       .in          ← native language",
+    "       ↑",
+    " Inauguration       ← compiler — the real OS contract",
+    "       ↑",
+    "      SCI           ← component image format (replaces ELF)",
+    "       ↑",
+    "    Space           ← operating system, component runtime",
+    "       ↑",
+    " Nanokernel         ← hardware enforcement layer",
+    "",
+    "Commands: help, info, halt",
+    "",
+  ];
+  for (const line of lines) {
+    term.writeln(line);
+  }
 }
 
 if (!screen) {
@@ -179,21 +216,22 @@ try {
     memory_size: 512 * 1024 * 1024,
     autostart: true,
   });
+  window.spaceEmulator = emulator;
 
+  let serialOutCount = 0;
   emulator.add_listener("serial0-output-byte", (byte) => {
+    serialOutCount++;
+    window.serialOutCount = serialOutCount;
     const ch = String.fromCharCode(byte);
-    if (term) {
-      term.write(ch);
-    }
+    if (term) term.write(ch);
     if (legacyPre) {
       legacyPre.textContent += ch;
       legacyPre.scrollTop = legacyPre.scrollHeight;
     }
   });
 
-  if (!useXterm) {
-    wireLegacyKeyboard();
-  }
+  wireCommandBar();
+  if (!useXterm) wireLegacyKeyboard();
 
   emulator.add_listener("download-progress", (event) => {
     if (event.lengthComputable && event.total) {
@@ -213,6 +251,7 @@ try {
     finishStatus("booting Space (serial + VGA if kernel enables it)");
     applyTerminalScale();
     term?.focus();
+    printWelcome();
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
