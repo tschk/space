@@ -1,0 +1,144 @@
+package space.kernel
+
+fn alloc(n: Int) -> Int {
+  let aligned = (n + 15) & -16
+  let p = heap_next
+  let next = heap_next + aligned
+  if next > heap_end {
+    panic("heap exhausted")
+  }
+  heap_next = next
+  return p
+}
+
+// --- physical memory discovery (Multiboot1 memory map) ----------------------
+fn discover_memory(mb: Int) -> void {
+  let flags = load32(mb)
+  if (flags & 0x40) == 0 {
+    return
+  }
+  let mmap_len = load32(mb + 44)
+  let mmap_addr = load32(mb + 48)
+  let end = mmap_addr + mmap_len
+  let entry = mmap_addr
+  let best_base = 0
+  let best_len = 0
+  let total = 0
+  let count = 0
+  while entry < end {
+    let size = load32(entry)
+    let base = load64(entry + 4)
+    let len = load64(entry + 12)
+    let kind = load32(entry + 20)
+    if kind == 1 {
+      total = total + len
+      count = count + 1
+      if len > best_len {
+        best_base = base
+        best_len = len
+      }
+    }
+    entry = entry + size + 4
+  }
+  total_ram = total
+  region_count = count
+  // Place the heap above the first 16 MiB so it cannot clobber the kernel
+  // image (loaded at 1 MiB) or low memory used by the boot trampoline.
+  let hstart = best_base
+  if hstart < 0x1000000 {
+    hstart = 0x1000000
+  }
+  heap_next = hstart
+  heap_end = best_base + best_len
+  return
+}
+
+// --- virtual memory management ----------------------------------------------
+// The boot trampoline identity-maps the first 1 GiB with 2 MiB pages. These
+// helpers allocate fresh 4 KiB-aligned frames and install new 4 KiB mappings by
+// walking and growing the page tables, the foundation for realm memory domains.
+var free_list: Int = 0  // head of LIFO free list, 0 = empty
+
+fn frame_alloc() -> Int {
+  let p = (heap_next + 4095) & -4096
+  heap_next = p + 4096
+  let i = 0
+  while i < 512 {
+    store64(p + i * 8, 0)
+    i = i + 1
+  }
+  return p
+}
+
+// Free a 4 KiB frame back to the free list for reuse.
+fn frame_free(p: Int) -> void {
+  if p == 0 {
+    return
+  }
+  store64(p, free_list)  // link to previous head
+  free_list = p
+  return
+}
+
+// Walk x86-64 page tables: PML4 -> PDPT -> PD -> PT.
+// Creates intermediate tables and splits huge pages as needed.
+// Returns the address of the PTE slot for the given virtual address.
+fn pt_ensure_pte(pml4: Int, virt: Int) -> Int {
+  let i4 = (virt >> 39) & 0x1FF
+  let i3 = (virt >> 30) & 0x1FF
+  let i2 = (virt >> 21) & 0x1FF
+  let i1 = (virt >> 12) & 0x1FF
+  let e4 = load64(pml4 + i4 * 8)
+  if (e4 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pml4 + i4 * 8, np | 3)
+    e4 = np | 3
+  }
+  let pdpt = e4 & -4096
+  let e3 = load64(pdpt + i3 * 8)
+  if (e3 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pdpt + i3 * 8, np | 3)
+    e3 = np | 3
+  }
+  if (e3 & 0x80) != 0 {
+    let np = frame_alloc()
+    let base = e3 & -0x40000000
+    store64(pdpt + i3 * 8, np | 3)
+    e3 = np | 3
+    let pt_new = np & -4096
+    let j = 0
+    while j < 512 {
+      store64(pt_new + j * 8, (base + j * 0x200000) | 0x83)
+      j = j + 1
+    }
+  }
+  let pd = e3 & -4096
+  let e2 = load64(pd + i2 * 8)
+  if (e2 & 1) == 0 {
+    let np = frame_alloc()
+    store64(pd + i2 * 8, np | 3)
+    e2 = np | 3
+  }
+  if (e2 & 0x80) != 0 {
+    let np = frame_alloc()
+    let base = e2 & -0x200000
+    store64(pd + i2 * 8, np | 3)
+    e2 = np | 3
+    let pt_new = np & -4096
+    let j = 0
+    while j < 512 {
+      store64(pt_new + j * 8, (base + j * 0x1000) | 0x23)
+      j = j + 1
+    }
+  }
+  return (e2 & -4096) + i1 * 8
+}
+
+// Map one 4 KiB page via pt_ensure_pte. Kernel PML4 is at 0x1000.
+fn map_page(virt: Int, phys: Int, flags: Int) -> void {
+  let pte = pt_ensure_pte(0x1000, virt)
+  store64(pte, phys | flags)
+  invlpg(virt)
+  return
+}

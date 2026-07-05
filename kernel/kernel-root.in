@@ -33,10 +33,18 @@ import "sched.in"
 // Interactive serial shell.
 import "shell.in"
 
-// The nanokernel root component. The component, interface, and struct
-// declarations are the Space contract surface the loader and SCI metadata are
-// built from; the functions below are the lowerable nanokernel control flow
-// that runs after the boot trampoline enters long mode.
+// --- decomposed nanokernel subsystems ---------------------------------------
+import "serial.in"
+import "memory.in"
+import "object.in"
+import "interrupts.in"
+import "syscall.in"
+import "libc_test.in"
+import "font.in"
+import "vfs.in"
+
+
+// The nanokernel root component.
 component KernelRoot {
   target "x86_64-unknown-none"
   deterministic true
@@ -84,92 +92,7 @@ var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
 
-// --- serial console (COM1) --------------------------------------------------
-const COM1_PORT = 0x3F8
-const SPACE_VERSION_MAJOR = 0
-const SPACE_VERSION_MINOR = 2
-const SPACE_VERSION_PATCH = 75
-
-fn com1() -> Int {
-  return COM1_PORT
-}
-
-fn serial_init(port: Int) -> void {
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x80)
-  outb(port + 0, 0x03)
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x03)
-  outb(port + 2, 0xC7)
-  outb(port + 4, 0x0B)
-  return
-}
-
-fn serial_wait_tx(port: Int) -> void {
-  while (inb(port + 5) & 0x20) == 0 {
-  }
-  return
-}
-
-fn serial_put(port: Int, ch: Int) -> void {
-  serial_wait_tx(port)
-  outb(port, ch)
-  return
-}
-
-fn serial_nl(port: Int) -> void {
-  serial_put(port, 10)
-  return
-}
-
-fn serial_write_cstr(port: Int, addr: Int) -> void {
-  let i = 0
-  let c = load8(addr + i)
-  while c != 0 {
-    serial_put(port, c)
-    i = i + 1
-    c = load8(addr + i)
-  }
-  return
-}
-
-fn serial_write_dec_wide(port: Int, value: Int) -> void {
-  let n = value
-  if n < 0 {
-    serial_put(port, 45)  // '-'
-    n = -n
-  }
-  if n == 0 {
-    serial_put(port, 48)  // '0'
-    return
-  }
-  let div = 1
-  while n / div >= 10 {
-    div = div * 10
-  }
-  while div > 0 {
-    serial_put(port, 48 + (n / div) % 10)
-    div = div / 10
-  }
-  return
-}
-
-fn serial_write_hex(port: Int, value: Int) -> void {
-  let shift = 60
-  while shift >= 0 {
-    let nibble = (value >> shift) & 0xF
-    if nibble < 10 {
-      serial_put(port, 48 + nibble)
-    } else {
-      serial_put(port, 87 + nibble)
-    }
-    shift = shift - 4
-  }
-  return
-}
-
-// --- deterministic execution subsystem --------------------------------------
-// xorshift64 PRNG: same seed reproduces same execution exactly.
+// --- PRNG and determinism ---------------------------------------------------
 fn det_next(s: Int) -> Int {
   let x = s
   x = x ^ (x << 13)
@@ -180,539 +103,28 @@ fn det_next(s: Int) -> Int {
 
 fn det_workload(seed: Int) -> Int {
   let s = seed
-  let checksum = 0
-  for i in 0..64 {
+  let sum = 0
+  for i in 0..1000 {
     s = det_next(s)
-    let pick = s & 0x7
-    checksum = (checksum * 31 + pick) & 0xFFFFFFFF
+    sum = sum + (s & 0xFF)
   }
-  return checksum
+  return sum
 }
 
 fn run_determinism(port: Int) -> void {
-  let r1 = det_workload(0x12345678)
-  let r2 = det_workload(0x12345678)
-  let r3 = det_workload(0x12345679)
-  serial_write_cstr(port, "  det run1 (seed 0x12345678) 0x")
-  serial_write_hex(port, r1)
-  serial_put(port, 10)
-  serial_write_cstr(port, "  det run2 (seed 0x12345678) 0x")
-  serial_write_hex(port, r2)
-  serial_put(port, 10)
-  if r1 == r2 {
-    serial_write_cstr(port, "  DETERMINISTIC: identical result for identical seed\n")
-  } else {
-    serial_write_cstr(port, "  NONDETERMINISTIC: results differ\n")
-  }
-  serial_write_cstr(port, "  det altseed (0x12345679) 0x")
-  serial_write_hex(port, r3)
-  serial_write_cstr(port, " (differs, as expected)\n")
-  return
-}
-
-// --- heap allocator (bump) --------------------------------------------------
-fn alloc(n: Int) -> Int {
-  let aligned = (n + 15) & -16
-  let p = heap_next
-  let next = heap_next + aligned
-  if next > heap_end {
-    panic("heap exhausted")
-  }
-  heap_next = next
-  return p
-}
-
-// --- physical memory discovery (Multiboot1 memory map) ----------------------
-fn discover_memory(mb: Int) -> void {
-  let flags = load32(mb)
-  if (flags & 0x40) == 0 {
-    return
-  }
-  let mmap_len = load32(mb + 44)
-  let mmap_addr = load32(mb + 48)
-  let end = mmap_addr + mmap_len
-  let entry = mmap_addr
-  let best_base = 0
-  let best_len = 0
-  let total = 0
-  let count = 0
-  while entry < end {
-    let size = load32(entry)
-    let base = load64(entry + 4)
-    let len = load64(entry + 12)
-    let kind = load32(entry + 20)
-    if kind == 1 {
-      total = total + len
-      count = count + 1
-      if len > best_len {
-        best_base = base
-        best_len = len
-      }
-    }
-    entry = entry + size + 4
-  }
-  total_ram = total
-  region_count = count
-  // Place the heap above the first 16 MiB so it cannot clobber the kernel
-  // image (loaded at 1 MiB) or low memory used by the boot trampoline.
-  let hstart = best_base
-  if hstart < 0x1000000 {
-    hstart = 0x1000000
-  }
-  heap_next = hstart
-  heap_end = best_base + best_len
-  return
-}
-
-// --- virtual memory management ----------------------------------------------
-// The boot trampoline identity-maps the first 1 GiB with 2 MiB pages. These
-// helpers allocate fresh 4 KiB-aligned frames and install new 4 KiB mappings by
-// walking and growing the page tables, the foundation for realm memory domains.
-var free_list: Int = 0  // head of LIFO free list, 0 = empty
-
-fn frame_alloc() -> Int {
-  let p = (heap_next + 4095) & -4096
-  heap_next = p + 4096
-  let i = 0
-  while i < 512 {
-    store64(p + i * 8, 0)
-    i = i + 1
-  }
-  return p
-}
-
-// Free a 4 KiB frame back to the free list for reuse.
-fn frame_free(p: Int) -> void {
-  if p == 0 {
-    return
-  }
-  store64(p, free_list)  // link to previous head
-  free_list = p
-  return
-}
-
-// Walk x86-64 page tables: PML4 -> PDPT -> PD -> PT.
-// Creates intermediate tables and splits huge pages as needed.
-// Returns the address of the PTE slot for the given virtual address.
-fn pt_ensure_pte(pml4: Int, virt: Int) -> Int {
-  let i4 = (virt >> 39) & 0x1FF
-  let i3 = (virt >> 30) & 0x1FF
-  let i2 = (virt >> 21) & 0x1FF
-  let i1 = (virt >> 12) & 0x1FF
-  let e4 = load64(pml4 + i4 * 8)
-  if (e4 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pml4 + i4 * 8, np | 3)
-    e4 = np | 3
-  }
-  let pdpt = e4 & -4096
-  let e3 = load64(pdpt + i3 * 8)
-  if (e3 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pdpt + i3 * 8, np | 3)
-    e3 = np | 3
-  }
-  if (e3 & 0x80) != 0 {
-    let np = frame_alloc()
-    let base = e3 & -0x40000000
-    store64(pdpt + i3 * 8, np | 3)
-    e3 = np | 3
-    let pt_new = np & -4096
-    let j = 0
-    while j < 512 {
-      store64(pt_new + j * 8, (base + j * 0x200000) | 0x83)
-      j = j + 1
-    }
-  }
-  let pd = e3 & -4096
-  let e2 = load64(pd + i2 * 8)
-  if (e2 & 1) == 0 {
-    let np = frame_alloc()
-    store64(pd + i2 * 8, np | 3)
-    e2 = np | 3
-  }
-  if (e2 & 0x80) != 0 {
-    let np = frame_alloc()
-    let base = e2 & -0x200000
-    store64(pd + i2 * 8, np | 3)
-    e2 = np | 3
-    let pt_new = np & -4096
-    let j = 0
-    while j < 512 {
-      store64(pt_new + j * 8, (base + j * 0x1000) | 0x23)
-      j = j + 1
-    }
-  }
-  return (e2 & -4096) + i1 * 8
-}
-
-// Map one 4 KiB page via pt_ensure_pte. Kernel PML4 is at 0x1000.
-fn map_page(virt: Int, phys: Int, flags: Int) -> void {
-  let pte = pt_ensure_pte(0x1000, virt)
-  store64(pte, phys | flags)
-  invlpg(virt)
-  return
-}
-
-// --- object graph v0 --------------------------------------------------------
-// The object graph lives in a dedicated arena so it can be checkpointed and
-// restored independently of kernel scratch allocations.
-var obj_arena: Int = 0
-var obj_arena_next: Int = 0
-var obj_arena_size: Int = 0
-var obj_arena_end: Int = 0
-
-fn obj_arena_init(size: Int) -> void {
-  obj_arena = alloc(size)
-  obj_arena_next = obj_arena
-  obj_arena_size = size
-  obj_arena_end = obj_arena + size
-  return
-}
-
-fn obj_bump(n: Int) -> Int {
-  let p = obj_arena_next
-  let next = obj_arena_next + ((n + 15) & -16)
-  if next > obj_arena_end {
-    panic("obj arena exhausted")
-  }
-  obj_arena_next = next
-  return p
-}
-
-// Object record (32 bytes): [id][type_tag][ref0][ref1].
-fn obj_alloc(type_tag: Int) -> Int {
-  let p = obj_bump(32)
-  obj_counter = obj_counter + 1
-  store64(p + 0, obj_counter)
-  store64(p + 8, type_tag)
-  store64(p + 16, 0)
-  store64(p + 24, 0)
-  return p
-}
-
-fn obj_id(obj: Int) -> Int {
-  return load64(obj + 0)
-}
-
-// Object graph edge: single link in slot 1 (ref1). ref0 reserved for future use.
-fn obj_link(src: Int, dst: Int) -> void {
-  store64(src + 24, dst)
-  return
-}
-
-// --- object-graph checkpoint / restore --------------------------------------
-// Snapshotting is a Space primitive: capture a consistent copy of the object
-// graph and its allocator/counter state, and restore the graph to it later.
-var snap_buf: Int = 0
-var snap_obj_next: Int = 0
-var snap_obj_counter: Int = 0
-var snap_cap_count: Int = 0
-
-fn checkpoint_save() -> void {
-  if snap_buf == 0 {
-    snap_buf = alloc(obj_arena_size)
-  }
-  let words = (obj_arena_next - obj_arena) / 8
-  for k in 0..words {
-    store64(snap_buf + k * 8, load64(obj_arena + k * 8))
-  }
-  snap_obj_next = obj_arena_next
-  snap_obj_counter = obj_counter
-  snap_cap_count = cap_count
-  return
-}
-
-fn checkpoint_restore() -> void {
-  let words = (snap_obj_next - obj_arena) / 8
-  for k in 0..words {
-    store64(obj_arena + k * 8, load64(snap_buf + k * 8))
-  }
-  obj_arena_next = snap_obj_next
-  obj_counter = snap_obj_counter
-  cap_count = snap_cap_count
-  return
-}
-
-// --- capability table v0 ----------------------------------------------------
-// Capability slot (16 bytes): [target_object_ptr][rights].
-fn cap_table_init(capacity: Int) -> void {
-  cap_table_base = alloc(capacity * 16)
-  cap_count = 0
-  return
-}
-
-fn cap_mint(target_obj: Int, rights: Int) -> Int {
-  let idx = cap_count
-  let slot = cap_table_base + idx * 16
-  store64(slot + 0, target_obj)
-  store64(slot + 8, rights)
-  cap_count = cap_count + 1
-  return idx
-}
-
-// --- interrupts: IDT, PIC, PIT timer ---------------------------------------
-// Interrupt dispatcher, called from the assembly timer stub with the vector in
-// the first argument. Counts ticks and acknowledges the interrupt controller.
-fn isr_dispatch(vector: Int) -> void {
-  ticks = ticks + 1
-  outb(0x20, 0x20)
-  return
-}
-
-// CPU exception handler. Reports the fault and halts the nanokernel rather than
-// letting an unhandled fault triple-fault the machine.
-fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
-  let port = com1()
+  serial_write_cstr(port, "space: determinism test starting")
   serial_nl(port)
-    serial_write_cstr(port, "space: *** CPU EXCEPTION vector 0x")
-  serial_write_hex(port, vector)
-  serial_write_cstr(port, " error 0x")
-  serial_write_hex(port, error_code)
-  serial_write_cstr(port, " rip 0x")
-  serial_write_hex(port, rip)
+  let sum1 = det_workload(42)
+  let sum2 = det_workload(42)
+  serial_write_cstr(port, "space: seed 42 run 1 sum 0x")
+  serial_write_hex(port, sum1)
+  serial_write_cstr(port, " run 2 sum 0x")
+  serial_write_hex(port, sum2)
   serial_nl(port)
-  if vector == 14 {
-    serial_write_cstr(port, "space:     page fault address CR2 0x")
-    serial_write_hex(port, read_cr2())
-    serial_nl(port)
-  }
-    serial_write_cstr(port, "space: nanokernel fault handler halting")
-  serial_nl(port)
-  cli()
-  while true {
-    hlt()
-  }
-  return
-}
-
-// Install a 64-bit interrupt gate into the IDT.
-fn idt_set(vec: Int, handler: Int) -> void {
-  let e = idt_base + vec * 16
-  store16(e + 0, handler & 0xFFFF)
-  store16(e + 2, 0x08)
-  store8(e + 4, 0)
-  store8(e + 5, 0x8E)
-  store16(e + 6, (handler >> 16) & 0xFFFF)
-  store32(e + 8, (handler >> 32) & 0xFFFFFFFF)
-  store32(e + 12, 0)
-  return
-}
-
-// Remap the 8259 PICs so hardware IRQs land on vectors 32..47, then mask
-// everything except IRQ0 (the timer).
-fn pic_remap() -> void {
-  outb(0x20, 0x11)
-  outb(0xA0, 0x11)
-  outb(0x21, 0x20)
-  outb(0xA1, 0x28)
-  outb(0x21, 0x04)
-  outb(0xA1, 0x02)
-  outb(0x21, 0x01)
-  outb(0xA1, 0x01)
-  outb(0x21, 0xFE)
-  outb(0xA1, 0xFF)
-  return
-}
-
-// Program PIT channel 0 to ~100 Hz.
-fn pit_init() -> void {
-  let divisor = 11932
-  outb(0x43, 0x36)
-  outb(0x40, divisor & 0xFF)
-  outb(0x40, (divisor >> 8) & 0xFF)
-  return
-}
-
-fn interrupts_init() -> void {
-  store64(0x4000, isr_dispatch)
-  let timer_stub = load64(0x4008)
-  let default_stub = load64(0x4010)
-  idt_base = alloc(256 * 16)
-  for i in 0..256 {
-    idt_set(i, default_stub)
-  }
-  idt_set(32, timer_stub)
-  // Wire CPU exception vectors to the fault handler.
-  store64(0x4050, exception_handler)
-  idt_set(0, load64(0x4030))
-  idt_set(6, load64(0x4038))
-  idt_set(13, load64(0x4040))
-  idt_set(14, load64(0x4048))
-  // Wire the syscall trap (int 0x80) with DPL=3 so user-mode code can invoke it.
-  store64(0x4070, syscall_dispatch)
-  idt_set_user(0x80, load64(0x4068))
-  let idtr = alloc(16)
-  store16(idtr + 0, 256 * 16 - 1)
-  store64(idtr + 2, idt_base)
-  lidt(idtr)
-  pic_remap()
-  pit_init()
-  sti()
-  return
-}
-
-// --- syscall trap (int 0x80) ------------------------------------------------
-// User programs request kernel services via int 0x80. The assembly stub
-// (isr_syscall) saves all 15 GP registers into a frame on the stack and calls
-// syscall_dispatch with a pointer to that frame. The dispatch function reads
-// the syscall number from RAX (frame offset 112) and the arguments from
-// RDI (72), RSI (80), RDX (88), then writes the return value back into the
-// RAX slot so the stub's iretq delivers it to the caller.
-//
-// Frame layout (matches push order in isr_syscall):
-//   rax=112 rbx=104 rcx=96 rdx=88 rsi=80 rdi=72 rbp=64
-//   r8=56 r9=48 r10=40 r11=32 r12=24 r13=16 r14=8 r15=0
-
-// Syscall 0: sys_write(fd, buf, len) — write to serial console (fd=1 = stdout).
-fn sys_write(fd: Int, buf: Int, len: Int) -> Int {
-  if fd != 1 {
-    return -1
-  }
-  let port = com1()
-  let i = 0
-  while i < len {
-    serial_put(port, load8(buf + i))
-    i = i + 1
-  }
-  return len
-}
-
-// Syscall 1: sys_read(fd, buf, len) — read from serial (fd=0 = stdin, blocking).
-// Reads up to len bytes, stopping at a newline, and returns the byte count.
-fn sys_read(fd: Int, buf: Int, len: Int) -> Int {
-  if fd != 0 {
-    return -1
-  }
-  let port = com1()
-  let i = 0
-  while i < len {
-    let c = serial_read(port)
-    store8(buf + i, c)
-    i = i + 1
-    if c == 10 || c == 13 {
-      return i
-    }
-  }
-  return len
-}
-
-// Syscall 2: sys_exit(code) — exit the current process/component.
-// In kernel context (thread 0) this halts the nanokernel.
-fn sys_exit(code: Int) -> Int {
-  let port = com1()
-  serial_write_cstr(port, "space: sys_exit(code=0x")
-  serial_write_hex(port, code)
-  serial_write_cstr(port, ") from thread 0x")
-  serial_write_hex(port, current_task)
-  serial_nl(port)
-  cli()
-  while true {
-    hlt()
-  }
-  return 0
-}
-
-// Syscall 3: sys_yield() — yield CPU to scheduler.
-// In kernel context this is a no-op since there is nothing to yield to.
-fn sys_yield() -> Int {
-  return 0
-}
-
-// Syscall 4: sys_getpid() — return current thread ID.
-fn sys_getpid() -> Int {
-  return current_task
-}
-
-// Syscall 5: sys_chan_create(cap) — create a channel with capacity.
-fn sys_chan_create(cap: Int) -> Int {
-  return chan_new(cap)
-}
-
-// Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
-fn sys_chan_send(ch: Int, msg: Int) -> void {
-  chan_send(ch, msg)
-  return
-}
-
-// Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
-fn sys_chan_recv(ch: Int) -> Int {
-  return chan_recv(ch)
-}
-
-// Syscall 8: sys_chan_close(ch) — close/free a channel.
-fn sys_chan_close(ch: Int) -> Int {
-  chan_heap_free(ch)
-  return 0
-}
-
-// Dispatch a syscall based on the number in the saved RAX slot of the frame.
-// Writes the return value back into the RAX slot (frame offset 112).
-fn syscall_dispatch(frame: Int) -> void {
-  let num = load64(frame + 112)
-  if num == 0 {
-    let fd = load64(frame + 72)
-    let buf = load64(frame + 80)
-    let len = load64(frame + 88)
-    store64(frame + 112, sys_write(fd, buf, len))
-  } else if num == 1 {
-    let fd = load64(frame + 72)
-    let buf = load64(frame + 80)
-    let len = load64(frame + 88)
-    store64(frame + 112, sys_read(fd, buf, len))
-  } else if num == 2 {
-    let code = load64(frame + 72)
-    store64(frame + 112, sys_exit(code))
-  } else if num == 3 {
-    store64(frame + 112, sys_yield())
-  } else if num == 4 {
-    store64(frame + 112, sys_getpid())
-  } else if num == 5 {
-    let cap = load64(frame + 72)
-    store64(frame + 112, sys_chan_create(cap))
-  } else if num == 6 {
-    let ch = load64(frame + 72)
-    let msg = load64(frame + 80)
-    sys_chan_send(ch, msg)
-    store64(frame + 112, 0)
-  } else if num == 7 {
-    let ch = load64(frame + 72)
-    store64(frame + 112, sys_chan_recv(ch))
-  } else if num == 8 {
-    let ch = load64(frame + 72)
-    store64(frame + 112, sys_chan_close(ch))
-  } else {
-    let port = com1()
-    serial_write_cstr(port, "space: unknown syscall 0x")
-    serial_write_hex(port, num)
-    serial_nl(port)
-    store64(frame + 112, -1)
-  }
-  return
-}
-
-// Install a 64-bit interrupt gate with DPL=3 so user-mode code can invoke it.
-fn idt_set_user(vec: Int, handler: Int) -> void {
-  let e = idt_base + vec * 16
-  store16(e + 0, handler & 0xFFFF)
-  store16(e + 2, 0x08)
-  store8(e + 4, 0)
-  store8(e + 5, 0xEE)             ; present | DPL=3 | interrupt gate
-  store16(e + 6, (handler >> 16) & 0xFFFF)
-  store32(e + 8, (handler >> 32) & 0xFFFFFFFF)
-  store32(e + 12, 0)
   return
 }
 
 // --- component supervisor ---------------------------------------------------
-// Capability bits a realm can grant to a component.
-fn cap_serial() -> Int { return 1 }
-fn cap_timer() -> Int { return 2 }
-fn cap_memory() -> Int { return 4 }
-fn cap_graph() -> Int { return 8 }
-
-// Register a component as an object in the graph (56 bytes):
-// [id][type=5][entry_addr][required_caps][name_addr][domain_id][last_status].
 fn component_register(name: Int, entry: Int, required: Int) -> Int {
   let c = obj_bump(56)
   obj_counter = obj_counter + 1
@@ -726,9 +138,6 @@ fn component_register(name: Int, entry: Int, required: Int) -> Int {
   return c
 }
 
-// The SCI loader rule, enforced live: a component may only be activated if the
-// authority it declares is a subset of what its realm grants. Components that
-// request undeclared capabilities are denied before their entry ever runs.
 fn supervisor_activate(port: Int, c: Int) -> void {
   let name = load64(c + 32)
   let entry = load64(c + 16)
@@ -743,7 +152,7 @@ fn supervisor_activate(port: Int, c: Int) -> void {
     return
   }
   cap_mint(c, required)
-    serial_write_cstr(port, " -> ACTIVATING")
+  serial_write_cstr(port, " -> ACTIVATING")
   serial_nl(port)
   let status = invoke(entry)
   serial_write_cstr(port, "space:   ")
@@ -754,7 +163,6 @@ fn supervisor_activate(port: Int, c: Int) -> void {
   return
 }
 
-// --- sample service components ----------------------------------------------
 fn svc_heartbeat() -> Int {
   let port = com1()
   serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
@@ -782,7 +190,7 @@ fn run_supervisor(port: Int) -> void {
   let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
   let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
   let c3 = component_register("pager", svc_pager, cap_memory())
-    serial_write_cstr(port, "space: supervisor activating component graph")
+  serial_write_cstr(port, "space: supervisor activating component graph")
   serial_nl(port)
   supervisor_activate(port, c1)
   supervisor_activate(port, c2)
@@ -791,8 +199,6 @@ fn run_supervisor(port: Int) -> void {
 }
 
 // --- preemptive scheduler ---------------------------------------------------
-// Build a full interrupt-frame for a new task: 15 saved GP registers followed
-// by the iretq frame (RIP, CS, RFLAGS with IF set, RSP, SS).
 fn build_preempt_task(entry: Int, stack_top: Int) -> Int {
   let sp = stack_top - 160
   for i in 0..15 {
@@ -806,9 +212,6 @@ fn build_preempt_task(entry: Int, stack_top: Int) -> Int {
   return sp
 }
 
-// Invoked from the preemptive timer ISR with a pointer to the interrupted
-// task's saved context. Saves it, advances round-robin, and returns the next
-// task's saved stack pointer for the ISR to resume.
 fn schedule_tick(ctx: Int) -> Int {
   ticks = ticks + 1
   outb(0x20, 0x20)
@@ -838,10 +241,8 @@ fn preempt_worker_b() -> Int {
 }
 
 fn run_preemptive(port: Int) -> void {
-    serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
+  serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
   serial_nl(port)
-  // Task 0 is this kernel context, captured on the first preemption. Tasks 1
-  // and 2 are independent workers with pre-built interrupt frames.
   ptasks = alloc(3 * 8)
   pcount = 3
   pcurrent = 0
@@ -871,89 +272,9 @@ fn run_preemptive(port: Int) -> void {
   return
 }
 
-// --- typed channels with blocking (CSP-style) ------------------------------
-// Channels are ring buffers with blocking wait queues. A thread that tries to
-// send on a full channel or recv from an empty one blocks (THR_BLOCKED) and
-// the counterparty wakes it when space/data becomes available. This replaces
-// the old poll-with-yield approach for zero-CPU-waste IPC.
-var chan0: Int = 0
-var comp_backbuf: Int = 0  // double-buffer for tear-free compositor
-
-fn chan_new(cap: Int) -> Int {
-  // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
-  let c = chan_alloc(48 + cap * 8)
-  store64(c + 0, cap)
-  store64(c + 8, 0)
-  store64(c + 16, 0)
-  store64(c + 24, 0)
-  store64(c + 32, -1)  // wait_send: no sender blocked
-  store64(c + 40, -1)  // wait_recv: no receiver blocked
-  return c
-}
-
-fn chan_count(c: Int) -> Int {
-  return load64(c + 8)
-}
-
-// IPC wait queues for channel operations. Each channel has a wait queue slot
-// for a blocked sender and a blocked receiver. When the channel is full/empty,
-// the calling thread stores its ID in the wait slot and blocks; the
-// counterparty wakes it upon consuming/producing data. This is safe because
-// .in has no preemption between the state check and the wait registration.
-
-// Send to channel: block until room, then write. Wake a waiting receiver.
-fn chan_send(c: Int, msg: Int) -> void {
-  let cap = load64(c + 0)
-  while load64(c + 8) >= cap {
-    store64(c + 32, current_task)  // register as blocked sender
-    thr_block()
-  }
-  store64(c + 32, -1)  // clear waiter flag
-  let wpos = load64(c + 24)
-  let buf = c + 48
-  buf[wpos] = msg
-  store64(c + 24, (wpos + 1) % cap)
-  store64(c + 8, load64(c + 8) + 1)
-  // Wake a blocked receiver, if any
-  let rcv = load64(c + 40)
-  if rcv != -1 {
-    store64(c + 40, -1)
-    thr_wake(rcv)
-  }
-  return
-}
-
-// Recv from channel: block until data, then read. Wake a waiting sender.
-fn chan_recv(c: Int) -> Int {
-  while load64(c + 8) == 0 {
-    store64(c + 40, current_task)  // register as blocked receiver
-    thr_block()
-  }
-  store64(c + 40, -1)  // clear waiter flag
-  let cap = load64(c + 0)
-  let rpos = load64(c + 16)
-  let buf = c + 48
-  let msg = buf[rpos]
-  store64(c + 16, (rpos + 1) % cap)
-  store64(c + 8, load64(c + 8) - 1)
-  // Wake a blocked sender, if any
-  let snd = load64(c + 32)
-  if snd != -1 {
-    store64(c + 32, -1)
-    thr_wake(snd)
-  }
-  return msg
-}
-
 // --- SCI component loader ---------------------------------------------------
-// Load a separately-compiled component from a binary SCI manifest in memory:
-// [magic][required_caps][entry][reserved] followed by the component's code.
-// The loader validates the declared authority against the realm's grants
-// before transferring control -- the SCI loader rule, applied to real loaded
-// code rather than an in-image component.
 const SCI_MAGIC = 0x5343490000000001
 
-// GNOME-style compositor colors (in kernel-root so the optimizer doesn't misbehave)
 const COMP_GNOME_DESKTOP = 0x001E1E2E
 const COMP_GNOME_PANEL = 0x00181825
 const COMP_GNOME_PANEL_LINE = 0x00333040
@@ -998,7 +319,6 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
     serial_nl(port)
     return -1
   }
-  // Phase 0: create a domain record for the component
   let domain = domain_create()
   if domain == 0 {
     serial_write_cstr(port, "  SCI: domain_create failed")
@@ -1024,7 +344,6 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_cstr(port, "  SCI: registered component object id 0x")
   serial_write_hex(port, obj_id(component))
   serial_nl(port)
-  // Pack realm cap table info for guest: [cap_count][cap_table_base].
   let cap_info = alloc(16)
   store64(cap_info + 0, cap_count)
   store64(cap_info + 8, cap_table_base)
@@ -1039,10 +358,6 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
 }
 
 // --- syscall demo -----------------------------------------------------------
-// Demonstrates calling sys_write via the int 0x80 trap from kernel context.
-// The assembly helper syscall_write_demo (published at [0x4078]) rearranges
-// its arguments into the syscall register convention and executes int 0x80,
-// which traps into isr_syscall -> syscall_dispatch -> sys_write.
 fn run_syscall_demo(port: Int) -> void {
   serial_write_cstr(port, "space: syscall demo -- calling sys_write via int 0x80")
   serial_nl(port)
@@ -1059,13 +374,11 @@ fn run_syscall_demo(port: Int) -> void {
   return
 }
 
-
-
 // --- kernel entry -----------------------------------------------------------
 fn kernel_entry(mb_info: Int) -> Int {
   let port = com1()
   serial_init(port)
-    serial_write_cstr(port, "space: kernel root entered")
+  serial_write_cstr(port, "space: kernel root entered")
   serial_nl(port)
 
   discover_memory(mb_info)
@@ -1080,7 +393,6 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_hex(port, heap_end)
   serial_nl(port)
 
-  // Capability root, bootstrap realm, and root capability table object.
   obj_arena_init(65536)
   cap_table_init(64)
   let cap_table_obj = obj_alloc(2)
@@ -1100,7 +412,6 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_hex(port, obj_counter)
   serial_nl(port)
 
-  // Initialize memory domain subsystem (Phase 0).
   domain_init()
   serial_write_cstr(port, "space: domain subsystem init, ")
   serial_write_dec_wide(port, domain_count)
@@ -1110,9 +421,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_cstr(port, " available)")
   serial_nl(port)
 
-  // Bring up interrupts and run the timer for a short, observable window.
   interrupts_init()
-    serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
+  serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
   serial_nl(port)
 
   let shown = 0
@@ -1126,28 +436,20 @@ fn kernel_entry(mb_info: Int) -> Int {
     }
   }
 
-  // Hand the running system to the component supervisor.
   run_supervisor(port)
-
-  // Run the cooperative multitasking scheduler.
   run_scheduler(port)
-
-  // Demonstrate typed-channel IPC between scheduled components.
   run_channels(port)
-
-  // Demonstrate timer-driven preemptive multitasking.
   run_preemptive(port)
 
-  if load64(0x140000) == SCI_MAGIC {
-    sci_load(port, 0x140000)
+  if load64(0x180000) == SCI_MAGIC {
+    sci_load(port, 0x180000)
   }
 
-  // Initialize the process abstraction layer.
+
   proc_init(16)
   serial_write_cstr(port, "space: process table initialized (max 16)")
   serial_nl(port)
 
-  // Initialize NVMe storage (PCIe). Fails gracefully if no controller found.
   let nvme_rc = nvme_init()
   if nvme_rc == 0 {
     serial_write_cstr(port, "space: NVMe controller initialized")
@@ -1157,7 +459,6 @@ fn kernel_entry(mb_info: Int) -> Int {
     serial_nl(port)
   }
 
-  // Initialize USB xHCI host controller + HID keyboard. Fails gracefully.
   let usb_rc = xhci_init()
   if usb_rc == 0 {
     serial_write_cstr(port, "space: USB xHCI controller initialized")
@@ -1167,17 +468,19 @@ fn kernel_entry(mb_info: Int) -> Int {
     serial_nl(port)
   }
 
-  // Initialize the flat filesystem (loads file table from disk if formatted).
   fs_init()
   serial_write_cstr(port, "space: filesystem initialized")
   serial_nl(port)
 
-  // Initialize the Linux personality (POSIX syscall translation layer).
+  vfs_init()
+  test_sci_loader(port)
+
+
+
   linux_init()
   serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
   serial_nl(port)
 
-  // Initialize the VBE framebuffer from Bochs VBE I/O ports.
   let fb_rc = fb_init(mb_info)
   if fb_rc == 0 {
     serial_write_cstr(port, "space: framebuffer initialized")
@@ -1187,7 +490,6 @@ fn kernel_entry(mb_info: Int) -> Int {
     serial_nl(port)
   }
 
-  // Initialize the PS/2 mouse (if framebuffer is ready).
   if fb_ready != 0 {
     let mouse_rc = mouse_init()
     if mouse_rc == 0 {
@@ -1203,7 +505,6 @@ fn kernel_entry(mb_info: Int) -> Int {
     }
   }
 
-  // Initialize USB HID keyboard (only if xHCI controller is active).
   if usb_rc == 0 {
     let kbd_rc = usb_kbd_init()
     if kbd_rc == 0 {
@@ -1212,18 +513,16 @@ fn kernel_entry(mb_info: Int) -> Int {
     }
   }
 
-  // Initialize the compositor.
   comp_init()
   serial_write_cstr(port, "space: compositor initialized")
   serial_nl(port)
 
-  // Drop into the interactive serial shell.
   shell(port)
 
-    serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
+  serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
   serial_write_hex(port, ticks)
   serial_nl(port)
-    serial_write_cstr(port, "space: halting")
+  serial_write_cstr(port, "space: halting")
   serial_nl(port)
   cli()
   while true {

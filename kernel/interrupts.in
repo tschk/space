@@ -1,0 +1,102 @@
+package space.kernel
+
+// --- interrupts: IDT, PIC, PIT timer ---------------------------------------
+// Interrupt dispatcher, called from the assembly timer stub with the vector in
+// the first argument. Counts ticks and acknowledges the interrupt controller.
+fn isr_dispatch(vector: Int) -> void {
+  ticks = ticks + 1
+  outb(0x20, 0x20)
+  return
+}
+
+// CPU exception handler. Reports the fault and halts the nanokernel rather than
+// letting an unhandled fault triple-fault the machine.
+fn exception_handler(vector: Int, error_code: Int, rip: Int) -> void {
+  let port = com1()
+  serial_nl(port)
+  serial_write_cstr(port, "space: *** CPU EXCEPTION vector 0x")
+  serial_write_hex(port, vector)
+  serial_write_cstr(port, " error 0x")
+  serial_write_hex(port, error_code)
+  serial_write_cstr(port, " rip 0x")
+  serial_write_hex(port, rip)
+  serial_nl(port)
+  if vector == 14 {
+    serial_write_cstr(port, "space:     page fault address CR2 0x")
+    serial_write_hex(port, read_cr2())
+    serial_nl(port)
+  }
+  serial_write_cstr(port, "space: nanokernel fault handler halting")
+  serial_nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return
+}
+
+// Install a 64-bit interrupt gate into the IDT.
+fn idt_set(vec: Int, handler: Int) -> void {
+  let e = idt_base + vec * 16
+  store16(e + 0, handler & 0xFFFF)
+  store16(e + 2, 0x08)
+  store8(e + 4, 0)
+  store8(e + 5, 0x8E)
+  store16(e + 6, (handler >> 16) & 0xFFFF)
+  store32(e + 8, (handler >> 32) & 0xFFFFFFFF)
+  store32(e + 12, 0)
+  return
+}
+
+// Remap the 8259 PICs so hardware IRQs land on vectors 32..47, then mask
+// everything except IRQ0 (the timer).
+fn pic_remap() -> void {
+  outb(0x20, 0x11)
+  outb(0xA0, 0x11)
+  outb(0x21, 0x20)
+  outb(0xA1, 0x28)
+  outb(0x21, 0x04)
+  outb(0xA1, 0x02)
+  outb(0x21, 0x01)
+  outb(0xA1, 0x01)
+  outb(0x21, 0xFE)
+  outb(0xA1, 0xFF)
+  return
+}
+
+// Program PIT channel 0 to ~100 Hz.
+fn pit_init() -> void {
+  let divisor = 11932
+  outb(0x43, 0x36)
+  outb(0x40, divisor & 0xFF)
+  outb(0x40, (divisor >> 8) & 0xFF)
+  return
+}
+
+fn interrupts_init() -> void {
+  store64(0x4000, isr_dispatch)
+  let timer_stub = load64(0x4008)
+  let default_stub = load64(0x4010)
+  idt_base = alloc(256 * 16)
+  for i in 0..256 {
+    idt_set(i, default_stub)
+  }
+  idt_set(32, timer_stub)
+  // Wire CPU exception vectors to the fault handler.
+  store64(0x4050, exception_handler)
+  idt_set(0, load64(0x4030))
+  idt_set(6, load64(0x4038))
+  idt_set(13, load64(0x4040))
+  idt_set(14, load64(0x4048))
+  // Wire the syscall trap (int 0x80) with DPL=3 so user-mode code can invoke it.
+  store64(0x4070, syscall_dispatch)
+  idt_set_user(0x80, load64(0x4068))
+  let idtr = alloc(16)
+  store16(idtr + 0, 256 * 16 - 1)
+  store64(idtr + 2, idt_base)
+  lidt(idtr)
+  pic_remap()
+  pit_init()
+  sti()
+  return
+}

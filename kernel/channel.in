@@ -3,6 +3,7 @@
 // memory domains. Each cross-domain channel endpoint is a shared physical page
 // mapped into both domains' page tables. The ring buffer protocol uses the
 // same blocking wait-queue pattern as the kernel-side channels.
+package space.kernel
 
 // Shared page layout (4096 bytes, all Int = 8 bytes):
 // [head(8)][tail(8)][capacity(8)][msg_size(8)]...[msg data ring(4096-32)]
@@ -26,4 +27,78 @@ fn chan_cross_bind(shared_page: Int, local_domain: Int, capacity: Int) -> Int {
   store64(shared_page + 16, capacity)
   store64(shared_page + 24, 8)   // msg_size = 8 (single Int)
   return ch
+}
+
+// --- typed channels with blocking (CSP-style) ------------------------------
+// Channels are ring buffers with blocking wait queues. A thread that tries to
+// send on a full channel or recv from an empty one blocks (THR_BLOCKED) and
+// the counterparty wakes it when space/data becomes available. This replaces
+// the old poll-with-yield approach for zero-CPU-waste IPC.
+var chan0: Int = 0
+var comp_backbuf: Int = 0  // double-buffer for tear-free compositor
+
+fn chan_new(cap: Int) -> Int {
+  // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
+  let c = chan_alloc(48 + cap * 8)
+  store64(c + 0, cap)
+  store64(c + 8, 0)
+  store64(c + 16, 0)
+  store64(c + 24, 0)
+  store64(c + 32, -1)  // wait_send: no sender blocked
+  store64(c + 40, -1)  // wait_recv: no receiver blocked
+  return c
+}
+
+fn chan_count(c: Int) -> Int {
+  return load64(c + 8)
+}
+
+// IPC wait queues for channel operations. Each channel has a wait queue slot
+// for a blocked sender and a blocked receiver. When the channel is full/empty,
+// the calling thread stores its ID in the wait slot and blocks; the
+// counterparty wakes it upon consuming/producing data. This is safe because
+// .in has no preemption between the state check and the wait registration.
+
+// Send to channel: block until room, then write. Wake a waiting receiver.
+fn chan_send(c: Int, msg: Int) -> void {
+  let cap = load64(c + 0)
+  while load64(c + 8) >= cap {
+    store64(c + 32, current_task)  // register as blocked sender
+    thr_block()
+  }
+  store64(c + 32, -1)  // clear waiter flag
+  let wpos = load64(c + 24)
+  let buf = c + 48
+  buf[wpos] = msg
+  store64(c + 24, (wpos + 1) % cap)
+  store64(c + 8, load64(c + 8) + 1)
+  // Wake a blocked receiver, if any
+  let rcv = load64(c + 40)
+  if rcv != -1 {
+    store64(c + 40, -1)
+    thr_wake(rcv)
+  }
+  return
+}
+
+// Recv from channel: block until data, then read. Wake a waiting sender.
+fn chan_recv(c: Int) -> Int {
+  while load64(c + 8) == 0 {
+    store64(c + 40, current_task)  // register as blocked receiver
+    thr_block()
+  }
+  store64(c + 40, -1)  // clear waiter flag
+  let cap = load64(c + 0)
+  let rpos = load64(c + 16)
+  let buf = c + 48
+  let msg = buf[rpos]
+  store64(c + 16, (rpos + 1) % cap)
+  store64(c + 8, load64(c + 8) - 1)
+  // Wake a blocked sender, if any
+  let snd = load64(c + 32)
+  if snd != -1 {
+    store64(c + 32, -1)
+    thr_wake(snd)
+  }
+  return msg
 }

@@ -1,0 +1,287 @@
+package space.kernel
+
+const VFS_O_RDONLY = 0
+const VFS_O_WRONLY = 1
+const VFS_O_RDWR = 2
+const VFS_O_CREAT = 64
+
+var vfs_fd_max: Int = 16
+var vfs_fd_table: Int = 0
+
+fn vfs_init() -> void {
+  vfs_fd_max = 16
+  vfs_fd_table = alloc(vfs_fd_max * 32)
+  let i = 0
+  while i < vfs_fd_max {
+    vfs_fd_clear(i)
+    i = i + 1
+  }
+  // fds 0, 1, 2 are pre-opened std streams (serial console)
+  store64(vfs_fd_table + 0 * 32 + 0, 0)  // stdin
+  store64(vfs_fd_table + 0 * 32 + 8, 0)
+  store64(vfs_fd_table + 0 * 32 + 16, VFS_O_RDONLY)
+  store64(vfs_fd_table + 1 * 32 + 0, 0)  // stdout
+  store64(vfs_fd_table + 1 * 32 + 8, 0)
+  store64(vfs_fd_table + 1 * 32 + 16, VFS_O_WRONLY)
+  store64(vfs_fd_table + 2 * 32 + 0, 0)  // stderr
+  store64(vfs_fd_table + 2 * 32 + 8, 0)
+  store64(vfs_fd_table + 2 * 32 + 16, VFS_O_WRONLY)
+  return
+}
+
+fn vfs_fd_clear(fd: Int) -> void {
+  let base = vfs_fd_table + fd * 32
+  store64(base + 0, -1)
+  store64(base + 8, 0)
+  store64(base + 16, 0)
+  store64(base + 24, 0)
+  return
+}
+
+fn vfs_fd_alloc() -> Int {
+  let i = 3
+  while i < vfs_fd_max {
+    if load64(vfs_fd_table + i * 32 + 0) == -1 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn vfs_fd_valid(fd: Int) -> Int {
+  if fd < 0 {
+    return 0
+  }
+  if fd >= vfs_fd_max {
+    return 0
+  }
+  if fd < 3 {
+    return 1
+  }
+  if load64(vfs_fd_table + fd * 32 + 0) == -1 {
+    return 0
+  }
+  return 1
+}
+
+fn vfs_open(pathname: Int, flags: Int) -> Int {
+  let file_idx = fs_open_path(pathname)
+  if file_idx < 0 {
+    if (flags & VFS_O_CREAT) != 0 {
+      let rc = fs_write_file(pathname, pathname, 0)
+      if rc != 0 {
+        return -28 // ENOSPC
+      }
+      file_idx = fs_open_path(pathname)
+      if file_idx < 0 {
+        return -5 // EIO
+      }
+    } else {
+      return -2 // ENOENT
+    }
+  }
+  let fd = vfs_fd_alloc()
+  if fd < 0 {
+    return -16 // EBUSY
+  }
+  let base = vfs_fd_table + fd * 32
+  store64(base + 0, file_idx)
+  store64(base + 8, 0)  // offset = 0
+  store64(base + 16, flags)
+  store64(base + 24, 0)
+  return fd
+}
+
+fn vfs_close(fd: Int) -> Int {
+  if vfs_fd_valid(fd) == 0 {
+    return -9 // EBADF
+  }
+  if fd < 3 {
+    return 0
+  }
+  vfs_fd_clear(fd)
+  return 0
+}
+
+fn vfs_read(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs_fd_valid(fd) == 0 {
+    return -9 // EBADF
+  }
+  if fd == 0 {
+    let port = com1()
+    let i = 0
+    while i < count {
+      let c = serial_read(port)
+      store8(buf + i, c)
+      i = i + 1
+      if c == 10 || c == 13 {
+        return i
+      }
+    }
+    return count
+  }
+  if fd < 3 {
+    return -9 // EBADF
+  }
+  let base = vfs_fd_table + fd * 32
+  let file_idx = load64(base + 0)
+  let offset = load64(base + 8)
+  let entry = fs_entry(file_idx)
+  let file_size = load32(entry + 20)
+  let start_sector = load32(entry + 16)
+  if offset >= file_size {
+    return 0  // EOF
+  }
+  let remaining = file_size - offset
+  let to_read = count
+  if remaining < count {
+    to_read = remaining
+  }
+  if fs_disk_ready == 0 {
+    let src = start_sector + offset
+    let m = 0
+    while m < to_read {
+      store8(buf + m, load8(src + m))
+      m = m + 1
+    }
+    store64(base + 8, offset + to_read)
+    return to_read
+  }
+  let sbuf = alloc(512)
+  let pos = 0
+  while pos < to_read {
+    let sector_idx = (offset + pos) / 512
+    let sector_off = (offset + pos) % 512
+    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
+    if rc != 0 {
+      return -5 // EIO
+    }
+    let chunk = 512 - sector_off
+    let left = to_read - pos
+    if chunk > left {
+      chunk = left
+    }
+    let k = 0
+    while k < chunk {
+      store8(buf + pos + k, load8(sbuf + sector_off + k))
+      k = k + 1
+    }
+    pos = pos + chunk
+  }
+  store64(base + 8, offset + to_read)
+  return to_read
+}
+
+fn vfs_write(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs_fd_valid(fd) == 0 {
+    return -9 // EBADF
+  }
+  if fd == 1 || fd == 2 {
+    let port = com1()
+    let i = 0
+    while i < count {
+      serial_put(port, load8(buf + i))
+      i = i + 1
+    }
+    return count
+  }
+  if fd == 0 {
+    return -9 // EBADF
+  }
+  let base = vfs_fd_table + fd * 32
+  let file_idx = load64(base + 0)
+  let offset = load64(base + 8)
+  let entry = fs_entry(file_idx)
+  let file_size = load32(entry + 20)
+  let start_sector = load32(entry + 16)
+
+  if fs_disk_ready == 0 {
+    let new_offset = offset + count
+    if new_offset > file_size {
+      let new_mem = alloc(new_offset + 1)
+      let m = 0
+      while m < file_size {
+        store8(new_mem + m, load8(start_sector + m))
+        m = m + 1
+      }
+      store32(entry + 16, new_mem)
+      store32(entry + 20, new_offset)
+      start_sector = new_mem
+      file_size = new_offset
+    }
+    let k = 0
+    while k < count {
+      store8(start_sector + offset + k, load8(buf + k))
+      k = k + 1
+    }
+    store64(base + 8, new_offset)
+    return count
+  }
+
+  let sbuf = alloc(512)
+  let pos = 0
+  while pos < count {
+    let sector_idx = (offset + pos) / 512
+    let sector_off = (offset + pos) % 512
+    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
+    if rc != 0 {
+      let z = 0
+      while z < 512 {
+        store8(sbuf + z, 0)
+        z = z + 1
+      }
+    }
+    let chunk = 512 - sector_off
+    let left = count - pos
+    if chunk > left {
+      chunk = left
+    }
+    let k = 0
+    while k < chunk {
+      store8(sbuf + sector_off + k, load8(buf + pos + k))
+      k = k + 1
+    }
+    let wrc = ata_write_sector(start_sector + sector_idx, sbuf)
+    if wrc != 0 {
+      return -5 // EIO
+    }
+    pos = pos + chunk
+  }
+  let new_offset = offset + count
+  store64(base + 8, new_offset)
+  if new_offset > file_size {
+    store32(entry + 20, new_offset)
+    fs_flush_table()
+  }
+  return count
+}
+
+fn vfs_lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  if vfs_fd_valid(fd) == 0 {
+    return -9 // EBADF
+  }
+  if fd < 3 {
+    return -29 // ESPIPE
+  }
+  let base = vfs_fd_table + fd * 32
+  let file_idx = load64(base + 0)
+  let entry = fs_entry(file_idx)
+  let file_size = load32(entry + 20)
+  let cur_offset = load64(base + 8)
+  let new_offset = 0
+  if whence == 0 {      // SEEK_SET
+    new_offset = offset
+  } else if whence == 1 { // SEEK_CUR
+    new_offset = cur_offset + offset
+  } else if whence == 2 { // SEEK_END
+    new_offset = file_size + offset
+  } else {
+    return -22 // EINVAL
+  }
+  if new_offset < 0 {
+    return -22 // EINVAL
+  }
+  store64(base + 8, new_offset)
+  return new_offset
+}

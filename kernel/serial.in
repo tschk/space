@@ -1,0 +1,85 @@
+package space.kernel
+
+// --- serial console (COM1) --------------------------------------------------
+const COM1_PORT = 0x3F8
+const SPACE_VERSION_MAJOR = 0
+const SPACE_VERSION_MINOR = 2
+const SPACE_VERSION_PATCH = 75
+
+fn com1() -> Int {
+  return COM1_PORT
+}
+
+fn serial_init(port: Int) -> void {
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x80)
+  outb(port + 0, 0x03)
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x03)
+  outb(port + 2, 0xC7)
+  outb(port + 4, 0x0B)
+  return
+}
+
+fn serial_wait_tx(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn serial_put(port: Int, ch: Int) -> void {
+  serial_wait_tx(port)
+  outb(port, ch)
+  return
+}
+
+fn serial_nl(port: Int) -> void {
+  serial_put(port, 10)
+  return
+}
+
+fn serial_write_cstr(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    serial_put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn serial_write_dec_wide(port: Int, value: Int) -> void {
+  let n = value
+  if n < 0 {
+    serial_put(port, 45)  // '-'
+    n = -n
+  }
+  if n == 0 {
+    serial_put(port, 48)  // '0'
+    return
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    serial_put(port, 48 + (n / div) % 10)
+    div = div / 10
+  }
+  return
+}
+
+fn serial_write_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      serial_put(port, 48 + nibble)
+    } else {
+      serial_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}

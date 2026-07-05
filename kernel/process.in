@@ -168,3 +168,119 @@ fn proc_dummy_entry() -> Int {
   proc_exit(0)
   return 0
 }
+
+// Load and run an SCI component from the filesystem.
+// Resolves the file, maps it to a new domain, registers it in the object graph,
+// and invokes its entry point.
+fn sci_load_file(port: Int, pathname: Int) -> Int {
+  let fd = vfs_open(pathname, VFS_O_RDONLY)
+  if fd < 0 {
+    serial_write_cstr(port, "  SCI: failed to open file ")
+    serial_write_cstr(port, pathname)
+    serial_nl(port)
+    return -1
+  }
+  let manifest = alloc(32)
+  let rc = vfs_read(fd, manifest, 32)
+  if rc < 32 {
+    serial_write_cstr(port, "  SCI: failed to read manifest header from ")
+    serial_write_cstr(port, pathname)
+    serial_nl(port)
+    vfs_close(fd)
+    return -1
+  }
+  let magic = load64(manifest + 0)
+  if magic != SCI_MAGIC {
+    serial_write_cstr(port, "  SCI: invalid magic in ")
+    serial_write_cstr(port, pathname)
+    serial_nl(port)
+    vfs_close(fd)
+    return -1
+  }
+  let required = load64(manifest + 8)
+  let entry = load64(manifest + 16)
+  let image_size = load64(manifest + 24)
+
+  serial_write_cstr(port, "  SCI debug: magic=0x")
+  serial_write_hex(port, magic)
+  serial_write_cstr(port, " req=0x")
+  serial_write_hex(port, required)
+  serial_write_cstr(port, " entry=0x")
+  serial_write_hex(port, entry)
+  serial_write_cstr(port, " size=0x")
+  serial_write_hex(port, image_size)
+  serial_nl(port)
+
+  serial_write_cstr(port, "  SCI: loading ")
+
+  serial_write_cstr(port, pathname)
+  serial_write_cstr(port, ", size 0x")
+  serial_write_hex(port, image_size)
+  serial_nl(port)
+
+  let missing = required & (-1 ^ realm_grants)
+  if missing != 0 {
+    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial_write_hex(port, missing)
+    serial_nl(port)
+    vfs_close(fd)
+    return -1
+  }
+
+  let pages = (image_size + 4095) / 4096
+  let load_addr = (heap_next + 4095) & -4096
+  heap_next = load_addr + pages * 4096
+
+  // Zero the allocated pages
+  let z = 0
+  while z < pages * 4096 {
+    store8(load_addr + z, 0)
+    z = z + 1
+  }
+
+  vfs_lseek(fd, 0, 0)
+  let bytes_read = vfs_read(fd, load_addr, image_size)
+  vfs_close(fd)
+  if bytes_read < image_size {
+    serial_write_cstr(port, "  SCI: read failed (got 0x")
+    serial_write_hex(port, bytes_read)
+    serial_write_cstr(port, " bytes)")
+    serial_nl(port)
+    return -1
+  }
+
+  let domain = domain_create()
+  if domain == 0 {
+    serial_write_cstr(port, "  SCI: domain_create failed")
+    serial_nl(port)
+    return -1
+  }
+
+  let component = component_register(pathname, entry, required)
+  let virt_load = entry - 32
+  let image_pages = (image_size + 4095) / 4096
+  let i = 0
+  while i < image_pages {
+    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+    i = i + 1
+  }
+
+  store64(component + 40, domain)
+  obj_link(root_realm, component)
+
+  let cap_info = alloc(16)
+  store64(cap_info + 0, cap_count)
+  store64(cap_info + 8, cap_table_base)
+
+  domain_switch(domain)
+  let status = invoke1(entry, cap_info)
+  domain_switch(0)
+
+  store64(component + 48, status)
+  serial_write_cstr(port, "  SCI: guest ")
+  serial_write_cstr(port, pathname)
+  serial_write_cstr(port, " returned status 0x")
+  serial_write_hex(port, status)
+  serial_nl(port)
+  return status
+}

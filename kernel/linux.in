@@ -95,290 +95,48 @@ const LINUX_ELF_MAGIC = 0x00010102464C457F
 const LINUX_ELF_LOAD_ADDR = 0x140000
 
 // --- personality state ------------------------------------------------------
-var linux_fd_table: Int = 0
-var linux_fd_max: Int = 16
 var linux_cwd: Int = 0        // current working directory string (always "/" for now)
 var linux_active: Int = 0     // 1 when personality is initialized
 var linux_brk_current: Int = 0  // current program break
 
-// Initialize the Linux personality: allocate the FD table and set defaults.
+// Initialize the Linux personality.
 fn linux_init() -> void {
-  linux_fd_max = 16
-  linux_fd_table = alloc(linux_fd_max * 32)
-  let i = 0
-  while i < linux_fd_max {
-    linux_fd_clear(i)
-    i = i + 1
-  }
-  // fds 0, 1, 2 are pre-opened std streams (serial console)
-  store64(linux_fd_table + 0 * 32 + 0, 0)  // stdin
-  store64(linux_fd_table + 0 * 32 + 8, 0)
-  store64(linux_fd_table + 0 * 32 + 16, LINUX_O_RDONLY)
-  store64(linux_fd_table + 1 * 32 + 0, 0)  // stdout
-  store64(linux_fd_table + 1 * 32 + 8, 0)
-  store64(linux_fd_table + 1 * 32 + 16, LINUX_O_WRONLY)
-  store64(linux_fd_table + 2 * 32 + 0, 0)  // stderr
-  store64(linux_fd_table + 2 * 32 + 8, 0)
-  store64(linux_fd_table + 2 * 32 + 16, LINUX_O_WRONLY)
   linux_cwd = "/"
   linux_active = 1
   linux_brk_current = 0
   return
 }
 
-// Mark an FD table entry as unused.
-fn linux_fd_clear(fd: Int) -> void {
-  let base = linux_fd_table + fd * 32
-  store64(base + 0, -1)
-  store64(base + 8, 0)
-  store64(base + 16, 0)
-  store64(base + 24, 0)
-  return
-}
 
-// Find a free FD slot starting from fd 3. Returns fd number or -1.
-fn linux_fd_alloc() -> Int {
-  let i = 3
-  while i < linux_fd_max {
-    if load64(linux_fd_table + i * 32 + 0) == -1 {
-      return i
-    }
-    i = i + 1
-  }
-  return -1
-}
-
-// Check if fd is valid and in range.
 fn linux_fd_valid(fd: Int) -> Int {
-  if fd < 0 {
-    return 0
-  }
-  if fd >= linux_fd_max {
-    return 0
-  }
-  if fd < 3 {
-    return 1
-  }
-  if load64(linux_fd_table + fd * 32 + 0) == -1 {
-    return 0
-  }
-  return 1
+  return vfs_fd_valid(fd)
 }
 
 // --- Linux syscall implementations -----------------------------------------
 
 // sys_read(fd, buf, count) — read from fd into buf.
-// fd 0 = stdin (serial), fd 3+ = file on disk.
 fn linux_sys_read(fd: Int, buf: Int, count: Int) -> Int {
-  if linux_fd_valid(fd) == 0 {
-    return LINUX_EBADF
-  }
-  if fd == 0 {
-    // stdin: read from serial, line-buffered
-    let port = com1()
-    let i = 0
-    while i < count {
-      let c = serial_read(port)
-      store8(buf + i, c)
-      i = i + 1
-      if c == 10 || c == 13 {
-        return i
-      }
-    }
-    return count
-  }
-  if fd < 3 {
-    // stdout/stderr are write-only
-    return LINUX_EBADF
-  }
-  // File read: use the Space filesystem
-  let base = linux_fd_table + fd * 32
-  let file_idx = load64(base + 0)
-  let offset = load64(base + 8)
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
-  let start_sector = load32(entry + 16)
-  if offset >= file_size {
-    return 0  // EOF
-  }
-  let remaining = file_size - offset
-  let to_read = count
-  if remaining < count {
-    to_read = remaining
-  }
-  // Read sector by sector
-  let sbuf = alloc(512)
-  let pos = 0
-  while pos < to_read {
-    let sector_idx = (offset + pos) / 512
-    let sector_off = (offset + pos) % 512
-    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
-    if rc != 0 {
-      return LINUX_EIO
-    }
-    let chunk = 512 - sector_off
-    let left = to_read - pos
-    if chunk > left {
-      chunk = left
-    }
-    let k = 0
-    while k < chunk {
-      store8(buf + pos + k, load8(sbuf + sector_off + k))
-      k = k + 1
-    }
-    pos = pos + chunk
-  }
-  // Update offset
-  store64(base + 8, offset + to_read)
-  return to_read
+  return vfs_read(fd, buf, count)
 }
 
 // sys_write(fd, buf, count) — write buf to fd.
-// fd 1 = stdout, fd 2 = stderr (both serial), fd 3+ = file on disk.
 fn linux_sys_write(fd: Int, buf: Int, count: Int) -> Int {
-  if linux_fd_valid(fd) == 0 {
-    return LINUX_EBADF
-  }
-  if fd == 1 || fd == 2 {
-    // stdout/stderr: write to serial console
-    let port = com1()
-    let i = 0
-    while i < count {
-      serial_put(port, load8(buf + i))
-      i = i + 1
-    }
-    return count
-  }
-  if fd == 0 {
-    // stdin is read-only
-    return LINUX_EBADF
-  }
-  // File write: write at current offset
-  let base = linux_fd_table + fd * 32
-  let file_idx = load64(base + 0)
-  let offset = load64(base + 8)
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
-  let start_sector = load32(entry + 16)
-  let sbuf = alloc(512)
-  let pos = 0
-  while pos < count {
-    let sector_idx = (offset + pos) / 512
-    let sector_off = (offset + pos) % 512
-    // Read existing sector first (partial write)
-    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
-    if rc != 0 {
-      // Might be past end of file — zero the buffer
-      let z = 0
-      while z < 512 {
-        store8(sbuf + z, 0)
-        z = z + 1
-      }
-    }
-    let chunk = 512 - sector_off
-    let left = count - pos
-    if chunk > left {
-      chunk = left
-    }
-    let k = 0
-    while k < chunk {
-      store8(sbuf + sector_off + k, load8(buf + pos + k))
-      k = k + 1
-    }
-    let wrc = ata_write_sector(start_sector + sector_idx, sbuf)
-    if wrc != 0 {
-      return LINUX_EIO
-    }
-    pos = pos + chunk
-  }
-  // Update offset and file size if we extended it
-  let new_offset = offset + count
-  store64(base + 8, new_offset)
-  if new_offset > file_size {
-    store32(entry + 20, new_offset)
-    fs_flush_table()
-  }
-  return count
+  return vfs_write(fd, buf, count)
 }
 
 // sys_open(pathname, flags, mode) — open a file on the filesystem.
-// Returns a non-negative fd on success, or a negative errno on failure.
 fn linux_sys_open(pathname: Int, flags: Int, mode: Int) -> Int {
-  let file_idx = fs_find(pathname)
-  if file_idx < 0 {
-    // File does not exist — create it if O_CREAT
-    if (flags & LINUX_O_CREAT) != 0 {
-      // Create an empty file via fs_write_file with zero bytes
-      let rc = fs_write_file(pathname, pathname, 0)
-      if rc != 0 {
-        return LINUX_ENOSPC
-      }
-      file_idx = fs_find(pathname)
-      if file_idx < 0 {
-        return LINUX_EIO
-      }
-    } else {
-      return LINUX_ENOENT
-    }
-  }
-  let fd = linux_fd_alloc()
-  if fd < 0 {
-    return LINUX_EBUSY
-  }
-  let base = linux_fd_table + fd * 32
-  store64(base + 0, file_idx)
-  store64(base + 8, 0)  // offset = 0
-  store64(base + 16, flags)
-  store64(base + 24, 0)
-  return fd
+  return vfs_open(pathname, flags)
 }
 
 // sys_close(fd) — close a file descriptor. Returns 0 on success.
 fn linux_sys_close(fd: Int) -> Int {
-  if linux_fd_valid(fd) == 0 {
-    return LINUX_EBADF
-  }
-  if fd < 3 {
-    // std streams cannot be closed
-    return 0
-  }
-  linux_fd_clear(fd)
-  return 0
+  return vfs_close(fd)
 }
 
 // sys_lseek(fd, offset, whence) — reposition file offset.
-// whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
-// Returns the new offset on success, or negative errno.
 fn linux_sys_lseek(fd: Int, offset: Int, whence: Int) -> Int {
-  if linux_fd_valid(fd) == 0 {
-    return LINUX_EBADF
-  }
-  if fd < 3 {
-    return LINUX_ESPIPE
-  }
-  let base = linux_fd_table + fd * 32
-  let file_idx = load64(base + 0)
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
-  let cur_offset = load64(base + 8)
-  let new_offset = 0
-  if whence == 0 {
-    // SEEK_SET
-    new_offset = offset
-  } else if whence == 1 {
-    // SEEK_CUR
-    new_offset = cur_offset + offset
-  } else if whence == 2 {
-    // SEEK_END
-    new_offset = file_size + offset
-  } else {
-    return LINUX_EINVAL
-  }
-  if new_offset < 0 {
-    new_offset = 0
-  }
-  store64(base + 8, new_offset)
-  return new_offset
+  return vfs_lseek(fd, offset, whence)
 }
 
 // Linux EINVAL (not in the main constants since it's used only here)
@@ -430,7 +188,8 @@ fn linux_sys_fstat(fd: Int, statbuf: Int) -> Int {
     store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
     return 0
   }
-  let base = linux_fd_table + fd * 32
+  let base = vfs_fd_table + fd * 32
+
   let file_idx = load64(base + 0)
   let entry = fs_entry(file_idx)
   let file_size = load32(entry + 20)
@@ -717,7 +476,8 @@ fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
   }
   // If fd is valid, read file contents into the mapping
   if fd >= 3 && linux_fd_valid(fd) != 0 {
-    let base = linux_fd_table + fd * 32
+    let base = vfs_fd_table + fd * 32
+
     let file_idx = load64(base + 0)
     let entry = fs_entry(file_idx)
     let file_size = load32(entry + 20)
