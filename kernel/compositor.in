@@ -392,49 +392,6 @@ fn comp_draw_border(base: Int, color: Int) -> void {
   fb_fill_rect(bx + bw - 1, by + 1, 1, bh - 2, color)  // right
 }
 
-// Helper: draw title bar background with text
-fn comp_draw_titlebar(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let title = load64(base + 24)
-  let flags = load32(base + 20)
-  let bg = COMP_COLOR_TITLE
-  let fg = COMP_COLOR_MUTED
-  if (flags & COMP_WIN_FOCUSED) != 0 {
-    bg = COMP_COLOR_TITLE_ACTIVE
-    fg = FB_COLOR_WHITE
-  }
-  // Draw title bar background
-  fb_fill_rect(x, y, w, COMP_TITLE_BAR_H, bg)
-  let ch = fb_font_scale * 8
-  if title != 0 {
-    comp_draw_label(x + 12, y + (COMP_TITLE_BAR_H - ch) / 2, title, fg, bg)
-  }
-  // Draw close button
-  let btn_x = x + w - 28
-  // Draw minimize button
-  let min_x = x + w - 52
-  fb_fill_rect(min_x, y + 5, 22, COMP_TITLE_BAR_H - 10, 0x00555555)
-  let min_bar_y = y + 5 + (COMP_TITLE_BAR_H - 10) / 2
-  let mi = 0
-  while mi < 14 {
-    store32(fb_addr + min_bar_y * fb_pitch + (min_x + 4 + mi) * 4, FB_COLOR_WHITE)
-    mi = mi + 1
-  }
-  // Draw close button with X symbol
-  fb_fill_rect(btn_x, y + 5, 22, COMP_TITLE_BAR_H - 10, COMP_GNOME_BTN_CLOSE)
-  let cx = btn_x + 11
-  let cy = y + 5 + (COMP_TITLE_BAR_H - 10) / 2
-  let xi = -3
-  while xi <= 3 {
-    store32(fb_addr + (cy + xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
-    store32(fb_addr + (cy - xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
-    xi = xi + 1
-  }
-  return
-}
-
 // Helper: draw content area background
 fn comp_draw_content_bg(base: Int) -> void {
   let x = load32(base + 4)
