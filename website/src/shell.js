@@ -112,7 +112,7 @@ async function mountTerminal() {
 
   term = new Terminal({
     fontSize: computeTerminalMetrics().fontSize,
-    fontFamily: '"Geist Mono", ui-monospace, monospace',
+    fontFamily: 'GeistMono, ui-monospace, monospace',
     cursorBlink: true,
     scrollback: 10000,
     allowTransparency: false,
@@ -141,6 +141,12 @@ async function mountTerminal() {
       brightWhite: "#fafafa",
     },
   });
+
+  try {
+    await document.fonts.load('1rem GeistMono');
+  } catch {
+    /* ignore */
+  }
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
