@@ -345,28 +345,6 @@ fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
   return
 }
 
-// Draw a string with a background color (for text on filled backgrounds).
-fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
-  let i = 0
-  let cx = x
-  let cy = y
-  while i < 256 {
-    let ch = load8(str + i)
-    if ch == 0 {
-      i = 256
-    } else if ch == 10 {
-      cx = x
-      cy = cy + 18
-    } else {
-      fb_fill_rect(cx, cy, 16, 16, bg)
-      fb_draw_char(cx, cy, ch, fg)
-      cx = cx + 16
-    }
-    i = i + 1
-  }
-  return
-}
-
 // Clear the entire screen to a color.
 fn fb_clear(color: Int) -> void {
   fb_fill_rect(0, 0, fb_width, fb_height, color)
