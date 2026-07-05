@@ -57,7 +57,7 @@ code and linked into a single bootable binary.
 | Arch | Compiler status | Kernel status |
 |------|-----------------|---------------|
 | x86_64 | Native lowering, boot image, ELF object | Boots verified subsystems |
-| ARM64 | Planned (SCI table) | — |
+| ARM64 | Native lowering, boot image, ELF object | Boots verified subsystems |
 | RISC-V | Planned | — |
 
 ## Build and run
