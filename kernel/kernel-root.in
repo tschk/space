@@ -450,6 +450,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_write_cstr(port, "space: process table initialized (max 16)")
   serial_nl(port)
 
+  proc_selftest()
+
   let nvme_rc = nvme_init()
   if nvme_rc == 0 {
     serial_write_cstr(port, "space: NVMe controller initialized")
