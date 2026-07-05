@@ -354,28 +354,6 @@ fn comp_render_cursor() -> void {
   }
 }
 
-// Window drop shadow (dark band along bottom and right edges)
-fn comp_draw_shadow(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let h = load32(base + 16)
-  let r = COMP_SHADOW_R
-  let sx = x + r
-  let sy = y + r + COMP_TITLE_BAR_H
-  let sw = w
-  let sh = h
-  // Bottom shadow band
-  if sy + sh < fb_height {
-    let bh = r
-    fb_fill_rect(sx, sy + sh, sw, bh, FB_COLOR_BLACK)
-  }
-  // Right shadow band
-  if sx + sw < fb_width {
-    fb_fill_rect(sx + sw, sy, r, sh + r, FB_COLOR_BLACK)
-  }
-}
-
 // Helper: draw window border (outline around full window including title bar)
 fn comp_draw_border(base: Int, color: Int) -> void {
   let x = load32(base + 4)
