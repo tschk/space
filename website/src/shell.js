@@ -58,7 +58,6 @@ async function sendInput(data) {
   const ps2 = emulator.v86?.cpu?.devices?.ps2;
   if (!ps2) return;
   ps2.enable_keyboard_stream = true;
-  window.sendInputCount = (window.sendInputCount || 0) + 1;
   for (const ch of data) {
     if (ch === "\r" || ch === "\n") {
       ps2.kbd_send_code(0x1c);
@@ -154,6 +153,7 @@ async function mountTerminal() {
   applyTerminalScale();
   if (fitAddon.observeResize) fitAddon.observeResize();
   window.addEventListener("resize", () => applyTerminalScale());
+  document.fonts.ready.then(() => applyTerminalScale()).catch(() => {});
 
   term.focus();
   term.onData(sendInput);
@@ -206,6 +206,7 @@ try {
     screen_container: screen,
     multiboot: { url: asset("/v86/space-multiboot.bin") },
     memory_size: 512 * 1024 * 1024,
+    disable_keyboard: true,
     autostart: true,
   });
   window.spaceEmulator = emulator;
