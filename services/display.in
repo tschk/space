@@ -61,16 +61,6 @@ fn dsp_attach_buffer(surf_id: Int, pool_id: Int, offset: Int, w: Int, h: Int) ->
   return
 }
 
-// Set surface position.
-fn dsp_move_surface(surf_id: Int, x: Int, y: Int) -> void {
-  if surf_id < 0 || surf_id >= dsp_surface_count {
-    return
-  }
-  let base = dsp_surfaces + surf_id * dsp_surface_size()
-  store64(base + 32, x | (y << 16))
-  return
-}
-
 // Render all surfaces to the framebuffer.
 fn dsp_composite() -> void {
   if fb_ready == 0 {
