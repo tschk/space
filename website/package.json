@@ -1,5 +1,6 @@
 {
   "name": "space-v86",
+  "version": "0.0.264",
   "private": true,
   "scripts": {
     "build:kernel": "sh scripts/build-space-v86-32.sh",

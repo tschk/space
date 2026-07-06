@@ -10,6 +10,8 @@ package space.kernel
 
 const COM1_PORT = 0x3F8
 
+const SPACE_VERSION = "0.0.264"
+
 const FILE_README = "README.md"
 const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
 
@@ -135,7 +137,9 @@ fn kernel_entry(mb_info: Int) -> Int {
     } else if cstr_eq(cmd, "history") {
       cmd_history()
     } else if cstr_eq(cmd, "uname") {
-      serial_write_cstr("Space v86 32-bit .in kernel")
+      serial_write_cstr("Space v")
+      serial_write_cstr(SPACE_VERSION)
+      serial_write_cstr(" (v86 32-bit .in kernel)")
       serial_nl()
     } else if cstr_eq(cmd, "reset") {
       serial_write_cstr("resetting")
@@ -158,7 +162,9 @@ fn kernel_entry(mb_info: Int) -> Int {
 }
 
 fn print_welcome() -> void {
-  serial_write_cstr("Space 32-bit v86")
+  serial_write_cstr("Space v")
+  serial_write_cstr(SPACE_VERSION)
+  serial_write_cstr(" (32-bit v86)")
   serial_nl()
   serial_write_cstr("A microkernel shell running in the browser, written in .in and compiled to i386.")
   serial_nl()

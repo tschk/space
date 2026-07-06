@@ -1,3 +1,9 @@
 *.sh           linguist-detectable=false
 *.in           linguist-language=Inauguration
 vendor/inauguration/** linguist-vendored
+
+# Website assets are generated/config, not primary source
+website/**/*.ts    linguist-detectable=false
+website/**/*.js    linguist-detectable=false
+website/**/*.astro linguist-detectable=false
+website/**/*.mjs   linguist-detectable=false
