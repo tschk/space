@@ -79,7 +79,7 @@ fn comp_draw_vro_content(base: Int) -> void {
   let y = load32(base + 8)
   let w = load32(base + 12)
   let h = load32(base + 16)
-  let cw = fb_font_scale * 8 + 2  // match fb_draw_string spacing
+  let cw = fb_font_scale * 8 + 2  // match font spacing
   let lh = cw + 3
   let content_y = y + COMP_TITLE_BAR_H
   fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
