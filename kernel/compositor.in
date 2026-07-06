@@ -23,23 +23,23 @@ import "vro.in"
 // --- window constants -------------------------------------------------------
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 0
-const COMP_BORDER_W = 0
+const COMP_TITLE_BAR_H = 28
+const COMP_BORDER_W = 1
 const COMP_TASKBAR_H = 28
-const COMP_COLOR_DESKTOP = 0x00191C20
-const COMP_COLOR_PANEL = 0x0024272E
-const COMP_COLOR_PANEL_LINE = 0x00383C45
-const COMP_COLOR_TITLE = 0x00E7E8EA
-const COMP_COLOR_TITLE_ACTIVE = 0x00F7F7F5
-const COMP_COLOR_WINDOW = 0x00F7F7F5
-const COMP_COLOR_BORDER = 0x00C9CCD1
-const COMP_COLOR_ACCENT = 0x002EA7D7
-const COMP_COLOR_TEXT = 0x001C2128
-const COMP_COLOR_MUTED = 0x005C6A7A
+const COMP_COLOR_DESKTOP = 0x000B0909
+const COMP_COLOR_PANEL = 0x001B1818
+const COMP_COLOR_PANEL_LINE = 0x0027272A
+const COMP_COLOR_TITLE = 0x001B1818
+const COMP_COLOR_TITLE_ACTIVE = 0x0027272A
+const COMP_COLOR_WINDOW = 0x00FFFFFF
+const COMP_COLOR_BORDER = 0x003F3F46
+const COMP_COLOR_ACCENT = 0x00F8BD38
+const COMP_COLOR_TEXT = 0x0018181B
+const COMP_COLOR_MUTED = 0x00AAA1A1
 const COMP_COLOR_SURFACE = 0x00FFFFFF
-const COMP_COLOR_SURFACE_ALT = 0x00E4E8ED
-const COMP_COLOR_TERM_BG = 0x00121015
-const COMP_COLOR_TERM_TEXT = 0x00C8D4E0
+const COMP_COLOR_SURFACE_ALT = 0x00E4E4E7
+const COMP_COLOR_TERM_BG = 0x000B0909
+const COMP_COLOR_TERM_TEXT = 0x00F5F4F4
 
 const COMP_WIN_VISIBLE = 1
 const COMP_WIN_FOCUSED = 2
@@ -340,7 +340,59 @@ fn comp_draw_content_bg(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content_y = y + COMP_TITLE_BAR_H
-  fb_fill_rect(x, content_y, w, h, COMP_COLOR_WINDOW)
+  fb_fill_rect(x + COMP_BORDER_W, content_y, w - COMP_BORDER_W * 2, h - COMP_BORDER_W, COMP_COLOR_WINDOW)
+}
+
+// Draw the title bar, border, and window controls for a single window.
+fn comp_draw_window_frame(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let title = load64(base + 24)
+  let flags = load32(base + 20)
+  let bg = COMP_COLOR_TITLE
+  let fg = COMP_COLOR_MUTED
+  if (flags & COMP_WIN_FOCUSED) != 0 {
+    bg = COMP_COLOR_TITLE_ACTIVE
+    fg = FB_COLOR_WHITE
+  }
+  // Border
+  let bw = w
+  let bh = h + COMP_TITLE_BAR_H
+  fb_fill_rect(x, y, bw, 1, COMP_COLOR_BORDER)
+  fb_fill_rect(x, y + bh - 1, bw, 1, COMP_COLOR_BORDER)
+  fb_fill_rect(x, y + 1, 1, bh - 2, COMP_COLOR_BORDER)
+  fb_fill_rect(x + bw - 1, y + 1, 1, bh - 2, COMP_COLOR_BORDER)
+  // Title bar background
+  fb_fill_rect(x + 1, y + 1, w - 2, COMP_TITLE_BAR_H - 1, bg)
+  // Title text
+  if title != 0 {
+    comp_draw_label(x + 12, y + (COMP_TITLE_BAR_H - 18) / 2, title, fg, bg)
+  }
+  // Minimize button
+  let min_x = x + w - 52
+  let btn_y = y + 5
+  let btn_h = COMP_TITLE_BAR_H - 10
+  fb_fill_rect(min_x, btn_y, 22, btn_h, 0x00555555)
+  let min_bar_y = btn_y + btn_h / 2
+  let mi = 0
+  while mi < 14 {
+    store32(fb_addr + min_bar_y * fb_pitch + (min_x + 4 + mi) * 4, FB_COLOR_WHITE)
+    mi = mi + 1
+  }
+  // Close button
+  let btn_x = x + w - 28
+  fb_fill_rect(btn_x, btn_y, 22, btn_h, FB_COLOR_RED)
+  let cx = btn_x + 11
+  let cy = btn_y + btn_h / 2
+  let xi = -3
+  while xi <= 3 {
+    store32(fb_addr + (cy + xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
+    store32(fb_addr + (cy - xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
+    xi = xi + 1
+  }
+  return
 }
 
 fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
@@ -526,6 +578,9 @@ fn comp_render_window(idx: Int) -> void {
     return
   }
 
+  // Draw window frame (title bar + border + controls)
+  comp_draw_window_frame(base)
+
   // Draw content (role-specific drawers handle their own backgrounds)
   let role = load64(base + 40)
   if role == COMP_ROLE_UTILITIES {
@@ -665,6 +720,7 @@ fn comp_render() -> void {
         comp_render_window(comp_focused)
       }
     }
+    comp_render_topbar()
     comp_render_taskbar()
     comp_cur_save()
     comp_render_cursor()
@@ -698,15 +754,30 @@ fn comp_render_taskbar() -> void {
     store32(fb_addr + bar_y * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
     tx2 = tx2 + 1
   }
-  comp_render_taskbar_text()
   comp_render_taskbar_dot()
   return
 }
 
-fn comp_render_taskbar_text() -> void {
-  let bar_y = fb_height - COMP_TASKBAR_H
-  let ty = bar_y + (COMP_TASKBAR_H - fb_font_scale * 8) / 2
+fn comp_render_topbar() -> void {
+  fb_fill_rect(0, 0, fb_width, COMP_TASKBAR_H, COMP_COLOR_PANEL)
+  // Separator line at bottom of top bar
+  let tx2 = 0
+  while tx2 < fb_width {
+    store32(fb_addr + (COMP_TASKBAR_H - 1) * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
+    tx2 = tx2 + 1
+  }
+  let ty = (COMP_TASKBAR_H - fb_font_scale * 8) / 2
   comp_draw_label(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  comp_draw_label(fb_width / 2 - 40, ty, "WORKSPACE", COMP_COLOR_MUTED, COMP_COLOR_PANEL)
+  // Show active app name (or "DESKTOP" if nothing focused)
+  let active = "DESKTOP"
+  if comp_focused >= 0 && comp_focused < comp_count {
+    active = load64(comp_win_base(comp_focused) + 24)
+  }
+  if active == 0 {
+    active = "DESKTOP"
+  }
+  comp_draw_label(fb_width - 200, ty, active, COMP_COLOR_ACCENT, COMP_COLOR_PANEL)
   return
 }
 
