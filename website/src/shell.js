@@ -59,11 +59,27 @@ async function sendInput(data) {
   if (!ps2) return;
   ps2.enable_keyboard_stream = true;
   for (const ch of data) {
+    const code = ch.charCodeAt(0);
     if (ch === "\r" || ch === "\n") {
       ps2.kbd_send_code(0x1c);
       continue;
     }
-    const make = scancodeSet1[ch];
+    if (ch === "\x7F" || ch === "\x08") {
+      ps2.kbd_send_code(0x0e);
+      continue;
+    }
+    if (ch === "\t") {
+      ps2.kbd_send_code(0x0f);
+      continue;
+    }
+    if (ch === "\x1b") {
+      continue;
+    }
+    let key = ch;
+    if (code >= 65 && code <= 90) {
+      key = String.fromCharCode(code + 32);
+    }
+    const make = scancodeSet1[key];
     if (make) ps2.kbd_send_code(make);
   }
 }
@@ -111,7 +127,7 @@ async function mountTerminal() {
 
   term = new Terminal({
     fontSize: computeTerminalMetrics().fontSize,
-    fontFamily: 'GeistMono, ui-monospace, monospace',
+    fontFamily: 'GeistMono, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace',
     cursorBlink: true,
     scrollback: 10000,
     allowTransparency: false,
