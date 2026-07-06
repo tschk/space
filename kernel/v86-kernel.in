@@ -1,7 +1,7 @@
 package space.kernel
 
 // 32-bit v86 kernel: serial shell on COM1, PS/2 keyboard, in-memory
-// filesystem with directory support (SparkFS-lite).
+// filesystem with directory support and a line editor (vro).
 
 const COM1_PORT = 0x3F8
 const KBD_TABLE = 0x3000
@@ -16,13 +16,13 @@ const FILE_NOTES = "notes.txt"
 const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.\n"
 
 // --- memory layout ----------------------------------------------------------
+const LINE_BUF = 0x5000
 const EDIT_BUF = 0x6000
 const EDIT_BUF_SIZE = 1024
 const NUM_BUF = 0x6500
 const HIST_BUF = 0x6600
 const HIST_MAX = 16
 const HIST_ENTRY_SIZE = 80
-const LINE_BUF = 0x5000
 const PATH_BUF = 0x6B00
 const NAME_BUF = 0x6B80
 
@@ -53,65 +53,67 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   let running = true
   while running {
-    serial_put(62)
-    serial_put(32)
+    serial_write_cstr("space$ ")
     let len = read_line()
     if len == 0 {
       continue
     }
     history_add(LINE_BUF)
-    if match_command("help") {
+    let cmd = parse_cmd()
+    if cmd == 0 {
+      continue
+    }
+    if cstr_eq(cmd, "help") {
       cmd_help()
-    } else if match_command("about") {
-      cmd_cat(FILE_ABOUT)
-    } else if match_command("info") {
-      serial_write_cstr("v86 32-bit protected mode")
-      serial_nl()
-      serial_write_cstr("mb_info: 0x")
-      serial_write_hex32(mb_info)
-      serial_nl()
-    } else if match_command("ls") {
-      cmd_ls(0)
-    } else if line_prefix("ls ") {
-      cmd_ls(arg_at(1))
-    } else if match_command("cat") {
+    } else if cstr_eq(cmd, "about") {
       cmd_cat(arg_at(1))
-    } else if match_command("echo") {
+    } else if cstr_eq(cmd, "info") {
+      cmd_info(mb_info)
+    } else if cstr_eq(cmd, "ls") {
+      let a = arg_at(1)
+      if a != 0 {
+        cmd_ls(a)
+      } else {
+        cmd_ls(0)
+      }
+    } else if cstr_eq(cmd, "cat") {
+      cmd_cat(arg_at(1))
+    } else if cstr_eq(cmd, "echo") {
       cmd_echo(arg_at(1))
-    } else if match_command("write") {
+    } else if cstr_eq(cmd, "write") {
       cmd_write(arg_at(1), arg_at(2))
-    } else if match_command("rm") {
+    } else if cstr_eq(cmd, "rm") {
       cmd_rm(arg_at(1))
-    } else if match_command("touch") {
+    } else if cstr_eq(cmd, "touch") {
       cmd_touch(arg_at(1))
-    } else if match_command("cp") {
+    } else if cstr_eq(cmd, "cp") {
       cmd_cp(arg_at(1), arg_at(2))
-    } else if match_command("mv") {
+    } else if cstr_eq(cmd, "mv") {
       cmd_mv(arg_at(1), arg_at(2))
-    } else if match_command("mkdir") {
+    } else if cstr_eq(cmd, "mkdir") {
       cmd_mkdir(arg_at(1))
-    } else if match_command("stat") {
+    } else if cstr_eq(cmd, "stat") {
       cmd_stat(arg_at(1))
-    } else if match_command("pwd") {
+    } else if cstr_eq(cmd, "pwd") {
       serial_write_cstr("/")
       serial_nl()
-    } else if match_command("whoami") {
+    } else if cstr_eq(cmd, "whoami") {
       serial_write_cstr("space")
       serial_nl()
-    } else if match_command("clear") {
+    } else if cstr_eq(cmd, "clear") {
       serial_write_cstr("\x1b[2J\x1b[H")
-    } else if match_command("edit") || match_command("vro") {
-      cmd_edit(arg_at(1))
-    } else if match_command("history") {
+    } else if cstr_eq(cmd, "edit") || cstr_eq(cmd, "vro") {
+      cmd_vro(arg_at(1))
+    } else if cstr_eq(cmd, "history") {
       cmd_history()
-    } else if match_command("uname") {
+    } else if cstr_eq(cmd, "uname") {
       serial_write_cstr("Space v86 32-bit .in kernel")
       serial_nl()
-    } else if match_command("reset") {
+    } else if cstr_eq(cmd, "reset") {
       serial_write_cstr("resetting")
       serial_nl()
       outb(0x64, 0xFE)
-    } else if match_command("halt") {
+    } else if cstr_eq(cmd, "halt") {
       serial_write_cstr("halting")
       serial_nl()
       cli()
@@ -120,7 +122,7 @@ fn kernel_entry(mb_info: Int) -> Int {
       }
     } else {
       serial_write_cstr("unknown command: ")
-      serial_write_cstr(LINE_BUF)
+      serial_write_cstr(cmd)
       serial_nl()
     }
   }
@@ -165,15 +167,15 @@ fn cmd_help() -> void {
   serial_nl()
   serial_write_cstr("stat    - show file info")
   serial_nl()
+  serial_write_cstr("edit    - edit a file with vro")
+  serial_nl()
+  serial_write_cstr("vro     - same as edit")
+  serial_nl()
   serial_write_cstr("clear   - clear the screen")
   serial_nl()
   serial_write_cstr("pwd     - print working directory")
   serial_nl()
   serial_write_cstr("whoami  - print current user")
-  serial_nl()
-  serial_write_cstr("edit    - edit notes.txt")
-  serial_nl()
-  serial_write_cstr("vro     - same as edit")
   serial_nl()
   serial_write_cstr("history - show previous commands")
   serial_nl()
@@ -184,6 +186,46 @@ fn cmd_help() -> void {
   serial_write_cstr("halt    - stop the cpu")
   serial_nl()
   return
+}
+
+fn cmd_info(mb_info: Int) -> void {
+  serial_write_cstr("v86 32-bit protected mode")
+  serial_nl()
+  serial_write_cstr("mb_info: 0x")
+  serial_write_hex32(mb_info)
+  serial_nl()
+  serial_write_cstr("files: ")
+  serial_write_num(FS_FILES)
+  serial_write_cstr("  max file size: ")
+  serial_write_num(FS_FILE_SIZE)
+  serial_nl()
+  return
+}
+
+// --- command parsing --------------------------------------------------------
+// Extract the command word (first token) from LINE_BUF into NAME_BUF.
+// Returns pointer to NAME_BUF, or 0 if empty.
+fn parse_cmd() -> Int {
+  let i = 0
+  while load8(LINE_BUF + i) == 32 {
+    i = i + 1
+  }
+  if load8(LINE_BUF + i) == 0 {
+    return 0
+  }
+  let j = 0
+  while j < FS_NAME_SIZE - 1 {
+    let c = load8(LINE_BUF + i)
+    if c == 0 || c == 32 {
+      store8(NAME_BUF + j, 0)
+      return NAME_BUF
+    }
+    store8(NAME_BUF + j, c)
+    i = i + 1
+    j = j + 1
+  }
+  store8(NAME_BUF + FS_NAME_SIZE - 1, 0)
+  return NAME_BUF
 }
 
 // --- filesystem entry accessors ---------------------------------------------
@@ -250,7 +292,6 @@ fn fs_init() -> void {
   return
 }
 
-// Find an entry by name within a parent (0 = root). Returns index or -1.
 fn fs_find_in(parent: Int, name: Int) -> Int {
   let i = 0
   while i < FS_FILES {
@@ -265,12 +306,12 @@ fn fs_find_in(parent: Int, name: Int) -> Int {
 }
 
 // Resolve a path to an entry index. Returns -1 if not found.
-// Root is represented as 0 (the implicit root, not a real entry).
+// Root is represented as -1 (the implicit root, not a real entry).
 fn fs_resolve(path: Int) -> Int {
   if load8(path) == 0 {
-    return 0
+    return -1
   }
-  let parent = 0
+  let parent = -1
   let i = 0
   if load8(path) == 47 {
     i = 1
@@ -280,21 +321,21 @@ fn fs_resolve(path: Int) -> Int {
     while j < FS_NAME_SIZE {
       let c = load8(path + i + j)
       if c == 0 || c == 47 {
-        store8(NAME_BUF + j, 0)
+        store8(PATH_BUF + j, 0)
         j = FS_NAME_SIZE
       } else {
-        store8(NAME_BUF + j, c)
+        store8(PATH_BUF + j, c)
         j = j + 1
       }
     }
-    if load8(NAME_BUF) == 0 {
+    if load8(PATH_BUF) == 0 {
       return parent
     }
-    let idx = fs_find_in(parent, NAME_BUF)
+    let idx = fs_find_in(parent, PATH_BUF)
     if idx < 0 {
       return -1
     }
-    parent = idx + 1
+    parent = idx
     while load8(path + i) != 0 && load8(path + i) != 47 {
       i = i + 1
     }
@@ -306,8 +347,8 @@ fn fs_resolve(path: Int) -> Int {
   return -1
 }
 
-// Resolve parent directory and final name. Returns parent code (0=root or idx+1),
-// or -1 if parent doesn't exist. Stores final name in NAME_BUF.
+// Resolve parent directory and final name. Returns parent index (-1 = root),
+// or -2 if parent doesn't exist. Stores final name in NAME_BUF.
 fn fs_resolve_parent(path: Int) -> Int {
   let last_slash = -1
   let i = 0
@@ -319,7 +360,7 @@ fn fs_resolve_parent(path: Int) -> Int {
   }
   if last_slash < 0 {
     cstr_copy(NAME_BUF, path, FS_NAME_SIZE - 1)
-    return 0
+    return -1
   }
   let k = 0
   while k < last_slash {
@@ -329,7 +370,7 @@ fn fs_resolve_parent(path: Int) -> Int {
   store8(PATH_BUF + k, 0)
   let p = fs_resolve(PATH_BUF)
   if p < 0 {
-    return -1
+    return -2
   }
   let m = 0
   let s = last_slash + 1
@@ -343,7 +384,7 @@ fn fs_resolve_parent(path: Int) -> Int {
       m = m + 1
     }
   }
-  return p + 1
+  return p
 }
 
 fn fs_create(parent: Int, name: Int, ty: Int) -> Int {
@@ -364,11 +405,10 @@ fn fs_create(parent: Int, name: Int, ty: Int) -> Int {
 }
 
 fn fs_delete(idx: Int) -> Int {
-  // Remove children if directory
   if fs_entry_type(idx) == FS_TYPE_DIR {
     let i = 0
     while i < FS_FILES {
-      if fs_entry_used(i) != 0 && fs_entry_parent(i) == idx + 1 {
+      if fs_entry_used(i) != 0 && fs_entry_parent(i) == idx {
         fs_delete(i)
       }
       i = i + 1
@@ -399,13 +439,13 @@ fn fs_write_data(idx: Int, data: Int, sz: Int) -> void {
 // --- commands ---------------------------------------------------------------
 
 fn cmd_ls(path: Int) -> void {
-  let parent = 0
+  let parent = -1
   if path != 0 {
     let idx = fs_resolve(path)
     if idx < 0 {
       serial_write_cstr("ls: ")
       serial_write_cstr(path)
-      serial_write_cstr(": no such directory")
+      serial_write_cstr(": no such file or directory")
       serial_nl()
       return
     }
@@ -414,10 +454,9 @@ fn cmd_ls(path: Int) -> void {
       serial_nl()
       return
     }
-    parent = idx + 1
+    parent = idx
   }
-  // List built-in root files when parent is root
-  if parent == 0 {
+  if parent == -1 {
     serial_write_cstr(FILE_README)
     serial_nl()
     serial_write_cstr(FILE_ABOUT)
@@ -484,40 +523,150 @@ fn cmd_echo(text: Int) -> void {
   return
 }
 
-fn cmd_edit(name: Int) -> void {
+// --- vro editor -------------------------------------------------------------
+// vro is a line-based editor. It loads a file into EDIT_BUF, lets the user
+// append/insert lines, and saves back. Commands start with '.':
+//   .w       save and quit
+//   .q       quit without saving
+//   .p       print current content
+//   .c       clear content
+//   .d       delete last line
+// Any other line is appended to the buffer.
+
+fn cmd_vro(name: Int) -> void {
   if name == 0 {
-    name = FILE_NOTES
-  }
-  if !cstr_eq(name, FILE_NOTES) {
-    serial_write_cstr("edit: only ")
-    serial_write_cstr(FILE_NOTES)
-    serial_write_cstr(" is editable")
+    serial_write_cstr("usage: edit <file>")
     serial_nl()
     return
   }
-  serial_write_cstr("VRO editor: type lines, Backspace to correct, '.exit' to save, '.cancel' to discard.")
+
+  // Load file content into EDIT_BUF
+  let target_idx = -1
+  if cstr_eq(name, FILE_NOTES) {
+    // notes.txt already lives in EDIT_BUF
+    serial_write_cstr("vro: editing ")
+    serial_write_cstr(name)
+    serial_write_cstr(" (")
+    serial_write_num(edit_len)
+    serial_write_cstr(" bytes)")
+    serial_nl()
+  } else if cstr_eq(name, FILE_README) {
+    edit_len = cstr_copy(EDIT_BUF, DATA_README, EDIT_BUF_SIZE - 1)
+    serial_write_cstr("vro: editing ")
+    serial_write_cstr(name)
+    serial_write_cstr(" (")
+    serial_write_num(edit_len)
+    serial_write_cstr(" bytes)")
+    serial_nl()
+  } else if cstr_eq(name, FILE_ABOUT) {
+    edit_len = cstr_copy(EDIT_BUF, DATA_ABOUT, EDIT_BUF_SIZE - 1)
+    serial_write_cstr("vro: editing ")
+    serial_write_cstr(name)
+    serial_write_cstr(" (")
+    serial_write_num(edit_len)
+    serial_write_cstr(" bytes)")
+    serial_nl()
+  } else {
+    let idx = fs_resolve(name)
+    if idx < 0 {
+      // Create the file
+      let p = fs_resolve_parent(name)
+      if p == -2 {
+        serial_write_cstr("vro: parent directory not found")
+        serial_nl()
+        return
+      }
+      idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+      if idx < 0 {
+        serial_write_cstr("vro: no free file slots")
+        serial_nl()
+        return
+      }
+    }
+    if fs_entry_type(idx) == FS_TYPE_DIR {
+      serial_write_cstr("vro: ")
+      serial_write_cstr(name)
+      serial_write_cstr(": is a directory")
+      serial_nl()
+      return
+    }
+    target_idx = idx
+    edit_len = cstr_copy(EDIT_BUF, fs_entry_data(idx), EDIT_BUF_SIZE - 1)
+    serial_write_cstr("vro: editing ")
+    serial_write_cstr(name)
+    serial_write_cstr(" (")
+    serial_write_num(edit_len)
+    serial_write_cstr(" bytes)")
+    serial_nl()
+  }
+
+  serial_write_cstr("Type lines to append. Commands: .w=save .q=quit .p=print .c=clear .d=delline")
   serial_nl()
-  serial_write_cstr("Current content:")
-  serial_nl()
-  serial_write_cstr(EDIT_BUF)
   serial_write_cstr("---")
   serial_nl()
+
   while true {
-    serial_put(43)
+    serial_put(62)
     serial_put(32)
     let len = read_line()
     if len == 0 {
       continue
     }
-    if cstr_eq(LINE_BUF, ".exit") {
-      break
-    }
-    if cstr_eq(LINE_BUF, ".cancel") {
-      edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
-      serial_write_cstr("discarded")
+    if cstr_eq(LINE_BUF, ".w") {
+      // Save
+      if target_idx >= 0 {
+        fs_write_data(target_idx, EDIT_BUF, edit_len)
+      }
+      serial_write_cstr("saved ")
+      serial_write_num(edit_len)
+      serial_write_cstr(" bytes")
       serial_nl()
       return
     }
+    if cstr_eq(LINE_BUF, ".q") {
+      serial_write_cstr("quit without saving")
+      serial_nl()
+      return
+    }
+    if cstr_eq(LINE_BUF, ".p") {
+      serial_write_cstr(EDIT_BUF)
+      serial_write_cstr("---")
+      serial_nl()
+      continue
+    }
+    if cstr_eq(LINE_BUF, ".c") {
+      edit_len = 0
+      store8(EDIT_BUF, 0)
+      serial_write_cstr("cleared")
+      serial_nl()
+      continue
+    }
+    if cstr_eq(LINE_BUF, ".d") {
+      // Remove last line: walk back to find the previous newline or start
+      if edit_len == 0 {
+        serial_write_cstr("buffer empty")
+        serial_nl()
+        continue
+      }
+      let p = edit_len - 1
+      // Skip trailing newline if present
+      if load8(EDIT_BUF + p) == 10 {
+        p = p - 1
+      }
+      while p > 0 && load8(EDIT_BUF + p) != 10 {
+        p = p - 1
+      }
+      if p == 0 {
+        edit_len = 0
+      } else {
+        edit_len = p
+      }
+      store8(EDIT_BUF + edit_len, 0)
+      serial_write_cstr("deleted last line")
+      serial_nl()
+      continue
+    }
+    // Append the line
     let i = 0
     while i < len && edit_len < EDIT_BUF_SIZE - 2 {
       store8(EDIT_BUF + edit_len, load8(LINE_BUF + i))
@@ -528,10 +677,6 @@ fn cmd_edit(name: Int) -> void {
     edit_len = edit_len + 1
     store8(EDIT_BUF + edit_len, 0)
   }
-  serial_write_cstr("saved ")
-  serial_write_num(edit_len)
-  serial_write_cstr(" bytes")
-  serial_nl()
   return
 }
 
@@ -544,7 +689,7 @@ fn cmd_write(name: Int, text: Int) -> void {
   let idx = fs_resolve(name)
   if idx < 0 {
     let p = fs_resolve_parent(name)
-    if p < 0 {
+    if p == -2 {
       serial_write_cstr("write: parent directory not found")
       serial_nl()
       return
@@ -596,7 +741,7 @@ fn cmd_touch(name: Int) -> void {
   let idx = fs_resolve(name)
   if idx < 0 {
     let p = fs_resolve_parent(name)
-    if p < 0 {
+    if p == -2 {
       serial_write_cstr("touch: parent directory not found")
       serial_nl()
       return
@@ -630,7 +775,7 @@ fn cmd_cp(src: Int, dst: Int) -> void {
   let didx = fs_resolve(dst)
   if didx < 0 {
     let p = fs_resolve_parent(dst)
-    if p < 0 {
+    if p == -2 {
       serial_write_cstr("cp: parent directory not found")
       serial_nl()
       return
@@ -670,7 +815,7 @@ fn cmd_mv(src: Int, dst: Int) -> void {
     fs_delete(didx)
   }
   let p = fs_resolve_parent(dst)
-  if p < 0 {
+  if p == -2 {
     serial_write_cstr("mv: parent directory not found")
     serial_nl()
     return
@@ -699,7 +844,7 @@ fn cmd_mkdir(name: Int) -> void {
     return
   }
   let p = fs_resolve_parent(name)
-  if p < 0 {
+  if p == -2 {
     serial_write_cstr("mkdir: parent directory not found")
     serial_nl()
     return
@@ -721,13 +866,21 @@ fn cmd_stat(name: Int) -> void {
     serial_nl()
     return
   }
-  if cstr_eq(name, FILE_README) || cstr_eq(name, FILE_ABOUT) || cstr_eq(name, FILE_NOTES) {
-    serial_write_cstr("  type=file  size=")
-    if cstr_eq(name, FILE_NOTES) {
-      serial_write_num(edit_len)
-    } else {
-      serial_write_num(cstr_len(name))
-    }
+  if cstr_eq(name, FILE_README) {
+    serial_write_cstr("  file=README.md  type=file  size=")
+    serial_write_num(cstr_len(DATA_README))
+    serial_nl()
+    return
+  }
+  if cstr_eq(name, FILE_ABOUT) {
+    serial_write_cstr("  file=ABOUT.md  type=file  size=")
+    serial_write_num(cstr_len(DATA_ABOUT))
+    serial_nl()
+    return
+  }
+  if cstr_eq(name, FILE_NOTES) {
+    serial_write_cstr("  file=notes.txt  type=file  size=")
+    serial_write_num(edit_len)
     serial_nl()
     return
   }
@@ -739,6 +892,8 @@ fn cmd_stat(name: Int) -> void {
     serial_nl()
     return
   }
+  serial_write_cstr("  file=")
+  serial_write_cstr(fs_entry_name(idx))
   serial_write_cstr("  type=")
   if fs_entry_type(idx) == FS_TYPE_DIR {
     serial_write_cstr("dir")
@@ -841,23 +996,6 @@ fn arg_at(idx: Int) -> Int {
   return LINE_BUF + i
 }
 
-// Check if LINE_BUF starts with the given command (used for "ls <arg>").
-fn line_prefix(cmd: Int) -> Bool {
-  let i = 0
-  while true {
-    let c = load8(cmd + i)
-    if c == 0 {
-      let b = load8(LINE_BUF + i)
-      return b == 32
-    }
-    if c != load8(LINE_BUF + i) {
-      return false
-    }
-    i = i + 1
-  }
-  return false
-}
-
 // --- PS/2 keyboard ----------------------------------------------------------
 
 fn keyboard_init() -> void {
@@ -958,22 +1096,6 @@ fn read_line() -> Int {
     }
   }
   return 0
-}
-
-fn match_command(cmd: Int) -> Bool {
-  let i = 0
-  while true {
-    let c = load8(cmd + i)
-    let b = load8(LINE_BUF + i)
-    if c == 0 {
-      return b == 0 || b == 32 || b == 10 || b == 13
-    }
-    if c != b {
-      return false
-    }
-    i = i + 1
-  }
-  return false
 }
 
 // --- serial -----------------------------------------------------------------
