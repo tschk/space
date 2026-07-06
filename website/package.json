@@ -1,0 +1,24 @@
+{
+  "name": "space-v86",
+  "private": true,
+  "scripts": {
+    "build:kernel": "sh scripts/build-space-v86-32.sh",
+    "dev": "sh scripts/build-space-v86-32.sh && astro dev",
+    "build": "sh scripts/build-space-v86-32.sh && astro check --minimumSeverity error && astro build",
+    "preview": "astro preview",
+    "deploy": "bun run build && wrangler pages deploy dist --project-name space"
+  },
+  "dependencies": {
+    "@astrojs/check": "latest",
+    "@fontsource/geist-mono": "^5.2.8",
+    "astro": "latest",
+    "ghostty-web": "^0.4.0",
+    "typescript": "latest",
+    "v86": "latest"
+  },
+  "devDependencies": {
+    "@unocss/astro": "^66.7.4",
+    "unocss": "^66.7.4",
+    "wrangler": "latest"
+  }
+}
