@@ -1,0 +1,38 @@
+package space.kernel
+
+// SparkFS public compatibility API.
+
+fn fs_init() -> void {
+  sparkfs_init()
+  return
+}
+
+fn fs_format() -> void {
+  sparkfs_format()
+  return
+}
+
+fn fs_list(port: Int) -> void {
+  sparkfs_list("/", port)
+  return
+}
+
+fn fs_read_file(name: Int, buf: Int) -> Int {
+  return sparkfs_read(name, buf, 0x7FFFFFFF)
+}
+
+fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
+  return sparkfs_write(name, buf, size)
+}
+
+fn fs_delete(name: Int) -> Int {
+  return sparkfs_delete(name)
+}
+
+fn fs_open_path(path: Int) -> Int {
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  return ino
+}

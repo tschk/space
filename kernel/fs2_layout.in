@@ -1,0 +1,76 @@
+package space.kernel
+
+// SparkFS layout constants and runtime globals.
+
+// --- constants --------------------------------------------------------------
+
+const SF_MAGIC = 0x53504146          // "SPAF"
+const SF_VERSION = 1
+const SF_BLOCK_SIZE = 4096
+const SF_SECTOR_SIZE = 512
+const SF_SECTORS_PER_BLOCK = 8
+
+const SF_INODE_SIZE = 256
+const SF_INODE_DIRECT = 12
+const SF_INODE_INDIRECT_COUNT = 512  // 4 KiB / 8 bytes per block number
+const SF_NAME_MAX = 255
+const SF_DIR_ENTRY_HEAD = 8          // inode(4) + name_len(1) + type(1) + padding(2)
+
+const SF_TYPE_FILE = 1
+const SF_TYPE_DIR = 2
+const SF_TYPE_FREE = 0
+
+const SF_OP_CREATE = 1
+const SF_OP_WRITE = 2
+const SF_OP_DELETE = 3
+const SF_OP_RENAME = 4
+
+const SF_JOURNAL_ENTRY_SIZE = 64
+const SF_JOURNAL_ENTRIES_PER_BLOCK = 64
+
+// --- on-disk layout defaults ------------------------------------------------
+
+const SF_DEFAULT_TOTAL_BLOCKS = 8192  // 32 MiB
+const SF_DEFAULT_INODE_COUNT = 256
+const SF_DEFAULT_JOURNAL_BLOCKS = 2
+
+const SF_MEM_DISK_BLOCKS = 256  // 1 MiB memory-backed disk for testing
+const SF_MEM_DISK_SIZE = 1048576  // 256 * 4096
+
+// Superblock offsets
+const SF_SB_MAGIC = 0
+const SF_SB_VERSION = 4
+const SF_SB_BLOCK_SIZE = 8
+const SF_SB_TOTAL_BLOCKS = 12
+const SF_SB_INODE_COUNT = 20
+const SF_SB_BITMAP_START = 24
+const SF_SB_JOURNAL_START = 32
+const SF_SB_INODE_TABLE_START = 40
+const SF_SB_DATA_START = 48
+const SF_SB_ROOT_INODE = 56
+const SF_SB_JOURNAL_SEQ = 60
+
+// Inode offsets
+const SF_IN_TYPE = 0
+const SF_IN_MODE = 4
+const SF_IN_UID = 8
+const SF_IN_GID = 12
+const SF_IN_SIZE = 16
+const SF_IN_BLOCKS = 24
+const SF_IN_CTIME = 32
+const SF_IN_MTIME = 40
+const SF_IN_ATIME = 48
+const SF_IN_NLINK = 56
+const SF_IN_DIRECT = 64
+const SF_IN_INDIRECT = 160
+const SF_IN_DINDIRECT = 168
+
+// --- runtime state ----------------------------------------------------------
+
+var sf_super: Int = 0
+var sf_bitmap: Int = 0
+var sf_inodes: Int = 0
+var sf_block_buf: Int = 0
+var sf_initialized: Int = 0
+var sf_disk_ready: Int = 0
+var sf_mem_disk: Int = 0

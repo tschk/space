@@ -1,0 +1,116 @@
+package space.kernel
+
+// SparkFS low-level block I/O and allocation bitmap.
+
+// --- low-level block I/O ----------------------------------------------------
+
+// Read block `bno` into `buf`. Returns 0 on success.
+fn sf_read_block(bno: Int, buf: Int) -> Int {
+  if sf_mem_disk != 0 {
+    let src = sf_mem_disk + bno * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(buf + i, load8(src + i))
+      i = i + 1
+    }
+    return 0
+  }
+  let sector = bno * SF_SECTORS_PER_BLOCK
+  let i = 0
+  while i < SF_SECTORS_PER_BLOCK {
+    let rc = ata_read_sector(sector + i, buf + i * SF_SECTOR_SIZE)
+    if rc != 0 {
+      return -1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Write block `bno` from `buf`. Returns 0 on success.
+fn sf_write_block(bno: Int, buf: Int) -> Int {
+  if sf_mem_disk != 0 {
+    let dst = sf_mem_disk + bno * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(dst + i, load8(buf + i))
+      i = i + 1
+    }
+    return 0
+  }
+  let sector = bno * SF_SECTORS_PER_BLOCK
+  let i = 0
+  while i < SF_SECTORS_PER_BLOCK {
+    let rc = ata_write_sector(sector + i, buf + i * SF_SECTOR_SIZE)
+    if rc != 0 {
+      return -1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Zero a block buffer.
+fn sf_zero_block(buf: Int) -> void {
+  let i = 0
+  while i < SF_BLOCK_SIZE {
+    store8(buf + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+// --- bitmap -----------------------------------------------------------------
+
+fn sf_bitmap_byte(bno: Int) -> Int {
+  return bno >> 3
+}
+
+fn sf_bitmap_bit(bno: Int) -> Int {
+  return 1 << (bno & 7)
+}
+
+fn sf_mark_used(bno: Int) -> void {
+  let addr = sf_bitmap + (bno >> 3)
+  let b = load8(addr)
+  store8(addr, b | (1 << (bno & 7)))
+  return
+}
+
+fn sf_mark_free(bno: Int) -> void {
+  let addr = sf_bitmap + (bno >> 3)
+  let b = load8(addr)
+  store8(addr, b & (255 - (1 << (bno & 7))))
+  return
+}
+
+fn sf_block_used(bno: Int) -> Int {
+  let b = load8(sf_bitmap + (bno >> 3))
+  if (b & (1 << (bno & 7))) != 0 {
+    return 1
+  }
+  return 0
+}
+
+// Allocate a data block. Returns block number or -1.
+fn sf_alloc_block() -> Int {
+  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
+  let data_start = load64(sf_super + SF_SB_DATA_START)
+  let bno = data_start
+  while bno < total {
+    if sf_block_used(bno) == 0 {
+      sf_mark_used(bno)
+      sf_zero_block(sf_block_buf)
+      sf_write_block(bno, sf_block_buf)
+      return bno
+    }
+    bno = bno + 1
+  }
+  return -1
+}
+
+// Free a data block.
+fn sf_free_block(bno: Int) -> void {
+  sf_mark_free(bno)
+  return
+}

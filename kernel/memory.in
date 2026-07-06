@@ -42,12 +42,12 @@ fn discover_memory(mb: Int) -> void {
   }
   total_ram = total
   region_count = count
-  // Place the heap above the kernel image (loaded at 1 MiB, code starts at
-  // 0x101100) and the boot trampoline. Use 2 MiB as a conservative floor;
-  // the current kernel image is well under 1 MiB and the gap is reserved.
+  // Place the heap above the kernel image, the boot trampoline, and the
+  // compiler's global data area. The compiler emits globals at 0x200000, so
+  // the heap must start above that region to avoid runtime corruption.
   let hstart = best_base
-  if hstart < 0x200000 {
-    hstart = 0x200000
+  if hstart < 0x300000 {
+    hstart = 0x300000
   }
   heap_next = hstart
   heap_end = best_base + best_len

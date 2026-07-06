@@ -12,8 +12,14 @@ import "domain.in"
 import "nvme.in"
 // USB xHCI host controller and HID keyboard driver.
 import "usb.in"
-// Flat filesystem layer.
-import "fs.in"
+// SparkFS block-structured filesystem.
+import "fs2_layout.in"
+import "fs2_block.in"
+import "fs2_inode.in"
+import "fs2_dir.in"
+import "fs2_path.in"
+import "fs2_file.in"
+import "fs2.in"
 // Full libc (string, memory, ctype, stdio, stdlib, math, time).
 import "libc.in"
 // Process abstraction layer (domain + component + thread).
@@ -379,6 +385,15 @@ fn kernel_entry(mb_info: Int) -> Int {
   serial_init(port)
   serial_write_cstr(port, "space: kernel root entered")
   serial_nl(port)
+
+  // Zero the compiler's global data area before any globals are read.
+  // The bootloader loads the kernel image but does not guarantee this
+  // region is cleared, and the multiboot info structure may overlap it.
+  let g = 0
+  while g < 0x10000 {
+    store64(0x200000 + g, 0)
+    g = g + 8
+  }
 
   discover_memory(mb_info)
   serial_write_cstr(port, "space: available RAM bytes 0x")

@@ -1,0 +1,400 @@
+package space.kernel
+
+// SparkFS high-level file operations: init, format, create, read, write, delete, list.
+
+fn sparkfs_init() -> void {
+  sf_super = alloc(SF_BLOCK_SIZE)
+  sf_block_buf = alloc(SF_BLOCK_SIZE)
+  sf_disk_ready = 0
+  sf_initialized = 1
+  if nvme_ready == 0 {
+    sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
+    let i = 0
+    while i < SF_MEM_DISK_SIZE {
+      store8(sf_mem_disk + i, 0)
+      i = i + 1
+    }
+    sf_disk_ready = 1
+    sparkfs_format_mem_disk()
+    return
+  }
+  if sf_read_block(0, sf_super) != 0 {
+    return
+  }
+  let magic = load32(sf_super + SF_SB_MAGIC)
+  if magic != SF_MAGIC {
+    return
+  }
+  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
+  let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
+  let bitmap_bytes = (total + 7) / 8
+  sf_bitmap = alloc(bitmap_bytes)
+  let i = 0
+  while i < bitmap_bytes {
+    store8(sf_bitmap + i, 0)
+    i = i + 1
+  }
+  let bitmap_start = load64(sf_super + SF_SB_BITMAP_START)
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let b = 0
+  while b < bitmap_blocks {
+    sf_read_block(bitmap_start + b, sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(sf_bitmap + b * SF_BLOCK_SIZE + k, load8(sf_block_buf + k))
+      k = k + 1
+    }
+    b = b + 1
+  }
+  sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  let ino = 0
+  while ino < ino_count {
+    sf_read_inode(ino)
+    ino = ino + 1
+  }
+  sf_disk_ready = 1
+  return
+}
+
+fn sf_do_format(total: Int, ino_count: Int) -> void {
+  if sf_super == 0 {
+    sf_super = alloc(SF_BLOCK_SIZE)
+  }
+  if sf_block_buf == 0 {
+    sf_block_buf = alloc(SF_BLOCK_SIZE)
+  }
+  sf_zero_block(sf_super)
+  store32(sf_super + SF_SB_MAGIC, SF_MAGIC)
+  store32(sf_super + SF_SB_VERSION, SF_VERSION)
+  store32(sf_super + SF_SB_BLOCK_SIZE, SF_BLOCK_SIZE)
+  store64(sf_super + SF_SB_TOTAL_BLOCKS, total)
+  store32(sf_super + SF_SB_INODE_COUNT, ino_count)
+  let bitmap_bytes = (total + 7) / 8
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let inode_table_blocks = (ino_count * SF_INODE_SIZE + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let journal_blocks = SF_DEFAULT_JOURNAL_BLOCKS
+  let bitmap_start = 1
+  let journal_start = bitmap_start + bitmap_blocks
+  let inode_table_start = journal_start + journal_blocks
+  let data_start = inode_table_start + inode_table_blocks
+  store64(sf_super + SF_SB_BITMAP_START, bitmap_start)
+  store64(sf_super + SF_SB_JOURNAL_START, journal_start)
+  store64(sf_super + SF_SB_INODE_TABLE_START, inode_table_start)
+  store64(sf_super + SF_SB_DATA_START, data_start)
+  store32(sf_super + SF_SB_ROOT_INODE, 0)
+  store32(sf_super + SF_SB_JOURNAL_SEQ, 0)
+  sf_write_block(0, sf_super)
+
+  sf_bitmap = alloc(bitmap_bytes)
+  let i = 0
+  while i < bitmap_bytes {
+    store8(sf_bitmap + i, 0)
+    i = i + 1
+  }
+  sf_mark_used(0)
+  let b = 1
+  while b < data_start {
+    sf_mark_used(b)
+    b = b + 1
+  }
+  b = 0
+  while b < bitmap_blocks {
+    sf_zero_block(sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(sf_block_buf + k, load8(sf_bitmap + b * SF_BLOCK_SIZE + k))
+      k = k + 1
+    }
+    sf_write_block(bitmap_start + b, sf_block_buf)
+    b = b + 1
+  }
+
+  sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  let ino = 0
+  while ino < ino_count {
+    let addr = sf_inode_addr(ino)
+    let j = 0
+    while j < SF_INODE_SIZE {
+      store8(addr + j, 0)
+      j = j + 1
+    }
+    ino = ino + 1
+  }
+  let root = sf_inode_addr(0)
+  store32(root + SF_IN_TYPE, SF_TYPE_DIR)
+  store32(root + SF_IN_MODE, 0o755)
+  store64(root + SF_IN_SIZE, 0)
+  store64(root + SF_IN_CTIME, 0)
+  store64(root + SF_IN_MTIME, 0)
+  store64(root + SF_IN_ATIME, 0)
+  store32(root + SF_IN_NLINK, 1)
+  sf_write_inode(0)
+  store32(sf_super + SF_SB_ROOT_INODE, 0)
+  sf_write_block(0, sf_super)
+  sf_disk_ready = 1
+  return
+}
+
+fn sparkfs_format() -> void {
+  sf_do_format(SF_DEFAULT_TOTAL_BLOCKS, SF_DEFAULT_INODE_COUNT)
+  return
+}
+
+fn sparkfs_format_mem_disk() -> void {
+  sf_do_format(256, 256)
+  return
+}
+
+fn sparkfs_create(path: Int, is_dir: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let name = alloc(SF_NAME_MAX + 1)
+  let parent = sf_lookup_parent(path, name)
+  if parent < 0 {
+    return -1
+  }
+  let tmp = alloc(4)
+  if sf_dir_find(parent, name, tmp) >= 0 {
+    return -1
+  }
+  let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
+  let ino = 1
+  while ino < ino_count {
+    let addr = sf_inode_addr(ino)
+    if load32(addr + SF_IN_TYPE) == SF_TYPE_FREE {
+      sf_zero_block(addr)
+      store32(addr + SF_IN_TYPE, is_dir)
+      store32(addr + SF_IN_MODE, 0o644)
+      if is_dir == SF_TYPE_DIR {
+        store32(addr + SF_IN_MODE, 0o755)
+      }
+      store64(addr + SF_IN_SIZE, 0)
+      store32(addr + SF_IN_NLINK, 1)
+      sf_write_inode(ino)
+      sf_dir_add(parent, name, ino, is_dir)
+      return 0
+    }
+    ino = ino + 1
+  }
+  return -1
+}
+
+fn sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  if max < size {
+    size = max
+  }
+  let n = 0
+  while n < size {
+    let fbn = n / SF_BLOCK_SIZE
+    let bno = sf_inode_block(ino, fbn)
+    if bno < 0 {
+      return n
+    }
+    sf_read_block(bno, sf_block_buf)
+    let off = n & (SF_BLOCK_SIZE - 1)
+    let to_copy = SF_BLOCK_SIZE - off
+    if n + to_copy > size {
+      to_copy = size - n
+    }
+    let i = 0
+    while i < to_copy {
+      store8(buf + n + i, load8(sf_block_buf + off + i))
+      i = i + 1
+    }
+    n = n + to_copy
+  }
+  return size
+}
+
+fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    let rc = sparkfs_create(path, SF_TYPE_FILE)
+    if rc != 0 {
+      return -1
+    }
+    ino = sf_lookup_path(path)
+    if ino < 0 {
+      return -1
+    }
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let old_size = load64(addr + SF_IN_SIZE)
+  let n = 0
+  while n < size {
+    let fbn = n / SF_BLOCK_SIZE
+    let bno = sf_inode_block(ino, fbn)
+    if bno < 0 {
+      bno = sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      sf_set_inode_block(ino, fbn, bno)
+    }
+    sf_read_block(bno, sf_block_buf)
+    let off = n & (SF_BLOCK_SIZE - 1)
+    let to_copy = SF_BLOCK_SIZE - off
+    if n + to_copy > size {
+      to_copy = size - n
+    }
+    let i = 0
+    while i < to_copy {
+      store8(sf_block_buf + off + i, load8(buf + n + i))
+      i = i + 1
+    }
+    sf_write_block(bno, sf_block_buf)
+    n = n + to_copy
+  }
+  if size > old_size {
+    store64(addr + SF_IN_SIZE, size)
+  }
+  sf_write_inode(ino)
+  return 0
+}
+
+fn sparkfs_delete(path: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino <= 0 {
+    return -1
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) == SF_TYPE_DIR {
+    if load64(addr + SF_IN_SIZE) != 0 {
+      return -1
+    }
+  }
+  let name = alloc(SF_NAME_MAX + 1)
+  let parent = sf_lookup_parent(path, name)
+  if parent < 0 {
+    return -1
+  }
+  sf_dir_remove(parent, name)
+  let size = load64(addr + SF_IN_SIZE)
+  let sectors = (size + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let fbn = 0
+  while fbn < sectors {
+    let bno = sf_inode_block(ino, fbn)
+    if bno > 0 {
+      sf_free_block(bno)
+    }
+    fbn = fbn + 1
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect > 0 {
+    sf_free_block(indirect)
+  }
+  let j = 0
+  while j < SF_INODE_SIZE {
+    store8(addr + j, 0)
+    j = j + 1
+  }
+  sf_write_inode(ino)
+  sf_flush_bitmap()
+  return 0
+}
+
+fn sparkfs_list(path: Int, port: Int) -> void {
+  if sf_disk_ready == 0 {
+    serial_write_cstr(port, "  (no disk)")
+    serial_nl(port)
+    return
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    serial_write_cstr(port, "  (not found)")
+    serial_nl(port)
+    return
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+    serial_write_cstr(port, "  (not a directory)")
+    serial_nl(port)
+    return
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while fbn * SF_BLOCK_SIZE < size {
+    let bno = sf_inode_block(ino, fbn)
+    if bno > 0 {
+      sf_read_block(bno, sf_block_buf)
+      let off = 0
+      while off < SF_BLOCK_SIZE {
+        let eino = load32(sf_block_buf + off)
+        let name_len = load8(sf_block_buf + off + 4)
+        let etype = load8(sf_block_buf + off + 5)
+        if eino == 0 {
+          break
+        }
+        serial_write_cstr(port, "  ")
+        let i = 0
+        while i < name_len {
+          serial_put(port, load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
+          i = i + 1
+        }
+        serial_write_cstr(port, "  size=")
+        let eaddr = sf_inode_addr(eino)
+        serial_write_dec_wide(port, load64(eaddr + SF_IN_SIZE))
+        serial_write_cstr(port, "  type=")
+        if etype == SF_TYPE_DIR {
+          serial_write_cstr(port, "dir")
+        } else {
+          serial_write_cstr(port, "file")
+        }
+        serial_nl(port)
+        off = off + sf_dir_entry_size(name_len)
+      }
+    }
+    fbn = fbn + 1
+  }
+  return
+}
+
+fn sf_flush_bitmap() -> void {
+  if sf_disk_ready == 0 {
+    return
+  }
+  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
+  let bitmap_bytes = (total + 7) / 8
+  let bitmap_start = load64(sf_super + SF_SB_BITMAP_START)
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let b = 0
+  while b < bitmap_blocks {
+    sf_zero_block(sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(sf_block_buf + k, load8(sf_bitmap + b * SF_BLOCK_SIZE + k))
+      k = k + 1
+    }
+    sf_write_block(bitmap_start + b, sf_block_buf)
+    b = b + 1
+  }
+  return
+}
+
+fn sparkfs_sync() -> void {
+  sf_flush_bitmap()
+  sf_write_block(0, sf_super)
+  return
+}

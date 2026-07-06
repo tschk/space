@@ -1,0 +1,145 @@
+package space.kernel
+
+// SparkFS directory entries: size calculation, lookup, add, and remove.
+
+// --- directory entries ------------------------------------------------------
+
+fn sf_dir_entry_size(name_len: Int) -> Int {
+  let sz = 8 + name_len
+  if (sz & 7) != 0 {
+    sz = sz + 8 - (sz & 7)
+  }
+  return sz
+}
+
+// Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
+fn sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
+  let addr = sf_inode_addr(dir_ino)
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while fbn * SF_BLOCK_SIZE < size {
+    let bno = sf_inode_block(dir_ino, fbn)
+    if bno > 0 {
+      sf_read_block(bno, sf_block_buf)
+      let off = 0
+      while off < SF_BLOCK_SIZE {
+        let eino = load32(sf_block_buf + off)
+        let name_len = load8(sf_block_buf + off + 4)
+        if eino == 0 {
+          break
+        }
+        if name_len > 0 && name_len <= SF_NAME_MAX {
+          let is_match = 1
+          let i = 0
+          while i < name_len {
+            let a = load8(name + i)
+            let b = load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i)
+            if a != b {
+              is_match = 0
+              break
+            }
+            i = i + 1
+          }
+          if is_match != 0 && load8(name + name_len) == 0 {
+            store32(out_ino, eino)
+            return fbn * SF_BLOCK_SIZE + off
+          }
+        }
+        let esz = sf_dir_entry_size(name_len)
+        off = off + esz
+        if esz == 0 {
+          break
+        }
+      }
+    }
+    fbn = fbn + 1
+  }
+  return -1
+}
+
+// Add an entry to directory `dir_ino`. Returns 0 on success.
+fn sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> Int {
+  let addr = sf_inode_addr(dir_ino)
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while true {
+    let bno = 0
+    if fbn * SF_BLOCK_SIZE < size {
+      bno = sf_inode_block(dir_ino, fbn)
+    }
+    if bno == 0 {
+      bno = sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      sf_set_inode_block(dir_ino, fbn, bno)
+      store64(addr + SF_IN_SIZE, size + SF_BLOCK_SIZE)
+      sf_zero_block(sf_block_buf)
+    } else {
+      sf_read_block(bno, sf_block_buf)
+    }
+    let off = 0
+    while off < SF_BLOCK_SIZE {
+      let eino = load32(sf_block_buf + off)
+      let name_len = load8(sf_block_buf + off + 4)
+      if eino == 0 {
+        let new_len = 0
+        let i = 0
+        while i < SF_NAME_MAX {
+          if load8(name + i) == 0 {
+            break
+          }
+          new_len = new_len + 1
+          i = i + 1
+        }
+        let esz = sf_dir_entry_size(new_len)
+        if off + esz <= SF_BLOCK_SIZE {
+          store32(sf_block_buf + off, entry_ino)
+          store8(sf_block_buf + off + 4, new_len)
+          store8(sf_block_buf + off + 5, entry_type)
+          i = 0
+          while i < new_len {
+            store8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i, load8(name + i))
+            i = i + 1
+          }
+          sf_write_block(bno, sf_block_buf)
+          let new_size = load64(addr + SF_IN_SIZE)
+          if new_size < fbn * SF_BLOCK_SIZE + off + esz {
+            store64(addr + SF_IN_SIZE, fbn * SF_BLOCK_SIZE + off + esz)
+          }
+          sf_write_inode(dir_ino)
+          return 0
+        }
+        break
+      }
+      off = off + sf_dir_entry_size(name_len)
+      if off > SF_BLOCK_SIZE {
+        break
+      }
+    }
+    fbn = fbn + 1
+  }
+  return -1
+}
+
+// Remove an entry from directory `dir_ino`. Returns 0 on success.
+fn sf_dir_remove(dir_ino: Int, name: Int) -> Int {
+  let tmp = alloc(4)
+  let off = sf_dir_find(dir_ino, name, tmp)
+  if off < 0 {
+    return -1
+  }
+  let fbn = off / SF_BLOCK_SIZE
+  let boff = off & (SF_BLOCK_SIZE - 1)
+  let bno = sf_inode_block(dir_ino, fbn)
+  sf_read_block(bno, sf_block_buf)
+  let esz = sf_dir_entry_size(load8(sf_block_buf + boff + 4))
+  let i = 0
+  while i < esz {
+    store8(sf_block_buf + boff + i, 0)
+    i = i + 1
+  }
+  sf_write_block(bno, sf_block_buf)
+  sf_write_inode(dir_ino)
+  return 0
+}

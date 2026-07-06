@@ -168,9 +168,7 @@ fn thr_run() -> void {
 
 fn scheduler_init(max_tasks: Int) -> void {
   ctxsw = load64(0x4018)
-  if kernel_slot == 0 {
-    kernel_slot = alloc(8)
-  }
+  kernel_slot = alloc(8)
   thr_init(max_tasks)
   return
 }

@@ -1,0 +1,86 @@
+package space.kernel
+
+// SparkFS inode table and per-inode block addressing.
+
+// --- inode table ------------------------------------------------------------
+
+fn sf_inode_addr(ino: Int) -> Int {
+  return sf_inodes + ino * SF_INODE_SIZE
+}
+
+fn sf_read_inode(ino: Int) -> void {
+  let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
+  let ino_bytes = ino * SF_INODE_SIZE
+  let block = table_start + (ino_bytes >> 12)
+  let offset = ino_bytes & 4095
+  sf_read_block(block, sf_block_buf)
+  let i = 0
+  let addr = sf_inode_addr(ino)
+  while i < SF_INODE_SIZE {
+    store8(addr + i, load8(sf_block_buf + offset + i))
+    i = i + 1
+  }
+  return
+}
+
+fn sf_write_inode(ino: Int) -> void {
+  let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
+  let ino_bytes = ino * SF_INODE_SIZE
+  let block = table_start + (ino_bytes >> 12)
+  let offset = ino_bytes & 4095
+  sf_read_block(block, sf_block_buf)
+  let i = 0
+  let addr = sf_inode_addr(ino)
+  while i < SF_INODE_SIZE {
+    store8(sf_block_buf + offset + i, load8(addr + i))
+    i = i + 1
+  }
+  sf_write_block(block, sf_block_buf)
+  return
+}
+
+// --- inode block addressing -------------------------------------------------
+
+// Return the data block number for file block `fbn`, or -1 if unallocated.
+fn sf_inode_block(ino: Int, fbn: Int) -> Int {
+  let addr = sf_inode_addr(ino)
+  if fbn < SF_INODE_DIRECT {
+    let b = load64(addr + SF_IN_DIRECT + fbn * 8)
+    return b
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect == 0 {
+    return -1
+  }
+  sf_read_block(indirect, sf_block_buf)
+  let idx = fbn - SF_INODE_DIRECT
+  if idx >= SF_INODE_INDIRECT_COUNT {
+    return -1
+  }
+  return load64(sf_block_buf + idx * 8)
+}
+
+// Set the data block number for file block `fbn`. Allocates indirect block if needed.
+fn sf_set_inode_block(ino: Int, fbn: Int, bno: Int) -> Int {
+  let addr = sf_inode_addr(ino)
+  if fbn < SF_INODE_DIRECT {
+    store64(addr + SF_IN_DIRECT + fbn * 8, bno)
+    return 0
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect == 0 {
+    indirect = sf_alloc_block()
+    if indirect < 0 {
+      return -1
+    }
+    store64(addr + SF_IN_INDIRECT, indirect)
+  }
+  sf_read_block(indirect, sf_block_buf)
+  let idx = fbn - SF_INODE_DIRECT
+  if idx >= SF_INODE_INDIRECT_COUNT {
+    return -1
+  }
+  store64(sf_block_buf + idx * 8, bno)
+  sf_write_block(indirect, sf_block_buf)
+  return 0
+}

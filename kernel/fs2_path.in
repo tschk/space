@@ -1,0 +1,104 @@
+package space.kernel
+
+// SparkFS path resolution helpers.
+
+// --- path resolution --------------------------------------------------------
+
+// Find the last '/' in path. Returns index or -1.
+fn sf_last_slash(path: Int) -> Int {
+  let last = -1
+  let i = 0
+  while true {
+    let c = load8(path + i)
+    if c == 0 {
+      return last
+    }
+    if c == 47 {
+      last = i
+    }
+    i = i + 1
+  }
+  return last
+}
+
+// Copy the filename component from path into dst.
+fn sf_copy_name(dst: Int, path: Int, slash: Int) -> void {
+  let start = 0
+  if slash >= 0 {
+    start = slash + 1
+  }
+  let i = 0
+  while i < SF_NAME_MAX {
+    let c = load8(path + start + i)
+    store8(dst + i, c)
+    if c == 0 {
+      return
+    }
+    i = i + 1
+  }
+  store8(dst + SF_NAME_MAX, 0)
+  return
+}
+
+// Resolve a path to an inode. Returns inode or -1.
+fn sf_lookup_path(path: Int) -> Int {
+  if load8(path) == 0 {
+    return 0
+  }
+  let ino = load32(sf_super + SF_SB_ROOT_INODE)
+  if load8(path) == 47 && load8(path + 1) == 0 {
+    return ino
+  }
+  let name_buf = alloc(SF_NAME_MAX + 1)
+  let i = 0
+  if load8(path) == 47 {
+    i = 1
+  }
+  while true {
+    let j = 0
+    while j < SF_NAME_MAX {
+      let c = load8(path + i + j)
+      if c == 0 || c == 47 {
+        store8(name_buf + j, 0)
+        break
+      }
+      store8(name_buf + j, c)
+      j = j + 1
+    }
+    if j == 0 {
+      return ino
+    }
+    let tmp = alloc(4)
+    let off = sf_dir_find(ino, name_buf, tmp)
+    if off < 0 {
+      return -1
+    }
+    ino = load32(tmp)
+    while load8(path + i) != 0 && load8(path + i) != 47 {
+      i = i + 1
+    }
+    if load8(path + i) == 0 {
+      return ino
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// Resolve parent directory and final name. Returns parent inode, or -1.
+fn sf_lookup_parent(path: Int, name_out: Int) -> Int {
+  let slash = sf_last_slash(path)
+  if slash < 0 {
+    sf_copy_name(name_out, path, -1)
+    return 0
+  }
+  let parent_path = alloc(SF_NAME_MAX + 1)
+  let i = 0
+  while i < slash {
+    store8(parent_path + i, load8(path + i))
+    i = i + 1
+  }
+  store8(parent_path + i, 0)
+  sf_copy_name(name_out, path, slash)
+  return sf_lookup_path(parent_path)
+}
