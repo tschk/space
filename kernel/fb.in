@@ -232,20 +232,38 @@ fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   if fb_ready == 0 {
     return
   }
-  let j = 0
-  while j < h {
-    let py = y + j
-    if py >= 0 && py < fb_height {
-      let i = 0
-      while i < w {
-        let px = x + i
-        if px >= 0 && px < fb_width {
-          store32(fb_addr + py * fb_pitch + px * 4, color)
-        }
-        i = i + 1
-      }
+
+  let x_start = x
+  if x_start < 0 {
+    x_start = 0
+  }
+  let x_end = x + w
+  if x_end > fb_width {
+    x_end = fb_width
+  }
+
+  let y_start = y
+  if y_start < 0 {
+    y_start = 0
+  }
+  let y_end = y + h
+  if y_end > fb_height {
+    y_end = fb_height
+  }
+
+  if x_start >= x_end || y_start >= y_end {
+    return
+  }
+
+  let py = y_start
+  while py < y_end {
+    let px = x_start
+    let row_addr = fb_addr + py * fb_pitch
+    while px < x_end {
+      store32(row_addr + px * 4, color)
+      px = px + 1
     }
-    j = j + 1
+    py = py + 1
   }
   return
 }
@@ -303,6 +321,32 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
   if ch < 0 || ch >= 128 {
     ch = 63  // '?'
   }
+
+  // Fast path if the whole character (16x16) is within bounds
+  if x >= 0 && x + 16 <= fb_width && y >= 0 && y + 16 <= fb_height {
+    let row = 0
+    let row_addr = fb_addr + y * fb_pitch + x * 4
+    while row < 8 {
+      let bits = fb_glyph8(ch, row)
+      let col = 0
+      let pixel_addr = row_addr
+      while col < 8 {
+        let bit = (bits >> (7 - col)) & 1
+        if bit != 0 {
+          store32(pixel_addr, color)
+          store32(pixel_addr + 4, color)
+          store32(pixel_addr + fb_pitch, color)
+          store32(pixel_addr + fb_pitch + 4, color)
+        }
+        pixel_addr = pixel_addr + 8
+        col = col + 1
+      }
+      row_addr = row_addr + fb_pitch * 2
+      row = row + 1
+    }
+    return
+  }
+
   let row = 0
   while row < 8 {
     let bits = fb_glyph8(ch, row)
@@ -320,49 +364,6 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
       col = col + 1
     }
     row = row + 1
-  }
-  return
-}
-// Draw a null-terminated string at (x, y) in the given color.
-// Handles '\n' (newline) by moving to the next row.
-fn fb_draw_string(x: Int, y: Int, str: Int, color: Int) -> void {
-  let i = 0
-  let cx = x
-  let cy = y
-  while i < 256 {
-    let ch = load8(str + i)
-    if ch == 0 {
-      i = 256
-    } else if ch == 10 {
-      cx = x
-      cy = cy + 18
-    } else {
-      fb_draw_char(cx, cy, ch, color)
-      cx = cx + 16
-    }
-    i = i + 1
-  }
-  return
-}
-
-// Draw a string with a background color (for text on filled backgrounds).
-fn fb_draw_string_bg(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
-  let i = 0
-  let cx = x
-  let cy = y
-  while i < 256 {
-    let ch = load8(str + i)
-    if ch == 0 {
-      i = 256
-    } else if ch == 10 {
-      cx = x
-      cy = cy + 18
-    } else {
-      fb_fill_rect(cx, cy, 16, 16, bg)
-      fb_draw_char(cx, cy, ch, fg)
-      cx = cx + 16
-    }
-    i = i + 1
   }
   return
 }

@@ -188,19 +188,6 @@ fn thr_reset() -> void {
   return
 }
 
-fn worker_a() -> Int {
-  let round = 0
-  while round < 3 {
-    let port = com1()
-    serial_write_cstr(port, "space:   <worker A> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
-    round = round + 1
-    thr_yield()
-  }
-  return 0
-}
-
 fn worker_b() -> Int {
   let round = 0
   while round < 3 {
@@ -216,7 +203,6 @@ fn worker_b() -> Int {
 
 fn run_scheduler(port: Int) -> void {
   scheduler_init(8)
-  thr_create(worker_a)
   thr_create(worker_b)
   serial_write_cstr(port, "space: scheduler running 2 threads, round-robin")
   serial_nl(port)
