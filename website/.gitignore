@@ -1,0 +1,6 @@
+node_modules
+dist
+public/v86/*.bin
+public/v86/*.wasm
+public/v86/*.mjs
+!public/v86/.gitkeep
