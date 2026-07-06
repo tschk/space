@@ -64,6 +64,7 @@ var hist_count: Int = 0
 var boot_tick: Int = 0
 var esc_state: Int = 0
 var esc_len: Int = 0
+var serial_pushback: Int = 0
 
 fn kernel_entry(mb_info: Int) -> Int {
   serial_init()
@@ -72,6 +73,11 @@ fn kernel_entry(mb_info: Int) -> Int {
   edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
 
   print_welcome()
+
+  // Flush any stray bytes that arrived during boot output
+  while (inb(COM1_PORT + 5) & 0x01) != 0 {
+    inb(COM1_PORT)
+  }
 
   let running = true
   while running {
@@ -122,7 +128,9 @@ fn kernel_entry(mb_info: Int) -> Int {
       serial_nl()
     } else if cstr_eq(cmd, "clear") {
       serial_write_cstr("\x1b[2J\x1b[H")
-    } else if cstr_eq(cmd, "edit") || cstr_eq(cmd, "vro") {
+    } else if cstr_eq(cmd, "edit") {
+      vro_run(arg_at(1))
+    } else if cstr_eq(cmd, "vro") {
       vro_run(arg_at(1))
     } else if cstr_eq(cmd, "history") {
       cmd_history()
@@ -1448,6 +1456,11 @@ fn serial_data_ready() -> Int {
 }
 
 fn serial_read_byte() -> Int {
+  if serial_pushback != 0 {
+    let pb = serial_pushback
+    serial_pushback = 0
+    return pb
+  }
   while (inb(COM1_PORT + 5) & 0x01) == 0 {
     pause()
   }
@@ -1469,7 +1482,8 @@ fn serial_get_key() -> Int {
   // Escape sequence: read next byte
   let b2 = serial_read_byte()
   if b2 != 91 {
-    // Not a CSI sequence, return escape
+    // Not a CSI sequence. Save b2 for next call, return ESC.
+    serial_pushback = b2
     return 27
   }
 
@@ -1551,6 +1565,11 @@ fn serial_init() -> void {
   outb(COM1_PORT + 3, 0x03)
   outb(COM1_PORT + 2, 0x07)
   outb(COM1_PORT + 4, 0x0B)
+  // Flush any stray bytes in the receive buffer
+  while (inb(COM1_PORT + 5) & 0x01) != 0 {
+    inb(COM1_PORT)
+  }
+  serial_pushback = 0
   return
 }
 
