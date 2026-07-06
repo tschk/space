@@ -42,46 +42,8 @@ function finishStatus(message) {
   }, 700);
 }
 
-const scancodeSet1 = {
-  a: 0x1e, b: 0x30, c: 0x2e, d: 0x20, e: 0x12, f: 0x21, g: 0x22, h: 0x23,
-  i: 0x17, j: 0x24, k: 0x25, l: 0x26, m: 0x32, n: 0x31, o: 0x18, p: 0x19,
-  q: 0x10, r: 0x13, s: 0x1f, t: 0x14, u: 0x16, v: 0x2f, w: 0x11, x: 0x2d,
-  y: 0x15, z: 0x2c,
-  "0": 0x0b, "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06,
-  "6": 0x07, "7": 0x08, "8": 0x09, "9": 0x0a,
-  "-": 0x0c, "=": 0x0d, ",": 0x33, ".": 0x34, "/": 0x35,
-  " ": 0x39,
-};
-
-async function sendInput(data) {
-  if (!emulator) return;
-  const ps2 = emulator.v86?.cpu?.devices?.ps2;
-  if (!ps2) return;
-  ps2.enable_keyboard_stream = true;
-  for (const ch of data) {
-    const code = ch.charCodeAt(0);
-    if (ch === "\r" || ch === "\n") {
-      ps2.kbd_send_code(0x1c);
-      continue;
-    }
-    if (ch === "\x7F" || ch === "\x08") {
-      ps2.kbd_send_code(0x0e);
-      continue;
-    }
-    if (ch === "\t") {
-      ps2.kbd_send_code(0x0f);
-      continue;
-    }
-    if (ch === "\x1b") {
-      continue;
-    }
-    let key = ch;
-    if (code >= 65 && code <= 90) {
-      key = String.fromCharCode(code + 32);
-    }
-    const make = scancodeSet1[key];
-    if (make) ps2.kbd_send_code(make);
-  }
+function sendSerial(data) {
+  emulator?.serial0_send(data);
 }
 
 function computeTerminalMetrics() {
@@ -171,8 +133,9 @@ async function mountTerminal() {
   window.addEventListener("resize", () => applyTerminalScale());
   document.fonts.ready.then(() => applyTerminalScale()).catch(() => {});
 
+  term.writeln("Space loading…");
   term.focus();
-  term.onData(sendInput);
+  term.onData(sendSerial);
   host.addEventListener("pointerdown", () => term.focus());
   return true;
 }
@@ -189,19 +152,19 @@ function wireLegacyKeyboard() {
     if (event.ctrlKey) {
       const key = event.key.toLowerCase();
       if (key >= "a" && key <= "z") {
-        sendInput(String.fromCharCode(key.charCodeAt(0) - 96));
+        sendSerial(String.fromCharCode(key.charCodeAt(0) - 96));
         event.preventDefault();
       }
       return;
     }
     const keys = { Enter: "\r", Backspace: "\x7F", Tab: "\t" };
     if (keys[event.key]) {
-      sendInput(keys[event.key]);
+      sendSerial(keys[event.key]);
       event.preventDefault();
       return;
     }
     if (event.key.length === 1) {
-      sendInput(event.key);
+      sendSerial(event.key);
       event.preventDefault();
     }
   });
@@ -219,10 +182,9 @@ try {
 
   emulator = new V86({
     wasm_path: asset("/v86/v86.wasm"),
-    screen_container: screen,
+    screen_container: null,
     multiboot: { url: asset("/v86/space-multiboot.bin") },
-    memory_size: 512 * 1024 * 1024,
-    disable_keyboard: true,
+    memory_size: 256 * 1024 * 1024,
     autostart: true,
   });
   window.spaceEmulator = emulator;
@@ -257,7 +219,7 @@ try {
   });
 
   emulator.add_listener("emulator-ready", () => {
-    finishStatus("booting Space (serial + VGA if kernel enables it)");
+    finishStatus("booting Space");
     applyTerminalScale();
     term?.focus();
   });

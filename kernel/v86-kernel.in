@@ -1,25 +1,20 @@
 package space.kernel
 
-// 32-bit v86 kernel: serial shell on COM1, PS/2 keyboard, in-memory
-// filesystem with directory support and a screen-based text editor (vro).
+// 32-bit v86 kernel: serial shell on COM1, in-memory filesystem with
+// directory support and a screen-based text editor (vro).
 //
-// vro is a micro-inspired screen editor written in .in:
-//   - Full-screen mode with ANSI alternate screen buffer
-//   - Arrow keys, Home, End, Page Up/Down for cursor movement
-//   - Character insert/delete at cursor position
-//   - Ctrl-S to save, Ctrl-Q to quit
-//   - Status bar with filename, cursor position, dirty flag
-//   - Scrolling for files longer than the terminal
+// Input and output both go through COM1 (serial). The terminal emulator
+// in the browser handles key processing (shift, ctrl, arrows, etc.) and
+// sends the resulting bytes via serial0_send. Arrow keys arrive as ANSI
+// escape sequences which the kernel parses.
 
 const COM1_PORT = 0x3F8
-const KBD_TABLE = 0x3000
-const KBD_SHIFT_TABLE = 0x3100
 
 const FILE_README = "README.md"
-const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a PS/2 keyboard and serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
+const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
 
 const FILE_ABOUT = "ABOUT.md"
-const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, edit (vro), and more\n  - PS/2 keyboard input with Shift and Ctrl modifiers\n  - Screen-based text editor (vro) with cursor movement\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, vro test/hello.txt\n"
+const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, vro (screen editor), and more\n  - Screen-based text editor with cursor movement and save\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, vro test/hello.txt\n"
 
 const FILE_NOTES = "notes.txt"
 const DATA_NOTES = "This is a scratch file. Use 'vro notes.txt' to edit it.\n"
@@ -34,35 +29,26 @@ const HIST_MAX = 16
 const HIST_ENTRY_SIZE = 80
 const PATH_BUF = 0x6F00
 const NAME_BUF = 0x6F80
+const ESC_BUF = 0x7000
 
 // --- filesystem -------------------------------------------------------------
-// Entry layout (32 bytes): name[16] + used[1] + type[1] + parent[1] + size[1] + pad[12]
 const FS_FILES = 16
 const FS_NAME_SIZE = 16
 const FS_ENTRY_SIZE = 32
 const FS_FILE_SIZE = 512
-const FS_TABLE = 0x7000
-const FS_DATA = 0x7400
+const FS_TABLE = 0x7400
+const FS_DATA = 0x7800
 
 const FS_TYPE_FILE = 0
 const FS_TYPE_DIR = 1
 
 // --- vro editor memory ------------------------------------------------------
-const VRO_BUF = 0x9400
+const VRO_BUF = 0x9800
 const VRO_BUF_SIZE = 4096
-const VRO_NAME = 0xA400
-const VRO_META = 0xA420
-// VRO_META layout (32 bytes):
-//   +0: row (cursor row)
-//   +4: col (cursor col)
-//   +8: len (text length)
-//   +12: dirty (modified flag)
-//   +16: scroll (scroll offset in rows)
-//   +20: file_idx (FS entry index, -1 for built-in)
-//   +24: total_rows (cached row count)
-//   +28: screen_rows (terminal height - 1)
+const VRO_NAME = 0xA800
+const VRO_META = 0xA820
 
-// Special key codes returned by keyboard_get
+// Special key codes
 const KEY_LEFT = 1000
 const KEY_RIGHT = 1001
 const KEY_UP = 1002
@@ -76,11 +62,10 @@ const KEY_DELETE = 1008
 var edit_len: Int = 0
 var hist_count: Int = 0
 var boot_tick: Int = 0
-var kbd_ctrl: Int = 0
-var kbd_shift: Int = 0
+var esc_state: Int = 0
+var esc_len: Int = 0
 
 fn kernel_entry(mb_info: Int) -> Int {
-  keyboard_init()
   serial_init()
   fs_init()
 
@@ -200,7 +185,7 @@ fn cmd_help() -> void {
   serial_nl()
   serial_write_cstr("stat    - show file info")
   serial_nl()
-  serial_write_cstr("vro     - screen-based text editor (Ctrl-S=save Ctrl-Q=quit)")
+  serial_write_cstr("vro     - screen text editor (Ctrl-S=save Ctrl-Q=quit)")
   serial_nl()
   serial_write_cstr("edit    - same as vro")
   serial_nl()
@@ -505,21 +490,45 @@ fn cmd_ls(path: Int) -> void {
   return
 }
 
+// Case-insensitive comparison for built-in file matching
+fn cstr_eq_ci(a: Int, b: Int) -> Bool {
+  let i = 0
+  while true {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    // Lowercase both
+    if ca >= 65 && ca <= 90 {
+      ca = ca + 32
+    }
+    if cb >= 65 && cb <= 90 {
+      cb = cb + 32
+    }
+    if ca != cb {
+      return false
+    }
+    if ca == 0 {
+      return true
+    }
+    i = i + 1
+  }
+  return false
+}
+
 fn cmd_cat(name: Int) -> void {
   if name == 0 {
     serial_write_cstr("usage: cat <file>")
     serial_nl()
     return
   }
-  if cstr_eq(name, FILE_README) {
+  if cstr_eq_ci(name, FILE_README) {
     serial_write_cstr(DATA_README)
     return
   }
-  if cstr_eq(name, FILE_ABOUT) {
+  if cstr_eq_ci(name, FILE_ABOUT) {
     serial_write_cstr(DATA_ABOUT)
     return
   }
-  if cstr_eq(name, FILE_NOTES) {
+  if cstr_eq_ci(name, FILE_NOTES) {
     serial_write_cstr(EDIT_BUF)
     return
   }
@@ -736,19 +745,19 @@ fn cmd_stat(name: Int) -> void {
     serial_nl()
     return
   }
-  if cstr_eq(name, FILE_README) {
+  if cstr_eq_ci(name, FILE_README) {
     serial_write_cstr("  file=README.md  type=file  size=")
     serial_write_num(cstr_len(DATA_README))
     serial_nl()
     return
   }
-  if cstr_eq(name, FILE_ABOUT) {
+  if cstr_eq_ci(name, FILE_ABOUT) {
     serial_write_cstr("  file=ABOUT.md  type=file  size=")
     serial_write_num(cstr_len(DATA_ABOUT))
     serial_nl()
     return
   }
-  if cstr_eq(name, FILE_NOTES) {
+  if cstr_eq_ci(name, FILE_NOTES) {
     serial_write_cstr("  file=notes.txt  type=file  size=")
     serial_write_num(edit_len)
     serial_nl()
@@ -777,10 +786,6 @@ fn cmd_stat(name: Int) -> void {
 }
 
 // --- vro editor -------------------------------------------------------------
-// Screen-based text editor inspired by the original vro (V) and micro.
-// Uses ANSI escape sequences for full-screen rendering.
-// Text is stored as a contiguous byte array in VRO_BUF with \n separators.
-// Cursor is tracked as (row, col) and mapped to byte offsets.
 
 fn vro_meta_load(row: Int, col: Int, len: Int, dirty: Int, scroll: Int, file_idx: Int) -> void {
   store32(VRO_META, row)
@@ -841,7 +846,6 @@ fn vro_set_scroll(v: Int) -> void {
   return
 }
 
-// Byte offset of the start of a given row. Row 0 = offset 0.
 fn vro_row_offset(row: Int) -> Int {
   if row <= 0 {
     return 0
@@ -857,7 +861,6 @@ fn vro_row_offset(row: Int) -> Int {
   return off
 }
 
-// Length of a given row in bytes (excluding the trailing \n).
 fn vro_row_length(row: Int) -> Int {
   let off = vro_row_offset(row)
   let n = 0
@@ -867,7 +870,6 @@ fn vro_row_length(row: Int) -> Int {
   return n
 }
 
-// Total number of rows in the buffer.
 fn vro_count_rows() -> Int {
   if vro_len() == 0 {
     return 1
@@ -880,16 +882,13 @@ fn vro_count_rows() -> Int {
     }
     i = i + 1
   }
-  // If buffer ends with \n, the last "row" is empty but still counts
   return count
 }
 
-// Byte offset of the cursor position.
 fn vro_cursor_offset() -> Int {
   return vro_row_offset(vro_row()) + vro_col()
 }
 
-// Insert a byte at the cursor position, shifting bytes right.
 fn vro_insert_byte(ch: Int) -> void {
   let len = vro_len()
   if len >= VRO_BUF_SIZE - 1 {
@@ -908,7 +907,6 @@ fn vro_insert_byte(ch: Int) -> void {
   return
 }
 
-// Delete the byte at the cursor position, shifting bytes left.
 fn vro_delete_byte() -> void {
   let len = vro_len()
   let off = vro_cursor_offset()
@@ -926,20 +924,17 @@ fn vro_delete_byte() -> void {
   return
 }
 
-// Delete the byte before the cursor (backspace).
 fn vro_backspace() -> void {
   let off = vro_cursor_offset()
   if off == 0 {
     return
   }
-  // If deleting a newline, move cursor up to end of previous line
   if load8(VRO_BUF + off - 1) == 10 {
     vro_set_row(vro_row() - 1)
     vro_set_col(vro_row_length(vro_row()))
   } else {
     vro_set_col(vro_col() - 1)
   }
-  // Shift bytes left from off-1
   let len = vro_len()
   let i = off - 1
   while i < len - 1 {
@@ -952,7 +947,6 @@ fn vro_backspace() -> void {
   return
 }
 
-// Insert a newline at cursor position.
 fn vro_insert_newline() -> void {
   vro_insert_byte(10)
   vro_set_row(vro_row() + 1)
@@ -960,14 +954,11 @@ fn vro_insert_newline() -> void {
   return
 }
 
-// Insert a printable character at cursor position.
 fn vro_insert_char(ch: Int) -> void {
   vro_insert_byte(ch)
   vro_set_col(vro_col() + 1)
   return
 }
-
-// --- cursor movement --------------------------------------------------------
 
 fn vro_move_left() -> void {
   if vro_col() > 0 {
@@ -1052,8 +1043,6 @@ fn vro_page_down() -> void {
   return
 }
 
-// --- scrolling --------------------------------------------------------------
-
 fn vro_adjust_scroll() -> void {
   let row = vro_row()
   let scroll = vro_scroll()
@@ -1067,23 +1056,17 @@ fn vro_adjust_scroll() -> void {
   return
 }
 
-// --- rendering --------------------------------------------------------------
-
 fn vro_render() -> void {
   vro_adjust_scroll()
   let scroll = vro_scroll()
-  let len = vro_len()
   let total = vro_count_rows()
   let screen = 22
 
-  // Hide cursor, clear screen, home
   serial_write_cstr("\x1b[?25l\x1b[2J\x1b[H")
 
-  // Draw text rows
   let y = 0
   while y < screen {
     let filerow = scroll + y
-    // Move to row y+1, col 1
     serial_put(27)
     serial_put(91)
     serial_write_num(y + 1)
@@ -1092,7 +1075,6 @@ fn vro_render() -> void {
     serial_put(72)
 
     if filerow < total {
-      // Draw the line content
       let off = vro_row_offset(filerow)
       let rl = vro_row_length(filerow)
       let c = 0
@@ -1101,17 +1083,15 @@ fn vro_render() -> void {
         c = c + 1
       }
     } else {
-      // Empty line: draw ~ marker
       serial_put(126)
     }
-    // Clear to end of line
     serial_put(27)
     serial_put(91)
     serial_put(75)
     y = y + 1
   }
 
-  // Draw status bar at row 24
+  // Status bar
   serial_put(27)
   serial_put(91)
   serial_put(50)
@@ -1119,38 +1099,31 @@ fn vro_render() -> void {
   serial_put(59)
   serial_put(49)
   serial_put(72)
-  // Reverse video
   serial_put(27)
   serial_put(91)
   serial_put(55)
   serial_put(109)
-  // Filename
   serial_write_cstr(" VRO ")
   serial_write_cstr(VRO_NAME)
-  // Dirty marker
   if vro_dirty() != 0 {
     serial_put(42)
   } else {
     serial_put(32)
   }
-  // Pad and show position
   serial_write_cstr("  Ln ")
   serial_write_num(vro_row() + 1)
   serial_write_cstr(" Col ")
   serial_write_num(vro_col() + 1)
   serial_write_cstr(" / ")
   serial_write_num(total)
-  // Clear to end of line
   serial_put(27)
   serial_put(91)
   serial_put(75)
-  // Reset attributes
   serial_put(27)
   serial_put(91)
   serial_put(48)
   serial_put(109)
 
-  // Position cursor at the right spot
   let cur_row = vro_row() - scroll + 1
   let cur_col = vro_col() + 1
   serial_put(27)
@@ -1159,7 +1132,6 @@ fn vro_render() -> void {
   serial_put(59)
   serial_write_num(cur_col)
   serial_put(72)
-  // Show cursor
   serial_put(27)
   serial_put(91)
   serial_put(63)
@@ -1169,8 +1141,6 @@ fn vro_render() -> void {
   return
 }
 
-// --- save -------------------------------------------------------------------
-
 fn vro_save() -> Int {
   let fi = vro_file_idx()
   if fi >= 0 {
@@ -1178,7 +1148,6 @@ fn vro_save() -> Int {
     vro_set_dirty(0)
     return 0
   }
-  // Built-in file: create a new FS entry
   let p = fs_resolve_parent(VRO_NAME)
   if p == -2 {
     return -1
@@ -1193,8 +1162,6 @@ fn vro_save() -> Int {
   return 0
 }
 
-// --- main editor loop -------------------------------------------------------
-
 fn vro_run(name: Int) -> void {
   if name == 0 {
     serial_write_cstr("usage: vro <file>")
@@ -1202,19 +1169,18 @@ fn vro_run(name: Int) -> void {
     return
   }
 
-  // Load file content into VRO_BUF
   let file_idx = -1
-  if cstr_eq(name, FILE_NOTES) {
+  if cstr_eq_ci(name, FILE_NOTES) {
     cstr_copy(VRO_BUF, EDIT_BUF, VRO_BUF_SIZE - 1)
     let n = 0
     while load8(EDIT_BUF + n) != 0 {
       n = n + 1
     }
     vro_set_len(n)
-  } else if cstr_eq(name, FILE_README) {
+  } else if cstr_eq_ci(name, FILE_README) {
     let n = cstr_copy(VRO_BUF, DATA_README, VRO_BUF_SIZE - 1)
     vro_set_len(n)
-  } else if cstr_eq(name, FILE_ABOUT) {
+  } else if cstr_eq_ci(name, FILE_ABOUT) {
     let n = cstr_copy(VRO_BUF, DATA_ABOUT, VRO_BUF_SIZE - 1)
     vro_set_len(n)
   } else {
@@ -1245,33 +1211,27 @@ fn vro_run(name: Int) -> void {
     vro_set_len(n)
   }
 
-  // Store filename
   cstr_copy(VRO_NAME, name, 31)
   vro_meta_load(0, 0, vro_len(), 0, 0, file_idx)
 
-  // Switch to alternate screen
   serial_write_cstr("\x1b[?1049h")
-
-  // Initial render
   vro_render()
 
-  // Editor loop
   let quit = false
   while !quit {
-    let ch = keyboard_get()
+    let ch = serial_get_key()
     if ch == 0 {
       continue
     }
 
-    // Ctrl-Q = quit
     if ch == 17 {
       if vro_dirty() != 0 {
         serial_write_cstr("\x1b[?1049l")
-        serial_write_cstr("vro: unsaved changes. Press Ctrl-Q again to discard, any other key to resume.")
+        serial_write_cstr("vro: unsaved changes. Ctrl-Q again to discard, any key to resume.")
         serial_nl()
-        let ch2 = keyboard_get()
+        let ch2 = serial_get_key()
         while ch2 == 0 {
-          ch2 = keyboard_get()
+          ch2 = serial_get_key()
         }
         if ch2 == 17 {
           return
@@ -1280,13 +1240,12 @@ fn vro_run(name: Int) -> void {
         vro_render()
         continue
       }
+      serial_write_cstr("\x1b[?1049l")
       return
     }
 
-    // Ctrl-S = save
     if ch == 19 {
       if vro_save() == 0 {
-        // Brief flash status
         serial_put(27)
         serial_put(91)
         serial_put(50)
@@ -1308,7 +1267,6 @@ fn vro_run(name: Int) -> void {
         serial_put(91)
         serial_put(48)
         serial_put(109)
-        // Re-position cursor
         let cur_row = vro_row() - vro_scroll() + 1
         let cur_col = vro_col() + 1
         serial_put(27)
@@ -1321,7 +1279,6 @@ fn vro_run(name: Int) -> void {
       continue
     }
 
-    // Arrow keys and special keys
     if ch == KEY_LEFT {
       vro_move_left()
       vro_render()
@@ -1368,21 +1325,18 @@ fn vro_run(name: Int) -> void {
       continue
     }
 
-    // Enter = newline
     if ch == 13 || ch == 10 {
       vro_insert_newline()
       vro_render()
       continue
     }
 
-    // Backspace
     if ch == 8 || ch == 127 {
       vro_backspace()
       vro_render()
       continue
     }
 
-    // Printable characters
     if ch >= 32 && ch < 127 {
       vro_insert_char(ch)
       vro_render()
@@ -1390,7 +1344,6 @@ fn vro_run(name: Int) -> void {
     }
   }
 
-  // Switch back to main screen
   serial_write_cstr("\x1b[?1049l")
   return
 }
@@ -1485,212 +1438,83 @@ fn arg_at(idx: Int) -> Int {
   return LINE_BUF + i
 }
 
-// --- PS/2 keyboard ----------------------------------------------------------
-// Handles scancode set 1 with:
-//   - Extended scancodes (0xE0 prefix) for arrow keys, Home, End, Delete, Page Up/Down
-//   - Ctrl modifier (0x1D press, 0x9D release)
-//   - Shift modifier (0x2A/0x36 press, 0xAA/0xB6 release)
-//   - Shifted symbol mapping (number row, brackets, etc.)
+// --- serial input -----------------------------------------------------------
+// Reads from COM1. Parses ANSI escape sequences for arrow keys etc.
+// Returns special key codes (KEY_LEFT etc.) for escape sequences,
+// or raw byte for printable characters.
 
-fn keyboard_init() -> void {
-  outb(0x60, 0xF4)
-  while (inb(0x64) & 0x01) == 0 {
-    outb(0x80, 0)
-  }
-  inb(0x60)
-
-  // Clear main table
-  let i = 0
-  while i < 256 {
-    store8(KBD_TABLE + i, 0)
-    store8(KBD_SHIFT_TABLE + i, 0)
-    i = i + 1
-  }
-
-  // Main scancode table (lowercase)
-  store8(KBD_TABLE + 0x02, 49)
-  store8(KBD_TABLE + 0x03, 50)
-  store8(KBD_TABLE + 0x04, 51)
-  store8(KBD_TABLE + 0x05, 52)
-  store8(KBD_TABLE + 0x06, 53)
-  store8(KBD_TABLE + 0x07, 54)
-  store8(KBD_TABLE + 0x08, 55)
-  store8(KBD_TABLE + 0x09, 56)
-  store8(KBD_TABLE + 0x0A, 57)
-  store8(KBD_TABLE + 0x0B, 48)
-  store8(KBD_TABLE + 0x0C, 45)
-  store8(KBD_TABLE + 0x0D, 61)
-  store8(KBD_TABLE + 0x10, 113)
-  store8(KBD_TABLE + 0x11, 119)
-  store8(KBD_TABLE + 0x12, 101)
-  store8(KBD_TABLE + 0x13, 114)
-  store8(KBD_TABLE + 0x14, 116)
-  store8(KBD_TABLE + 0x15, 121)
-  store8(KBD_TABLE + 0x16, 117)
-  store8(KBD_TABLE + 0x17, 105)
-  store8(KBD_TABLE + 0x18, 111)
-  store8(KBD_TABLE + 0x19, 112)
-  store8(KBD_TABLE + 0x1A, 91)
-  store8(KBD_TABLE + 0x1B, 93)
-  store8(KBD_TABLE + 0x1E, 97)
-  store8(KBD_TABLE + 0x1F, 115)
-  store8(KBD_TABLE + 0x20, 100)
-  store8(KBD_TABLE + 0x21, 102)
-  store8(KBD_TABLE + 0x22, 103)
-  store8(KBD_TABLE + 0x23, 104)
-  store8(KBD_TABLE + 0x24, 106)
-  store8(KBD_TABLE + 0x25, 107)
-  store8(KBD_TABLE + 0x26, 108)
-  store8(KBD_TABLE + 0x27, 59)
-  store8(KBD_TABLE + 0x28, 39)
-  store8(KBD_TABLE + 0x29, 96)
-  store8(KBD_TABLE + 0x2B, 92)
-  store8(KBD_TABLE + 0x2C, 122)
-  store8(KBD_TABLE + 0x2D, 120)
-  store8(KBD_TABLE + 0x2E, 99)
-  store8(KBD_TABLE + 0x2F, 118)
-  store8(KBD_TABLE + 0x30, 98)
-  store8(KBD_TABLE + 0x31, 110)
-  store8(KBD_TABLE + 0x32, 109)
-  store8(KBD_TABLE + 0x33, 44)
-  store8(KBD_TABLE + 0x34, 46)
-  store8(KBD_TABLE + 0x35, 47)
-  store8(KBD_TABLE + 0x39, 32)
-  store8(KBD_TABLE + 0x1C, 13)
-  store8(KBD_TABLE + 0x0E, 8)
-
-  // Shifted scancode table
-  store8(KBD_SHIFT_TABLE + 0x02, 33)
-  store8(KBD_SHIFT_TABLE + 0x03, 64)
-  store8(KBD_SHIFT_TABLE + 0x04, 35)
-  store8(KBD_SHIFT_TABLE + 0x05, 36)
-  store8(KBD_SHIFT_TABLE + 0x06, 37)
-  store8(KBD_SHIFT_TABLE + 0x07, 94)
-  store8(KBD_SHIFT_TABLE + 0x08, 38)
-  store8(KBD_SHIFT_TABLE + 0x09, 42)
-  store8(KBD_SHIFT_TABLE + 0x0A, 40)
-  store8(KBD_SHIFT_TABLE + 0x0B, 41)
-  store8(KBD_SHIFT_TABLE + 0x0C, 95)
-  store8(KBD_SHIFT_TABLE + 0x0D, 43)
-  store8(KBD_SHIFT_TABLE + 0x1A, 123)
-  store8(KBD_SHIFT_TABLE + 0x1B, 125)
-  store8(KBD_SHIFT_TABLE + 0x27, 58)
-  store8(KBD_SHIFT_TABLE + 0x28, 34)
-  store8(KBD_SHIFT_TABLE + 0x29, 126)
-  store8(KBD_SHIFT_TABLE + 0x2B, 124)
-  store8(KBD_SHIFT_TABLE + 0x33, 60)
-  store8(KBD_SHIFT_TABLE + 0x34, 62)
-  store8(KBD_SHIFT_TABLE + 0x35, 63)
-  store8(KBD_SHIFT_TABLE + 0x1C, 13)
-  store8(KBD_SHIFT_TABLE + 0x0E, 8)
-  store8(KBD_SHIFT_TABLE + 0x39, 32)
-  return
+fn serial_data_ready() -> Int {
+  return inb(COM1_PORT + 5) & 0x01
 }
 
-fn keyboard_get() -> Int {
-  while (inb(0x64) & 0x01) == 0 {
-    outb(0x80, 0)
+fn serial_read_byte() -> Int {
+  while (inb(COM1_PORT + 5) & 0x01) == 0 {
+    pause()
   }
-  let sc = inb(0x60)
+  return inb(COM1_PORT)
+}
 
-  // Extended scancode prefix (arrow keys, Home, End, Delete, Page Up/Down)
-  if sc == 0xE0 {
-    while (inb(0x64) & 0x01) == 0 {
-      outb(0x80, 0)
-    }
-    let ext = inb(0x60)
-    if ext >= 128 {
-      return 0
-    }
-    if ext == 0x4B {
-      return KEY_LEFT
-    }
-    if ext == 0x4D {
-      return KEY_RIGHT
-    }
-    if ext == 0x48 {
-      return KEY_UP
-    }
-    if ext == 0x50 {
-      return KEY_DOWN
-    }
-    if ext == 0x47 {
-      return KEY_HOME
-    }
-    if ext == 0x4F {
-      return KEY_END
-    }
-    if ext == 0x49 {
-      return KEY_PGUP
-    }
-    if ext == 0x51 {
-      return KEY_PGDN
-    }
-    if ext == 0x53 {
-      return KEY_DELETE
-    }
-    return 0
+// Read a key from serial. Handles ANSI escape sequences:
+//   \x1b[A = up    \x1b[B = down   \x1b[C = right  \x1b[D = left
+//   \x1b[H = home  \x1b[F = end
+//   \x1b[5~ = pgup \x1b[6~ = pgdn   \x1b[3~ = delete
+// Returns the raw byte for printable chars, or KEY_* constants.
+fn serial_get_key() -> Int {
+  let b = serial_read_byte()
+
+  if b != 27 {
+    return b
   }
 
-  // Key release
-  if sc >= 128 {
-    if sc == 0x9D {
-      kbd_ctrl = 0
-    }
-    if sc == 0xAA || sc == 0xB6 {
-      kbd_shift = 0
-    }
-    return 0
+  // Escape sequence: read next byte
+  let b2 = serial_read_byte()
+  if b2 != 91 {
+    // Not a CSI sequence, return escape
+    return 27
   }
 
-  // Modifier key presses
-  if sc == 0x1D {
-    kbd_ctrl = 1
-    return 0
+  // CSI sequence: read the final byte(s)
+  let b3 = serial_read_byte()
+  if b3 == 65 {
+    return KEY_UP
   }
-  if sc == 0x2A || sc == 0x36 {
-    kbd_shift = 1
-    return 0
+  if b3 == 66 {
+    return KEY_DOWN
   }
-  if sc == 0x3A {
-    return 0
+  if b3 == 67 {
+    return KEY_RIGHT
   }
-  if sc == 0x1C {
-    return 13
+  if b3 == 68 {
+    return KEY_LEFT
   }
-  if sc == 0x0E {
-    return 8
+  if b3 == 72 {
+    return KEY_HOME
   }
-
-  // Ctrl + letter = control character
-  if kbd_ctrl != 0 {
-    let ch = load8(KBD_TABLE + sc)
-    if ch >= 97 && ch <= 122 {
-      return ch & 0x1F
-    }
-    return 0
+  if b3 == 70 {
+    return KEY_END
   }
-
-  // Shift handling
-  if kbd_shift != 0 {
-    let sh = load8(KBD_SHIFT_TABLE + sc)
-    if sh != 0 {
-      return sh
-    }
-    let ch = load8(KBD_TABLE + sc)
-    if ch >= 97 && ch <= 122 {
-      return ch - 32
-    }
-    return ch
+  if b3 == 51 {
+    // \x1b[3~ = delete
+    serial_read_byte()
+    return KEY_DELETE
   }
-
-  return load8(KBD_TABLE + sc)
+  if b3 == 53 {
+    // \x1b[5~ = page up
+    serial_read_byte()
+    return KEY_PGUP
+  }
+  if b3 == 54 {
+    // \x1b[6~ = page down
+    serial_read_byte()
+    return KEY_PGDN
+  }
+  return 0
 }
 
 fn read_line() -> Int {
   let line_len = 0
   while true {
-    let ch = keyboard_get()
+    let ch = serial_get_key()
     if ch == 0 {
       continue
     }
