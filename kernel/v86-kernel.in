@@ -17,7 +17,13 @@ const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.
 const EDIT_BUF = 0x6000
 const EDIT_BUF_SIZE = 1024
 
+const HIST_BUF = 0x7500
+const HIST_MAX = 16
+const HIST_ENTRY_SIZE = 80
+
 var edit_len: Int = 0
+var hist_count: Int = 0
+var boot_tick: Int = 0
 
 fn kernel_entry(mb_info: Int) -> Int {
   keyboard_init()
@@ -35,6 +41,7 @@ fn kernel_entry(mb_info: Int) -> Int {
     if len == 0 {
       continue
     }
+    history_add(LINE_BUF)
     if match_command("help") {
       cmd_help()
     } else if match_command("about") {
@@ -59,8 +66,17 @@ fn kernel_entry(mb_info: Int) -> Int {
       serial_nl()
     } else if match_command("clear") {
       serial_write_cstr("\x1b[2J\x1b[H")
-    } else if match_command("edit") {
+    } else if match_command("edit") || match_command("vro") {
       cmd_edit(arg_at(1))
+    } else if match_command("history") {
+      cmd_history()
+    } else if match_command("uname") {
+      serial_write_cstr("Space v86 32-bit .in kernel")
+      serial_nl()
+    } else if match_command("reset") {
+      serial_write_cstr("resetting")
+      serial_nl()
+      outb(0x64, 0xFE)
     } else if match_command("halt") {
       serial_write_cstr("halting")
       serial_nl()
@@ -89,27 +105,35 @@ fn print_welcome() -> void {
 }
 
 fn cmd_help() -> void {
-  serial_write_cstr("help  - this message")
+  serial_write_cstr("help    - this message")
   serial_nl()
-  serial_write_cstr("about - what Space is and why it is different")
+  serial_write_cstr("about   - what Space is and why it is different")
   serial_nl()
-  serial_write_cstr("info  - show boot info")
+  serial_write_cstr("info    - show boot info")
   serial_nl()
-  serial_write_cstr("ls    - list root files")
+  serial_write_cstr("ls      - list root files")
   serial_nl()
-  serial_write_cstr("cat   - print a file")
+  serial_write_cstr("cat     - print a file")
   serial_nl()
-  serial_write_cstr("echo  - print text")
+  serial_write_cstr("echo    - print text")
   serial_nl()
-  serial_write_cstr("clear - clear the screen")
+  serial_write_cstr("clear   - clear the screen")
   serial_nl()
-  serial_write_cstr("pwd   - print working directory")
+  serial_write_cstr("pwd     - print working directory")
   serial_nl()
-  serial_write_cstr("whoami- print current user")
+  serial_write_cstr("whoami  - print current user")
   serial_nl()
-  serial_write_cstr("edit  - edit a scratch file")
+  serial_write_cstr("edit    - edit notes.txt")
   serial_nl()
-  serial_write_cstr("halt  - stop the cpu")
+  serial_write_cstr("vro     - same as edit")
+  serial_nl()
+  serial_write_cstr("history - show previous commands")
+  serial_nl()
+  serial_write_cstr("uname   - print kernel name")
+  serial_nl()
+  serial_write_cstr("reset   - reboot the machine")
+  serial_nl()
+  serial_write_cstr("halt    - stop the cpu")
   serial_nl()
   return
 }
@@ -168,10 +192,13 @@ fn cmd_edit(name: Int) -> void {
     serial_nl()
     return
   }
-  serial_write_cstr("Enter text. Type '.exit' to save, '.cancel' to discard.")
+  serial_write_cstr("VRO editor: type lines, Backspace to correct, '.exit' to save, '.cancel' to discard.")
   serial_nl()
-  edit_len = 0
-  store8(EDIT_BUF, 0)
+  serial_write_cstr("Current content:")
+  serial_nl()
+  serial_write_cstr(EDIT_BUF)
+  serial_write_cstr("---")
+  serial_nl()
   while true {
     serial_put(43)
     serial_put(32)
@@ -202,6 +229,36 @@ fn cmd_edit(name: Int) -> void {
   serial_write_num(edit_len)
   serial_write_cstr(" bytes")
   serial_nl()
+  return
+}
+
+fn history_add(cmd: Int) -> void {
+  if hist_count >= HIST_MAX {
+    let i = 0
+    while i < HIST_MAX - 1 {
+      cstr_copy(HIST_BUF + i * HIST_ENTRY_SIZE, HIST_BUF + (i + 1) * HIST_ENTRY_SIZE, HIST_ENTRY_SIZE - 1)
+      i = i + 1
+    }
+    hist_count = HIST_MAX - 1
+  }
+  let slot = HIST_BUF + hist_count * HIST_ENTRY_SIZE
+  cstr_copy(slot, cmd, HIST_ENTRY_SIZE - 1)
+  hist_count = hist_count + 1
+  return
+}
+
+fn cmd_history() -> void {
+  serial_write_cstr("command history:")
+  serial_nl()
+  let i = 0
+  while i < hist_count {
+    let slot = HIST_BUF + i * HIST_ENTRY_SIZE
+    serial_write_num(i + 1)
+    serial_write_cstr("  ")
+    serial_write_cstr(slot)
+    serial_nl()
+    i = i + 1
+  }
   return
 }
 
