@@ -105,13 +105,6 @@ fn proc_wait(pid: Int) -> Int {
   return load64(base + PROC_OFF_EXIT_CODE)
 }
 
-// Return the current status of `pid`, or -1 if out of range.
-fn proc_status(pid: Int) -> Int {
-  if pid >= proc_count { return -1 }
-  let base = proc_table + pid * PROC_SIZE
-  return load64(base + PROC_OFF_STATUS)
-}
-
 // Print all processes and their status (for the `ps` shell command).
 fn proc_list(port: Int) -> void {
   serial_write_cstr(port, "  PID  DOMAIN  THREAD  STATUS   NAME")
