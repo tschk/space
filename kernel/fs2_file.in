@@ -163,7 +163,11 @@ fn sparkfs_create(path: Int, is_dir: Int) -> Int {
   while ino < ino_count {
     let addr = sf_inode_addr(ino)
     if load32(addr + SF_IN_TYPE) == SF_TYPE_FREE {
-      sf_zero_block(addr)
+      let j = 0
+      while j < SF_INODE_SIZE {
+        store8(addr + j, 0)
+        j = j + 1
+      }
       store32(addr + SF_IN_TYPE, is_dir)
       store32(addr + SF_IN_MODE, 0o644)
       if is_dir == SF_TYPE_DIR {
@@ -171,9 +175,13 @@ fn sparkfs_create(path: Int, is_dir: Int) -> Int {
       }
       store64(addr + SF_IN_SIZE, 0)
       store32(addr + SF_IN_NLINK, 1)
+      store64(addr + SF_IN_CTIME, ticks)
+      store64(addr + SF_IN_MTIME, ticks)
+      store64(addr + SF_IN_ATIME, ticks)
+      store32(addr + SF_IN_INLINE, 0)
       sf_write_inode(ino)
       sf_dir_add(parent, name, ino, is_dir)
-      return 0
+      return ino
     }
     ino = ino + 1
   }
@@ -195,6 +203,16 @@ fn sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
   let size = load64(addr + SF_IN_SIZE)
   if max < size {
     size = max
+  }
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < size {
+      store8(buf + i, load8(addr + SF_IN_DIRECT + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_ATIME, ticks)
+    sf_write_inode(ino)
+    return size
   }
   let n = 0
   while n < size {
@@ -225,11 +243,7 @@ fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
   }
   let ino = sf_lookup_path(path)
   if ino < 0 {
-    let rc = sparkfs_create(path, SF_TYPE_FILE)
-    if rc != 0 {
-      return -1
-    }
-    ino = sf_lookup_path(path)
+    ino = sparkfs_create(path, SF_TYPE_FILE)
     if ino < 0 {
       return -1
     }
@@ -239,6 +253,38 @@ fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
     return -1
   }
   let old_size = load64(addr + SF_IN_SIZE)
+
+  if size <= SF_INLINE_MAX {
+    let i = 0
+    while i < size {
+      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_SIZE, size)
+    store32(addr + SF_IN_INLINE, 1)
+    store64(addr + SF_IN_MTIME, ticks)
+    sf_write_inode(ino)
+    return 0
+  }
+
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let bno = sf_alloc_block()
+    if bno < 0 {
+      return -1
+    }
+    sf_read_block(bno, sf_block_buf)
+    let i = 0
+    while i < old_size {
+      store8(sf_block_buf + i, load8(addr + SF_IN_DIRECT + i))
+      i = i + 1
+    }
+    sf_write_block(bno, sf_block_buf)
+    store64(addr + SF_IN_DIRECT, bno)
+    store32(addr + SF_IN_INLINE, 0)
+    store64(addr + SF_IN_INDIRECT, 0)
+    store64(addr + SF_IN_DINDIRECT, 0)
+  }
+
   let n = 0
   while n < size {
     let fbn = n / SF_BLOCK_SIZE
@@ -267,6 +313,7 @@ fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
   if size > old_size {
     store64(addr + SF_IN_SIZE, size)
   }
+  store64(addr + SF_IN_MTIME, ticks)
   sf_write_inode(ino)
   return 0
 }
@@ -315,6 +362,77 @@ fn sparkfs_delete(path: Int) -> Int {
   return 0
 }
 
+fn sparkfs_mkdir(path: Int) -> Int {
+  return sparkfs_create(path, SF_TYPE_DIR)
+}
+
+fn sparkfs_rmdir(path: Int) -> Int {
+  let ino = sf_lookup_path(path)
+  if ino <= 0 {
+    return -1
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+    return -1
+  }
+  return sparkfs_delete(path)
+}
+
+fn sparkfs_rename(old_path: Int, new_path: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let old_ino = sf_lookup_path(old_path)
+  if old_ino <= 0 {
+    return -1
+  }
+  let old_addr = sf_inode_addr(old_ino)
+  let old_type = load32(old_addr + SF_IN_TYPE)
+  if old_type != SF_TYPE_FILE && old_type != SF_TYPE_DIR {
+    return -1
+  }
+  let new_name = alloc(SF_NAME_MAX + 1)
+  let new_parent = sf_lookup_parent(new_path, new_name)
+  if new_parent < 0 {
+    return -1
+  }
+  let tmp = alloc(4)
+  if sf_dir_find(new_parent, new_name, tmp) >= 0 {
+    return -1
+  }
+  let old_name = alloc(SF_NAME_MAX + 1)
+  let old_parent = sf_lookup_parent(old_path, old_name)
+  if old_parent < 0 {
+    return -1
+  }
+  if sf_dir_add(new_parent, new_name, old_ino, old_type) != 0 {
+    return -1
+  }
+  sf_dir_remove(old_parent, old_name)
+  store64(old_addr + SF_IN_MTIME, ticks)
+  sf_write_inode(old_ino)
+  return 0
+}
+
+fn sparkfs_stat(path: Int, stat_buf: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = sf_inode_addr(ino)
+  store32(stat_buf + SF_ST_TYPE, load32(addr + SF_IN_TYPE))
+  store32(stat_buf + SF_ST_MODE, load32(addr + SF_IN_MODE))
+  store64(stat_buf + SF_ST_SIZE, load64(addr + SF_IN_SIZE))
+  store32(stat_buf + SF_ST_NLINK, load32(addr + SF_IN_NLINK))
+  store64(stat_buf + SF_ST_CTIME, load64(addr + SF_IN_CTIME))
+  store64(stat_buf + SF_ST_MTIME, load64(addr + SF_IN_MTIME))
+  store64(stat_buf + SF_ST_ATIME, load64(addr + SF_IN_ATIME))
+  return 0
+}
+
 fn sparkfs_list(path: Int, port: Int) -> void {
   if sf_disk_ready == 0 {
     serial_write_cstr(port, "  (no disk)")
@@ -345,25 +463,31 @@ fn sparkfs_list(path: Int, port: Int) -> void {
         let name_len = load8(sf_block_buf + off + 4)
         let etype = load8(sf_block_buf + off + 5)
         if eino == 0 {
-          break
-        }
-        serial_write_cstr(port, "  ")
-        let i = 0
-        while i < name_len {
-          serial_put(port, load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
-          i = i + 1
-        }
-        serial_write_cstr(port, "  size=")
-        let eaddr = sf_inode_addr(eino)
-        serial_write_dec_wide(port, load64(eaddr + SF_IN_SIZE))
-        serial_write_cstr(port, "  type=")
-        if etype == SF_TYPE_DIR {
-          serial_write_cstr(port, "dir")
+          off = SF_BLOCK_SIZE
         } else {
-          serial_write_cstr(port, "file")
+          serial_write_cstr(port, "  ")
+          let i = 0
+          while i < name_len {
+            serial_put(port, load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
+            i = i + 1
+          }
+          serial_write_cstr(port, "  size=")
+          let eaddr = sf_inode_addr(eino)
+          serial_write_dec_wide(port, load64(eaddr + SF_IN_SIZE))
+          serial_write_cstr(port, "  type=")
+          if etype == SF_TYPE_DIR {
+            serial_write_cstr(port, "dir")
+          } else {
+            serial_write_cstr(port, "file")
+          }
+          if load32(eaddr + SF_IN_INLINE) != 0 {
+            serial_write_cstr(port, "  inline")
+          }
+          serial_write_cstr(port, "  mtime=")
+          serial_write_hex(port, load64(eaddr + SF_IN_MTIME))
+          serial_nl(port)
+          off = off + SF_DIR_ENTRY_SIZE
         }
-        serial_nl(port)
-        off = off + sf_dir_entry_size(name_len)
       }
     }
     fbn = fbn + 1

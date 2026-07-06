@@ -17,6 +17,11 @@ fn fs_list(port: Int) -> void {
   return
 }
 
+fn fs_list_path(path: Int, port: Int) -> void {
+  sparkfs_list(path, port)
+  return
+}
+
 fn fs_read_file(name: Int, buf: Int) -> Int {
   return sparkfs_read(name, buf, 0x7FFFFFFF)
 }
@@ -27,6 +32,22 @@ fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
 
 fn fs_delete(name: Int) -> Int {
   return sparkfs_delete(name)
+}
+
+fn fs_mkdir(path: Int) -> Int {
+  return sparkfs_mkdir(path)
+}
+
+fn fs_rmdir(path: Int) -> Int {
+  return sparkfs_rmdir(path)
+}
+
+fn fs_rename(old: Int, new: Int) -> Int {
+  return sparkfs_rename(old, new)
+}
+
+fn fs_stat(path: Int, buf: Int) -> Int {
+  return sparkfs_stat(path, buf)
 }
 
 fn fs_open_path(path: Int) -> Int {

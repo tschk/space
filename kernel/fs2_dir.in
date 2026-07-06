@@ -4,13 +4,11 @@ package space.kernel
 
 // --- directory entries ------------------------------------------------------
 
-fn sf_dir_entry_size(name_len: Int) -> Int {
-  let sz = 8 + name_len
-  if (sz & 7) != 0 {
-    sz = sz + 8 - (sz & 7)
-  }
-  return sz
+fn sf_dir_entry_size(nlen: Int) -> Int {
+  return 32
 }
+
+const SF_DIR_ENTRY_SIZE = 32
 
 // Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
 fn sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
@@ -24,11 +22,8 @@ fn sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
       let off = 0
       while off < SF_BLOCK_SIZE {
         let eino = load32(sf_block_buf + off)
-        let name_len = load8(sf_block_buf + off + 4)
-        if eino == 0 {
-          break
-        }
-        if name_len > 0 && name_len <= SF_NAME_MAX {
+        if eino != 0 {
+          let name_len = load8(sf_block_buf + off + 4)
           let is_match = 1
           let i = 0
           while i < name_len {
@@ -36,19 +31,19 @@ fn sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
             let b = load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i)
             if a != b {
               is_match = 0
-              break
             }
             i = i + 1
           }
-          if is_match != 0 && load8(name + name_len) == 0 {
-            store32(out_ino, eino)
-            return fbn * SF_BLOCK_SIZE + off
+          if is_match != 0 {
+            if load8(name + name_len) == 0 {
+              store32(out_ino, eino)
+              return fbn * SF_BLOCK_SIZE + off
+            }
           }
         }
-        let esz = sf_dir_entry_size(name_len)
-        off = off + esz
-        if esz == 0 {
-          break
+        off = off + SF_DIR_ENTRY_SIZE
+        if off > SF_BLOCK_SIZE {
+          off = SF_BLOCK_SIZE
         }
       }
     }
@@ -84,20 +79,21 @@ fn sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> Int {
       let name_len = load8(sf_block_buf + off + 4)
       if eino == 0 {
         let new_len = 0
-        let i = 0
-        while i < SF_NAME_MAX {
-          if load8(name + i) == 0 {
-            break
+        let k = 0
+        while k < SF_NAME_MAX {
+          if load8(name + k) == 0 {
+            k = SF_NAME_MAX
+          } else {
+            new_len = new_len + 1
+            k = k + 1
           }
-          new_len = new_len + 1
-          i = i + 1
         }
-        let esz = sf_dir_entry_size(new_len)
+        let esz = SF_DIR_ENTRY_SIZE
         if off + esz <= SF_BLOCK_SIZE {
           store32(sf_block_buf + off, entry_ino)
           store8(sf_block_buf + off + 4, new_len)
           store8(sf_block_buf + off + 5, entry_type)
-          i = 0
+          let i = 0
           while i < new_len {
             store8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i, load8(name + i))
             i = i + 1
@@ -112,7 +108,7 @@ fn sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> Int {
         }
         break
       }
-      off = off + sf_dir_entry_size(name_len)
+      off = off + SF_DIR_ENTRY_SIZE
       if off > SF_BLOCK_SIZE {
         break
       }
@@ -133,7 +129,7 @@ fn sf_dir_remove(dir_ino: Int, name: Int) -> Int {
   let boff = off & (SF_BLOCK_SIZE - 1)
   let bno = sf_inode_block(dir_ino, fbn)
   sf_read_block(bno, sf_block_buf)
-  let esz = sf_dir_entry_size(load8(sf_block_buf + boff + 4))
+  let esz = SF_DIR_ENTRY_SIZE
   let i = 0
   while i < esz {
     store8(sf_block_buf + boff + i, 0)

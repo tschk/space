@@ -64,6 +64,17 @@ const SF_IN_NLINK = 56
 const SF_IN_DIRECT = 64
 const SF_IN_INDIRECT = 160
 const SF_IN_DINDIRECT = 168
+const SF_IN_INLINE = 176
+const SF_INLINE_MAX = 96
+
+// Stat buffer offsets
+const SF_ST_TYPE = 0
+const SF_ST_MODE = 4
+const SF_ST_SIZE = 8
+const SF_ST_NLINK = 16
+const SF_ST_CTIME = 24
+const SF_ST_MTIME = 32
+const SF_ST_ATIME = 40
 
 // --- runtime state ----------------------------------------------------------
 

@@ -95,6 +95,53 @@ fn line_prefix(prefix: Int) -> Int {
   return i
 }
 
+// Return the index of the first argument after the command, or 0 if none.
+fn cmd_arg() -> Int {
+  let i = 0
+  while load8(line + i) != 0 && load8(line + i) != 32 {
+    i = i + 1
+  }
+  if load8(line + i) == 32 {
+    return i + 1
+  }
+  return 0
+}
+
+// Return the index of the next argument after `start`, or 0 if none.
+fn next_arg(start: Int) -> Int {
+  let i = start
+  while load8(line + i) != 0 && load8(line + i) != 32 {
+    i = i + 1
+  }
+  if load8(line + i) == 32 {
+    return i + 1
+  }
+  return 0
+}
+
+// Print the value of a stat buffer returned by fs_stat.
+fn print_stat(port: Int, stat_buf: Int) -> void {
+  serial_write_cstr(port, "  type=")
+  let ty = load32(stat_buf + SF_ST_TYPE)
+  if ty == SF_TYPE_DIR {
+    serial_write_cstr(port, "dir")
+  } else if ty == SF_TYPE_FILE {
+    serial_write_cstr(port, "file")
+  } else {
+    serial_write_cstr(port, "?")
+  }
+  serial_write_cstr(port, "  mode=0x")
+  serial_write_hex(port, load32(stat_buf + SF_ST_MODE))
+  serial_write_cstr(port, "  size=")
+  serial_write_dec_wide(port, load64(stat_buf + SF_ST_SIZE))
+  serial_write_cstr(port, "  nlink=")
+  serial_write_dec_wide(port, load32(stat_buf + SF_ST_NLINK))
+  serial_write_cstr(port, "  mtime=0x")
+  serial_write_hex(port, load64(stat_buf + SF_ST_MTIME))
+  serial_nl(port)
+  return
+}
+
 // A self-test of array indexing: sum of squares 0..7 == 140 (0x8C).
 fn array_selftest() -> Int {
   let a = alloc(64)
@@ -165,7 +212,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls write read rm libc usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
+      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm write read mv stat libc usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
       serial_nl(port)
 
     } else if line_eq("snapshot") != 0 {
@@ -296,8 +343,86 @@ fn shell(port: Int) -> void {
       fs_format()
       serial_write_cstr(port, "  disk formatted")
       serial_nl(port)
+    } else if line_prefix("ls ") >= 0 {
+      let ls_arg = line_prefix("ls ")
+      fs_list_path(line + ls_arg, port)
     } else if line_eq("ls") != 0 {
       fs_list(port)
+    } else if line_prefix("mkdir ") >= 0 {
+      let arg = line_prefix("mkdir ")
+      if fs_mkdir(line + arg) >= 0 {
+        serial_write_cstr(port, "  created")
+      } else {
+        serial_write_cstr(port, "  failed")
+      }
+      serial_nl(port)
+    } else if line_prefix("rmdir ") >= 0 {
+      let arg = line_prefix("rmdir ")
+      if fs_rmdir(line + arg) == 0 {
+        serial_write_cstr(port, "  removed")
+      } else {
+        serial_write_cstr(port, "  failed")
+      }
+      serial_nl(port)
+    } else if line_prefix("rm ") >= 0 {
+      let arg = line_prefix("rm ")
+      if fs_delete(line + arg) == 0 {
+        serial_write_cstr(port, "  deleted")
+      } else {
+        serial_write_cstr(port, "  failed")
+      }
+      serial_nl(port)
+    } else if line_prefix("read ") >= 0 {
+      let arg = line_prefix("read ")
+      let buf = alloc(4096)
+      let n = fs_read_file(line + arg, buf)
+      if n < 0 {
+        serial_write_cstr(port, "  failed")
+      } else {
+        let i = 0
+        while i < n {
+          serial_put(port, load8(buf + i))
+          i = i + 1
+        }
+      }
+      serial_nl(port)
+    } else if line_prefix("write ") >= 0 {
+      let arg1 = line_prefix("write ")
+      let arg2 = next_arg(arg1)
+      if arg2 != 0 {
+        store8(line + arg2 - 1, 0)
+        let len = strlen(line + arg2)
+        if fs_write_file(line + arg1, line + arg2, len) == 0 {
+          serial_write_cstr(port, "  written")
+        } else {
+          serial_write_cstr(port, "  failed")
+        }
+      } else {
+        serial_write_cstr(port, "  usage: write <path> <data>")
+      }
+      serial_nl(port)
+    } else if line_prefix("mv ") >= 0 {
+      let arg1 = line_prefix("mv ")
+      let arg2 = next_arg(arg1)
+      if arg2 != 0 {
+        if fs_rename(line + arg1, line + arg2) == 0 {
+          serial_write_cstr(port, "  renamed")
+        } else {
+          serial_write_cstr(port, "  failed")
+        }
+      } else {
+        serial_write_cstr(port, "  usage: mv <old> <new>")
+      }
+      serial_nl(port)
+    } else if line_prefix("stat ") >= 0 {
+      let arg = line_prefix("stat ")
+      let stat_buf = alloc(64)
+      if fs_stat(line + arg, stat_buf) == 0 {
+        print_stat(port, stat_buf)
+      } else {
+        serial_write_cstr(port, "  failed")
+        serial_nl(port)
+      }
     } else if line_eq("libc") != 0 {
       let rc = libc_selftest()
       if rc == 0 {

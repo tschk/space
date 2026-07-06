@@ -8,6 +8,17 @@ fn sf_inode_addr(ino: Int) -> Int {
   return sf_inodes + ino * SF_INODE_SIZE
 }
 
+fn sf_inode_is_inline(ino: Int) -> Int {
+  let addr = sf_inode_addr(ino)
+  return load32(addr + SF_IN_INLINE)
+}
+
+fn sf_inode_set_inline(ino: Int, is_inline: Int) -> void {
+  let addr = sf_inode_addr(ino)
+  store32(addr + SF_IN_INLINE, is_inline)
+  return
+}
+
 fn sf_read_inode(ino: Int) -> void {
   let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
   let ino_bytes = ino * SF_INODE_SIZE
@@ -44,6 +55,9 @@ fn sf_write_inode(ino: Int) -> void {
 // Return the data block number for file block `fbn`, or -1 if unallocated.
 fn sf_inode_block(ino: Int, fbn: Int) -> Int {
   let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_INLINE) != 0 {
+    return -1
+  }
   if fbn < SF_INODE_DIRECT {
     let b = load64(addr + SF_IN_DIRECT + fbn * 8)
     return b

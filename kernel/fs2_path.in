@@ -21,20 +21,17 @@ fn sf_last_slash(path: Int) -> Int {
   return last
 }
 
-// Copy the filename component from path into dst.
-fn sf_copy_name(dst: Int, path: Int, slash: Int) -> void {
-  let start = 0
-  if slash >= 0 {
-    start = slash + 1
-  }
+// Copy a NUL-terminated string from path into dst.
+fn sf_copy_name(dst: Int, path: Int) -> void {
   let i = 0
   while i < SF_NAME_MAX {
-    let c = load8(path + start + i)
+    let c = load8(path + i)
     store8(dst + i, c)
     if c == 0 {
-      return
+      i = SF_NAME_MAX
+    } else {
+      i = i + 1
     }
-    i = i + 1
   }
   store8(dst + SF_NAME_MAX, 0)
   return
@@ -56,16 +53,19 @@ fn sf_lookup_path(path: Int) -> Int {
   }
   while true {
     let j = 0
+    let seg_len = 0
     while j < SF_NAME_MAX {
       let c = load8(path + i + j)
       if c == 0 || c == 47 {
         store8(name_buf + j, 0)
-        break
+        j = SF_NAME_MAX
+      } else {
+        store8(name_buf + j, c)
+        seg_len = seg_len + 1
+        j = j + 1
       }
-      store8(name_buf + j, c)
-      j = j + 1
     }
-    if j == 0 {
+    if seg_len == 0 {
       return ino
     }
     let tmp = alloc(4)
@@ -89,7 +89,7 @@ fn sf_lookup_path(path: Int) -> Int {
 fn sf_lookup_parent(path: Int, name_out: Int) -> Int {
   let slash = sf_last_slash(path)
   if slash < 0 {
-    sf_copy_name(name_out, path, -1)
+    sf_copy_name(name_out, path)
     return 0
   }
   let parent_path = alloc(SF_NAME_MAX + 1)
@@ -99,6 +99,6 @@ fn sf_lookup_parent(path: Int, name_out: Int) -> Int {
     i = i + 1
   }
   store8(parent_path + i, 0)
-  sf_copy_name(name_out, path, slash)
+  sf_copy_name(name_out, path + slash + 1)
   return sf_lookup_path(parent_path)
 }
