@@ -5,34 +5,62 @@ package space.kernel
 const COM1_PORT = 0x3F8
 const KBD_TABLE = 0x3000
 
+const FILE_README = "README.md"
+const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a PS/2 keyboard and serial console.\n\nTry: help, ls, cat README.md, echo hello, about\n"
+
+const FILE_ABOUT = "ABOUT.md"
+const DATA_ABOUT = "Why Space is different\n\nSpace is a component-based operating system. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\n       .in          native language\n       Inauguration  compiler\n       SCI           component image format\n       Space         OS runtime\n       Nanokernel    hardware enforcement\n\nThere is no POSIX in the kernel. Linux, Darwin, and Windows compatibility are .in microservices that translate legacy concepts into Space primitives.\n"
+
+const FILE_NOTES = "notes.txt"
+const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.\n"
+
+const EDIT_BUF = 0x6000
+const EDIT_BUF_SIZE = 1024
+
+var edit_len: Int = 0
+
 fn kernel_entry(mb_info: Int) -> Int {
   keyboard_init()
   serial_init()
 
-  serial_write_cstr("Space 32-bit v86")
-  serial_nl()
-  serial_write_cstr("type 'help' for commands")
-  serial_nl()
+  edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
+
+  print_welcome()
 
   let running = true
   while running {
+    serial_put(62)
+    serial_put(32)
     let len = read_line()
     if len == 0 {
       continue
     }
     if match_command("help") {
-      serial_write_cstr("help  - this message")
-      serial_nl()
-      serial_write_cstr("info  - show boot info")
-      serial_nl()
-      serial_write_cstr("halt  - stop the cpu")
-      serial_nl()
+      cmd_help()
+    } else if match_command("about") {
+      cmd_cat(FILE_ABOUT)
     } else if match_command("info") {
       serial_write_cstr("v86 32-bit protected mode")
       serial_nl()
       serial_write_cstr("mb_info: 0x")
       serial_write_hex32(mb_info)
       serial_nl()
+    } else if match_command("ls") {
+      cmd_ls()
+    } else if match_command("cat") {
+      cmd_cat(arg_at(1))
+    } else if match_command("echo") {
+      cmd_echo(arg_at(1))
+    } else if match_command("pwd") {
+      serial_write_cstr("/")
+      serial_nl()
+    } else if match_command("whoami") {
+      serial_write_cstr("space")
+      serial_nl()
+    } else if match_command("clear") {
+      serial_write_cstr("\x1b[2J\x1b[H")
+    } else if match_command("edit") {
+      cmd_edit(arg_at(1))
     } else if match_command("halt") {
       serial_write_cstr("halting")
       serial_nl()
@@ -41,11 +69,188 @@ fn kernel_entry(mb_info: Int) -> Int {
         hlt()
       }
     } else {
-      serial_write_cstr("unknown command")
+      serial_write_cstr("unknown command: ")
+      serial_write_cstr(LINE_BUF)
       serial_nl()
     }
   }
   return 0
+}
+
+fn print_welcome() -> void {
+  serial_write_cstr("Space 32-bit v86")
+  serial_nl()
+  serial_write_cstr("A microkernel shell running in the browser, written in .in and compiled to i386.")
+  serial_nl()
+  serial_write_cstr("Type 'help' for commands, 'about' for the pitch, or 'ls' to see root files.")
+  serial_nl()
+  serial_nl()
+  return
+}
+
+fn cmd_help() -> void {
+  serial_write_cstr("help  - this message")
+  serial_nl()
+  serial_write_cstr("about - what Space is and why it is different")
+  serial_nl()
+  serial_write_cstr("info  - show boot info")
+  serial_nl()
+  serial_write_cstr("ls    - list root files")
+  serial_nl()
+  serial_write_cstr("cat   - print a file")
+  serial_nl()
+  serial_write_cstr("echo  - print text")
+  serial_nl()
+  serial_write_cstr("clear - clear the screen")
+  serial_nl()
+  serial_write_cstr("pwd   - print working directory")
+  serial_nl()
+  serial_write_cstr("whoami- print current user")
+  serial_nl()
+  serial_write_cstr("edit  - edit a scratch file")
+  serial_nl()
+  serial_write_cstr("halt  - stop the cpu")
+  serial_nl()
+  return
+}
+
+fn cmd_ls() -> void {
+  serial_write_cstr(FILE_README)
+  serial_nl()
+  serial_write_cstr(FILE_ABOUT)
+  serial_nl()
+  serial_write_cstr(FILE_NOTES)
+  serial_nl()
+  return
+}
+
+fn cmd_cat(name: Int) -> void {
+  if name == 0 {
+    serial_write_cstr("usage: cat <file>")
+    serial_nl()
+    return
+  }
+  if cstr_eq(name, FILE_README) {
+    serial_write_cstr(DATA_README)
+    return
+  }
+  if cstr_eq(name, FILE_ABOUT) {
+    serial_write_cstr(DATA_ABOUT)
+    return
+  }
+  if cstr_eq(name, FILE_NOTES) {
+    serial_write_cstr(EDIT_BUF)
+    return
+  }
+  serial_write_cstr("cat: ")
+  serial_write_cstr(name)
+  serial_write_cstr(": no such file")
+  serial_nl()
+  return
+}
+
+fn cmd_echo(text: Int) -> void {
+  if text != 0 {
+    serial_write_cstr(text)
+  }
+  serial_nl()
+  return
+}
+
+fn cmd_edit(name: Int) -> void {
+  if name == 0 {
+    name = FILE_NOTES
+  }
+  if !cstr_eq(name, FILE_NOTES) {
+    serial_write_cstr("edit: only ")
+    serial_write_cstr(FILE_NOTES)
+    serial_write_cstr(" is editable")
+    serial_nl()
+    return
+  }
+  serial_write_cstr("Enter text. Type '.exit' to save, '.cancel' to discard.")
+  serial_nl()
+  edit_len = 0
+  store8(EDIT_BUF, 0)
+  while true {
+    serial_put(43)
+    serial_put(32)
+    let len = read_line()
+    if len == 0 {
+      continue
+    }
+    if cstr_eq(LINE_BUF, ".exit") {
+      break
+    }
+    if cstr_eq(LINE_BUF, ".cancel") {
+      edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
+      serial_write_cstr("discarded")
+      serial_nl()
+      return
+    }
+    let i = 0
+    while i < len && edit_len < EDIT_BUF_SIZE - 2 {
+      store8(EDIT_BUF + edit_len, load8(LINE_BUF + i))
+      edit_len = edit_len + 1
+      i = i + 1
+    }
+    store8(EDIT_BUF + edit_len, 10)
+    edit_len = edit_len + 1
+    store8(EDIT_BUF + edit_len, 0)
+  }
+  serial_write_cstr("saved ")
+  serial_write_num(edit_len)
+  serial_write_cstr(" bytes")
+  serial_nl()
+  return
+}
+
+fn cstr_eq(a: Int, b: Int) -> Bool {
+  let i = 0
+  while true {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      return false
+    }
+    if ca == 0 {
+      return true
+    }
+    i = i + 1
+  }
+  return false
+}
+
+fn cstr_copy(dst: Int, src: Int, max: Int) -> Int {
+  let i = 0
+  while i < max {
+    let ch = load8(src + i)
+    store8(dst + i, ch)
+    if ch == 0 {
+      return i
+    }
+    i = i + 1
+  }
+  store8(dst + max, 0)
+  return max
+}
+
+fn arg_at(idx: Int) -> Int {
+  let i = 0
+  let n = 0
+  while n < idx {
+    while load8(LINE_BUF + i) != 0 && load8(LINE_BUF + i) != 32 {
+      i = i + 1
+    }
+    while load8(LINE_BUF + i) == 32 {
+      i = i + 1
+    }
+    n = n + 1
+  }
+  if load8(LINE_BUF + i) == 0 {
+    return 0
+  }
+  return LINE_BUF + i
 }
 
 // PS/2 keyboard scancode set 1 -> ASCII lookup table.
@@ -219,6 +424,26 @@ fn serial_write_hex32(value: Int) -> void {
       serial_put(87 + nibble)
     }
     shift = shift - 4
+  }
+  return
+}
+
+fn serial_write_num(value: Int) -> void {
+  if value == 0 {
+    serial_put(48)
+    return
+  }
+  let buf = 0x7000
+  let i = 0
+  let v = value
+  while v > 0 {
+    store8(buf + i, 48 + (v % 10))
+    v = v / 10
+    i = i + 1
+  }
+  while i > 0 {
+    i = i - 1
+    serial_put(load8(buf + i))
   }
   return
 }
