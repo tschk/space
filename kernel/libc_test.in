@@ -26,11 +26,20 @@ fn libc_selftest_string() -> Int {
   pass = pass & libc_check(strlen("hello world") == 11, "strlen long")
   pass = pass & libc_check(strlen("a b c") == 5, "strlen with spaces")
 
+  pass = pass & libc_check(strlen("a") == 1, "strlen single char")
+
   let dyn_str = malloc(8)
   store8(dyn_str, 65)
   store8(dyn_str + 1, 66)
   store8(dyn_str + 2, 0)
   pass = pass & libc_check(strlen(dyn_str) == 2, "strlen dynamic buffer")
+
+  let n_str = malloc(8)
+  store8(n_str, 65) // 'A'
+  store8(n_str + 1, 0) // NUL
+  store8(n_str + 2, 66) // 'B'
+  store8(n_str + 3, 0) // NUL
+  pass = pass & libc_check(strlen(n_str) == 1, "strlen embedded NUL")
 
   pass = pass & libc_check(strcmp(s2, s1) == 0, "strlcpy/strcmp equal")
   pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
