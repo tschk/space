@@ -300,6 +300,9 @@ fn shell(port: Int) -> void {
       fs_list(port)
     } else if line_eq("libc") != 0 {
       let rc = libc_selftest()
+      if rc == 0 {
+        serial_write_cstr(port, "  libc self-test passed")
+      } else {
         serial_write_cstr(port, "  libc self-test FAILED")
       }
       serial_nl(port)
