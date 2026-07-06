@@ -6,13 +6,7 @@ component GuestService {
   deterministic true
   checkpoint none
 
-  export svc: GuestApi
-
   capability serial: DebugConsole(write)
-}
-
-interface GuestApi {
-  fn run(arg: Int) -> Int
 }
 
 fn g_wait(port: Int) -> void {
