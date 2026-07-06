@@ -127,7 +127,7 @@ fn kernel_entry(mb_info: Int) -> Int {
       serial_write_cstr("space")
       serial_nl()
     } else if cstr_eq(cmd, "clear") {
-      serial_write_cstr("\x1b[2J\x1b[H")
+      serial_clear_screen()
     } else if cstr_eq(cmd, "edit") {
       vro_run(arg_at(1))
     } else if cstr_eq(cmd, "vro") {
@@ -1069,83 +1069,77 @@ fn vro_render() -> void {
   let scroll = vro_scroll()
   let total = vro_count_rows()
   let screen = 22
+  let gutter = 4
 
-  serial_write_cstr("\x1b[?25l\x1b[2J\x1b[H")
+  serial_cursor_hide()
+  serial_clear_screen()
 
   let y = 0
   while y < screen {
     let filerow = scroll + y
-    serial_put(27)
-    serial_put(91)
-    serial_write_num(y + 1)
-    serial_put(59)
-    serial_put(49)
-    serial_put(72)
+    serial_csi_xy(y + 1, 1, 72)
 
     if filerow < total {
+      // Line number gutter
+      let linenum = filerow + 1
+      serial_put(32)
+      if linenum < 10 {
+        serial_put(32)
+        serial_put(32)
+      } else if linenum < 100 {
+        serial_put(32)
+      }
+      serial_write_num(linenum)
+      serial_put(32)
+
+      // Line content
       let off = vro_row_offset(filerow)
       let rl = vro_row_length(filerow)
       let c = 0
-      while c < rl && c < 80 {
+      while c < rl && c < 76 - gutter {
         serial_put(load8(VRO_BUF + off + c))
         c = c + 1
       }
     } else {
+      // Empty line marker
+      serial_put(32)
+      serial_put(32)
+      serial_put(32)
+      serial_put(32)
       serial_put(126)
     }
-    serial_put(27)
-    serial_put(91)
-    serial_put(75)
+    // Clear to end of line
+    serial_csi(0, 75)
     y = y + 1
   }
 
-  // Status bar
-  serial_put(27)
-  serial_put(91)
-  serial_put(50)
-  serial_put(52)
-  serial_put(59)
-  serial_put(49)
-  serial_put(72)
-  serial_put(27)
-  serial_put(91)
-  serial_put(55)
-  serial_put(109)
-  serial_write_cstr(" VRO ")
+  // Status bar at row 24
+  serial_csi_xy(24, 1, 72)
+  // Reverse video
+  serial_csi(55, 109)
+  serial_write_cstr(" ")
   serial_write_cstr(VRO_NAME)
   if vro_dirty() != 0 {
-    serial_put(42)
+    serial_put(43)
   } else {
     serial_put(32)
   }
-  serial_write_cstr("  Ln ")
+  serial_write_cstr("  ")
   serial_write_num(vro_row() + 1)
-  serial_write_cstr(" Col ")
+  serial_put(58)
   serial_write_num(vro_col() + 1)
-  serial_write_cstr(" / ")
+  serial_write_cstr("  ")
   serial_write_num(total)
-  serial_put(27)
-  serial_put(91)
-  serial_put(75)
-  serial_put(27)
-  serial_put(91)
-  serial_put(48)
-  serial_put(109)
+  serial_write_cstr(" lines")
+  serial_csi(0, 75)
+  // Reset attributes
+  serial_csi(48, 109)
 
+  // Position cursor
   let cur_row = vro_row() - scroll + 1
-  let cur_col = vro_col() + 1
-  serial_put(27)
-  serial_put(91)
-  serial_write_num(cur_row)
-  serial_put(59)
-  serial_write_num(cur_col)
-  serial_put(72)
-  serial_put(27)
-  serial_put(91)
-  serial_put(63)
-  serial_put(50)
-  serial_put(53)
-  serial_put(104)
+  let cur_col = vro_col() + gutter + 1
+  serial_csi_xy(cur_row, cur_col, 72)
+  serial_cursor_show()
   return
 }
 
@@ -1222,7 +1216,7 @@ fn vro_run(name: Int) -> void {
   cstr_copy(VRO_NAME, name, 31)
   vro_meta_load(0, 0, vro_len(), 0, 0, file_idx)
 
-  serial_write_cstr("\x1b[?1049h")
+  serial_alt_enter()
   vro_render()
 
   let quit = false
@@ -1232,9 +1226,10 @@ fn vro_run(name: Int) -> void {
       continue
     }
 
+    // Ctrl-Q = quit
     if ch == 17 {
       if vro_dirty() != 0 {
-        serial_write_cstr("\x1b[?1049l")
+        serial_alt_exit()
         serial_write_cstr("vro: unsaved changes. Ctrl-Q again to discard, any key to resume.")
         serial_nl()
         let ch2 = serial_get_key()
@@ -1244,46 +1239,37 @@ fn vro_run(name: Int) -> void {
         if ch2 == 17 {
           return
         }
-        serial_write_cstr("\x1b[?1049h")
+        serial_alt_enter()
         vro_render()
         continue
       }
-      serial_write_cstr("\x1b[?1049l")
+      serial_alt_exit()
       return
     }
 
+    // Ctrl-S = save
     if ch == 19 {
       if vro_save() == 0 {
-        serial_put(27)
-        serial_put(91)
-        serial_put(50)
-        serial_put(52)
-        serial_put(59)
-        serial_put(49)
-        serial_put(72)
-        serial_put(27)
-        serial_put(91)
-        serial_put(55)
-        serial_put(109)
-        serial_write_cstr(" VRO ")
+        // Flash SAVED in status bar
+        serial_csi_xy(24, 1, 72)
+        serial_csi(55, 109)
+        serial_write_cstr(" ")
         serial_write_cstr(VRO_NAME)
         serial_write_cstr("  SAVED  ")
-        serial_put(27)
-        serial_put(91)
-        serial_put(75)
-        serial_put(27)
-        serial_put(91)
-        serial_put(48)
-        serial_put(109)
+        serial_csi(0, 75)
+        serial_csi(48, 109)
         let cur_row = vro_row() - vro_scroll() + 1
-        let cur_col = vro_col() + 1
-        serial_put(27)
-        serial_put(91)
-        serial_write_num(cur_row)
-        serial_put(59)
-        serial_write_num(cur_col)
-        serial_put(72)
+        let cur_col = vro_col() + 4 + 1
+        serial_csi_xy(cur_row, cur_col, 72)
       }
+      continue
+    }
+
+    // Tab = insert spaces
+    if ch == 9 {
+      vro_insert_char(32)
+      vro_insert_char(32)
+      vro_render()
       continue
     }
 
@@ -1352,7 +1338,7 @@ fn vro_run(name: Int) -> void {
     }
   }
 
-  serial_write_cstr("\x1b[?1049l")
+  serial_alt_exit()
   return
 }
 
@@ -1583,6 +1569,92 @@ fn serial_wait_tx() -> void {
 fn serial_put(ch: Int) -> void {
   serial_wait_tx()
   outb(COM1_PORT, ch)
+  return
+}
+
+// Send ESC + '[' + suffix (CSI sequence)
+fn serial_csi(a: Int, b: Int) -> void {
+  serial_put(27)
+  serial_put(91)
+  if a != 0 {
+    serial_put(a)
+  }
+  serial_put(b)
+  return
+}
+
+// Send ESC + '[' + num + final (CSI with parameter)
+fn serial_csi_n(n: Int, final: Int) -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_write_num(n)
+  serial_put(final)
+  return
+}
+
+// Send ESC + '[' + n1 + ';' + n2 + final (CSI with two params)
+fn serial_csi_xy(n1: Int, n2: Int, final: Int) -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_write_num(n1)
+  serial_put(59)
+  serial_write_num(n2)
+  serial_put(final)
+  return
+}
+
+// Clear screen and home cursor
+fn serial_clear_screen() -> void {
+  serial_csi(50, 74)
+  serial_csi(0, 72)
+  return
+}
+
+// Enter alternate screen buffer
+fn serial_alt_enter() -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_put(63)
+  serial_put(49)
+  serial_put(48)
+  serial_put(52)
+  serial_put(57)
+  serial_put(104)
+  return
+}
+
+// Exit alternate screen buffer
+fn serial_alt_exit() -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_put(63)
+  serial_put(49)
+  serial_put(48)
+  serial_put(52)
+  serial_put(57)
+  serial_put(108)
+  return
+}
+
+// Hide cursor
+fn serial_cursor_hide() -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_put(63)
+  serial_put(50)
+  serial_put(53)
+  serial_put(108)
+  return
+}
+
+// Show cursor
+fn serial_cursor_show() -> void {
+  serial_put(27)
+  serial_put(91)
+  serial_put(63)
+  serial_put(50)
+  serial_put(53)
+  serial_put(104)
   return
 }
 
