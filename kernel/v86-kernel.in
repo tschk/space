@@ -1,46 +1,83 @@
 package space.kernel
 
 // 32-bit v86 kernel: serial shell on COM1, PS/2 keyboard, in-memory
-// filesystem with directory support and a line editor (vro).
+// filesystem with directory support and a screen-based text editor (vro).
+//
+// vro is a micro-inspired screen editor written in .in:
+//   - Full-screen mode with ANSI alternate screen buffer
+//   - Arrow keys, Home, End, Page Up/Down for cursor movement
+//   - Character insert/delete at cursor position
+//   - Ctrl-S to save, Ctrl-Q to quit
+//   - Status bar with filename, cursor position, dirty flag
+//   - Scrolling for files longer than the terminal
 
 const COM1_PORT = 0x3F8
 const KBD_TABLE = 0x3000
+const KBD_SHIFT_TABLE = 0x3100
 
 const FILE_README = "README.md"
 const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a PS/2 keyboard and serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
 
 const FILE_ABOUT = "ABOUT.md"
-const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, edit (vro), and more\n  - PS/2 keyboard input\n  - Line editor with append, delete, save\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, cat test/hello.txt\n"
+const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, edit (vro), and more\n  - PS/2 keyboard input with Shift and Ctrl modifiers\n  - Screen-based text editor (vro) with cursor movement\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, vro test/hello.txt\n"
 
 const FILE_NOTES = "notes.txt"
-const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.\n"
+const DATA_NOTES = "This is a scratch file. Use 'vro notes.txt' to edit it.\n"
 
 // --- memory layout ----------------------------------------------------------
 const LINE_BUF = 0x5000
 const EDIT_BUF = 0x6000
-const EDIT_BUF_SIZE = 1280
-const NUM_BUF = 0x6500
-const HIST_BUF = 0x6600
+const EDIT_BUF_SIZE = 2048
+const NUM_BUF = 0x6900
+const HIST_BUF = 0x6A00
 const HIST_MAX = 16
 const HIST_ENTRY_SIZE = 80
-const PATH_BUF = 0x6B00
-const NAME_BUF = 0x6B80
+const PATH_BUF = 0x6F00
+const NAME_BUF = 0x6F80
 
 // --- filesystem -------------------------------------------------------------
 // Entry layout (32 bytes): name[16] + used[1] + type[1] + parent[1] + size[1] + pad[12]
 const FS_FILES = 16
 const FS_NAME_SIZE = 16
 const FS_ENTRY_SIZE = 32
-const FS_FILE_SIZE = 256
-const FS_TABLE = 0x6C00
-const FS_DATA = 0x7000
+const FS_FILE_SIZE = 512
+const FS_TABLE = 0x7000
+const FS_DATA = 0x7400
 
 const FS_TYPE_FILE = 0
 const FS_TYPE_DIR = 1
 
+// --- vro editor memory ------------------------------------------------------
+const VRO_BUF = 0x9400
+const VRO_BUF_SIZE = 4096
+const VRO_NAME = 0xA400
+const VRO_META = 0xA420
+// VRO_META layout (32 bytes):
+//   +0: row (cursor row)
+//   +4: col (cursor col)
+//   +8: len (text length)
+//   +12: dirty (modified flag)
+//   +16: scroll (scroll offset in rows)
+//   +20: file_idx (FS entry index, -1 for built-in)
+//   +24: total_rows (cached row count)
+//   +28: screen_rows (terminal height - 1)
+
+// Special key codes returned by keyboard_get
+const KEY_LEFT = 1000
+const KEY_RIGHT = 1001
+const KEY_UP = 1002
+const KEY_DOWN = 1003
+const KEY_HOME = 1004
+const KEY_END = 1005
+const KEY_PGUP = 1006
+const KEY_PGDN = 1007
+const KEY_DELETE = 1008
+
 var edit_len: Int = 0
 var hist_count: Int = 0
 var boot_tick: Int = 0
+var kbd_ctrl: Int = 0
+var kbd_shift: Int = 0
 
 fn kernel_entry(mb_info: Int) -> Int {
   keyboard_init()
@@ -101,7 +138,7 @@ fn kernel_entry(mb_info: Int) -> Int {
     } else if cstr_eq(cmd, "clear") {
       serial_write_cstr("\x1b[2J\x1b[H")
     } else if cstr_eq(cmd, "edit") || cstr_eq(cmd, "vro") {
-      cmd_vro(arg_at(1))
+      vro_run(arg_at(1))
     } else if cstr_eq(cmd, "history") {
       cmd_history()
     } else if cstr_eq(cmd, "uname") {
@@ -163,9 +200,9 @@ fn cmd_help() -> void {
   serial_nl()
   serial_write_cstr("stat    - show file info")
   serial_nl()
-  serial_write_cstr("edit    - edit a file with vro")
+  serial_write_cstr("vro     - screen-based text editor (Ctrl-S=save Ctrl-Q=quit)")
   serial_nl()
-  serial_write_cstr("vro     - same as edit")
+  serial_write_cstr("edit    - same as vro")
   serial_nl()
   serial_write_cstr("clear   - clear the screen")
   serial_nl()
@@ -199,8 +236,6 @@ fn cmd_info(mb_info: Int) -> void {
 }
 
 // --- command parsing --------------------------------------------------------
-// Extract the command word (first token) from LINE_BUF into NAME_BUF.
-// Returns pointer to NAME_BUF, or 0 if empty.
 fn parse_cmd() -> Int {
   let i = 0
   while load8(LINE_BUF + i) == 32 {
@@ -301,8 +336,6 @@ fn fs_find_in(parent: Int, name: Int) -> Int {
   return -1
 }
 
-// Resolve a path to an entry index. Returns -1 if not found.
-// Root is represented as -1 (the implicit root, not a real entry).
 fn fs_resolve(path: Int) -> Int {
   if load8(path) == 0 {
     return -1
@@ -343,8 +376,6 @@ fn fs_resolve(path: Int) -> Int {
   return -1
 }
 
-// Resolve parent directory and final name. Returns parent index (-1 = root),
-// or -2 if parent doesn't exist. Stores final name in NAME_BUF.
 fn fs_resolve_parent(path: Int) -> Int {
   let last_slash = -1
   let i = 0
@@ -432,7 +463,7 @@ fn fs_write_data(idx: Int, data: Int, sz: Int) -> void {
   return
 }
 
-// --- commands ---------------------------------------------------------------
+// --- shell commands ---------------------------------------------------------
 
 fn cmd_ls(path: Int) -> void {
   let parent = -1
@@ -516,163 +547,6 @@ fn cmd_echo(text: Int) -> void {
     serial_write_cstr(text)
   }
   serial_nl()
-  return
-}
-
-// --- vro editor -------------------------------------------------------------
-// vro is a line-based editor. It loads a file into EDIT_BUF, lets the user
-// append/insert lines, and saves back. Commands start with '.':
-//   .w       save and quit
-//   .q       quit without saving
-//   .p       print current content
-//   .c       clear content
-//   .d       delete last line
-// Any other line is appended to the buffer.
-
-fn cmd_vro(name: Int) -> void {
-  if name == 0 {
-    serial_write_cstr("usage: edit <file>")
-    serial_nl()
-    return
-  }
-
-  // Load file content into EDIT_BUF
-  let target_idx = -1
-  if cstr_eq(name, FILE_NOTES) {
-    // notes.txt already lives in EDIT_BUF
-    serial_write_cstr("vro: editing ")
-    serial_write_cstr(name)
-    serial_write_cstr(" (")
-    serial_write_num(edit_len)
-    serial_write_cstr(" bytes)")
-    serial_nl()
-  } else if cstr_eq(name, FILE_README) {
-    edit_len = cstr_copy(EDIT_BUF, DATA_README, EDIT_BUF_SIZE - 1)
-    serial_write_cstr("vro: editing ")
-    serial_write_cstr(name)
-    serial_write_cstr(" (")
-    serial_write_num(edit_len)
-    serial_write_cstr(" bytes)")
-    serial_nl()
-  } else if cstr_eq(name, FILE_ABOUT) {
-    edit_len = cstr_copy(EDIT_BUF, DATA_ABOUT, EDIT_BUF_SIZE - 1)
-    serial_write_cstr("vro: editing ")
-    serial_write_cstr(name)
-    serial_write_cstr(" (")
-    serial_write_num(edit_len)
-    serial_write_cstr(" bytes)")
-    serial_nl()
-  } else {
-    let idx = fs_resolve(name)
-    if idx < 0 {
-      // Create the file
-      let p = fs_resolve_parent(name)
-      if p == -2 {
-        serial_write_cstr("vro: parent directory not found")
-        serial_nl()
-        return
-      }
-      idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
-      if idx < 0 {
-        serial_write_cstr("vro: no free file slots")
-        serial_nl()
-        return
-      }
-    }
-    if fs_entry_type(idx) == FS_TYPE_DIR {
-      serial_write_cstr("vro: ")
-      serial_write_cstr(name)
-      serial_write_cstr(": is a directory")
-      serial_nl()
-      return
-    }
-    target_idx = idx
-    edit_len = cstr_copy(EDIT_BUF, fs_entry_data(idx), EDIT_BUF_SIZE - 1)
-    serial_write_cstr("vro: editing ")
-    serial_write_cstr(name)
-    serial_write_cstr(" (")
-    serial_write_num(edit_len)
-    serial_write_cstr(" bytes)")
-    serial_nl()
-  }
-
-  serial_write_cstr("Type lines to append. Commands: .w=save .q=quit .p=print .c=clear .d=delline")
-  serial_nl()
-  serial_write_cstr("---")
-  serial_nl()
-
-  while true {
-    serial_put(62)
-    serial_put(32)
-    let len = read_line()
-    if len == 0 {
-      continue
-    }
-    if cstr_eq(LINE_BUF, ".w") {
-      // Save
-      if target_idx >= 0 {
-        fs_write_data(target_idx, EDIT_BUF, edit_len)
-      }
-      serial_write_cstr("saved ")
-      serial_write_num(edit_len)
-      serial_write_cstr(" bytes")
-      serial_nl()
-      return
-    }
-    if cstr_eq(LINE_BUF, ".q") {
-      serial_write_cstr("quit without saving")
-      serial_nl()
-      return
-    }
-    if cstr_eq(LINE_BUF, ".p") {
-      serial_write_cstr(EDIT_BUF)
-      serial_write_cstr("---")
-      serial_nl()
-      continue
-    }
-    if cstr_eq(LINE_BUF, ".c") {
-      edit_len = 0
-      store8(EDIT_BUF, 0)
-      serial_write_cstr("cleared")
-      serial_nl()
-      continue
-    }
-    if cstr_eq(LINE_BUF, ".d") {
-      // Remove last line: walk back to find the previous newline or start
-      if edit_len == 0 {
-        serial_write_cstr("buffer empty")
-        serial_nl()
-        continue
-      }
-      let p = edit_len - 1
-      // Skip trailing newline if present
-      if load8(EDIT_BUF + p) == 10 {
-        p = p - 1
-      }
-      while p > 0 && load8(EDIT_BUF + p) != 10 {
-        p = p - 1
-      }
-      if p == 0 {
-        edit_len = 0
-      } else {
-        edit_len = p
-      }
-      store8(EDIT_BUF + edit_len, 0)
-      serial_write_cstr("deleted last line")
-      serial_nl()
-      continue
-    }
-    // Append the line
-    let i = 0
-    while i < len && edit_len < EDIT_BUF_SIZE - 2 {
-      store8(EDIT_BUF + edit_len, load8(LINE_BUF + i))
-      edit_len = edit_len + 1
-      i = i + 1
-    }
-    store8(EDIT_BUF + edit_len, 10)
-    edit_len = edit_len + 1
-    store8(EDIT_BUF + edit_len, 0)
-  }
   return
 }
 
@@ -902,6 +776,625 @@ fn cmd_stat(name: Int) -> void {
   return
 }
 
+// --- vro editor -------------------------------------------------------------
+// Screen-based text editor inspired by the original vro (V) and micro.
+// Uses ANSI escape sequences for full-screen rendering.
+// Text is stored as a contiguous byte array in VRO_BUF with \n separators.
+// Cursor is tracked as (row, col) and mapped to byte offsets.
+
+fn vro_meta_load(row: Int, col: Int, len: Int, dirty: Int, scroll: Int, file_idx: Int) -> void {
+  store32(VRO_META, row)
+  store32(VRO_META + 4, col)
+  store32(VRO_META + 8, len)
+  store32(VRO_META + 12, dirty)
+  store32(VRO_META + 16, scroll)
+  store32(VRO_META + 20, file_idx)
+  return
+}
+
+fn vro_row() -> Int {
+  return load32(VRO_META)
+}
+
+fn vro_col() -> Int {
+  return load32(VRO_META + 4)
+}
+
+fn vro_len() -> Int {
+  return load32(VRO_META + 8)
+}
+
+fn vro_dirty() -> Int {
+  return load32(VRO_META + 12)
+}
+
+fn vro_scroll() -> Int {
+  return load32(VRO_META + 16)
+}
+
+fn vro_file_idx() -> Int {
+  return load32(VRO_META + 20)
+}
+
+fn vro_set_row(v: Int) -> void {
+  store32(VRO_META, v)
+  return
+}
+
+fn vro_set_col(v: Int) -> void {
+  store32(VRO_META + 4, v)
+  return
+}
+
+fn vro_set_len(v: Int) -> void {
+  store32(VRO_META + 8, v)
+  return
+}
+
+fn vro_set_dirty(v: Int) -> void {
+  store32(VRO_META + 12, v)
+  return
+}
+
+fn vro_set_scroll(v: Int) -> void {
+  store32(VRO_META + 16, v)
+  return
+}
+
+// Byte offset of the start of a given row. Row 0 = offset 0.
+fn vro_row_offset(row: Int) -> Int {
+  if row <= 0 {
+    return 0
+  }
+  let off = 0
+  let r = 0
+  while r < row && off < vro_len() {
+    if load8(VRO_BUF + off) == 10 {
+      r = r + 1
+    }
+    off = off + 1
+  }
+  return off
+}
+
+// Length of a given row in bytes (excluding the trailing \n).
+fn vro_row_length(row: Int) -> Int {
+  let off = vro_row_offset(row)
+  let n = 0
+  while off + n < vro_len() && load8(VRO_BUF + off + n) != 10 {
+    n = n + 1
+  }
+  return n
+}
+
+// Total number of rows in the buffer.
+fn vro_count_rows() -> Int {
+  if vro_len() == 0 {
+    return 1
+  }
+  let count = 1
+  let i = 0
+  while i < vro_len() {
+    if load8(VRO_BUF + i) == 10 {
+      count = count + 1
+    }
+    i = i + 1
+  }
+  // If buffer ends with \n, the last "row" is empty but still counts
+  return count
+}
+
+// Byte offset of the cursor position.
+fn vro_cursor_offset() -> Int {
+  return vro_row_offset(vro_row()) + vro_col()
+}
+
+// Insert a byte at the cursor position, shifting bytes right.
+fn vro_insert_byte(ch: Int) -> void {
+  let len = vro_len()
+  if len >= VRO_BUF_SIZE - 1 {
+    return
+  }
+  let off = vro_cursor_offset()
+  let i = len
+  while i > off {
+    store8(VRO_BUF + i, load8(VRO_BUF + i - 1))
+    i = i - 1
+  }
+  store8(VRO_BUF + off, ch)
+  vro_set_len(len + 1)
+  store8(VRO_BUF + len + 1, 0)
+  vro_set_dirty(1)
+  return
+}
+
+// Delete the byte at the cursor position, shifting bytes left.
+fn vro_delete_byte() -> void {
+  let len = vro_len()
+  let off = vro_cursor_offset()
+  if off >= len {
+    return
+  }
+  let i = off
+  while i < len - 1 {
+    store8(VRO_BUF + i, load8(VRO_BUF + i + 1))
+    i = i + 1
+  }
+  vro_set_len(len - 1)
+  store8(VRO_BUF + len - 1, 0)
+  vro_set_dirty(1)
+  return
+}
+
+// Delete the byte before the cursor (backspace).
+fn vro_backspace() -> void {
+  let off = vro_cursor_offset()
+  if off == 0 {
+    return
+  }
+  // If deleting a newline, move cursor up to end of previous line
+  if load8(VRO_BUF + off - 1) == 10 {
+    vro_set_row(vro_row() - 1)
+    vro_set_col(vro_row_length(vro_row()))
+  } else {
+    vro_set_col(vro_col() - 1)
+  }
+  // Shift bytes left from off-1
+  let len = vro_len()
+  let i = off - 1
+  while i < len - 1 {
+    store8(VRO_BUF + i, load8(VRO_BUF + i + 1))
+    i = i + 1
+  }
+  vro_set_len(len - 1)
+  store8(VRO_BUF + len - 1, 0)
+  vro_set_dirty(1)
+  return
+}
+
+// Insert a newline at cursor position.
+fn vro_insert_newline() -> void {
+  vro_insert_byte(10)
+  vro_set_row(vro_row() + 1)
+  vro_set_col(0)
+  return
+}
+
+// Insert a printable character at cursor position.
+fn vro_insert_char(ch: Int) -> void {
+  vro_insert_byte(ch)
+  vro_set_col(vro_col() + 1)
+  return
+}
+
+// --- cursor movement --------------------------------------------------------
+
+fn vro_move_left() -> void {
+  if vro_col() > 0 {
+    vro_set_col(vro_col() - 1)
+  } else if vro_row() > 0 {
+    vro_set_row(vro_row() - 1)
+    vro_set_col(vro_row_length(vro_row()))
+  }
+  return
+}
+
+fn vro_move_right() -> void {
+  if vro_col() < vro_row_length(vro_row()) {
+    vro_set_col(vro_col() + 1)
+  } else if vro_row() < vro_count_rows() - 1 {
+    vro_set_row(vro_row() + 1)
+    vro_set_col(0)
+  }
+  return
+}
+
+fn vro_move_up() -> void {
+  if vro_row() > 0 {
+    vro_set_row(vro_row() - 1)
+    let rl = vro_row_length(vro_row())
+    if vro_col() > rl {
+      vro_set_col(rl)
+    }
+  }
+  return
+}
+
+fn vro_move_down() -> void {
+  if vro_row() < vro_count_rows() - 1 {
+    vro_set_row(vro_row() + 1)
+    let rl = vro_row_length(vro_row())
+    if vro_col() > rl {
+      vro_set_col(rl)
+    }
+  }
+  return
+}
+
+fn vro_move_home() -> void {
+  vro_set_col(0)
+  return
+}
+
+fn vro_move_end() -> void {
+  vro_set_col(vro_row_length(vro_row()))
+  return
+}
+
+fn vro_page_up() -> void {
+  let screen = 22
+  let r = vro_row() - screen
+  if r < 0 {
+    vro_set_row(0)
+  } else {
+    vro_set_row(r)
+  }
+  let rl = vro_row_length(vro_row())
+  if vro_col() > rl {
+    vro_set_col(rl)
+  }
+  return
+}
+
+fn vro_page_down() -> void {
+  let screen = 22
+  let total = vro_count_rows()
+  let r = vro_row() + screen
+  if r >= total {
+    vro_set_row(total - 1)
+  } else {
+    vro_set_row(r)
+  }
+  let rl = vro_row_length(vro_row())
+  if vro_col() > rl {
+    vro_set_col(rl)
+  }
+  return
+}
+
+// --- scrolling --------------------------------------------------------------
+
+fn vro_adjust_scroll() -> void {
+  let row = vro_row()
+  let scroll = vro_scroll()
+  let screen = 22
+  if row < scroll {
+    vro_set_scroll(row)
+  }
+  if row >= scroll + screen {
+    vro_set_scroll(row - screen + 1)
+  }
+  return
+}
+
+// --- rendering --------------------------------------------------------------
+
+fn vro_render() -> void {
+  vro_adjust_scroll()
+  let scroll = vro_scroll()
+  let len = vro_len()
+  let total = vro_count_rows()
+  let screen = 22
+
+  // Hide cursor, clear screen, home
+  serial_write_cstr("\x1b[?25l\x1b[2J\x1b[H")
+
+  // Draw text rows
+  let y = 0
+  while y < screen {
+    let filerow = scroll + y
+    // Move to row y+1, col 1
+    serial_put(27)
+    serial_put(91)
+    serial_write_num(y + 1)
+    serial_put(59)
+    serial_put(49)
+    serial_put(72)
+
+    if filerow < total {
+      // Draw the line content
+      let off = vro_row_offset(filerow)
+      let rl = vro_row_length(filerow)
+      let c = 0
+      while c < rl && c < 80 {
+        serial_put(load8(VRO_BUF + off + c))
+        c = c + 1
+      }
+    } else {
+      // Empty line: draw ~ marker
+      serial_put(126)
+    }
+    // Clear to end of line
+    serial_put(27)
+    serial_put(91)
+    serial_put(75)
+    y = y + 1
+  }
+
+  // Draw status bar at row 24
+  serial_put(27)
+  serial_put(91)
+  serial_put(50)
+  serial_put(52)
+  serial_put(59)
+  serial_put(49)
+  serial_put(72)
+  // Reverse video
+  serial_put(27)
+  serial_put(91)
+  serial_put(55)
+  serial_put(109)
+  // Filename
+  serial_write_cstr(" VRO ")
+  serial_write_cstr(VRO_NAME)
+  // Dirty marker
+  if vro_dirty() != 0 {
+    serial_put(42)
+  } else {
+    serial_put(32)
+  }
+  // Pad and show position
+  serial_write_cstr("  Ln ")
+  serial_write_num(vro_row() + 1)
+  serial_write_cstr(" Col ")
+  serial_write_num(vro_col() + 1)
+  serial_write_cstr(" / ")
+  serial_write_num(total)
+  // Clear to end of line
+  serial_put(27)
+  serial_put(91)
+  serial_put(75)
+  // Reset attributes
+  serial_put(27)
+  serial_put(91)
+  serial_put(48)
+  serial_put(109)
+
+  // Position cursor at the right spot
+  let cur_row = vro_row() - scroll + 1
+  let cur_col = vro_col() + 1
+  serial_put(27)
+  serial_put(91)
+  serial_write_num(cur_row)
+  serial_put(59)
+  serial_write_num(cur_col)
+  serial_put(72)
+  // Show cursor
+  serial_put(27)
+  serial_put(91)
+  serial_put(63)
+  serial_put(50)
+  serial_put(53)
+  serial_put(104)
+  return
+}
+
+// --- save -------------------------------------------------------------------
+
+fn vro_save() -> Int {
+  let fi = vro_file_idx()
+  if fi >= 0 {
+    fs_write_data(fi, VRO_BUF, vro_len())
+    vro_set_dirty(0)
+    return 0
+  }
+  // Built-in file: create a new FS entry
+  let p = fs_resolve_parent(VRO_NAME)
+  if p == -2 {
+    return -1
+  }
+  let idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+  if idx < 0 {
+    return -1
+  }
+  fs_write_data(idx, VRO_BUF, vro_len())
+  store32(VRO_META + 20, idx)
+  vro_set_dirty(0)
+  return 0
+}
+
+// --- main editor loop -------------------------------------------------------
+
+fn vro_run(name: Int) -> void {
+  if name == 0 {
+    serial_write_cstr("usage: vro <file>")
+    serial_nl()
+    return
+  }
+
+  // Load file content into VRO_BUF
+  let file_idx = -1
+  if cstr_eq(name, FILE_NOTES) {
+    cstr_copy(VRO_BUF, EDIT_BUF, VRO_BUF_SIZE - 1)
+    let n = 0
+    while load8(EDIT_BUF + n) != 0 {
+      n = n + 1
+    }
+    vro_set_len(n)
+  } else if cstr_eq(name, FILE_README) {
+    let n = cstr_copy(VRO_BUF, DATA_README, VRO_BUF_SIZE - 1)
+    vro_set_len(n)
+  } else if cstr_eq(name, FILE_ABOUT) {
+    let n = cstr_copy(VRO_BUF, DATA_ABOUT, VRO_BUF_SIZE - 1)
+    vro_set_len(n)
+  } else {
+    let idx = fs_resolve(name)
+    if idx < 0 {
+      let p = fs_resolve_parent(name)
+      if p == -2 {
+        serial_write_cstr("vro: parent directory not found")
+        serial_nl()
+        return
+      }
+      idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+      if idx < 0 {
+        serial_write_cstr("vro: no free file slots")
+        serial_nl()
+        return
+      }
+    }
+    if fs_entry_type(idx) == FS_TYPE_DIR {
+      serial_write_cstr("vro: ")
+      serial_write_cstr(name)
+      serial_write_cstr(": is a directory")
+      serial_nl()
+      return
+    }
+    file_idx = idx
+    let n = cstr_copy(VRO_BUF, fs_entry_data(idx), VRO_BUF_SIZE - 1)
+    vro_set_len(n)
+  }
+
+  // Store filename
+  cstr_copy(VRO_NAME, name, 31)
+  vro_meta_load(0, 0, vro_len(), 0, 0, file_idx)
+
+  // Switch to alternate screen
+  serial_write_cstr("\x1b[?1049h")
+
+  // Initial render
+  vro_render()
+
+  // Editor loop
+  let quit = false
+  while !quit {
+    let ch = keyboard_get()
+    if ch == 0 {
+      continue
+    }
+
+    // Ctrl-Q = quit
+    if ch == 17 {
+      if vro_dirty() != 0 {
+        serial_write_cstr("\x1b[?1049l")
+        serial_write_cstr("vro: unsaved changes. Press Ctrl-Q again to discard, any other key to resume.")
+        serial_nl()
+        let ch2 = keyboard_get()
+        while ch2 == 0 {
+          ch2 = keyboard_get()
+        }
+        if ch2 == 17 {
+          return
+        }
+        serial_write_cstr("\x1b[?1049h")
+        vro_render()
+        continue
+      }
+      return
+    }
+
+    // Ctrl-S = save
+    if ch == 19 {
+      if vro_save() == 0 {
+        // Brief flash status
+        serial_put(27)
+        serial_put(91)
+        serial_put(50)
+        serial_put(52)
+        serial_put(59)
+        serial_put(49)
+        serial_put(72)
+        serial_put(27)
+        serial_put(91)
+        serial_put(55)
+        serial_put(109)
+        serial_write_cstr(" VRO ")
+        serial_write_cstr(VRO_NAME)
+        serial_write_cstr("  SAVED  ")
+        serial_put(27)
+        serial_put(91)
+        serial_put(75)
+        serial_put(27)
+        serial_put(91)
+        serial_put(48)
+        serial_put(109)
+        // Re-position cursor
+        let cur_row = vro_row() - vro_scroll() + 1
+        let cur_col = vro_col() + 1
+        serial_put(27)
+        serial_put(91)
+        serial_write_num(cur_row)
+        serial_put(59)
+        serial_write_num(cur_col)
+        serial_put(72)
+      }
+      continue
+    }
+
+    // Arrow keys and special keys
+    if ch == KEY_LEFT {
+      vro_move_left()
+      vro_render()
+      continue
+    }
+    if ch == KEY_RIGHT {
+      vro_move_right()
+      vro_render()
+      continue
+    }
+    if ch == KEY_UP {
+      vro_move_up()
+      vro_render()
+      continue
+    }
+    if ch == KEY_DOWN {
+      vro_move_down()
+      vro_render()
+      continue
+    }
+    if ch == KEY_HOME {
+      vro_move_home()
+      vro_render()
+      continue
+    }
+    if ch == KEY_END {
+      vro_move_end()
+      vro_render()
+      continue
+    }
+    if ch == KEY_PGUP {
+      vro_page_up()
+      vro_render()
+      continue
+    }
+    if ch == KEY_PGDN {
+      vro_page_down()
+      vro_render()
+      continue
+    }
+    if ch == KEY_DELETE {
+      vro_delete_byte()
+      vro_render()
+      continue
+    }
+
+    // Enter = newline
+    if ch == 13 || ch == 10 {
+      vro_insert_newline()
+      vro_render()
+      continue
+    }
+
+    // Backspace
+    if ch == 8 || ch == 127 {
+      vro_backspace()
+      vro_render()
+      continue
+    }
+
+    // Printable characters
+    if ch >= 32 && ch < 127 {
+      vro_insert_char(ch)
+      vro_render()
+      continue
+    }
+  }
+
+  // Switch back to main screen
+  serial_write_cstr("\x1b[?1049l")
+  return
+}
+
 // --- history ----------------------------------------------------------------
 
 fn history_add(cmd: Int) -> void {
@@ -993,6 +1486,11 @@ fn arg_at(idx: Int) -> Int {
 }
 
 // --- PS/2 keyboard ----------------------------------------------------------
+// Handles scancode set 1 with:
+//   - Extended scancodes (0xE0 prefix) for arrow keys, Home, End, Delete, Page Up/Down
+//   - Ctrl modifier (0x1D press, 0x9D release)
+//   - Shift modifier (0x2A/0x36 press, 0xAA/0xB6 release)
+//   - Shifted symbol mapping (number row, brackets, etc.)
 
 fn keyboard_init() -> void {
   outb(0x60, 0xF4)
@@ -1001,11 +1499,15 @@ fn keyboard_init() -> void {
   }
   inb(0x60)
 
+  // Clear main table
   let i = 0
-  while i < 128 {
+  while i < 256 {
     store8(KBD_TABLE + i, 0)
+    store8(KBD_SHIFT_TABLE + i, 0)
     i = i + 1
   }
+
+  // Main scancode table (lowercase)
   store8(KBD_TABLE + 0x02, 49)
   store8(KBD_TABLE + 0x03, 50)
   store8(KBD_TABLE + 0x04, 51)
@@ -1028,6 +1530,8 @@ fn keyboard_init() -> void {
   store8(KBD_TABLE + 0x17, 105)
   store8(KBD_TABLE + 0x18, 111)
   store8(KBD_TABLE + 0x19, 112)
+  store8(KBD_TABLE + 0x1A, 91)
+  store8(KBD_TABLE + 0x1B, 93)
   store8(KBD_TABLE + 0x1E, 97)
   store8(KBD_TABLE + 0x1F, 115)
   store8(KBD_TABLE + 0x20, 100)
@@ -1037,6 +1541,10 @@ fn keyboard_init() -> void {
   store8(KBD_TABLE + 0x24, 106)
   store8(KBD_TABLE + 0x25, 107)
   store8(KBD_TABLE + 0x26, 108)
+  store8(KBD_TABLE + 0x27, 59)
+  store8(KBD_TABLE + 0x28, 39)
+  store8(KBD_TABLE + 0x29, 96)
+  store8(KBD_TABLE + 0x2B, 92)
   store8(KBD_TABLE + 0x2C, 122)
   store8(KBD_TABLE + 0x2D, 120)
   store8(KBD_TABLE + 0x2E, 99)
@@ -1050,6 +1558,32 @@ fn keyboard_init() -> void {
   store8(KBD_TABLE + 0x39, 32)
   store8(KBD_TABLE + 0x1C, 13)
   store8(KBD_TABLE + 0x0E, 8)
+
+  // Shifted scancode table
+  store8(KBD_SHIFT_TABLE + 0x02, 33)
+  store8(KBD_SHIFT_TABLE + 0x03, 64)
+  store8(KBD_SHIFT_TABLE + 0x04, 35)
+  store8(KBD_SHIFT_TABLE + 0x05, 36)
+  store8(KBD_SHIFT_TABLE + 0x06, 37)
+  store8(KBD_SHIFT_TABLE + 0x07, 94)
+  store8(KBD_SHIFT_TABLE + 0x08, 38)
+  store8(KBD_SHIFT_TABLE + 0x09, 42)
+  store8(KBD_SHIFT_TABLE + 0x0A, 40)
+  store8(KBD_SHIFT_TABLE + 0x0B, 41)
+  store8(KBD_SHIFT_TABLE + 0x0C, 95)
+  store8(KBD_SHIFT_TABLE + 0x0D, 43)
+  store8(KBD_SHIFT_TABLE + 0x1A, 123)
+  store8(KBD_SHIFT_TABLE + 0x1B, 125)
+  store8(KBD_SHIFT_TABLE + 0x27, 58)
+  store8(KBD_SHIFT_TABLE + 0x28, 34)
+  store8(KBD_SHIFT_TABLE + 0x29, 126)
+  store8(KBD_SHIFT_TABLE + 0x2B, 124)
+  store8(KBD_SHIFT_TABLE + 0x33, 60)
+  store8(KBD_SHIFT_TABLE + 0x34, 62)
+  store8(KBD_SHIFT_TABLE + 0x35, 63)
+  store8(KBD_SHIFT_TABLE + 0x1C, 13)
+  store8(KBD_SHIFT_TABLE + 0x0E, 8)
+  store8(KBD_SHIFT_TABLE + 0x39, 32)
   return
 }
 
@@ -1057,11 +1591,100 @@ fn keyboard_get() -> Int {
   while (inb(0x64) & 0x01) == 0 {
     outb(0x80, 0)
   }
-  let scancode = inb(0x60)
-  if scancode >= 128 {
+  let sc = inb(0x60)
+
+  // Extended scancode prefix (arrow keys, Home, End, Delete, Page Up/Down)
+  if sc == 0xE0 {
+    while (inb(0x64) & 0x01) == 0 {
+      outb(0x80, 0)
+    }
+    let ext = inb(0x60)
+    if ext >= 128 {
+      return 0
+    }
+    if ext == 0x4B {
+      return KEY_LEFT
+    }
+    if ext == 0x4D {
+      return KEY_RIGHT
+    }
+    if ext == 0x48 {
+      return KEY_UP
+    }
+    if ext == 0x50 {
+      return KEY_DOWN
+    }
+    if ext == 0x47 {
+      return KEY_HOME
+    }
+    if ext == 0x4F {
+      return KEY_END
+    }
+    if ext == 0x49 {
+      return KEY_PGUP
+    }
+    if ext == 0x51 {
+      return KEY_PGDN
+    }
+    if ext == 0x53 {
+      return KEY_DELETE
+    }
     return 0
   }
-  return load8(KBD_TABLE + scancode)
+
+  // Key release
+  if sc >= 128 {
+    if sc == 0x9D {
+      kbd_ctrl = 0
+    }
+    if sc == 0xAA || sc == 0xB6 {
+      kbd_shift = 0
+    }
+    return 0
+  }
+
+  // Modifier key presses
+  if sc == 0x1D {
+    kbd_ctrl = 1
+    return 0
+  }
+  if sc == 0x2A || sc == 0x36 {
+    kbd_shift = 1
+    return 0
+  }
+  if sc == 0x3A {
+    return 0
+  }
+  if sc == 0x1C {
+    return 13
+  }
+  if sc == 0x0E {
+    return 8
+  }
+
+  // Ctrl + letter = control character
+  if kbd_ctrl != 0 {
+    let ch = load8(KBD_TABLE + sc)
+    if ch >= 97 && ch <= 122 {
+      return ch & 0x1F
+    }
+    return 0
+  }
+
+  // Shift handling
+  if kbd_shift != 0 {
+    let sh = load8(KBD_SHIFT_TABLE + sc)
+    if sh != 0 {
+      return sh
+    }
+    let ch = load8(KBD_TABLE + sc)
+    if ch >= 97 && ch <= 122 {
+      return ch - 32
+    }
+    return ch
+  }
+
+  return load8(KBD_TABLE + sc)
 }
 
 fn read_line() -> Int {
