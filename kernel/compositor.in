@@ -29,8 +29,8 @@ const COMP_TASKBAR_H = 28
 const COMP_COLOR_DESKTOP = 0x000B0909
 const COMP_COLOR_PANEL = 0x001B1818
 const COMP_COLOR_PANEL_LINE = 0x0027272A
-const COMP_COLOR_TITLE = 0x001B1818
-const COMP_COLOR_TITLE_ACTIVE = 0x0027272A
+const COMP_COLOR_TITLE = 0x00333336
+const COMP_COLOR_TITLE_ACTIVE = 0x00444444
 const COMP_COLOR_WINDOW = 0x00FFFFFF
 const COMP_COLOR_BORDER = 0x003F3F46
 const COMP_COLOR_ACCENT = 0x00F8BD38
@@ -343,58 +343,6 @@ fn comp_draw_content_bg(base: Int) -> void {
   fb_fill_rect(x + COMP_BORDER_W, content_y, w - COMP_BORDER_W * 2, h - COMP_BORDER_W, COMP_COLOR_WINDOW)
 }
 
-// Draw the title bar, border, and window controls for a single window.
-fn comp_draw_window_frame(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let h = load32(base + 16)
-  let title = load64(base + 24)
-  let flags = load32(base + 20)
-  let bg = COMP_COLOR_TITLE
-  let fg = COMP_COLOR_MUTED
-  if (flags & COMP_WIN_FOCUSED) != 0 {
-    bg = COMP_COLOR_TITLE_ACTIVE
-    fg = FB_COLOR_WHITE
-  }
-  // Border
-  let bw = w
-  let bh = h + COMP_TITLE_BAR_H
-  fb_fill_rect(x, y, bw, 1, COMP_COLOR_BORDER)
-  fb_fill_rect(x, y + bh - 1, bw, 1, COMP_COLOR_BORDER)
-  fb_fill_rect(x, y + 1, 1, bh - 2, COMP_COLOR_BORDER)
-  fb_fill_rect(x + bw - 1, y + 1, 1, bh - 2, COMP_COLOR_BORDER)
-  // Title bar background
-  fb_fill_rect(x + 1, y + 1, w - 2, COMP_TITLE_BAR_H - 1, bg)
-  // Title text
-  if title != 0 {
-    comp_draw_label(x + 12, y + (COMP_TITLE_BAR_H - 18) / 2, title, fg, bg)
-  }
-  // Minimize button
-  let min_x = x + w - 52
-  let btn_y = y + 5
-  let btn_h = COMP_TITLE_BAR_H - 10
-  fb_fill_rect(min_x, btn_y, 22, btn_h, 0x00555555)
-  let min_bar_y = btn_y + btn_h / 2
-  let mi = 0
-  while mi < 14 {
-    store32(fb_addr + min_bar_y * fb_pitch + (min_x + 4 + mi) * 4, FB_COLOR_WHITE)
-    mi = mi + 1
-  }
-  // Close button
-  let btn_x = x + w - 28
-  fb_fill_rect(btn_x, btn_y, 22, btn_h, FB_COLOR_RED)
-  let cx = btn_x + 11
-  let cy = btn_y + btn_h / 2
-  let xi = -3
-  while xi <= 3 {
-    store32(fb_addr + (cy + xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
-    store32(fb_addr + (cy - xi) * fb_pitch + (cx + xi) * 4, FB_COLOR_WHITE)
-    xi = xi + 1
-  }
-  return
-}
-
 fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   let cx = x
   let i = 0
@@ -579,7 +527,48 @@ fn comp_render_window(idx: Int) -> void {
   }
 
   // Draw window frame (title bar + border + controls)
-  comp_draw_window_frame(base)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let wh = load32(base + 16)
+  let wtitle = load64(base + 24)
+  let wflags = load32(base + 20)
+  let wfh = wh + COMP_TITLE_BAR_H
+  fb_fill_rect(wx, wy, ww, COMP_BORDER_W, COMP_COLOR_BORDER)
+  fb_fill_rect(wx, wy + wfh - COMP_BORDER_W, ww, COMP_BORDER_W, COMP_COLOR_BORDER)
+  fb_fill_rect(wx, wy + COMP_BORDER_W, COMP_BORDER_W, wfh - COMP_BORDER_W * 2, COMP_COLOR_BORDER)
+  fb_fill_rect(wx + ww - COMP_BORDER_W, wy + COMP_BORDER_W, COMP_BORDER_W, wfh - COMP_BORDER_W * 2, COMP_COLOR_BORDER)
+  if (wflags & COMP_WIN_FOCUSED) != 0 {
+    fb_fill_rect(wx + COMP_BORDER_W, wy + COMP_BORDER_W, ww - COMP_BORDER_W * 2, COMP_TITLE_BAR_H, COMP_COLOR_TITLE_ACTIVE)
+    if wtitle != 0 {
+      comp_draw_label(wx + 12, wy + COMP_BORDER_W + (COMP_TITLE_BAR_H - 18) / 2, wtitle, FB_COLOR_WHITE, COMP_COLOR_TITLE_ACTIVE)
+    }
+  } else {
+    fb_fill_rect(wx + COMP_BORDER_W, wy + COMP_BORDER_W, ww - COMP_BORDER_W * 2, COMP_TITLE_BAR_H, COMP_COLOR_TITLE)
+    if wtitle != 0 {
+      comp_draw_label(wx + 12, wy + COMP_BORDER_W + (COMP_TITLE_BAR_H - 18) / 2, wtitle, COMP_COLOR_MUTED, COMP_COLOR_TITLE)
+    }
+  }
+  let wmin_x = wx + ww - 52
+  let wbtn_y = wy + COMP_BORDER_W + 5
+  let wbtn_h = COMP_TITLE_BAR_H - 10
+  fb_fill_rect(wmin_x, wbtn_y, 22, wbtn_h, 0x00555555)
+  let wmin_bar_y = wbtn_y + wbtn_h / 2
+  let wmi = 0
+  while wmi < 14 {
+    store32(fb_addr + wmin_bar_y * fb_pitch + (wmin_x + 4 + wmi) * 4, FB_COLOR_WHITE)
+    wmi = wmi + 1
+  }
+  let wbtn_x = wx + ww - 28
+  fb_fill_rect(wbtn_x, wbtn_y, 22, wbtn_h, FB_COLOR_RED)
+  let wcx = wbtn_x + 11
+  let wcy = wbtn_y + wbtn_h / 2
+  let wxi = -3
+  while wxi <= 3 {
+    store32(fb_addr + (wcy + wxi) * fb_pitch + (wcx + wxi) * 4, FB_COLOR_WHITE)
+    store32(fb_addr + (wcy - wxi) * fb_pitch + (wcx + wxi) * 4, FB_COLOR_WHITE)
+    wxi = wxi + 1
+  }
 
   // Draw content (role-specific drawers handle their own backgrounds)
   let role = load64(base + 40)
@@ -988,12 +977,22 @@ fn comp_run(port: Int) -> void {
 
   comp_bg_drawn = 0  // force initial background render
 
-  // Create default windows with modern layout (accounting for bottom taskbar)
-  let win3_title = "TERMINAL"
-  let win3 = comp_win_create(win3_title, 800, 320, 360, 300)
-  comp_win_set_role(win3, COMP_ROLE_TERMINAL)
-  comp_win_place(win3, 48, 48, fb_width - 96, fb_height - 48 - COMP_TASKBAR_H - 48)
-  comp_win_focus(win3)
+  // Create default windows with a Crepuscularity-inspired workspace layout
+  let top_y = COMP_TASKBAR_H + 20
+  let usable_h = fb_height - COMP_TASKBAR_H * 2 - 40
+  let left_w = (fb_width - 64) / 2
+  let right_w = fb_width - 64 - left_w
+  let right_h = (usable_h - 16) / 2
+
+  let win_ed = comp_win_create("EDITOR", 48, top_y, left_w, usable_h)
+  comp_win_set_role(win_ed, COMP_ROLE_VRO)
+  comp_win_focus(win_ed)
+
+  let win_util = comp_win_create("UTILITIES", 48 + left_w + 16, top_y, right_w, right_h)
+  comp_win_set_role(win_util, COMP_ROLE_UTILITIES)
+
+  let win_term = comp_win_create("TERMINAL", 48 + left_w + 16, top_y + right_h + 16, right_w, right_h)
+  comp_win_set_role(win_term, COMP_ROLE_TERMINAL)
 
   comp_running = 1
   let prev_left = 0
