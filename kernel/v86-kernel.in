@@ -21,6 +21,13 @@ const HIST_BUF = 0x7500
 const HIST_MAX = 16
 const HIST_ENTRY_SIZE = 80
 
+const FS_FILES = 16
+const FS_NAME_SIZE = 16
+const FS_ENTRY_SIZE = 32
+const FS_FILE_SIZE = 256
+const FS_TABLE = 0x7900
+const FS_DATA = 0x7B00
+
 var edit_len: Int = 0
 var hist_count: Int = 0
 var boot_tick: Int = 0
@@ -28,6 +35,7 @@ var boot_tick: Int = 0
 fn kernel_entry(mb_info: Int) -> Int {
   keyboard_init()
   serial_init()
+  fs_init()
 
   edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
 
@@ -58,6 +66,18 @@ fn kernel_entry(mb_info: Int) -> Int {
       cmd_cat(arg_at(1))
     } else if match_command("echo") {
       cmd_echo(arg_at(1))
+    } else if match_command("write") {
+      cmd_write(arg_at(1), arg_at(2))
+    } else if match_command("rm") {
+      cmd_rm(arg_at(1))
+    } else if match_command("touch") {
+      cmd_touch(arg_at(1))
+    } else if match_command("cp") {
+      cmd_cp(arg_at(1), arg_at(2))
+    } else if match_command("mv") {
+      cmd_mv(arg_at(1), arg_at(2))
+    } else if match_command("mkdir") {
+      cmd_mkdir(arg_at(1))
     } else if match_command("pwd") {
       serial_write_cstr("/")
       serial_nl()
@@ -111,11 +131,23 @@ fn cmd_help() -> void {
   serial_nl()
   serial_write_cstr("info    - show boot info")
   serial_nl()
-  serial_write_cstr("ls      - list root files")
+  serial_write_cstr("ls      - list files")
   serial_nl()
   serial_write_cstr("cat     - print a file")
   serial_nl()
+  serial_write_cstr("write   - write text to a file")
+  serial_nl()
   serial_write_cstr("echo    - print text")
+  serial_nl()
+  serial_write_cstr("touch   - create a file")
+  serial_nl()
+  serial_write_cstr("rm      - remove a file")
+  serial_nl()
+  serial_write_cstr("cp      - copy a file")
+  serial_nl()
+  serial_write_cstr("mv      - rename a file")
+  serial_nl()
+  serial_write_cstr("mkdir   - create a directory")
   serial_nl()
   serial_write_cstr("clear   - clear the screen")
   serial_nl()
@@ -145,6 +177,14 @@ fn cmd_ls() -> void {
   serial_nl()
   serial_write_cstr(FILE_NOTES)
   serial_nl()
+  let i = 0
+  while i < FS_FILES {
+    if fs_entry_used(i) != 0 {
+      serial_write_cstr(fs_entry_name(i))
+      serial_nl()
+    }
+    i = i + 1
+  }
   return
 }
 
@@ -164,6 +204,11 @@ fn cmd_cat(name: Int) -> void {
   }
   if cstr_eq(name, FILE_NOTES) {
     serial_write_cstr(EDIT_BUF)
+    return
+  }
+  let idx = fs_find(name)
+  if idx >= 0 {
+    serial_write_cstr(fs_entry_data(idx))
     return
   }
   serial_write_cstr("cat: ")
@@ -260,6 +305,244 @@ fn cmd_history() -> void {
     i = i + 1
   }
   return
+}
+
+fn fs_entry_name(idx: Int) -> Int {
+  return FS_TABLE + idx * FS_ENTRY_SIZE
+}
+
+fn fs_entry_used(idx: Int) -> Int {
+  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE)
+}
+
+fn fs_entry_set_used(idx: Int, used: Int) -> void {
+  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE, used)
+  return
+}
+
+fn fs_entry_size(idx: Int) -> Int {
+  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 1)
+}
+
+fn fs_entry_set_size(idx: Int, sz: Int) -> void {
+  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 1, sz)
+  return
+}
+
+fn fs_entry_data(idx: Int) -> Int {
+  return FS_DATA + idx * FS_FILE_SIZE
+}
+
+fn fs_init() -> void {
+  let i = 0
+  while i < FS_FILES {
+    fs_entry_set_used(i, 0)
+    fs_entry_set_size(i, 0)
+    store8(fs_entry_data(i), 0)
+    let j = 0
+    while j < FS_NAME_SIZE {
+      store8(FS_TABLE + i * FS_ENTRY_SIZE + j, 0)
+      j = j + 1
+    }
+    i = i + 1
+  }
+  return
+}
+
+fn fs_find(name: Int) -> Int {
+  let i = 0
+  while i < FS_FILES {
+    if fs_entry_used(i) != 0 && cstr_eq(name, fs_entry_name(i)) {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn fs_create(name: Int) -> Int {
+  let i = 0
+  while i < FS_FILES {
+    if fs_entry_used(i) == 0 {
+      fs_entry_set_used(i, 1)
+      fs_entry_set_size(i, 0)
+      cstr_copy(fs_entry_name(i), name, FS_NAME_SIZE - 1)
+      store8(fs_entry_data(i), 0)
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn fs_delete(name: Int) -> Int {
+  let idx = fs_find(name)
+  if idx < 0 {
+    return -1
+  }
+  fs_entry_set_used(idx, 0)
+  fs_entry_set_size(idx, 0)
+  return idx
+}
+
+fn fs_write(idx: Int, data: Int, sz: Int) -> void {
+  let max = FS_FILE_SIZE - 1
+  let n = sz
+  if n > max {
+    n = max
+  }
+  let dst = fs_entry_data(idx)
+  let i = 0
+  while i < n {
+    store8(dst + i, load8(data + i))
+    i = i + 1
+  }
+  store8(dst + n, 0)
+  fs_entry_set_size(idx, n)
+  return
+}
+
+fn cmd_write(name: Int, text: Int) -> void {
+  if name == 0 || text == 0 {
+    serial_write_cstr("usage: write <file> <text>")
+    serial_nl()
+    return
+  }
+  let idx = fs_find(name)
+  if idx < 0 {
+    idx = fs_create(name)
+  }
+  if idx < 0 {
+    serial_write_cstr("write: no free file slots")
+    serial_nl()
+    return
+  }
+  let len = cstr_len(text)
+  fs_write(idx, text, len)
+  serial_write_cstr("wrote ")
+  serial_write_num(len)
+  serial_write_cstr(" bytes to ")
+  serial_write_cstr(name)
+  serial_nl()
+  return
+}
+
+fn cmd_rm(name: Int) -> void {
+  if name == 0 {
+    serial_write_cstr("usage: rm <file>")
+    serial_nl()
+    return
+  }
+  if fs_delete(name) >= 0 {
+    serial_write_cstr("removed ")
+    serial_write_cstr(name)
+    serial_nl()
+  } else {
+    serial_write_cstr("rm: ")
+    serial_write_cstr(name)
+    serial_write_cstr(": no such file")
+    serial_nl()
+  }
+  return
+}
+
+fn cmd_touch(name: Int) -> void {
+  if name == 0 {
+    serial_write_cstr("usage: touch <file>")
+    serial_nl()
+    return
+  }
+  if fs_find(name) < 0 {
+    if fs_create(name) < 0 {
+      serial_write_cstr("touch: no free file slots")
+      serial_nl()
+      return
+    }
+  }
+  serial_write_cstr("touched ")
+  serial_write_cstr(name)
+  serial_nl()
+  return
+}
+
+fn cmd_cp(src: Int, dst: Int) -> void {
+  if src == 0 || dst == 0 {
+    serial_write_cstr("usage: cp <src> <dst>")
+    serial_nl()
+    return
+  }
+  let sidx = fs_find(src)
+  if sidx < 0 {
+    serial_write_cstr("cp: ")
+    serial_write_cstr(src)
+    serial_write_cstr(": no such file")
+    serial_nl()
+    return
+  }
+  let didx = fs_find(dst)
+  if didx < 0 {
+    didx = fs_create(dst)
+  }
+  if didx < 0 {
+    serial_write_cstr("cp: no free file slots")
+    serial_nl()
+    return
+  }
+  fs_write(didx, fs_entry_data(sidx), fs_entry_size(sidx))
+  serial_write_cstr("copied ")
+  serial_write_cstr(src)
+  serial_write_cstr(" to ")
+  serial_write_cstr(dst)
+  serial_nl()
+  return
+}
+
+fn cmd_mv(src: Int, dst: Int) -> void {
+  if src == 0 || dst == 0 {
+    serial_write_cstr("usage: mv <src> <dst>")
+    serial_nl()
+    return
+  }
+  let sidx = fs_find(src)
+  if sidx < 0 {
+    serial_write_cstr("mv: ")
+    serial_write_cstr(src)
+    serial_write_cstr(": no such file")
+    serial_nl()
+    return
+  }
+  let didx = fs_find(dst)
+  if didx >= 0 {
+    fs_entry_set_used(didx, 0)
+  }
+  cstr_copy(fs_entry_name(sidx), dst, FS_NAME_SIZE - 1)
+  serial_write_cstr("moved ")
+  serial_write_cstr(src)
+  serial_write_cstr(" to ")
+  serial_write_cstr(dst)
+  serial_nl()
+  return
+}
+
+fn cmd_mkdir(name: Int) -> void {
+  if name == 0 {
+    serial_write_cstr("usage: mkdir <name>")
+    serial_nl()
+    return
+  }
+  serial_write_cstr("mkdir: ")
+  serial_write_cstr(name)
+  serial_write_cstr(" (directories are not supported yet)")
+  serial_nl()
+  return
+}
+
+fn cstr_len(s: Int) -> Int {
+  let i = 0
+  while load8(s + i) != 0 {
+    i = i + 1
+  }
+  return i
 }
 
 fn cstr_eq(a: Int, b: Int) -> Bool {
