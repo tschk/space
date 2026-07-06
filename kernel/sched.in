@@ -188,26 +188,9 @@ fn thr_reset() -> void {
   return
 }
 
-fn worker_b() -> Int {
-  let round = 0
-  while round < 3 {
-    let port = com1()
-    serial_write_cstr(port, "space:   <worker B> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
-    round = round + 1
-    thr_yield()
-  }
-  return 0
-}
-
 fn run_scheduler(port: Int) -> void {
   scheduler_init(8)
-  thr_create(worker_b)
-  serial_write_cstr(port, "space: scheduler running 2 threads, round-robin")
-  serial_nl(port)
-  thr_run()
-  serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
+  serial_write_cstr(port, "space: scheduler initialized (no demo threads)")
   serial_nl(port)
   return
 }
