@@ -7,10 +7,10 @@ const COM1_PORT = 0x3F8
 const KBD_TABLE = 0x3000
 
 const FILE_README = "README.md"
-const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a PS/2 keyboard and serial console.\n\nTry: help, ls, cat README.md, echo hello, about\n"
+const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a PS/2 keyboard and serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
 
 const FILE_ABOUT = "ABOUT.md"
-const DATA_ABOUT = "Why Space is different\n\nSpace is a component-based operating system. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\n       .in          native language\n       Inauguration  compiler\n       SCI           component image format\n       Space         OS runtime\n       Nanokernel    hardware enforcement\n\nThere is no POSIX in the kernel. Linux, Darwin, and Windows compatibility are .in microservices that translate legacy concepts into Space primitives.\n"
+const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, edit (vro), and more\n  - PS/2 keyboard input\n  - Line editor with append, delete, save\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, cat test/hello.txt\n"
 
 const FILE_NOTES = "notes.txt"
 const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.\n"
@@ -18,7 +18,7 @@ const DATA_NOTES = "This is a scratch file. Use the 'edit' command to change it.
 // --- memory layout ----------------------------------------------------------
 const LINE_BUF = 0x5000
 const EDIT_BUF = 0x6000
-const EDIT_BUF_SIZE = 1024
+const EDIT_BUF_SIZE = 1280
 const NUM_BUF = 0x6500
 const HIST_BUF = 0x6600
 const HIST_MAX = 16
@@ -65,8 +65,6 @@ fn kernel_entry(mb_info: Int) -> Int {
     }
     if cstr_eq(cmd, "help") {
       cmd_help()
-    } else if cstr_eq(cmd, "about") {
-      cmd_cat(arg_at(1))
     } else if cstr_eq(cmd, "info") {
       cmd_info(mb_info)
     } else if cstr_eq(cmd, "ls") {
@@ -134,7 +132,7 @@ fn print_welcome() -> void {
   serial_nl()
   serial_write_cstr("A microkernel shell running in the browser, written in .in and compiled to i386.")
   serial_nl()
-  serial_write_cstr("Type 'help' for commands, 'about' for the pitch, or 'ls' to see root files.")
+  serial_write_cstr("Type 'help' for commands, or 'cat ABOUT.md' for the system design.")
   serial_nl()
   serial_nl()
   return
@@ -142,8 +140,6 @@ fn print_welcome() -> void {
 
 fn cmd_help() -> void {
   serial_write_cstr("help    - this message")
-  serial_nl()
-  serial_write_cstr("about   - what Space is and why it is different")
   serial_nl()
   serial_write_cstr("info    - show boot info")
   serial_nl()
