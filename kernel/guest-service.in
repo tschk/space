@@ -26,20 +26,6 @@ fn g_put(port: Int, ch: Int) -> void {
   return
 }
 
-fn g_hex(port: Int, value: Int) -> void {
-  let shift = 60
-  while shift >= 0 {
-    let nibble = (value >> shift) & 0xF
-    if nibble < 10 {
-      g_put(port, 48 + nibble)
-    } else {
-      g_put(port, 87 + nibble)
-    }
-    shift = shift - 4
-  }
-  return
-}
-
 // Validate SCI manifest against realm's capability table.
 fn sci_validate_manifest(sci_ptr: Int, realm_cap_info: Int) -> Int {
   let magic = load64(sci_ptr + 0)
