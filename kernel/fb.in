@@ -321,6 +321,32 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
   if ch < 0 || ch >= 128 {
     ch = 63  // '?'
   }
+
+  // Fast path if the whole character (16x16) is within bounds
+  if x >= 0 && x + 16 <= fb_width && y >= 0 && y + 16 <= fb_height {
+    let row = 0
+    let row_addr = fb_addr + y * fb_pitch + x * 4
+    while row < 8 {
+      let bits = fb_glyph8(ch, row)
+      let col = 0
+      let pixel_addr = row_addr
+      while col < 8 {
+        let bit = (bits >> (7 - col)) & 1
+        if bit != 0 {
+          store32(pixel_addr, color)
+          store32(pixel_addr + 4, color)
+          store32(pixel_addr + fb_pitch, color)
+          store32(pixel_addr + fb_pitch + 4, color)
+        }
+        pixel_addr = pixel_addr + 8
+        col = col + 1
+      }
+      row_addr = row_addr + fb_pitch * 2
+      row = row + 1
+    }
+    return
+  }
+
   let row = 0
   while row < 8 {
     let bits = fb_glyph8(ch, row)
