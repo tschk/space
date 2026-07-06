@@ -218,3 +218,65 @@ fn dsp_handle_msg(obj_id: Int, opcode: Int, arg0: Int, port: Int) -> void {
   }
   return
 }
+
+
+fn dsp_check(cond: Int, msg: Int, port: Int) -> Int {
+  if cond != 0 {
+    serial_write_cstr(port, "  ok: ")
+    serial_write_cstr(port, msg)
+    serial_nl(port)
+    return 1
+  }
+  serial_write_cstr(port, "  FAIL: ")
+  serial_write_cstr(port, msg)
+  serial_nl(port)
+  return 0
+}
+
+fn dsp_selftest(port: Int) -> Int {
+  let pass = 1
+  dsp_init()
+
+  // Test 1: Initial state
+  pass = pass & dsp_check(dsp_surface_count == 0, "dsp: starts with 0 surfaces", port)
+
+  // Test 2: First surface creation
+  let id0 = dsp_create_surface()
+  pass = pass & dsp_check(id0 == 0, "dsp: first surface is id 0", port)
+  pass = pass & dsp_check(dsp_surface_count == 1, "dsp: surface count incremented", port)
+
+  // Test 3: Surface fields initialization
+  let base = dsp_surfaces + id0 * dsp_surface_size()
+  pass = pass & dsp_check(load64(base + 0) == 0, "dsp: surface 0 id initialized", port)
+  pass = pass & dsp_check(load64(base + 8) == -1, "dsp: surface 0 pool_id is -1", port)
+  pass = pass & dsp_check(load64(base + 16) == 0, "dsp: surface 0 buf_offset is 0", port)
+  pass = pass & dsp_check(load64(base + 24) == 0, "dsp: surface 0 w/h is 0", port)
+  pass = pass & dsp_check(load64(base + 32) == 0, "dsp: surface 0 x/y is 0", port)
+
+
+  // Test 4: Fill up to DSP_MAX_SURFACES
+  let i = 1
+  let all_ok = 1
+  while i < DSP_MAX_SURFACES {
+    let id = dsp_create_surface()
+    if id != i {
+      all_ok = 0
+    }
+    i = i + 1
+  }
+  pass = pass & dsp_check(all_ok == 1, "dsp: can create up to MAX_SURFACES", port)
+  pass = pass & dsp_check(dsp_surface_count == DSP_MAX_SURFACES, "dsp: max surface count reached", port)
+
+  // Test 5: Exceeding DSP_MAX_SURFACES returns -1
+  let id_fail = dsp_create_surface()
+  pass = pass & dsp_check(id_fail == -1, "dsp: fails to create past MAX_SURFACES", port)
+
+  if pass != 0 {
+    serial_write_cstr(port, "  dsp self-test passed")
+    serial_nl(port)
+    return 1
+  }
+  serial_write_cstr(port, "  dsp self-test FAILED")
+  serial_nl(port)
+  return 0
+}
