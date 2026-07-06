@@ -220,6 +220,17 @@ fn memset(addr: Int, val: Int, n: Int) -> void {
 // Copy n bytes from src to dst (does not handle overlap).
 fn memcpy(dst: Int, src: Int, n: Int) -> void {
   let i = 0
+  // Align dst to 8-byte boundary
+  while ((dst + i) & 7) != 0 && i < n {
+    store8(dst + i, load8(src + i))
+    i = i + 1
+  }
+  // Bulk copy in 8-byte chunks
+  while i + 8 <= n {
+    store64(dst + i, load64(src + i))
+    i = i + 8
+  }
+  // Remainder in 1-byte chunks
   while i < n {
     store8(dst + i, load8(src + i))
     i = i + 1

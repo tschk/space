@@ -285,7 +285,6 @@ const COMP_GNOME_ACCENT = 0x003584E4
 const COMP_GNOME_TERM_BG = 0x00121015
 const COMP_GNOME_TERM_TEXT = 0x00C8D4E0
 const COMP_GNOME_BTN_CLOSE = 0x00C01C28
-const COMP_SHADOW_R = 6
 const COMP_CURSOR_H = 16
 const COMP_CURSOR_W = 16
 const COMP_WIN_MINIMIZED = 8
@@ -449,6 +448,8 @@ fn kernel_entry(mb_info: Int) -> Int {
   proc_init(16)
   serial_write_cstr(port, "space: process table initialized (max 16)")
   serial_nl(port)
+
+  proc_selftest()
 
   let nvme_rc = nvme_init()
   if nvme_rc == 0 {

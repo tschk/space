@@ -72,6 +72,8 @@ bash scripts/check-sci-contract.sh   # metadata validation
 bash scripts/check-network.sh        # e1000 ARP/UDP test
 ```
 
+Browser demo (Alpenglow-style v86 shell): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
+
 ## Repository layout
 
 ```

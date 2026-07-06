@@ -26,11 +26,20 @@ fn libc_selftest_string() -> Int {
   pass = pass & libc_check(strlen("hello world") == 11, "strlen long")
   pass = pass & libc_check(strlen("a b c") == 5, "strlen with spaces")
 
+  pass = pass & libc_check(strlen("a") == 1, "strlen single char")
+
   let dyn_str = malloc(8)
   store8(dyn_str, 65)
   store8(dyn_str + 1, 66)
   store8(dyn_str + 2, 0)
   pass = pass & libc_check(strlen(dyn_str) == 2, "strlen dynamic buffer")
+
+  let n_str = malloc(8)
+  store8(n_str, 65) // 'A'
+  store8(n_str + 1, 0) // NUL
+  store8(n_str + 2, 66) // 'B'
+  store8(n_str + 3, 0) // NUL
+  pass = pass & libc_check(strlen(n_str) == 1, "strlen embedded NUL")
 
   pass = pass & libc_check(strcmp(s2, s1) == 0, "strlcpy/strcmp equal")
   pass = pass & libc_check(strcmp("abc", "abd") < 0, "strcmp less")
@@ -98,6 +107,17 @@ fn libc_selftest_memory() -> Int {
   // Set m1[8] to a non-zero value so memcmp at 9 bytes differs.
   store8(m1 + 8, 66)
   pass = pass & libc_check(memcmp(m2, m1, 9) != 0, "memcmp differ at 9")
+
+  // memcmp return value tests
+  let c1 = malloc(8)
+  let c2 = malloc(8)
+  memcpy(c1, "abc", 3)
+  memcpy(c2, "abc", 3)
+  pass = pass & libc_check(memcmp(c1, c2, 3) == 0, "memcmp equal")
+  store8(c2 + 2, 100) // 'd'
+  pass = pass & libc_check(memcmp(c1, c2, 3) < 0, "memcmp less than")
+  pass = pass & libc_check(memcmp(c2, c1, 3) > 0, "memcmp greater than")
+  pass = pass & libc_check(memcmp(c1, c2, 0) == 0, "memcmp zero length")
 
   // memmove overlapping: copy forward (dst < src).
   let m3 = malloc(16)

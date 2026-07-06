@@ -105,13 +105,6 @@ fn proc_wait(pid: Int) -> Int {
   return load64(base + PROC_OFF_EXIT_CODE)
 }
 
-// Return the current status of `pid`, or -1 if out of range.
-fn proc_status(pid: Int) -> Int {
-  if pid >= proc_count { return -1 }
-  let base = proc_table + pid * PROC_SIZE
-  return load64(base + PROC_OFF_STATUS)
-}
-
 // Print all processes and their status (for the `ps` shell command).
 fn proc_list(port: Int) -> void {
   serial_write_cstr(port, "  PID  DOMAIN  THREAD  STATUS   NAME")
@@ -283,4 +276,53 @@ fn sci_load_file(port: Int, pathname: Int) -> Int {
   serial_write_hex(port, status)
   serial_nl(port)
   return status
+}
+
+fn proc_check(cond: Int, msg: Int) -> Int {
+  let port = com1()
+  if cond != 0 {
+    serial_write_cstr(port, "  ok: ")
+    serial_write_cstr(port, msg)
+    serial_nl(port)
+    return 1
+  }
+  serial_write_cstr(port, "  FAIL: ")
+  serial_write_cstr(port, msg)
+  serial_nl(port)
+  return 0
+}
+
+fn proc_selftest() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "space: running process table self-tests")
+  serial_nl(port)
+  let pass = 1
+
+  proc_init(2)
+  pass = pass & proc_check(proc_count == 0, "proc_count initial 0")
+  pass = pass & proc_check(proc_max == 2, "proc_max initial 2")
+
+  let pid1 = proc_create("test1", 0x1000, 0)
+  pass = pass & proc_check(pid1 == 0, "proc_create returns pid 0")
+  pass = pass & proc_check(proc_count == 1, "proc_count increased to 1")
+
+  let pid2 = proc_create("test2", 0x2000, 0)
+  pass = pass & proc_check(pid2 == 1, "proc_create returns pid 1")
+  pass = pass & proc_check(proc_count == 2, "proc_count increased to 2")
+
+  let pid3 = proc_create("test3", 0x3000, 0)
+  pass = pass & proc_check(pid3 == -1, "proc_create respects proc_max")
+  pass = pass & proc_check(proc_count == 2, "proc_count remains 2")
+
+  if pass != 0 {
+    serial_write_cstr(port, "proc_selftest: PASS")
+    serial_nl(port)
+  } else {
+    serial_write_cstr(port, "proc_selftest: FAIL")
+    serial_nl(port)
+  }
+
+  // Restore the normal system state
+  proc_init(16)
+  return pass
 }
