@@ -315,6 +315,21 @@ fn proc_selftest() -> Int {
   pass = pass & proc_check(pid2 >= 0, "proc_create returns a pid")
   pass = pass & proc_check(proc_count == 2, "proc_count increased to 2")
 
+  let wait_invalid = proc_wait(999)
+  pass = pass & proc_check(wait_invalid == -1, "proc_wait returns -1 for invalid pid")
+
+  let pid3 = proc_create("test3", 0x3000, 0)
+  let base3 = proc_table + pid3 * PROC_SIZE
+  store64(base3 + PROC_OFF_STATUS, PROC_EXITED)
+  store64(base3 + PROC_OFF_EXIT_CODE, 42)
+  let wait_exited = proc_wait(pid3)
+  pass = pass & proc_check(wait_exited == 42, "proc_wait returns exit code for exited process")
+
+  let pid4 = proc_create("test4", 0x4000, 0)
+  proc_kill(pid4)
+  let wait_killed = proc_wait(pid4)
+  pass = pass & proc_check(wait_killed == 0, "proc_wait returns 0 for killed process")
+
   if pass != 0 {
     serial_write_cstr(port, "proc_selftest: PASS")
     serial_nl(port)
