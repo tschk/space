@@ -170,7 +170,7 @@ fn proc_dummy_entry() -> Int {
 // and invokes its entry point.
 fn sci_load_file(port: Int, pathname: Int) -> Int {
   let manifest = alloc(32)
-  let rc = sparkfs_read(pathname, manifest, 32)
+  let rc = sparkfs_pread(pathname, manifest, 32, 0)
   if rc < 32 {
     serial_write_cstr(port, "  SCI: failed to read manifest header from ")
     serial_write_cstr(port, pathname)
@@ -224,7 +224,7 @@ fn sci_load_file(port: Int, pathname: Int) -> Int {
     z = z + 1
   }
 
-  let bytes_read = sparkfs_read(pathname, load_addr, image_size)
+  let bytes_read = sparkfs_pread(pathname, load_addr, image_size, 0)
   if bytes_read < image_size {
     serial_write_cstr(port, "  SCI: read failed (got 0x")
     serial_write_hex(port, bytes_read)

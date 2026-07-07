@@ -179,11 +179,11 @@ fn space_fetch(port: Int) -> void {
   serial_write_dec_wide(port, fb_size / 1048576)
   serial_write_cstr(port, " MiB")
   serial_nl(port)
-  serial_write_cstr(port, "  storage     ")
-  if fs_disk_ready == 0 {
-    serial_write_cstr(port, "ramfs")
-  } else {
+  serial_write_cstr(port, "  storage     sparkfs ")
+  if nvme_ready != 0 {
     serial_write_cstr(port, "nvme")
+  } else {
+    serial_write_cstr(port, "mem")
   }
   serial_nl(port)
   serial_write_cstr(port, "  input       PS/2 keyboard + mouse")

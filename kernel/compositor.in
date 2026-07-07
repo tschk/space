@@ -498,10 +498,10 @@ fn comp_draw_terminal_content(base: Int) -> void {
     let vx = comp_draw_dec(x + 260, content_y + 204, fb_size / 1048576, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
     comp_draw_label(vx, content_y + 204, " MIB", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
     comp_draw_label(x + 16, content_y + 234, "STORAGE", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
-    if fs_disk_ready == 0 {
-      comp_draw_label(x + 260, content_y + 234, "RAMFS", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    if nvme_ready != 0 {
+      comp_draw_label(x + 260, content_y + 234, "SPARKFS NVME", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
     } else {
-      comp_draw_label(x + 260, content_y + 234, "NVME", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+      comp_draw_label(x + 260, content_y + 234, "SPARKFS MEM", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
     }
     comp_draw_label(x + 16, content_y + 264, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
     comp_draw_label(x + 260, content_y + 264, "PS/2 KEYBOARD + MOUSE", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)

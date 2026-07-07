@@ -237,6 +237,167 @@ fn sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
   return size
 }
 
+// Read up to `max` bytes from file `path` starting at `offset`. Returns byte count or -1.
+fn sparkfs_pread(path: Int, buf: Int, max: Int, offset: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  if offset >= size {
+    return 0
+  }
+  let avail = size - offset
+  let to_read = max
+  if to_read > avail {
+    to_read = avail
+  }
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < to_read {
+      store8(buf + i, load8(addr + SF_IN_DIRECT + offset + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_ATIME, ticks)
+    sf_write_inode(ino)
+    return to_read
+  }
+  let n = 0
+  while n < to_read {
+    let pos = offset + n
+    let fbn = pos / SF_BLOCK_SIZE
+    let bno = sf_inode_block(ino, fbn)
+    if bno < 0 {
+      return n
+    }
+    sf_read_block(bno, sf_block_buf)
+    let off = pos & (SF_BLOCK_SIZE - 1)
+    let chunk = SF_BLOCK_SIZE - off
+    let left = to_read - n
+    if chunk > left {
+      chunk = left
+    }
+    let i = 0
+    while i < chunk {
+      store8(buf + n + i, load8(sf_block_buf + off + i))
+      i = i + 1
+    }
+    n = n + chunk
+  }
+  store64(addr + SF_IN_ATIME, ticks)
+  sf_write_inode(ino)
+  return to_read
+}
+
+// Write `count` bytes from `buf` at `offset`. Grows file if needed. Returns count or -1.
+fn sparkfs_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+  if sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    ino = sparkfs_create(path, SF_TYPE_FILE)
+    if ino < 0 {
+      return -1
+    }
+  }
+  let addr = sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let old_size = load64(addr + SF_IN_SIZE)
+  let end = offset + count
+  if end > old_size {
+    let hole_buf = alloc(SF_BLOCK_SIZE)
+    let z = 0
+    while z < SF_BLOCK_SIZE {
+      store8(hole_buf + z, 0)
+      z = z + 1
+    }
+    let pos = old_size
+    while pos < offset {
+      let chunk = offset - pos
+      if chunk > SF_BLOCK_SIZE {
+        chunk = SF_BLOCK_SIZE
+      }
+      let rc = sparkfs_pwrite(path, hole_buf, chunk, pos)
+      if rc < 0 {
+        return -1
+      }
+      pos = pos + chunk
+    }
+    old_size = load64(addr + SF_IN_SIZE)
+  }
+  if end <= SF_INLINE_MAX && load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < count {
+      store8(addr + SF_IN_DIRECT + offset + i, load8(buf + i))
+      i = i + 1
+    }
+    if end > load64(addr + SF_IN_SIZE) {
+      store64(addr + SF_IN_SIZE, end)
+    }
+    store64(addr + SF_IN_MTIME, ticks)
+    sf_write_inode(ino)
+    return count
+  }
+  if end <= SF_INLINE_MAX && offset == 0 && count <= SF_INLINE_MAX {
+    let i = 0
+    while i < count {
+      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_SIZE, count)
+    store32(addr + SF_IN_INLINE, 1)
+    store64(addr + SF_IN_MTIME, ticks)
+    sf_write_inode(ino)
+    return count
+  }
+  let n = 0
+  while n < count {
+    let pos = offset + n
+    let fbn = pos / SF_BLOCK_SIZE
+    let bno = sf_inode_block(ino, fbn)
+    if bno < 0 {
+      bno = sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      sf_set_inode_block(ino, fbn, bno)
+      sf_zero_block(sf_block_buf)
+      sf_write_block(bno, sf_block_buf)
+    }
+    sf_read_block(bno, sf_block_buf)
+    let off = pos & (SF_BLOCK_SIZE - 1)
+    let chunk = SF_BLOCK_SIZE - off
+    let left = count - n
+    if chunk > left {
+      chunk = left
+    }
+    let i = 0
+    while i < chunk {
+      store8(sf_block_buf + off + i, load8(buf + n + i))
+      i = i + 1
+    }
+    sf_write_block(bno, sf_block_buf)
+    n = n + chunk
+  }
+  if end > load64(addr + SF_IN_SIZE) {
+    store64(addr + SF_IN_SIZE, end)
+    store32(addr + SF_IN_INLINE, 0)
+  }
+  store64(addr + SF_IN_MTIME, ticks)
+  sf_write_inode(ino)
+  return count
+}
+
 fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
   if sf_disk_ready == 0 {
     return -1

@@ -146,20 +146,19 @@ const LINUX_ESPIPE = -29
 // sys_stat(path, statbuf) — get file status.
 // Fills a 144-byte stat structure at statbuf.
 fn linux_sys_stat(path: Int, statbuf: Int) -> Int {
-  let file_idx = fs_find(path)
-  if file_idx < 0 {
+  let sfbuf = alloc(64)
+  if sparkfs_stat(path, sfbuf) != 0 {
     return LINUX_ENOENT
   }
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
-  // Zero the stat buffer
+  let file_size = load64(sfbuf + SF_ST_SIZE)
+  let ino = sf_lookup_path(path)
   let i = 0
   while i < LINUX_STAT_SIZE {
     store8(statbuf + i, 0)
     i = i + 1
   }
   store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, file_idx + 1)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
   store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
   store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
   store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
@@ -189,17 +188,20 @@ fn linux_sys_fstat(fd: Int, statbuf: Int) -> Int {
     return 0
   }
   let base = vfs_fd_table + fd * 32
-
-  let file_idx = load64(base + 0)
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
+  let fpath = load64(base + 0)
+  let sfbuf = alloc(64)
+  if sparkfs_stat(fpath, sfbuf) != 0 {
+    return LINUX_EIO
+  }
+  let file_size = load64(sfbuf + SF_ST_SIZE)
+  let ino = sf_lookup_path(fpath)
   let i = 0
   while i < LINUX_STAT_SIZE {
     store8(statbuf + i, 0)
     i = i + 1
   }
   store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, file_idx + 1)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
   store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
   store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
   store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
@@ -316,35 +318,19 @@ fn linux_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
 // Reads an SCI component from the filesystem and loads it via sci_load.
 // Falls back to ENOSYS if the file doesn't exist or isn't a valid SCI binary.
 fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
-  let file_idx = fs_open_path(path)
-  if file_idx < 0 {
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
     return LINUX_ENOENT
   }
-  let entry = fs_entry(file_idx)
-  let file_size = load32(entry + 20)
+  let addr = sf_inode_addr(ino)
+  let file_size = load64(addr + SF_IN_SIZE)
   if file_size < 64 {
     return LINUX_ENOEXEC
   }
-  let start_sector = load32(entry + 16)
   let buf = alloc(file_size)
-  let sbuf = alloc(512)
-  let pos = 0
-  while pos < file_size {
-    let sector_idx = pos / 512
-    let sector_off = pos % 512
-    let rc = ata_read_sector(start_sector + sector_idx, sbuf)
-    if rc != 0 {
-      return LINUX_EIO
-    }
-    let chunk = 512 - sector_off
-    let left = file_size - pos
-    if chunk > left { chunk = left }
-    let k = 0
-    while k < chunk {
-      store8(buf + pos + k, load8(sbuf + sector_off + k))
-      k = k + 1
-    }
-    pos = pos + chunk
+  let got = sparkfs_read(path, buf, file_size)
+  if got < file_size {
+    return LINUX_EIO
   }
   let port = com1()
   return linux_exec_image(port, buf, file_size, path)
@@ -477,13 +463,8 @@ fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
   // If fd is valid, read file contents into the mapping
   if fd >= 3 && linux_fd_valid(fd) != 0 {
     let base = vfs_fd_table + fd * 32
-
-    let file_idx = load64(base + 0)
-    let entry = fs_entry(file_idx)
-    let file_size = load32(entry + 20)
-    let start_sector = load32(entry + 16)
-    let sbuf = alloc(512)
-    let pos = 0
+    let fpath = load64(base + 0)
+    let file_size = vfs_sparkfs_file_size(fpath)
     let remaining = file_size - offset
     if remaining < 0 {
       remaining = 0
@@ -491,24 +472,8 @@ fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
     if remaining > aligned {
       remaining = aligned
     }
-    while pos < remaining {
-      let sector_idx = (offset + pos) / 512
-      let sector_off = (offset + pos) % 512
-      let rc = ata_read_sector(start_sector + sector_idx, sbuf)
-      if rc != 0 {
-        break
-      }
-      let chunk = 512 - sector_off
-      let left = remaining - pos
-      if chunk > left {
-        chunk = left
-      }
-      let k = 0
-      while k < chunk {
-        store8(p + pos + k, load8(sbuf + sector_off + k))
-        k = k + 1
-      }
-      pos = pos + chunk
+    if remaining > 0 {
+      sparkfs_pread(fpath, p, remaining, offset)
     }
   }
   return p
