@@ -304,22 +304,40 @@ fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
     return
   }
 
+  // Fully off-screen check
+  if x + 16 <= 0 || x >= fb_width || y + 16 <= 0 || y >= fb_height {
+    return
+  }
+
   let row = 0
+  let py = y
   while row < 8 {
-    let bits = fb_glyph8(ch, row)
-    let col = 0
-    while col < 8 {
-      let bit = (bits >> (7 - col)) & 1
-      if bit != 0 {
-        let px = x + col * 2
-        let py = y + row * 2
-        fb_put_pixel(px, py, color)
-        fb_put_pixel(px + 1, py, color)
-        fb_put_pixel(px, py + 1, color)
-        fb_put_pixel(px + 1, py + 1, color)
+    if py + 1 >= 0 && py < fb_height {
+      let bits = fb_glyph8(ch, row)
+      let col = 0
+      let px = x
+      let row_addr = fb_addr + py * fb_pitch + px * 4
+      while col < 8 {
+        let bit = (bits >> (7 - col)) & 1
+        if bit != 0 {
+          if px >= 0 && py >= 0 && px + 1 < fb_width && py + 1 < fb_height {
+            store32(row_addr, color)
+            store32(row_addr + 4, color)
+            store32(row_addr + fb_pitch, color)
+            store32(row_addr + fb_pitch + 4, color)
+          } else {
+            fb_put_pixel(px, py, color)
+            fb_put_pixel(px + 1, py, color)
+            fb_put_pixel(px, py + 1, color)
+            fb_put_pixel(px + 1, py + 1, color)
+          }
+        }
+        row_addr = row_addr + 8
+        px = px + 2
+        col = col + 1
       }
-      col = col + 1
     }
+    py = py + 2
     row = row + 1
   }
   return
