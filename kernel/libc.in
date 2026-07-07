@@ -210,10 +210,27 @@ fn strrev(s: Int) -> Int {
 // Fill n bytes at addr with val.
 fn memset(addr: Int, val: Int, n: Int) -> void {
   let i = 0
-  while i < n {
-    store8(addr + i, val)
+  let val8 = val & 0xFF
+  let val64 = val8 | (val8 << 8) | (val8 << 16) | (val8 << 24) | (val8 << 32) | (val8 << 40) | (val8 << 48) | (val8 << 56)
+
+  // Align to 8-byte boundary
+  while ((addr + i) & 7) != 0 && i < n {
+    store8(addr + i, val8)
     i = i + 1
   }
+
+  // Bulk set in 8-byte chunks
+  while i + 8 <= n {
+    store64(addr + i, val64)
+    i = i + 8
+  }
+
+  // Remainder in 1-byte chunks
+  while i < n {
+    store8(addr + i, val8)
+    i = i + 1
+  }
+
   return
 }
 
