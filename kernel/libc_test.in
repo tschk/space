@@ -119,6 +119,23 @@ fn libc_selftest_memory() -> Int {
   pass = pass & libc_check(memcmp(c2, c1, 3) > 0, "memcmp greater than")
   pass = pass & libc_check(memcmp(c1, c2, 0) == 0, "memcmp zero length")
 
+  pass = pass & libc_check(memcmp(c1, c1, 8) == 0, "memcmp identical pointers")
+
+  let u1 = malloc(8)
+  let u2 = malloc(8)
+  memset(u1, 0, 8)
+  memset(u2, 0, 8)
+  store8(u1, 0xFF)
+  store8(u2, 0x7F)
+  pass = pass & libc_check(memcmp(u1, u2, 1) > 0, "memcmp unsigned char comparison")
+
+  let d1 = malloc(16)
+  let d2 = malloc(16)
+  memset(d1, 65, 16)
+  memset(d2, 65, 16)
+  store8(d2 + 15, 66)
+  pass = pass & libc_check(memcmp(d1, d2, 16) < 0, "memcmp diff at last byte")
+
   // memmove overlapping: copy forward (dst < src).
   let m3 = malloc(16)
   memset(m3, 0, 16)
