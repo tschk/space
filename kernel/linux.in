@@ -327,7 +327,7 @@ fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
   if file_size < 64 {
     return LINUX_ENOEXEC
   }
-  let buf = alloc(file_size)
+  let buf = load_arena_alloc(file_size)
   let got = sparkfs_read(path, buf, file_size)
   if got < file_size {
     return LINUX_EIO

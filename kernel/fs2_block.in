@@ -2,6 +2,75 @@ package space.kernel
 
 // SparkFS low-level block I/O and allocation bitmap.
 
+// --- NVMe block cache (P2) --------------------------------------------------
+// Small fully-associative write-through cache used only on the NVMe path
+// (sf_mem_disk == 0). The memdisk path is already in-RAM, so caching would
+// just waste heap. Allocated lazily in sparkfs_init when the NVMe branch runs.
+const SF_CACHE_ENTRIES = 8
+
+var sf_cache_buf: Int = 0   // SF_CACHE_ENTRIES * SF_BLOCK_SIZE data buffer
+var sf_cache_meta: Int = 0  // SF_CACHE_ENTRIES * 16: [block_no, valid]
+var sf_cache_hits: Int = 0
+var sf_cache_misses: Int = 0
+
+fn sf_cache_init() -> void {
+  sf_cache_buf = alloc(SF_CACHE_ENTRIES * SF_BLOCK_SIZE)
+  sf_cache_meta = alloc(SF_CACHE_ENTRIES * 16)
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    store64(sf_cache_meta + i * 16 + 0, -1)
+    store64(sf_cache_meta + i * 16 + 8, 0)
+    i = i + 1
+  }
+  sf_cache_hits = 0
+  sf_cache_misses = 0
+  return
+}
+
+fn sf_cache_lookup(bno: Int) -> Int {
+  if sf_cache_buf == 0 {
+    return -1
+  }
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    if load64(sf_cache_meta + i * 16 + 8) != 0 && load64(sf_cache_meta + i * 16 + 0) == bno {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn sf_cache_find_empty() -> Int {
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    if load64(sf_cache_meta + i * 16 + 8) == 0 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn sf_cache_install(bno: Int, buf: Int) -> void {
+  if sf_cache_buf == 0 {
+    return
+  }
+  let slot = sf_cache_find_empty()
+  if slot < 0 {
+    slot = 0
+  }
+  store64(sf_cache_meta + slot * 16 + 0, bno)
+  store64(sf_cache_meta + slot * 16 + 8, 1)
+  let dst = sf_cache_buf + slot * SF_BLOCK_SIZE
+  let k = 0
+  while k < SF_BLOCK_SIZE {
+    store8(dst + k, load8(buf + k))
+    k = k + 1
+  }
+  return
+}
+
 // --- low-level block I/O ----------------------------------------------------
 
 // Read block `bno` into `buf`. Returns 0 on success.
@@ -15,6 +84,18 @@ fn sf_read_block(bno: Int, buf: Int) -> Int {
     }
     return 0
   }
+  let cached = sf_cache_lookup(bno)
+  if cached >= 0 {
+    let src = sf_cache_buf + cached * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(buf + i, load8(src + i))
+      i = i + 1
+    }
+    sf_cache_hits = sf_cache_hits + 1
+    return 0
+  }
+  sf_cache_misses = sf_cache_misses + 1
   let sector = bno * SF_SECTORS_PER_BLOCK
   let i = 0
   while i < SF_SECTORS_PER_BLOCK {
@@ -24,10 +105,11 @@ fn sf_read_block(bno: Int, buf: Int) -> Int {
     }
     i = i + 1
   }
+  sf_cache_install(bno, buf)
   return 0
 }
 
-// Write block `bno` from `buf`. Returns 0 on success.
+// Write block `bno` from `buf`. Returns 0 on success. Write-through.
 fn sf_write_block(bno: Int, buf: Int) -> Int {
   if sf_mem_disk != 0 {
     let dst = sf_mem_disk + bno * SF_BLOCK_SIZE
@@ -46,6 +128,17 @@ fn sf_write_block(bno: Int, buf: Int) -> Int {
       return -1
     }
     i = i + 1
+  }
+  let cached = sf_cache_lookup(bno)
+  if cached >= 0 {
+    let dst = sf_cache_buf + cached * SF_BLOCK_SIZE
+    let k = 0
+    while k < SF_BLOCK_SIZE {
+      store8(dst + k, load8(buf + k))
+      k = k + 1
+    }
+  } else {
+    sf_cache_install(bno, buf)
   }
   return 0
 }

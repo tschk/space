@@ -484,9 +484,22 @@ fn kernel_entry(mb_info: Int) -> Int {
     serial_nl(port)
   }
 
+  load_arena_init(4 * 1024 * 1024)
+  serial_write_cstr(port, "space: load arena reserved (4 MiB) at 0x")
+  serial_write_hex(port, load_arena_base)
+  serial_nl(port)
+
   fs_init()
   serial_write_cstr(port, "space: filesystem initialized")
   serial_nl(port)
+  if sf_mem_disk != 0 {
+    serial_write_cstr(port, "space: sparkfs mem volume at 0x")
+    serial_write_hex(port, sf_mem_disk)
+    serial_nl(port)
+  } else {
+    serial_write_cstr(port, "space: sparkfs nvme volume")
+    serial_nl(port)
+  }
 
   vfs_init()
   test_sci_loader(port)

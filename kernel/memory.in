@@ -143,3 +143,31 @@ fn map_page(virt: Int, phys: Int, flags: Int) -> void {
   invlpg(virt)
   return
 }
+
+// --- load arena -------------------------------------------------------------
+// Dedicated bump region for guest images (SCI/execve). Kept separate from the
+// general heap so memdisk + fd tables + scratch allocations do not collide
+// with executable guest bytes. Reserved once, before fs_init allocates the
+// memdisk, so the arena sits below the memdisk reservation in the heap.
+var load_arena_base: Int = 0
+var load_arena_next: Int = 0
+var load_arena_end: Int = 0
+
+fn load_arena_init(size: Int) -> void {
+  let aligned = (size + 4095) & -4096
+  load_arena_base = alloc(aligned)
+  load_arena_next = load_arena_base
+  load_arena_end = load_arena_base + aligned
+  return
+}
+
+fn load_arena_alloc(size: Int) -> Int {
+  let aligned = (size + 4095) & -4096
+  let p = load_arena_next
+  let next = p + aligned
+  if next > load_arena_end {
+    panic("load arena exhausted")
+  }
+  load_arena_next = next
+  return p
+}

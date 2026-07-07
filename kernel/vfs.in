@@ -99,8 +99,9 @@ fn vfs_open(pathname: Int, flags: Int) -> Int {
   if fd < 0 {
     return -16
   }
+  let path_copy = strdup(pathname)
   let base = vfs_fd_table + fd * 32
-  store64(base + 0, pathname)
+  store64(base + 0, path_copy)
   store64(base + 8, 0)
   store64(base + 16, flags)
   store64(base + 24, 0)

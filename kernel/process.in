@@ -214,8 +214,7 @@ fn sci_load_file(port: Int, pathname: Int) -> Int {
   }
 
   let pages = (image_size + 4095) / 4096
-  let load_addr = (heap_next + 4095) & -4096
-  heap_next = load_addr + pages * 4096
+  let load_addr = load_arena_alloc(pages * 4096)
 
   // Zero the allocated pages
   let z = 0

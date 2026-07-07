@@ -25,6 +25,7 @@ fn sparkfs_init() -> void {
   if magic != SF_MAGIC {
     return
   }
+  sf_cache_init()
   let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
   let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
   let bitmap_bytes = (total + 7) / 8
