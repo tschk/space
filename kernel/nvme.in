@@ -43,7 +43,8 @@ var nvme_mmio: Int = 0       // MMIO base virtual address (= physical, identity-
 var nvme_bdf: Int = 0        // PCI device number (bus 0, func 0)
 var nvme_dstrd: Int = 0      // CAP.DSTRD (doorbell stride exponent)
 var nvme_db_stride: Int = 4  // doorbell stride in bytes (4 << DSTRD)
-var nvme_ready: Int = 0      // 1 after successful init
+var nvme_ready: Int = 0
+var nvme_domain: Int = 0
 
 // Admin queue state (SQ0/CQ0)
 var nvme_asq: Int = 0        // admin SQ base address (page-aligned, identity-mapped)
@@ -258,12 +259,9 @@ fn nvme_pci_init() -> Int {
   let cmd = pci_read32(0, nvme_bdf, 0, 0x04)
   pci_write32(0, nvme_bdf, 0, 0x04, cmd | 0x6)
 
-  // Map the MMIO region identity-mapped (virt == phys), uncached.
-  // 8 pages (32 KiB) covers controller registers (0x00-0x3F) and doorbells
-  // (0x1000+) for admin + one I/O queue pair.
   let pg = mmio_phys
   while pg < mmio_phys + 0x8000 {
-    map_page(pg, pg, 0x1B)
+    domain_map(nvme_domain, pg, pg, 0x1B)
     pg = pg + 0x1000
   }
   nvme_mmio = mmio_phys
@@ -278,6 +276,19 @@ fn nvme_init() -> Int {
     return 0
   }
   let port = com1()
+
+  nvme_domain = domain_create()
+  if nvme_domain == 0 {
+    return -1
+  }
+  domain_switch(nvme_domain)
+
+  nvme_asq = frame_alloc()
+  nvme_acq = frame_alloc()
+  nvme_iocq = frame_alloc()
+  nvme_iosq = frame_alloc()
+  nvme_buf = frame_alloc()
+  nvme_prp_list = frame_alloc()
 
   if nvme_pci_init() != 0 {
     return -1
@@ -309,10 +320,6 @@ fn nvme_init() -> Int {
     return -1
   }
 
-  // Allocate admin queues (page-aligned, identity-mapped, zeroed by frame_alloc).
-  nvme_asq = frame_alloc()
-  nvme_acq = frame_alloc()
-
   // Configure admin queues: AQA (sizes), ASQ (SQ base), ACQ (CQ base).
   // AQA: ASQS (bits 27:16) = ADMIN_Q-1, ACQS (bits 11:0) = ADMIN_Q-1.
   nvme_w32(NVME_AQA, ((NVME_ADMIN_Q - 1) << 16) | (NVME_ADMIN_Q - 1))
@@ -338,7 +345,6 @@ fn nvme_init() -> Int {
   // Create I/O completion queue (CQ1): opcode 0x05.
   // CDW10: QID=1 (bits 15:0) | (QSIZE-1) (bits 31:16).
   // CDW11: PC=1 (physically contiguous, bit 0).
-  nvme_iocq = frame_alloc()
   let cq_cdw10 = 1 | ((NVME_IO_Q - 1) << 16)
   let cq_cdw11 = 1
   let st_cq = nvme_admin_submit(NVME_ADMIN_CREATE_IOCQ, 0, nvme_iocq, 0, cq_cdw10, cq_cdw11, 0)
@@ -352,7 +358,6 @@ fn nvme_init() -> Int {
   // Create I/O submission queue (SQ1): opcode 0x01.
   // CDW10: QID=1 | (QSIZE-1)<<16.
   // CDW11: PC=1 (bit 0) | CQID=1 (bits 31:16).
-  nvme_iosq = frame_alloc()
   let sq_cdw10 = 1 | ((NVME_IO_Q - 1) << 16)
   let sq_cdw11 = 1 | (1 << 16)
   let st_sq = nvme_admin_submit(NVME_ADMIN_CREATE_IOSQ, 0, nvme_iosq, 0, sq_cdw10, sq_cdw11, 0)
@@ -364,10 +369,6 @@ fn nvme_init() -> Int {
   }
 
   serial_write_cstr(port, "  nvme: I/O queues (SQ1/CQ1) created\n")
-
-  // Allocate page-aligned data buffer and PRP list page for shell commands.
-  nvme_buf = frame_alloc()
-  nvme_prp_list = frame_alloc()
 
   nvme_ready = 1
   serial_write_cstr(port, "  nvme: initialization complete\n")

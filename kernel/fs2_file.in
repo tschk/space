@@ -18,14 +18,16 @@ fn sparkfs_init() -> void {
     sparkfs_format_mem_disk()
     return
   }
+  sf_nvme_buf = frame_alloc()
+  sf_cache_init()
   if sf_read_block(0, sf_super) != 0 {
     return
   }
   let magic = load32(sf_super + SF_SB_MAGIC)
   if magic != SF_MAGIC {
+    sparkfs_format()
     return
   }
-  sf_cache_init()
   let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
   let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
   let bitmap_bytes = (total + 7) / 8

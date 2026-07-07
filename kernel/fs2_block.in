@@ -13,6 +13,10 @@ var sf_cache_meta: Int = 0  // SF_CACHE_ENTRIES * 16: [block_no, valid]
 var sf_cache_hits: Int = 0
 var sf_cache_misses: Int = 0
 
+// Page-aligned staging buffer for NVMe block I/O (PRP1 must be page-aligned).
+// Allocated in sparkfs_init when the NVMe path is taken.
+var sf_nvme_buf: Int = 0
+
 fn sf_cache_init() -> void {
   sf_cache_buf = alloc(SF_CACHE_ENTRIES * SF_BLOCK_SIZE)
   sf_cache_meta = alloc(SF_CACHE_ENTRIES * 16)
@@ -97,12 +101,13 @@ fn sf_read_block(bno: Int, buf: Int) -> Int {
   }
   sf_cache_misses = sf_cache_misses + 1
   let sector = bno * SF_SECTORS_PER_BLOCK
+  let rc = nvme_read(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
+  if rc != 0 {
+    return -1
+  }
   let i = 0
-  while i < SF_SECTORS_PER_BLOCK {
-    let rc = ata_read_sector(sector + i, buf + i * SF_SECTOR_SIZE)
-    if rc != 0 {
-      return -1
-    }
+  while i < SF_BLOCK_SIZE {
+    store8(buf + i, load8(sf_nvme_buf + i))
     i = i + 1
   }
   sf_cache_install(bno, buf)
@@ -122,12 +127,13 @@ fn sf_write_block(bno: Int, buf: Int) -> Int {
   }
   let sector = bno * SF_SECTORS_PER_BLOCK
   let i = 0
-  while i < SF_SECTORS_PER_BLOCK {
-    let rc = ata_write_sector(sector + i, buf + i * SF_SECTOR_SIZE)
-    if rc != 0 {
-      return -1
-    }
+  while i < SF_BLOCK_SIZE {
+    store8(sf_nvme_buf + i, load8(buf + i))
     i = i + 1
+  }
+  let rc = nvme_write(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
+  if rc != 0 {
+    return -1
   }
   let cached = sf_cache_lookup(bno)
   if cached >= 0 {

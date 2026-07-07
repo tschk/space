@@ -29,15 +29,25 @@ fn domain_init() -> void {
 fn create_domain_pml4() -> Int {
   let dst_pml4 = frame_alloc()
   let dst_pdpt = frame_alloc()
-  let dst_pd = frame_alloc()
   let i = 0
   while i < 512 {
     store64(dst_pml4 + i * 8, 0)
     store64(dst_pdpt + i * 8, 0)
-    store64(dst_pd + i * 8, load64(0x3000 + i * 8))
     i = i + 1
   }
-  store64(dst_pdpt, dst_pd | 3)
+  let src_pdpt = load64(0x1000) & -4096
+  let j = 0
+  while j < 4 {
+    let src_pd = load64(src_pdpt + j * 8) & -4096
+    let dst_pd = frame_alloc()
+    let k = 0
+    while k < 512 {
+      store64(dst_pd + k * 8, load64(src_pd + k * 8))
+      k = k + 1
+    }
+    store64(dst_pdpt + j * 8, dst_pd | 3)
+    j = j + 1
+  }
   store64(dst_pml4, dst_pdpt | 3)
   return dst_pml4
 }
