@@ -169,7 +169,11 @@ fn thr_run() -> void {
 fn scheduler_init(max_tasks: Int) -> void {
   ctxsw = load64(0x4018)
   kernel_slot = alloc(8)
-  thr_init(max_tasks)
+  let n = max_tasks
+  if n < 32 {
+    n = 32
+  }
+  thr_init(n)
   return
 }
 

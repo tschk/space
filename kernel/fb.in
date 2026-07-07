@@ -1,38 +1,14 @@
 package space.kernel
 
-// VBE framebuffer driver for the Space nanokernel.
-// Reads VBE mode info from the Multiboot1 info structure, maps the framebuffer
-// memory (identity-mapped in the first 4 GiB by the boot trampoline), and
-// provides drawing primitives: pixels, rectangles, lines, and bitmap text.
-//
-// The framebuffer is a linear pixel array. Each pixel is 32 bits (BGRA or RGBX
-// depending on the VBE mode). The pitch (bytes per scanline) may differ from
-// width * 4, so all drawing functions use fb_pitch for address calculation.
-//
-// Multiboot1 info structure offsets (VBE fields):
-//   offset 0:  flags (bit 11 = VBE info valid)
-//   offset 72: vbe_control_info (u32 pointer)
-//   offset 76: vbe_mode_info (u32 pointer)
-//   offset 80: vbe_mode (u16)
-//
-// VBE mode info structure offsets:
-//   offset 16: bytes_per_scanline (u16) -- pitch
-//   offset 18: x_resolution (u16)
-//   offset 20: y_resolution (u16)
-//   offset 25: bits_per_pixel (u8)
-//   offset 40: phys_base_ptr (u32) -- framebuffer physical address
+var fb_addr: Int = 0
+var fb_pitch: Int = 0
+var fb_width: Int = 0
+var fb_height: Int = 0
+var fb_bpp: Int = 0
+var fb_size: Int = 0
+var fb_ready: Int = 0
+var fb_font_scale: Int = 2
 
-// --- framebuffer state ------------------------------------------------------
-var fb_addr: Int = 0       // framebuffer virtual address (identity-mapped)
-var fb_pitch: Int = 0      // bytes per scanline
-var fb_width: Int = 0      // pixels
-var fb_height: Int = 0     // pixels
-var fb_bpp: Int = 0        // bits per pixel
-var fb_size: Int = 0       // total framebuffer size in bytes
-var fb_ready: Int = 0      // 1 after successful init
-var fb_font_scale: Int = 2  // font scale multiplier (2=16x16, 3=24x24)
-
-// --- colors (32-bit RGBX) ---------------------------------------------------
 const FB_COLOR_BLACK = 0x00000000
 const FB_COLOR_WHITE = 0x00FFFFFF
 const FB_COLOR_RED = 0x00FF0000
@@ -51,328 +27,38 @@ const FB_COLOR_ORANGE = 0x00FF8000
 const FB_COLOR_PURPLE = 0x00800080
 const FB_COLOR_TEAL = 0x00808000
 
-// --- font (8x8 bitmap) ------------------------------------------------------
-// Each character is 8 bytes (one per row, MSB = leftmost pixel).
-// We store 128 characters x 8 bytes = 1024 bytes in a heap buffer.
 const FB_FONT_WIDTH = 8
 const FB_FONT_HEIGHT = 8
 var fb_font: Int = 0
-// Font setup moved to font.in
 
-
-// --- Bochs VBE I/O ports (QEMU standard VGA) --------------------------------
-const VBE_INDEX = 0x1CE
-const VBE_DATA = 0x1CF
-
-// Write a VBE register.
-fn vbe_write(idx: Int, val: Int) -> void {
-  outw(VBE_INDEX, idx)
-  outw(VBE_DATA, val)
-  return
-}
-
-// Read a VBE register.
-fn vbe_read(idx: Int) -> Int {
-  outw(VBE_INDEX, idx)
-  return inw(VBE_DATA)
-}
-
-// --- framebuffer initialization ---------------------------------------------
-
-// Enable PCI vendor/device I/O for VGA device.
-fn fb_enable_vga_pci() -> void {
-  let dev = 0
-  while dev < 32 {
-    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
-    if vendor != 0xFFFF {
-      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
-      if class_code == 0x030000 {
-        let cmd = pci_read32(0, dev, 0, 0x04)
-        pci_write32(0, dev, 0, 0x04, cmd | 0x7)
-        return
-      }
-    }
-    dev = dev + 1
-  }
-  return
-}
-
-// Initialize the framebuffer using Bochs VBE I/O ports.
-// Sets a 1920x1080x32 graphics mode with linear framebuffer.
-// Falls back to multiboot VBE info if I/O ports don't respond.
-// Returns 0 on success, -1 if VBE is unavailable.
 fn fb_init(mb_info: Int) -> Int {
-  // Enable PCI VGA I/O (needed for VBE ports to work on some QEMU configs).
-  fb_enable_vga_pci()
-
-  // Check for Bochs VBE by reading the ID register.
-  let vbe_id = vbe_read(0x00)
-
-  // If VBE I/O fails, try multiboot VBE info.
-  if vbe_id == 0 {
-    let mb_flags = load32(mb_info + 0)
-    let vbe_avail = (mb_flags >> 11) & 1
-    if vbe_avail == 0 {
-      return -1
-    }
-    let mode_info = load32(mb_info + 76)
-    if mode_info == 0 {
-      return -1
-    }
-    fb_pitch = load16(mode_info + 16)
-    fb_width = load16(mode_info + 18)
-    fb_height = load16(mode_info + 20)
-    fb_bpp = load8(mode_info + 25)
-    fb_addr = load32(mode_info + 40)
-    if fb_bpp != 32 {
-      return -1
-    }
-    if fb_pitch < fb_width * 4 {
-      return -1
-    }
-    fb_size = fb_pitch * fb_height
-    fb_font_init()
-    fb_ready = 1
-    return 0
-  }
-
-  // VBE I/O ports work — configure mode.
-  // Disable VBE while configuring.
-  vbe_write(0x04, 0x00)
-
-  // Set X resolution, Y resolution, and BPP.
-  let target_w = 1920
-  let target_h = 1080
-  let target_bpp = 32
-  vbe_write(0x01, target_w)
-  vbe_write(0x02, target_h)
-  vbe_write(0x03, target_bpp)
-
-  // Enable VBE with linear framebuffer (bit 6 = LFB, bit 0 = enable).
-  // Bit 7 = clear video memory.
-  vbe_write(0x04, 0xC1)
-
-  // Read back the actual settings.
-  fb_width = vbe_read(0x01)
-  fb_height = vbe_read(0x02)
-  fb_bpp = vbe_read(0x03)
-
-  // Set pitch (bytes per scanline) = width * (bpp / 8).
-  fb_pitch = fb_width * 4
-  let virt_w = vbe_read(0x06)
-  if virt_w != 0 {
-    fb_pitch = virt_w * 4
-  }
-
-  if fb_width == 0 || fb_height == 0 {
-    return -1
-  }
-  if fb_bpp != 32 {
-    return -1
-  }
-  if fb_pitch < fb_width * 4 {
-    return -1
-  }
-
-  // Find the framebuffer address by scanning PCI for a VGA device (class 0x030000).
-  fb_addr = 0
-  let dev = 0
-  while dev < 32 {
-    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
-    if vendor != 0xFFFF {
-      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
-      if class_code == 0x030000 {
-        // Read BAR0 (64-bit memory BAR: BAR0 at 0x10, BAR1 at 0x14).
-        let bar0_raw = pci_read32(0, dev, 0, 0x10)
-        let bar0_lo = bar0_raw & 0xFFFFFFF0
-        let bar0_hi = 0
-        if (bar0_raw & 0x6) == 0x4 {
-          bar0_hi = pci_read32(0, dev, 0, 0x14)
-        }
-        fb_addr = bar0_lo | (bar0_hi << 32)
-        // Enable PCI memory space, I/O space, and bus mastering.
-        pci_write32(0, dev, 0, 0x04, 0x7)
-        break
-      }
-    }
-    dev = dev + 1
-  }
-
-  if fb_addr == 0 {
-    return -1
-  }
-
-  // Calculate framebuffer size.
-  fb_size = fb_pitch * fb_height
-
-  // Initialize the font.
-  fb_font_init()
-  fb_ready = 1
-
-  return 0
+  return -1
 }
 
-// --- drawing primitives -----------------------------------------------------
-
-// Set a single pixel at (x, y) to color. Clips to screen bounds.
 fn fb_put_pixel(x: Int, y: Int, color: Int) -> void {
-  if fb_ready == 0 {
-    return
-  }
-  if x < 0 || x >= fb_width || y < 0 || y >= fb_height {
-    return
-  }
-  let off = y * fb_pitch + x * 4
-  store32(fb_addr + off, color)
   return
 }
 
-// Fill a rectangle with a solid color. Clips to screen bounds.
 fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
-  if fb_ready == 0 {
-    return
-  }
-
-  let x_start = x
-  if x_start < 0 {
-    x_start = 0
-  }
-  let x_end = x + w
-  if x_end > fb_width {
-    x_end = fb_width
-  }
-
-  let y_start = y
-  if y_start < 0 {
-    y_start = 0
-  }
-  let y_end = y + h
-  if y_end > fb_height {
-    y_end = fb_height
-  }
-
-  if x_start >= x_end || y_start >= y_end {
-    return
-  }
-
-  let py = y_start
-  while py < y_end {
-    let px = x_start
-    let row_addr = fb_addr + py * fb_pitch
-    while px < x_end {
-      store32(row_addr + px * 4, color)
-      px = px + 1
-    }
-    py = py + 1
-  }
   return
 }
 
-// fb_glyph8 moved to font.in
-
-// Draw a single character at (x, y) in the given color.
 fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
-  if fb_ready == 0 {
-    return
-  }
-  if ch < 0 || ch >= 128 {
-    ch = 63  // '?'
-  }
-
-  // Fast path if the whole character (16x16) is within bounds
-  if x >= 0 && x + 16 <= fb_width && y >= 0 && y + 16 <= fb_height {
-    let row = 0
-    let row_addr = fb_addr + y * fb_pitch + x * 4
-    while row < 8 {
-      let bits = fb_glyph8(ch, row)
-      let col = 0
-      let pixel_addr = row_addr
-      while col < 8 {
-        let bit = (bits >> (7 - col)) & 1
-        if bit != 0 {
-          store32(pixel_addr, color)
-          store32(pixel_addr + 4, color)
-          store32(pixel_addr + fb_pitch, color)
-          store32(pixel_addr + fb_pitch + 4, color)
-        }
-        pixel_addr = pixel_addr + 8
-        col = col + 1
-      }
-      row_addr = row_addr + fb_pitch * 2
-      row = row + 1
-    }
-    return
-  }
-
-  // Fully off-screen check
-  if x + 16 <= 0 || x >= fb_width || y + 16 <= 0 || y >= fb_height {
-    return
-  }
-
-  let row = 0
-  let py = y
-  while row < 8 {
-    if py + 1 >= 0 && py < fb_height {
-      let bits = fb_glyph8(ch, row)
-      let col = 0
-      let px = x
-      let row_addr = fb_addr + py * fb_pitch + px * 4
-      while col < 8 {
-        let bit = (bits >> (7 - col)) & 1
-        if bit != 0 {
-          if px >= 0 && py >= 0 && px + 1 < fb_width && py + 1 < fb_height {
-            store32(row_addr, color)
-            store32(row_addr + 4, color)
-            store32(row_addr + fb_pitch, color)
-            store32(row_addr + fb_pitch + 4, color)
-          } else {
-            fb_put_pixel(px, py, color)
-            fb_put_pixel(px + 1, py, color)
-            fb_put_pixel(px, py + 1, color)
-            fb_put_pixel(px + 1, py + 1, color)
-          }
-        }
-        row_addr = row_addr + 8
-        px = px + 2
-        col = col + 1
-      }
-    }
-    py = py + 2
-    row = row + 1
-  }
   return
 }
 
-// Clear the entire screen to a color.
 fn fb_clear(color: Int) -> void {
-  fb_fill_rect(0, 0, fb_width, fb_height, color)
   return
 }
 
-// Print framebuffer info to the serial port.
 fn fb_info(port: Int) -> void {
-  if fb_ready == 0 {
-    serial_write_cstr(port, "  fb: not initialized")
-    serial_nl(port)
-    return
-  }
-  serial_write_cstr(port, "  fb: ")
-  serial_write_dec_wide(port, fb_width)
-  serial_write_cstr(port, "x")
-  serial_write_dec_wide(port, fb_height)
-  serial_write_cstr(port, "x")
-  serial_write_dec_wide(port, fb_bpp)
-  serial_write_cstr(port, " pitch=")
-  serial_write_dec_wide(port, fb_pitch)
-  serial_write_cstr(port, " addr=0x")
-  serial_write_hex(port, fb_addr)
-  serial_write_cstr(port, " size=")
-  serial_write_dec_wide(port, fb_size)
+  serial_write_cstr(port, "  fb: not initialized (display component)")
   serial_nl(port)
   return
 }
 
-// Test pattern: fill screen with colored stripes to verify rendering.
-// ponytail: test pattern removed — ~3KB of pixel-loop code that was only
-// used for framebuffer bring-up debugging. Restore when display bring-up
-// needs pixel-level verification.
+fn fb_test_pattern(port: Int) -> void {
+  serial_write_cstr(port, "  fb: test pattern unavailable (display component)")
+  serial_nl(port)
+  return
+}

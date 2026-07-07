@@ -1,0 +1,1752 @@
+package space.kernel
+
+// SparkFS + VFS standalone volume component.
+// This file is the extracted filesystem implementation.  It is intended to
+// run either linked into the kernel image during the transition or, later, in
+// its own domain as a component reached over a cross-domain channel.
+
+// --- cross-domain request/response protocol ---------------------------------
+
+const VOLUME_OP_NONE = 0
+const VOLUME_OP_INIT = 1
+const VOLUME_OP_OPEN = 2
+const VOLUME_OP_CLOSE = 3
+const VOLUME_OP_READ = 4
+const VOLUME_OP_WRITE = 5
+const VOLUME_OP_LSEEK = 6
+const VOLUME_OP_STAT = 7
+const VOLUME_OP_LIST = 8
+const VOLUME_OP_DELETE = 9
+const VOLUME_OP_MKDIR = 10
+const VOLUME_OP_RMDIR = 11
+const VOLUME_OP_RENAME = 12
+
+// Shared page layout (single request / single response, 4 KiB page)
+const VOL_OFF_REQ_READY = 0
+const VOL_OFF_RESP_READY = 8
+const VOL_OFF_OPCODE = 16
+const VOL_OFF_STATUS = 24
+const VOL_OFF_ARG0 = 32   // flags / offset / handle
+const VOL_OFF_ARG1 = 40   // count / whence / result
+const VOL_OFF_ARG2 = 48   // fd / size
+const VOL_OFF_RESULT = 56
+const VOL_OFF_PATH0 = 256
+const VOL_OFF_PATH1 = 512
+const VOL_OFF_DATA = 768
+const VOL_OFF_RESP_DATA = 768
+const VOL_PATH_MAX = 256
+const VOL_DATA_MAX = 3328  // 4096 - 768
+
+// SparkFS layout constants and runtime globals.
+
+// --- constants --------------------------------------------------------------
+
+const SF_MAGIC = 0x53504146          // "SPAF"
+const SF_VERSION = 1
+const SF_BLOCK_SIZE = 4096
+const SF_SECTOR_SIZE = 512
+const SF_SECTORS_PER_BLOCK = 8
+
+const SF_INODE_SIZE = 256
+const SF_INODE_DIRECT = 12
+const SF_INODE_INDIRECT_COUNT = 512  // 4 KiB / 8 bytes per block number
+const SF_NAME_MAX = 255
+const SF_DIR_ENTRY_HEAD = 8          // inode(4) + name_len(1) + type(1) + padding(2)
+
+const SF_TYPE_FILE = 1
+const SF_TYPE_DIR = 2
+const SF_TYPE_FREE = 0
+
+const SF_OP_CREATE = 1
+const SF_OP_WRITE = 2
+const SF_OP_DELETE = 3
+const SF_OP_RENAME = 4
+
+const SF_JOURNAL_ENTRY_SIZE = 64
+const SF_JOURNAL_ENTRIES_PER_BLOCK = 64
+
+// --- on-disk layout defaults ------------------------------------------------
+
+const SF_DEFAULT_TOTAL_BLOCKS = 8192  // 32 MiB
+const SF_DEFAULT_INODE_COUNT = 256
+const SF_DEFAULT_JOURNAL_BLOCKS = 2
+
+const SF_MEM_DISK_BLOCKS = 256  // 1 MiB memory-backed disk for testing
+const SF_MEM_DISK_SIZE = 1048576  // 256 * 4096
+
+// Superblock offsets
+const SF_SB_MAGIC = 0
+const SF_SB_VERSION = 4
+const SF_SB_BLOCK_SIZE = 8
+const SF_SB_TOTAL_BLOCKS = 12
+const SF_SB_INODE_COUNT = 20
+const SF_SB_BITMAP_START = 24
+const SF_SB_JOURNAL_START = 32
+const SF_SB_INODE_TABLE_START = 40
+const SF_SB_DATA_START = 48
+const SF_SB_ROOT_INODE = 56
+const SF_SB_JOURNAL_SEQ = 60
+
+// Inode offsets
+const SF_IN_TYPE = 0
+const SF_IN_MODE = 4
+const SF_IN_UID = 8
+const SF_IN_GID = 12
+const SF_IN_SIZE = 16
+const SF_IN_BLOCKS = 24
+const SF_IN_CTIME = 32
+const SF_IN_MTIME = 40
+const SF_IN_ATIME = 48
+const SF_IN_NLINK = 56
+const SF_IN_DIRECT = 64
+const SF_IN_INDIRECT = 160
+const SF_IN_DINDIRECT = 168
+const SF_IN_INLINE = 176
+const SF_INLINE_MAX = 96
+
+// Stat buffer offsets
+const SF_ST_TYPE = 0
+const SF_ST_MODE = 4
+const SF_ST_SIZE = 8
+const SF_ST_NLINK = 16
+const SF_ST_CTIME = 24
+const SF_ST_MTIME = 32
+const SF_ST_ATIME = 40
+
+// --- runtime state ----------------------------------------------------------
+
+var vol_sf_super: Int = 0
+var vol_sf_bitmap: Int = 0
+var vol_sf_inodes: Int = 0
+var vol_sf_block_buf: Int = 0
+var vol_sf_initialized: Int = 0
+var vol_sf_disk_ready: Int = 0
+var vol_sf_mem_disk: Int = 0
+
+// SparkFS low-level block I/O and allocation bitmap.
+
+// --- NVMe block cache (P2) --------------------------------------------------
+// Small fully-associative write-through cache used only on the NVMe path
+// (vol_sf_mem_disk == 0). The memdisk path is already in-RAM, so caching would
+// just waste heap. Allocated lazily in vol_sparkfs_init when the NVMe branch runs.
+const SF_CACHE_ENTRIES = 8
+
+var vol_sf_cache_buf: Int = 0   // SF_CACHE_ENTRIES * SF_BLOCK_SIZE data buffer
+var vol_sf_cache_meta: Int = 0  // SF_CACHE_ENTRIES * 16: [block_no, valid]
+var vol_sf_cache_hits: Int = 0
+var vol_sf_cache_misses: Int = 0
+
+// Page-aligned staging buffer for NVMe block I/O (PRP1 must be page-aligned).
+// Allocated in vol_sparkfs_init when the NVMe path is taken.
+var vol_sf_nvme_buf: Int = 0
+
+fn vol_sf_cache_init() -> void {
+  vol_sf_cache_buf = alloc(SF_CACHE_ENTRIES * SF_BLOCK_SIZE)
+  vol_sf_cache_meta = alloc(SF_CACHE_ENTRIES * 16)
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    store64(vol_sf_cache_meta + i * 16 + 0, -1)
+    store64(vol_sf_cache_meta + i * 16 + 8, 0)
+    i = i + 1
+  }
+  vol_sf_cache_hits = 0
+  vol_sf_cache_misses = 0
+  return
+}
+
+fn vol_sf_cache_lookup(bno: Int) -> Int {
+  if vol_sf_cache_buf == 0 {
+    return -1
+  }
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    if load64(vol_sf_cache_meta + i * 16 + 8) != 0 && load64(vol_sf_cache_meta + i * 16 + 0) == bno {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn vol_sf_cache_find_empty() -> Int {
+  let i = 0
+  while i < SF_CACHE_ENTRIES {
+    if load64(vol_sf_cache_meta + i * 16 + 8) == 0 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn vol_sf_cache_install(bno: Int, buf: Int) -> void {
+  if vol_sf_cache_buf == 0 {
+    return
+  }
+  let slot = vol_sf_cache_find_empty()
+  if slot < 0 {
+    slot = 0
+  }
+  store64(vol_sf_cache_meta + slot * 16 + 0, bno)
+  store64(vol_sf_cache_meta + slot * 16 + 8, 1)
+  let dst = vol_sf_cache_buf + slot * SF_BLOCK_SIZE
+  let k = 0
+  while k < SF_BLOCK_SIZE {
+    store8(dst + k, load8(buf + k))
+    k = k + 1
+  }
+  return
+}
+
+// --- low-level block I/O ----------------------------------------------------
+
+// Read block `bno` into `buf`. Returns 0 on success.
+fn vol_sf_read_block(bno: Int, buf: Int) -> Int {
+  if vol_sf_mem_disk != 0 {
+    let src = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(buf + i, load8(src + i))
+      i = i + 1
+    }
+    return 0
+  }
+  let cached = vol_sf_cache_lookup(bno)
+  if cached >= 0 {
+    let src = vol_sf_cache_buf + cached * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(buf + i, load8(src + i))
+      i = i + 1
+    }
+    vol_sf_cache_hits = vol_sf_cache_hits + 1
+    return 0
+  }
+  vol_sf_cache_misses = vol_sf_cache_misses + 1
+  let sector = bno * SF_SECTORS_PER_BLOCK
+  let rc = nvme_read(sector, SF_SECTORS_PER_BLOCK, vol_sf_nvme_buf)
+  if rc != 0 {
+    return -1
+  }
+  let i = 0
+  while i < SF_BLOCK_SIZE {
+    store8(buf + i, load8(vol_sf_nvme_buf + i))
+    i = i + 1
+  }
+  vol_sf_cache_install(bno, buf)
+  return 0
+}
+
+// Write block `bno` from `buf`. Returns 0 on success. Write-through.
+fn vol_sf_write_block(bno: Int, buf: Int) -> Int {
+  if vol_sf_mem_disk != 0 {
+    let dst = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
+    let i = 0
+    while i < SF_BLOCK_SIZE {
+      store8(dst + i, load8(buf + i))
+      i = i + 1
+    }
+    return 0
+  }
+  let sector = bno * SF_SECTORS_PER_BLOCK
+  let i = 0
+  while i < SF_BLOCK_SIZE {
+    store8(vol_sf_nvme_buf + i, load8(buf + i))
+    i = i + 1
+  }
+  let rc = nvme_write(sector, SF_SECTORS_PER_BLOCK, vol_sf_nvme_buf)
+  if rc != 0 {
+    return -1
+  }
+  let cached = vol_sf_cache_lookup(bno)
+  if cached >= 0 {
+    let dst = vol_sf_cache_buf + cached * SF_BLOCK_SIZE
+    let k = 0
+    while k < SF_BLOCK_SIZE {
+      store8(dst + k, load8(buf + k))
+      k = k + 1
+    }
+  } else {
+    vol_sf_cache_install(bno, buf)
+  }
+  return 0
+}
+
+// Zero a block buffer.
+fn vol_sf_zero_block(buf: Int) -> void {
+  let i = 0
+  while i < SF_BLOCK_SIZE {
+    store8(buf + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+// --- bitmap -----------------------------------------------------------------
+
+fn vol_sf_bitmap_byte(bno: Int) -> Int {
+  return bno >> 3
+}
+
+fn vol_sf_bitmap_bit(bno: Int) -> Int {
+  return 1 << (bno & 7)
+}
+
+fn vol_sf_mark_used(bno: Int) -> void {
+  let addr = vol_sf_bitmap + (bno >> 3)
+  let b = load8(addr)
+  store8(addr, b | (1 << (bno & 7)))
+  return
+}
+
+fn vol_sf_mark_free(bno: Int) -> void {
+  let addr = vol_sf_bitmap + (bno >> 3)
+  let b = load8(addr)
+  store8(addr, b & (255 - (1 << (bno & 7))))
+  return
+}
+
+fn vol_sf_block_used(bno: Int) -> Int {
+  let b = load8(vol_sf_bitmap + (bno >> 3))
+  if (b & (1 << (bno & 7))) != 0 {
+    return 1
+  }
+  return 0
+}
+
+// Allocate a data block. Returns block number or -1.
+fn vol_sf_alloc_block() -> Int {
+  let total = load64(vol_sf_super + SF_SB_TOTAL_BLOCKS)
+  let data_start = load64(vol_sf_super + SF_SB_DATA_START)
+  let bno = data_start
+  while bno < total {
+    if vol_sf_block_used(bno) == 0 {
+      vol_sf_mark_used(bno)
+      vol_sf_zero_block(vol_sf_block_buf)
+      vol_sf_write_block(bno, vol_sf_block_buf)
+      return bno
+    }
+    bno = bno + 1
+  }
+  return -1
+}
+
+// Free a data block.
+fn vol_sf_free_block(bno: Int) -> void {
+  vol_sf_mark_free(bno)
+  return
+}
+
+// SparkFS inode table and per-inode block addressing.
+
+// --- inode table ------------------------------------------------------------
+
+fn vol_sf_inode_addr(ino: Int) -> Int {
+  return vol_sf_inodes + ino * SF_INODE_SIZE
+}
+
+fn vol_sf_inode_is_inline(ino: Int) -> Int {
+  let addr = vol_sf_inode_addr(ino)
+  return load32(addr + SF_IN_INLINE)
+}
+
+fn vol_sf_inode_set_inline(ino: Int, is_inline: Int) -> void {
+  let addr = vol_sf_inode_addr(ino)
+  store32(addr + SF_IN_INLINE, is_inline)
+  return
+}
+
+fn vol_sf_read_inode(ino: Int) -> void {
+  let table_start = load64(vol_sf_super + SF_SB_INODE_TABLE_START)
+  let ino_bytes = ino * SF_INODE_SIZE
+  let block = table_start + (ino_bytes >> 12)
+  let offset = ino_bytes & 4095
+  vol_sf_read_block(block, vol_sf_block_buf)
+  let i = 0
+  let addr = vol_sf_inode_addr(ino)
+  while i < SF_INODE_SIZE {
+    store8(addr + i, load8(vol_sf_block_buf + offset + i))
+    i = i + 1
+  }
+  return
+}
+
+fn vol_sf_write_inode(ino: Int) -> void {
+  let table_start = load64(vol_sf_super + SF_SB_INODE_TABLE_START)
+  let ino_bytes = ino * SF_INODE_SIZE
+  let block = table_start + (ino_bytes >> 12)
+  let offset = ino_bytes & 4095
+  vol_sf_read_block(block, vol_sf_block_buf)
+  let i = 0
+  let addr = vol_sf_inode_addr(ino)
+  while i < SF_INODE_SIZE {
+    store8(vol_sf_block_buf + offset + i, load8(addr + i))
+    i = i + 1
+  }
+  vol_sf_write_block(block, vol_sf_block_buf)
+  return
+}
+
+// --- inode block addressing -------------------------------------------------
+
+// Return the data block number for file block `fbn`, or -1 if unallocated.
+fn vol_sf_inode_block(ino: Int, fbn: Int) -> Int {
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_INLINE) != 0 {
+    return -1
+  }
+  if fbn < SF_INODE_DIRECT {
+    let b = load64(addr + SF_IN_DIRECT + fbn * 8)
+    return b
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect == 0 {
+    return -1
+  }
+  vol_sf_read_block(indirect, vol_sf_block_buf)
+  let idx = fbn - SF_INODE_DIRECT
+  if idx >= SF_INODE_INDIRECT_COUNT {
+    return -1
+  }
+  return load64(vol_sf_block_buf + idx * 8)
+}
+
+// Set the data block number for file block `fbn`. Allocates indirect block if needed.
+fn vol_sf_set_inode_block(ino: Int, fbn: Int, bno: Int) -> Int {
+  let addr = vol_sf_inode_addr(ino)
+  if fbn < SF_INODE_DIRECT {
+    store64(addr + SF_IN_DIRECT + fbn * 8, bno)
+    return 0
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect == 0 {
+    indirect = vol_sf_alloc_block()
+    if indirect < 0 {
+      return -1
+    }
+    store64(addr + SF_IN_INDIRECT, indirect)
+  }
+  vol_sf_read_block(indirect, vol_sf_block_buf)
+  let idx = fbn - SF_INODE_DIRECT
+  if idx >= SF_INODE_INDIRECT_COUNT {
+    return -1
+  }
+  store64(vol_sf_block_buf + idx * 8, bno)
+  vol_sf_write_block(indirect, vol_sf_block_buf)
+  return 0
+}
+
+// SparkFS directory entries: size calculation, lookup, add, and remove.
+
+// --- directory entries ------------------------------------------------------
+
+fn vol_sf_dir_entry_size(nlen: Int) -> Int {
+  return 32
+}
+
+const SF_DIR_ENTRY_SIZE = 32
+
+// Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
+fn vol_sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
+  let addr = vol_sf_inode_addr(dir_ino)
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while fbn * SF_BLOCK_SIZE < size {
+    let bno = vol_sf_inode_block(dir_ino, fbn)
+    if bno > 0 {
+      vol_sf_read_block(bno, vol_sf_block_buf)
+      let off = 0
+      while off < SF_BLOCK_SIZE {
+        let eino = load32(vol_sf_block_buf + off)
+        if eino != 0 {
+          let name_len = load8(vol_sf_block_buf + off + 4)
+          let is_match = 1
+          let i = 0
+          while i < name_len {
+            let a = load8(name + i)
+            let b = load8(vol_sf_block_buf + off + SF_DIR_ENTRY_HEAD + i)
+            if a != b {
+              is_match = 0
+            }
+            i = i + 1
+          }
+          if is_match != 0 {
+            if load8(name + name_len) == 0 {
+              store32(out_ino, eino)
+              return fbn * SF_BLOCK_SIZE + off
+            }
+          }
+        }
+        off = off + SF_DIR_ENTRY_SIZE
+        if off > SF_BLOCK_SIZE {
+          off = SF_BLOCK_SIZE
+        }
+      }
+    }
+    fbn = fbn + 1
+  }
+  return -1
+}
+
+// Add an entry to directory `dir_ino`. Returns 0 on success.
+fn vol_sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> Int {
+  let addr = vol_sf_inode_addr(dir_ino)
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while true {
+    let bno = 0
+    if fbn * SF_BLOCK_SIZE < size {
+      bno = vol_sf_inode_block(dir_ino, fbn)
+    }
+    if bno == 0 {
+      bno = vol_sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      vol_sf_set_inode_block(dir_ino, fbn, bno)
+      store64(addr + SF_IN_SIZE, size + SF_BLOCK_SIZE)
+      vol_sf_zero_block(vol_sf_block_buf)
+    } else {
+      vol_sf_read_block(bno, vol_sf_block_buf)
+    }
+    let off = 0
+    while off < SF_BLOCK_SIZE {
+      let eino = load32(vol_sf_block_buf + off)
+      let name_len = load8(vol_sf_block_buf + off + 4)
+      if eino == 0 {
+        let new_len = 0
+        let k = 0
+        while k < SF_NAME_MAX {
+          if load8(name + k) == 0 {
+            k = SF_NAME_MAX
+          } else {
+            new_len = new_len + 1
+            k = k + 1
+          }
+        }
+        let esz = SF_DIR_ENTRY_SIZE
+        if off + esz <= SF_BLOCK_SIZE {
+          store32(vol_sf_block_buf + off, entry_ino)
+          store8(vol_sf_block_buf + off + 4, new_len)
+          store8(vol_sf_block_buf + off + 5, entry_type)
+          let i = 0
+          while i < new_len {
+            store8(vol_sf_block_buf + off + SF_DIR_ENTRY_HEAD + i, load8(name + i))
+            i = i + 1
+          }
+          vol_sf_write_block(bno, vol_sf_block_buf)
+          let new_size = load64(addr + SF_IN_SIZE)
+          if new_size < fbn * SF_BLOCK_SIZE + off + esz {
+            store64(addr + SF_IN_SIZE, fbn * SF_BLOCK_SIZE + off + esz)
+          }
+          vol_sf_write_inode(dir_ino)
+          return 0
+        }
+        break
+      }
+      off = off + SF_DIR_ENTRY_SIZE
+      if off > SF_BLOCK_SIZE {
+        break
+      }
+    }
+    fbn = fbn + 1
+  }
+  return -1
+}
+
+// Remove an entry from directory `dir_ino`. Returns 0 on success.
+fn vol_sf_dir_remove(dir_ino: Int, name: Int) -> Int {
+  let tmp = alloc(4)
+  let off = vol_sf_dir_find(dir_ino, name, tmp)
+  if off < 0 {
+    return -1
+  }
+  let fbn = off / SF_BLOCK_SIZE
+  let boff = off & (SF_BLOCK_SIZE - 1)
+  let bno = vol_sf_inode_block(dir_ino, fbn)
+  vol_sf_read_block(bno, vol_sf_block_buf)
+  let esz = SF_DIR_ENTRY_SIZE
+  let i = 0
+  while i < esz {
+    store8(vol_sf_block_buf + boff + i, 0)
+    i = i + 1
+  }
+  vol_sf_write_block(bno, vol_sf_block_buf)
+  vol_sf_write_inode(dir_ino)
+  return 0
+}
+
+// SparkFS path resolution helpers.
+
+// --- path resolution --------------------------------------------------------
+
+// Find the last '/' in path. Returns index or -1.
+fn vol_sf_last_slash(path: Int) -> Int {
+  let last = -1
+  let i = 0
+  while true {
+    let c = load8(path + i)
+    if c == 0 {
+      return last
+    }
+    if c == 47 {
+      last = i
+    }
+    i = i + 1
+  }
+  return last
+}
+
+// Copy a NUL-terminated string from path into dst.
+fn vol_sf_copy_name(dst: Int, path: Int) -> void {
+  let i = 0
+  while i < SF_NAME_MAX {
+    let c = load8(path + i)
+    store8(dst + i, c)
+    if c == 0 {
+      i = SF_NAME_MAX
+    } else {
+      i = i + 1
+    }
+  }
+  store8(dst + SF_NAME_MAX, 0)
+  return
+}
+
+// Resolve a path to an inode. Returns inode or -1.
+fn vol_sf_lookup_path(path: Int) -> Int {
+  if load8(path) == 0 {
+    return 0
+  }
+  let ino = load32(vol_sf_super + SF_SB_ROOT_INODE)
+  if load8(path) == 47 && load8(path + 1) == 0 {
+    return ino
+  }
+  let name_buf = alloc(SF_NAME_MAX + 1)
+  let i = 0
+  if load8(path) == 47 {
+    i = 1
+  }
+  while true {
+    let j = 0
+    let seg_len = 0
+    while j < SF_NAME_MAX {
+      let c = load8(path + i + j)
+      if c == 0 || c == 47 {
+        store8(name_buf + j, 0)
+        j = SF_NAME_MAX
+      } else {
+        store8(name_buf + j, c)
+        seg_len = seg_len + 1
+        j = j + 1
+      }
+    }
+    if seg_len == 0 {
+      return ino
+    }
+    let tmp = alloc(4)
+    let off = vol_sf_dir_find(ino, name_buf, tmp)
+    if off < 0 {
+      return -1
+    }
+    ino = load32(tmp)
+    while load8(path + i) != 0 && load8(path + i) != 47 {
+      i = i + 1
+    }
+    if load8(path + i) == 0 {
+      return ino
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// Resolve parent directory and final name. Returns parent inode, or -1.
+fn vol_sf_lookup_parent(path: Int, name_out: Int) -> Int {
+  let slash = vol_sf_last_slash(path)
+  if slash < 0 {
+    vol_sf_copy_name(name_out, path)
+    return 0
+  }
+  let parent_path = alloc(SF_NAME_MAX + 1)
+  let i = 0
+  while i < slash {
+    store8(parent_path + i, load8(path + i))
+    i = i + 1
+  }
+  store8(parent_path + i, 0)
+  vol_sf_copy_name(name_out, path + slash + 1)
+  return vol_sf_lookup_path(parent_path)
+}
+
+// SparkFS high-level file operations: init, format, create, read, write, delete, list.
+
+fn vol_sparkfs_init() -> void {
+  vol_sf_super = alloc(SF_BLOCK_SIZE)
+  vol_sf_block_buf = alloc(SF_BLOCK_SIZE)
+  vol_sf_disk_ready = 0
+  vol_sf_initialized = 1
+  if nvme_ready == 0 {
+    vol_sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
+    let i = 0
+    while i < SF_MEM_DISK_SIZE {
+      store8(vol_sf_mem_disk + i, 0)
+      i = i + 1
+    }
+    vol_sf_disk_ready = 1
+    vol_sparkfs_format_mem_disk()
+    return
+  }
+  vol_sf_nvme_buf = frame_alloc()
+  vol_sf_cache_init()
+  if vol_sf_read_block(0, vol_sf_super) != 0 {
+    return
+  }
+  let magic = load32(vol_sf_super + SF_SB_MAGIC)
+  if magic != SF_MAGIC {
+    vol_sparkfs_format()
+    return
+  }
+  let total = load64(vol_sf_super + SF_SB_TOTAL_BLOCKS)
+  let ino_count = load32(vol_sf_super + SF_SB_INODE_COUNT)
+  let bitmap_bytes = (total + 7) / 8
+  vol_sf_bitmap = alloc(bitmap_bytes)
+  let i = 0
+  while i < bitmap_bytes {
+    store8(vol_sf_bitmap + i, 0)
+    i = i + 1
+  }
+  let bitmap_start = load64(vol_sf_super + SF_SB_BITMAP_START)
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let b = 0
+  while b < bitmap_blocks {
+    vol_sf_read_block(bitmap_start + b, vol_sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(vol_sf_bitmap + b * SF_BLOCK_SIZE + k, load8(vol_sf_block_buf + k))
+      k = k + 1
+    }
+    b = b + 1
+  }
+  vol_sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  let ino = 0
+  while ino < ino_count {
+    vol_sf_read_inode(ino)
+    ino = ino + 1
+  }
+  vol_sf_disk_ready = 1
+  return
+}
+
+fn vol_sf_do_format(total: Int, ino_count: Int) -> void {
+  if vol_sf_super == 0 {
+    vol_sf_super = alloc(SF_BLOCK_SIZE)
+  }
+  if vol_sf_block_buf == 0 {
+    vol_sf_block_buf = alloc(SF_BLOCK_SIZE)
+  }
+  vol_sf_zero_block(vol_sf_super)
+  store32(vol_sf_super + SF_SB_MAGIC, SF_MAGIC)
+  store32(vol_sf_super + SF_SB_VERSION, SF_VERSION)
+  store32(vol_sf_super + SF_SB_BLOCK_SIZE, SF_BLOCK_SIZE)
+  store64(vol_sf_super + SF_SB_TOTAL_BLOCKS, total)
+  store32(vol_sf_super + SF_SB_INODE_COUNT, ino_count)
+  let bitmap_bytes = (total + 7) / 8
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let inode_table_blocks = (ino_count * SF_INODE_SIZE + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let journal_blocks = SF_DEFAULT_JOURNAL_BLOCKS
+  let bitmap_start = 1
+  let journal_start = bitmap_start + bitmap_blocks
+  let inode_table_start = journal_start + journal_blocks
+  let data_start = inode_table_start + inode_table_blocks
+  store64(vol_sf_super + SF_SB_BITMAP_START, bitmap_start)
+  store64(vol_sf_super + SF_SB_JOURNAL_START, journal_start)
+  store64(vol_sf_super + SF_SB_INODE_TABLE_START, inode_table_start)
+  store64(vol_sf_super + SF_SB_DATA_START, data_start)
+  store32(vol_sf_super + SF_SB_ROOT_INODE, 0)
+  store32(vol_sf_super + SF_SB_JOURNAL_SEQ, 0)
+  vol_sf_write_block(0, vol_sf_super)
+
+  vol_sf_bitmap = alloc(bitmap_bytes)
+  let i = 0
+  while i < bitmap_bytes {
+    store8(vol_sf_bitmap + i, 0)
+    i = i + 1
+  }
+  vol_sf_mark_used(0)
+  let b = 1
+  while b < data_start {
+    vol_sf_mark_used(b)
+    b = b + 1
+  }
+  b = 0
+  while b < bitmap_blocks {
+    vol_sf_zero_block(vol_sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(vol_sf_block_buf + k, load8(vol_sf_bitmap + b * SF_BLOCK_SIZE + k))
+      k = k + 1
+    }
+    vol_sf_write_block(bitmap_start + b, vol_sf_block_buf)
+    b = b + 1
+  }
+
+  vol_sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  let ino = 0
+  while ino < ino_count {
+    let addr = vol_sf_inode_addr(ino)
+    let j = 0
+    while j < SF_INODE_SIZE {
+      store8(addr + j, 0)
+      j = j + 1
+    }
+    ino = ino + 1
+  }
+  let root = vol_sf_inode_addr(0)
+  store32(root + SF_IN_TYPE, SF_TYPE_DIR)
+  store32(root + SF_IN_MODE, 0o755)
+  store64(root + SF_IN_SIZE, 0)
+  store64(root + SF_IN_CTIME, 0)
+  store64(root + SF_IN_MTIME, 0)
+  store64(root + SF_IN_ATIME, 0)
+  store32(root + SF_IN_NLINK, 1)
+  vol_sf_write_inode(0)
+  store32(vol_sf_super + SF_SB_ROOT_INODE, 0)
+  vol_sf_write_block(0, vol_sf_super)
+  vol_sf_disk_ready = 1
+  return
+}
+
+fn vol_sparkfs_format() -> void {
+  vol_sf_do_format(SF_DEFAULT_TOTAL_BLOCKS, SF_DEFAULT_INODE_COUNT)
+  return
+}
+
+fn vol_sparkfs_format_mem_disk() -> void {
+  vol_sf_do_format(256, 256)
+  return
+}
+
+fn vol_sparkfs_create(path: Int, is_dir: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let name = alloc(SF_NAME_MAX + 1)
+  let parent = vol_sf_lookup_parent(path, name)
+  if parent < 0 {
+    return -1
+  }
+  let tmp = alloc(4)
+  if vol_sf_dir_find(parent, name, tmp) >= 0 {
+    return -1
+  }
+  let ino_count = load32(vol_sf_super + SF_SB_INODE_COUNT)
+  let ino = 1
+  while ino < ino_count {
+    let addr = vol_sf_inode_addr(ino)
+    if load32(addr + SF_IN_TYPE) == SF_TYPE_FREE {
+      let j = 0
+      while j < SF_INODE_SIZE {
+        store8(addr + j, 0)
+        j = j + 1
+      }
+      store32(addr + SF_IN_TYPE, is_dir)
+      store32(addr + SF_IN_MODE, 0o644)
+      if is_dir == SF_TYPE_DIR {
+        store32(addr + SF_IN_MODE, 0o755)
+      }
+      store64(addr + SF_IN_SIZE, 0)
+      store32(addr + SF_IN_NLINK, 1)
+      store64(addr + SF_IN_CTIME, ticks)
+      store64(addr + SF_IN_MTIME, ticks)
+      store64(addr + SF_IN_ATIME, ticks)
+      store32(addr + SF_IN_INLINE, 0)
+      vol_sf_write_inode(ino)
+      vol_sf_dir_add(parent, name, ino, is_dir)
+      return ino
+    }
+    ino = ino + 1
+  }
+  return -1
+}
+
+fn vol_sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  if max < size {
+    size = max
+  }
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < size {
+      store8(buf + i, load8(addr + SF_IN_DIRECT + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_ATIME, ticks)
+    vol_sf_write_inode(ino)
+    return size
+  }
+  let n = 0
+  while n < size {
+    let fbn = n / SF_BLOCK_SIZE
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno < 0 {
+      return n
+    }
+    vol_sf_read_block(bno, vol_sf_block_buf)
+    let off = n & (SF_BLOCK_SIZE - 1)
+    let to_copy = SF_BLOCK_SIZE - off
+    if n + to_copy > size {
+      to_copy = size - n
+    }
+    let i = 0
+    while i < to_copy {
+      store8(buf + n + i, load8(vol_sf_block_buf + off + i))
+      i = i + 1
+    }
+    n = n + to_copy
+  }
+  return size
+}
+
+// Read up to `max` bytes from file `path` starting at `offset`. Returns byte count or -1.
+fn vol_sparkfs_pread(path: Int, buf: Int, max: Int, offset: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  if offset >= size {
+    return 0
+  }
+  let avail = size - offset
+  let to_read = max
+  if to_read > avail {
+    to_read = avail
+  }
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < to_read {
+      store8(buf + i, load8(addr + SF_IN_DIRECT + offset + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_ATIME, ticks)
+    vol_sf_write_inode(ino)
+    return to_read
+  }
+  let n = 0
+  while n < to_read {
+    let pos = offset + n
+    let fbn = pos / SF_BLOCK_SIZE
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno < 0 {
+      return n
+    }
+    vol_sf_read_block(bno, vol_sf_block_buf)
+    let off = pos & (SF_BLOCK_SIZE - 1)
+    let chunk = SF_BLOCK_SIZE - off
+    let left = to_read - n
+    if chunk > left {
+      chunk = left
+    }
+    let i = 0
+    while i < chunk {
+      store8(buf + n + i, load8(vol_sf_block_buf + off + i))
+      i = i + 1
+    }
+    n = n + chunk
+  }
+  store64(addr + SF_IN_ATIME, ticks)
+  vol_sf_write_inode(ino)
+  return to_read
+}
+
+// Write `count` bytes from `buf` at `offset`. Grows file if needed. Returns count or -1.
+fn vol_sparkfs_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    ino = vol_sparkfs_create(path, SF_TYPE_FILE)
+    if ino < 0 {
+      return -1
+    }
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let old_size = load64(addr + SF_IN_SIZE)
+  let end = offset + count
+  if end > old_size {
+    let hole_buf = alloc(SF_BLOCK_SIZE)
+    let z = 0
+    while z < SF_BLOCK_SIZE {
+      store8(hole_buf + z, 0)
+      z = z + 1
+    }
+    let pos = old_size
+    while pos < offset {
+      let chunk = offset - pos
+      if chunk > SF_BLOCK_SIZE {
+        chunk = SF_BLOCK_SIZE
+      }
+      let rc = vol_sparkfs_pwrite(path, hole_buf, chunk, pos)
+      if rc < 0 {
+        return -1
+      }
+      pos = pos + chunk
+    }
+    old_size = load64(addr + SF_IN_SIZE)
+  }
+  if end <= SF_INLINE_MAX && load32(addr + SF_IN_INLINE) != 0 {
+    let i = 0
+    while i < count {
+      store8(addr + SF_IN_DIRECT + offset + i, load8(buf + i))
+      i = i + 1
+    }
+    if end > load64(addr + SF_IN_SIZE) {
+      store64(addr + SF_IN_SIZE, end)
+    }
+    store64(addr + SF_IN_MTIME, ticks)
+    vol_sf_write_inode(ino)
+    return count
+  }
+  if end <= SF_INLINE_MAX && offset == 0 && count <= SF_INLINE_MAX {
+    let i = 0
+    while i < count {
+      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_SIZE, count)
+    store32(addr + SF_IN_INLINE, 1)
+    store64(addr + SF_IN_MTIME, ticks)
+    vol_sf_write_inode(ino)
+    return count
+  }
+  let n = 0
+  while n < count {
+    let pos = offset + n
+    let fbn = pos / SF_BLOCK_SIZE
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno < 0 {
+      bno = vol_sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      vol_sf_set_inode_block(ino, fbn, bno)
+      vol_sf_zero_block(vol_sf_block_buf)
+      vol_sf_write_block(bno, vol_sf_block_buf)
+    }
+    vol_sf_read_block(bno, vol_sf_block_buf)
+    let off = pos & (SF_BLOCK_SIZE - 1)
+    let chunk = SF_BLOCK_SIZE - off
+    let left = count - n
+    if chunk > left {
+      chunk = left
+    }
+    let i = 0
+    while i < chunk {
+      store8(vol_sf_block_buf + off + i, load8(buf + n + i))
+      i = i + 1
+    }
+    vol_sf_write_block(bno, vol_sf_block_buf)
+    n = n + chunk
+  }
+  if end > load64(addr + SF_IN_SIZE) {
+    store64(addr + SF_IN_SIZE, end)
+    store32(addr + SF_IN_INLINE, 0)
+  }
+  store64(addr + SF_IN_MTIME, ticks)
+  vol_sf_write_inode(ino)
+  return count
+}
+
+fn vol_sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    ino = vol_sparkfs_create(path, SF_TYPE_FILE)
+    if ino < 0 {
+      return -1
+    }
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  let old_size = load64(addr + SF_IN_SIZE)
+
+  if size <= SF_INLINE_MAX {
+    let i = 0
+    while i < size {
+      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      i = i + 1
+    }
+    store64(addr + SF_IN_SIZE, size)
+    store32(addr + SF_IN_INLINE, 1)
+    store64(addr + SF_IN_MTIME, ticks)
+    vol_sf_write_inode(ino)
+    return 0
+  }
+
+  if load32(addr + SF_IN_INLINE) != 0 {
+    let bno = vol_sf_alloc_block()
+    if bno < 0 {
+      return -1
+    }
+    vol_sf_read_block(bno, vol_sf_block_buf)
+    let i = 0
+    while i < old_size {
+      store8(vol_sf_block_buf + i, load8(addr + SF_IN_DIRECT + i))
+      i = i + 1
+    }
+    vol_sf_write_block(bno, vol_sf_block_buf)
+    store64(addr + SF_IN_DIRECT, bno)
+    store32(addr + SF_IN_INLINE, 0)
+    store64(addr + SF_IN_INDIRECT, 0)
+    store64(addr + SF_IN_DINDIRECT, 0)
+  }
+
+  let n = 0
+  while n < size {
+    let fbn = n / SF_BLOCK_SIZE
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno < 0 {
+      bno = vol_sf_alloc_block()
+      if bno < 0 {
+        return -1
+      }
+      vol_sf_set_inode_block(ino, fbn, bno)
+    }
+    vol_sf_read_block(bno, vol_sf_block_buf)
+    let off = n & (SF_BLOCK_SIZE - 1)
+    let to_copy = SF_BLOCK_SIZE - off
+    if n + to_copy > size {
+      to_copy = size - n
+    }
+    let i = 0
+    while i < to_copy {
+      store8(vol_sf_block_buf + off + i, load8(buf + n + i))
+      i = i + 1
+    }
+    vol_sf_write_block(bno, vol_sf_block_buf)
+    n = n + to_copy
+  }
+  if size > old_size {
+    store64(addr + SF_IN_SIZE, size)
+  }
+  store64(addr + SF_IN_MTIME, ticks)
+  vol_sf_write_inode(ino)
+  return 0
+}
+
+fn vol_sparkfs_delete(path: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino <= 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) == SF_TYPE_DIR {
+    if load64(addr + SF_IN_SIZE) != 0 {
+      return -1
+    }
+  }
+  let name = alloc(SF_NAME_MAX + 1)
+  let parent = vol_sf_lookup_parent(path, name)
+  if parent < 0 {
+    return -1
+  }
+  vol_sf_dir_remove(parent, name)
+  let size = load64(addr + SF_IN_SIZE)
+  let sectors = (size + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let fbn = 0
+  while fbn < sectors {
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno > 0 {
+      vol_sf_free_block(bno)
+    }
+    fbn = fbn + 1
+  }
+  let indirect = load64(addr + SF_IN_INDIRECT)
+  if indirect > 0 {
+    vol_sf_free_block(indirect)
+  }
+  let j = 0
+  while j < SF_INODE_SIZE {
+    store8(addr + j, 0)
+    j = j + 1
+  }
+  vol_sf_write_inode(ino)
+  vol_sf_flush_bitmap()
+  return 0
+}
+
+fn vol_sparkfs_mkdir(path: Int) -> Int {
+  return vol_sparkfs_create(path, SF_TYPE_DIR)
+}
+
+fn vol_sparkfs_rmdir(path: Int) -> Int {
+  let ino = vol_sf_lookup_path(path)
+  if ino <= 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+    return -1
+  }
+  return vol_sparkfs_delete(path)
+}
+
+fn vol_sparkfs_rename(old_path: Int, new_path: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let old_ino = vol_sf_lookup_path(old_path)
+  if old_ino <= 0 {
+    return -1
+  }
+  let old_addr = vol_sf_inode_addr(old_ino)
+  let old_type = load32(old_addr + SF_IN_TYPE)
+  if old_type != SF_TYPE_FILE && old_type != SF_TYPE_DIR {
+    return -1
+  }
+  let new_name = alloc(SF_NAME_MAX + 1)
+  let new_parent = vol_sf_lookup_parent(new_path, new_name)
+  if new_parent < 0 {
+    return -1
+  }
+  let tmp = alloc(4)
+  if vol_sf_dir_find(new_parent, new_name, tmp) >= 0 {
+    return -1
+  }
+  let old_name = alloc(SF_NAME_MAX + 1)
+  let old_parent = vol_sf_lookup_parent(old_path, old_name)
+  if old_parent < 0 {
+    return -1
+  }
+  if vol_sf_dir_add(new_parent, new_name, old_ino, old_type) != 0 {
+    return -1
+  }
+  vol_sf_dir_remove(old_parent, old_name)
+  store64(old_addr + SF_IN_MTIME, ticks)
+  vol_sf_write_inode(old_ino)
+  return 0
+}
+
+fn vol_sparkfs_stat(path: Int, stat_buf: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -1
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  store32(stat_buf + SF_ST_TYPE, load32(addr + SF_IN_TYPE))
+  store32(stat_buf + SF_ST_MODE, load32(addr + SF_IN_MODE))
+  store64(stat_buf + SF_ST_SIZE, load64(addr + SF_IN_SIZE))
+  store32(stat_buf + SF_ST_NLINK, load32(addr + SF_IN_NLINK))
+  store64(stat_buf + SF_ST_CTIME, load64(addr + SF_IN_CTIME))
+  store64(stat_buf + SF_ST_MTIME, load64(addr + SF_IN_MTIME))
+  store64(stat_buf + SF_ST_ATIME, load64(addr + SF_IN_ATIME))
+  return 0
+}
+
+fn vol_sparkfs_list(path: Int, port: Int) -> void {
+  if vol_sf_disk_ready == 0 {
+    serial_write_cstr(port, "  (no disk)")
+    serial_nl(port)
+    return
+  }
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    serial_write_cstr(port, "  (not found)")
+    serial_nl(port)
+    return
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+    serial_write_cstr(port, "  (not a directory)")
+    serial_nl(port)
+    return
+  }
+  let size = load64(addr + SF_IN_SIZE)
+  let fbn = 0
+  while fbn * SF_BLOCK_SIZE < size {
+    let bno = vol_sf_inode_block(ino, fbn)
+    if bno > 0 {
+      vol_sf_read_block(bno, vol_sf_block_buf)
+      let off = 0
+      while off < SF_BLOCK_SIZE {
+        let eino = load32(vol_sf_block_buf + off)
+        let name_len = load8(vol_sf_block_buf + off + 4)
+        let etype = load8(vol_sf_block_buf + off + 5)
+        if eino == 0 {
+          off = SF_BLOCK_SIZE
+        } else {
+          serial_write_cstr(port, "  ")
+          let i = 0
+          while i < name_len {
+            serial_put(port, load8(vol_sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
+            i = i + 1
+          }
+          serial_write_cstr(port, "  size=")
+          let eaddr = vol_sf_inode_addr(eino)
+          serial_write_dec_wide(port, load64(eaddr + SF_IN_SIZE))
+          serial_write_cstr(port, "  type=")
+          if etype == SF_TYPE_DIR {
+            serial_write_cstr(port, "dir")
+          } else {
+            serial_write_cstr(port, "file")
+          }
+          if load32(eaddr + SF_IN_INLINE) != 0 {
+            serial_write_cstr(port, "  inline")
+          }
+          serial_write_cstr(port, "  mtime=")
+          serial_write_hex(port, load64(eaddr + SF_IN_MTIME))
+          serial_nl(port)
+          off = off + SF_DIR_ENTRY_SIZE
+        }
+      }
+    }
+    fbn = fbn + 1
+  }
+  return
+}
+
+fn vol_sf_flush_bitmap() -> void {
+  if vol_sf_disk_ready == 0 {
+    return
+  }
+  let total = load64(vol_sf_super + SF_SB_TOTAL_BLOCKS)
+  let bitmap_bytes = (total + 7) / 8
+  let bitmap_start = load64(vol_sf_super + SF_SB_BITMAP_START)
+  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let b = 0
+  while b < bitmap_blocks {
+    vol_sf_zero_block(vol_sf_block_buf)
+    let k = 0
+    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
+      store8(vol_sf_block_buf + k, load8(vol_sf_bitmap + b * SF_BLOCK_SIZE + k))
+      k = k + 1
+    }
+    vol_sf_write_block(bitmap_start + b, vol_sf_block_buf)
+    b = b + 1
+  }
+  return
+}
+
+fn vol_sparkfs_sync() -> void {
+  vol_sf_flush_bitmap()
+  vol_sf_write_block(0, vol_sf_super)
+  return
+}
+
+const VOL_VFS_O_RDONLY = 0
+const VOL_VFS_O_WRONLY = 1
+const VOL_VFS_O_RDWR = 2
+const VOL_VFS_O_CREAT = 64
+
+var vol_vfs_fd_max: Int = 16
+var vol_vfs_fd_table: Int = 0
+
+fn vol_vfs_init() -> void {
+  vol_vfs_fd_max = 16
+  vol_vfs_fd_table = alloc(vol_vfs_fd_max * 32)
+  let i = 0
+  while i < vol_vfs_fd_max {
+    vol_vfs_fd_clear(i)
+    i = i + 1
+  }
+  store64(vol_vfs_fd_table + 0 * 32 + 0, 0)
+  store64(vol_vfs_fd_table + 0 * 32 + 8, 0)
+  store64(vol_vfs_fd_table + 0 * 32 + 16, VOL_VFS_O_RDONLY)
+  store64(vol_vfs_fd_table + 1 * 32 + 0, 0)
+  store64(vol_vfs_fd_table + 1 * 32 + 8, 0)
+  store64(vol_vfs_fd_table + 1 * 32 + 16, VOL_VFS_O_WRONLY)
+  store64(vol_vfs_fd_table + 2 * 32 + 0, 0)
+  store64(vol_vfs_fd_table + 2 * 32 + 8, 0)
+  store64(vol_vfs_fd_table + 2 * 32 + 16, VOL_VFS_O_WRONLY)
+  return
+}
+
+fn vol_vfs_fd_clear(fd: Int) -> void {
+  let base = vol_vfs_fd_table + fd * 32
+  store64(base + 0, -1)
+  store64(base + 8, 0)
+  store64(base + 16, 0)
+  store64(base + 24, 0)
+  return
+}
+
+fn vol_vfs_fd_alloc() -> Int {
+  let i = 3
+  while i < vol_vfs_fd_max {
+    if load64(vol_vfs_fd_table + i * 32 + 0) == -1 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn vol_vfs_fd_valid(fd: Int) -> Int {
+  if fd < 0 {
+    return 0
+  }
+  if fd >= vol_vfs_fd_max {
+    return 0
+  }
+  if fd < 3 {
+    return 1
+  }
+  if load64(vol_vfs_fd_table + fd * 32 + 0) == -1 {
+    return 0
+  }
+  return 1
+}
+
+fn vol_vfs_sparkfs_file_size(path: Int) -> Int {
+  let ino = vol_sf_lookup_path(path)
+  if ino < 0 {
+    return -1
+  }
+  let addr = vol_sf_inode_addr(ino)
+  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+    return -1
+  }
+  return load64(addr + SF_IN_SIZE)
+}
+
+fn vol_vfs_open(pathname: Int, flags: Int) -> Int {
+  if vol_sf_disk_ready == 0 {
+    return -5
+  }
+  let ino = vol_sf_lookup_path(pathname)
+  if ino < 0 {
+    if (flags & VOL_VFS_O_CREAT) != 0 {
+      let rc = vol_sparkfs_write(pathname, pathname, 0)
+      if rc != 0 {
+        return -28
+      }
+      ino = vol_sf_lookup_path(pathname)
+      if ino < 0 {
+        return -5
+      }
+    } else {
+      return -2
+    }
+  }
+  let fd = vol_vfs_fd_alloc()
+  if fd < 0 {
+    return -16
+  }
+  let path_copy = strdup(pathname)
+  let base = vol_vfs_fd_table + fd * 32
+  store64(base + 0, path_copy)
+  store64(base + 8, 0)
+  store64(base + 16, flags)
+  store64(base + 24, 0)
+  return fd
+}
+
+fn vol_vfs_close(fd: Int) -> Int {
+  if vol_vfs_fd_valid(fd) == 0 {
+    return -9
+  }
+  if fd < 3 {
+    return 0
+  }
+  vol_vfs_fd_clear(fd)
+  return 0
+}
+
+fn vol_vfs_read(fd: Int, buf: Int, count: Int) -> Int {
+  if vol_vfs_fd_valid(fd) == 0 {
+    return -9
+  }
+  if fd == 0 {
+    let port = com1()
+    let i = 0
+    while i < count {
+      let c = serial_read(port)
+      store8(buf + i, c)
+      i = i + 1
+      if c == 10 || c == 13 {
+        return i
+      }
+    }
+    return count
+  }
+  if fd < 3 {
+    return -9
+  }
+  let base = vol_vfs_fd_table + fd * 32
+  let path = load64(base + 0)
+  let offset = load64(base + 8)
+  let n = vol_sparkfs_pread(path, buf, count, offset)
+  if n < 0 {
+    return -5
+  }
+  store64(base + 8, offset + n)
+  return n
+}
+
+fn vol_vfs_write(fd: Int, buf: Int, count: Int) -> Int {
+  if vol_vfs_fd_valid(fd) == 0 {
+    return -9
+  }
+  if fd == 1 || fd == 2 {
+    let port = com1()
+    let i = 0
+    while i < count {
+      serial_put(port, load8(buf + i))
+      i = i + 1
+    }
+    return count
+  }
+  if fd == 0 {
+    return -9
+  }
+  let base = vol_vfs_fd_table + fd * 32
+  let path = load64(base + 0)
+  let offset = load64(base + 8)
+  let n = vol_sparkfs_pwrite(path, buf, count, offset)
+  if n < 0 {
+    return -5
+  }
+  store64(base + 8, offset + n)
+  return n
+}
+
+fn vol_vfs_lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  if vol_vfs_fd_valid(fd) == 0 {
+    return -9
+  }
+  if fd < 3 {
+    return -29
+  }
+  let base = vol_vfs_fd_table + fd * 32
+  let path = load64(base + 0)
+  let file_size = vol_vfs_sparkfs_file_size(path)
+  if file_size < 0 {
+    return -5
+  }
+  let cur_offset = load64(base + 8)
+  let new_offset = 0
+  if whence == 0 {
+    new_offset = offset
+  } else if whence == 1 {
+    new_offset = cur_offset + offset
+  } else if whence == 2 {
+    new_offset = file_size + offset
+  } else {
+    return -22
+  }
+  if new_offset < 0 {
+    return -22
+  }
+  store64(base + 8, new_offset)
+  return new_offset
+}
+// --- component entry points -------------------------------------------------
+
+fn volume_init() -> void {
+  vol_sparkfs_init()
+  return
+}
+
+fn volume_entry(cap_info: Int) -> Int {
+  // cap_info layout (64 bytes):
+  //   0: shared_page physical address
+  //   8: kernel domain id
+  //  16: volume domain id
+  //  24: shared page virtual address in volume domain
+  //  32: kernel shared page virtual address
+  let phys = load64(cap_info + 0)
+  let volume_domain = load64(cap_info + 16)
+  let volume_virt = load64(cap_info + 24)
+  if volume_domain != 0 && volume_virt != 0 {
+    domain_map(volume_domain, volume_virt, phys, 0x3)
+  }
+  let page = volume_virt
+  if page == 0 {
+    page = phys
+  }
+  vol_sparkfs_init()
+  while true {
+    if load64(page + VOL_OFF_REQ_READY) != 0 {
+      volume_dispatch_once(page)
+      store64(page + VOL_OFF_REQ_READY, 0)
+      store64(page + VOL_OFF_RESP_READY, 1)
+    }
+    // Busy-wait / cooperative pause while no request is pending.
+    pause()
+  }
+  return 0
+}
+
+// Process a single request on `page`.  The caller clears req_ready and sets
+// resp_ready after this returns.
+fn volume_dispatch_once(page: Int) -> void {
+  let op = load64(page + VOL_OFF_OPCODE)
+  let path0 = page + VOL_OFF_PATH0
+  let path1 = page + VOL_OFF_PATH1
+  let data = page + VOL_OFF_DATA
+  let arg0 = load64(page + VOL_OFF_ARG0)
+  let arg1 = load64(page + VOL_OFF_ARG1)
+  let arg2 = load64(page + VOL_OFF_ARG2)
+  store64(page + VOL_OFF_STATUS, 0)
+  store64(page + VOL_OFF_RESULT, 0)
+
+  if op == VOLUME_OP_INIT {
+    vol_sparkfs_init()
+    return
+  }
+  if op == VOLUME_OP_OPEN {
+    let ino = vol_sf_lookup_path(path0)
+    if ino < 0 && (arg0 & 64) != 0 {
+      // Create empty file if O_CREAT requested.
+      ino = vol_sparkfs_create(path0, SF_TYPE_FILE)
+    }
+    if ino < 0 {
+      store64(page + VOL_OFF_STATUS, 2)
+      return
+    }
+    store64(page + VOL_OFF_RESULT, ino)
+    return
+  }
+  if op == VOLUME_OP_READ {
+    let n = vol_sparkfs_pread(path0, data, arg1, arg0)
+    store64(page + VOL_OFF_RESULT, n)
+    if n < 0 { store64(page + VOL_OFF_STATUS, 5) }
+    return
+  }
+  if op == VOLUME_OP_WRITE {
+    let n = vol_sparkfs_pwrite(path0, data, arg1, arg0)
+    store64(page + VOL_OFF_RESULT, n)
+    if n < 0 { store64(page + VOL_OFF_STATUS, 5) }
+    return
+  }
+  if op == VOLUME_OP_STAT {
+    let rc = vol_sparkfs_stat(path0, page + VOL_OFF_RESP_DATA)
+    store64(page + VOL_OFF_RESULT, rc)
+    if rc != 0 { store64(page + VOL_OFF_STATUS, 2) }
+    return
+  }
+  if op == VOLUME_OP_DELETE {
+    store64(page + VOL_OFF_RESULT, vol_sparkfs_delete(path0))
+    return
+  }
+  if op == VOLUME_OP_MKDIR {
+    store64(page + VOL_OFF_RESULT, vol_sparkfs_mkdir(path0))
+    return
+  }
+  if op == VOLUME_OP_RMDIR {
+    store64(page + VOL_OFF_RESULT, vol_sparkfs_rmdir(path0))
+    return
+  }
+  if op == VOLUME_OP_RENAME {
+    store64(page + VOL_OFF_RESULT, vol_sparkfs_rename(path0, path1))
+    return
+  }
+  if op == VOLUME_OP_LIST {
+    // For the RPC list path, write a simple newline-separated listing into the
+    // response data area.  This is used when the component runs remotely; the
+    // caller is responsible for printing it.
+    let ino = vol_sf_lookup_path(path0)
+    if ino < 0 {
+      store64(page + VOL_OFF_STATUS, 2)
+      return
+    }
+    let addr = vol_sf_inode_addr(ino)
+    if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+      store64(page + VOL_OFF_STATUS, 22)
+      return
+    }
+    let out = page + VOL_OFF_RESP_DATA
+    let out_len = 0
+    let size = load64(addr + SF_IN_SIZE)
+    let fbn = 0
+    while fbn * SF_BLOCK_SIZE < size && out_len < VOL_DATA_MAX - 64 {
+      let bno = vol_sf_inode_block(ino, fbn)
+      if bno > 0 {
+        vol_sf_read_block(bno, vol_sf_block_buf)
+        let off = 0
+        while off < SF_BLOCK_SIZE && out_len < VOL_DATA_MAX - 64 {
+          let eino = load32(vol_sf_block_buf + off)
+          let name_len = load8(vol_sf_block_buf + off + 4)
+          let etype = load8(vol_sf_block_buf + off + 5)
+          if eino == 0 {
+            off = SF_BLOCK_SIZE
+          } else {
+            let i = 0
+            while i < name_len && out_len < VOL_DATA_MAX - 4 {
+              store8(out + out_len, load8(vol_sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
+              out_len = out_len + 1
+              i = i + 1
+            }
+            store8(out + out_len, 32)
+            out_len = out_len + 1
+            let eaddr = vol_sf_inode_addr(eino)
+            let esize = load64(eaddr + SF_IN_SIZE)
+            // append decimal size (very small helper)
+            if esize == 0 {
+              store8(out + out_len, 48)
+              out_len = out_len + 1
+            } else {
+              let digits = 0
+              let tmp = esize
+              while tmp > 0 {
+                digits = digits + 1
+                tmp = tmp / 10
+              }
+              let j = digits
+              tmp = esize
+              while j > 0 {
+                j = j - 1
+                store8(out + out_len + j, 48 + (tmp % 10))
+                tmp = tmp / 10
+              }
+              out_len = out_len + digits
+            }
+            store8(out + out_len, 10)
+            out_len = out_len + 1
+            off = off + SF_DIR_ENTRY_SIZE
+          }
+        }
+      }
+      fbn = fbn + 1
+    }
+    store8(out + out_len, 0)
+    store64(page + VOL_OFF_RESULT, out_len)
+    return
+  }
+  // Unknown op
+  store64(page + VOL_OFF_STATUS, 38)
+  return
+}

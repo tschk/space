@@ -1,0 +1,2728 @@
+package space.display
+
+import "../protocol/display.in"
+
+const SPDP_OBJ_SURFACE = 5
+
+interface DisplayDevice {
+  fn map(phys: Int, size: Int) -> void
+  fn present() -> void
+}
+
+component Display {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability display: DisplayDevice(map, present)
+}
+
+const COM1_PORT = 0x3F8
+const SPACE_VERSION_MAJOR = 0
+const SPACE_VERSION_MINOR = 2
+const SPACE_VERSION_PATCH = 75
+
+fn com1() -> Int {
+  return COM1_PORT
+}
+
+fn serial_wait_tx(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn serial_init(port: Int) -> void {
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x80)
+  outb(port + 0, 0x03)
+  outb(port + 1, 0x00)
+  outb(port + 3, 0x03)
+  outb(port + 2, 0xC7)
+  outb(port + 4, 0x0B)
+  return
+}
+
+fn serial_put(port: Int, ch: Int) -> void {
+  serial_wait_tx(port)
+  outb(port, ch)
+  return
+}
+
+fn serial_nl(port: Int) -> void {
+  serial_put(port, 10)
+  return
+}
+
+fn serial_write_cstr(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    serial_put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn serial_write_dec_wide(port: Int, value: Int) -> void {
+  let n = value
+  if n < 0 {
+    serial_put(port, 45)
+    n = -n
+  }
+  if n == 0 {
+    serial_put(port, 48)
+    return
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    serial_put(port, 48 + (n / div) % 10)
+    div = div / 10
+  }
+  return
+}
+
+fn serial_write_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      serial_put(port, 48 + nibble)
+    } else {
+      serial_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+fn serial_has_byte(port: Int) -> Int {
+  return 0
+}
+
+var heap_next: Int = 0x300000
+var heap_end: Int = 0x400000
+
+fn alloc(n: Int) -> Int {
+  let aligned = (n + 15) & -16
+  let p = heap_next
+  let next = heap_next + aligned
+  if next > heap_end {
+    return 0
+  }
+  heap_next = next
+  return p
+}
+
+const PCI_CONFIG_ADDR = 0xCF8
+const PCI_CONFIG_DATA = 0xCFC
+
+fn pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
+  return inl(PCI_CONFIG_DATA)
+}
+
+fn pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
+  outl(PCI_CONFIG_DATA, val)
+  return
+}
+
+
+fn outw(port: Int, val: Int) -> void {
+  outb(port, val & 0xFF)
+  outb(port + 1, (val >> 8) & 0xFF)
+  return
+}
+
+fn inw(port: Int) -> Int {
+  return inb(port) | (inb(port + 1) << 8)
+}
+
+fn outl(port: Int, val: Int) -> void {
+  outb(port, val & 0xFF)
+  outb(port + 1, (val >> 8) & 0xFF)
+  outb(port + 2, (val >> 16) & 0xFF)
+  outb(port + 3, (val >> 24) & 0xFF)
+  return
+}
+
+fn inl(port: Int) -> Int {
+  return inb(port) | (inb(port + 1) << 8) | (inb(port + 2) << 16) | (inb(port + 3) << 24)
+}
+
+var comp_backbuf: Int = 0
+
+var comp_dragging: Int = 0
+
+var mouse_x: Int = 0
+var mouse_y: Int = 0
+
+fn mouse_poll() -> Int {
+  return 0
+}
+
+fn mouse_left_pressed() -> Int {
+  return 0
+}
+
+fn usb_kbd_ready() -> Int {
+  return 0
+}
+
+fn usb_kbd_getchar() -> Int {
+  return -1
+}
+
+fn ps2_kbd_getchar() -> Int {
+  return -1
+}
+
+var total_ram: Int = 0
+var proc_count: Int = 0
+var domain_count: Int = 0
+var nvme_ready: Int = 0
+
+fn fs_write_file(path: Int, buf: Int, len: Int) -> Int {
+  return -1
+}
+
+fn chan_count(c: Int) -> Int {
+  if c == 0 {
+    return 0
+  }
+  let head = load64(c + 0)
+  let tail = load64(c + 8)
+  let cap = load64(c + 16)
+  let n = tail - head
+  if n < 0 {
+    n = n + cap
+  }
+  return n
+}
+
+fn chan_recv(c: Int) -> Int {
+  let head = load64(c + 0)
+  let cap = load64(c + 16)
+  let msg = load64(c + 32 + head * 8)
+  store64(c + 0, (head + 1) % cap)
+  return msg
+}
+
+
+// VBE framebuffer driver for the Space nanokernel.
+// Reads VBE mode info from the Multiboot1 info structure, maps the framebuffer
+// memory (identity-mapped in the first 4 GiB by the boot trampoline), and
+// provides drawing primitives: pixels, rectangles, lines, and bitmap text.
+//
+// The framebuffer is a linear pixel array. Each pixel is 32 bits (BGRA or RGBX
+// depending on the VBE mode). The pitch (bytes per scanline) may differ from
+// width * 4, so all drawing functions use fb_pitch for address calculation.
+//
+// Multiboot1 info structure offsets (VBE fields):
+//   offset 0:  flags (bit 11 = VBE info valid)
+//   offset 72: vbe_control_info (u32 pointer)
+//   offset 76: vbe_mode_info (u32 pointer)
+//   offset 80: vbe_mode (u16)
+//
+// VBE mode info structure offsets:
+//   offset 16: bytes_per_scanline (u16) -- pitch
+//   offset 18: x_resolution (u16)
+//   offset 20: y_resolution (u16)
+//   offset 25: bits_per_pixel (u8)
+//   offset 40: phys_base_ptr (u32) -- framebuffer physical address
+
+// --- framebuffer state ------------------------------------------------------
+var fb_addr: Int = 0       // framebuffer virtual address (identity-mapped)
+var fb_pitch: Int = 0      // bytes per scanline
+var fb_width: Int = 0      // pixels
+var fb_height: Int = 0     // pixels
+var fb_bpp: Int = 0        // bits per pixel
+var fb_size: Int = 0       // total framebuffer size in bytes
+var fb_ready: Int = 0      // 1 after successful init
+var fb_font_scale: Int = 2  // font scale multiplier (2=16x16, 3=24x24)
+
+// --- colors (32-bit RGBX) ---------------------------------------------------
+const FB_COLOR_BLACK = 0x00000000
+const FB_COLOR_WHITE = 0x00FFFFFF
+const FB_COLOR_RED = 0x00FF0000
+const FB_COLOR_GREEN = 0x0000FF00
+const FB_COLOR_BLUE = 0x000000FF
+const FB_COLOR_CYAN = 0x0000FFFF
+const FB_COLOR_MAGENTA = 0x00FF00FF
+const FB_COLOR_YELLOW = 0x00FFFF00
+const FB_COLOR_GRAY = 0x00808080
+const FB_COLOR_DARK_GRAY = 0x00404040
+const FB_COLOR_LIGHT_GRAY = 0x00C0C0C0
+const FB_COLOR_DARK_BLUE = 0x00000080
+const FB_COLOR_DARK_GREEN = 0x00008000
+const FB_COLOR_DARK_RED = 0x00800000
+const FB_COLOR_ORANGE = 0x00FF8000
+const FB_COLOR_PURPLE = 0x00800080
+const FB_COLOR_TEAL = 0x00808000
+
+// --- font (8x8 bitmap) ------------------------------------------------------
+// Each character is 8 bytes (one per row, MSB = leftmost pixel).
+// We store 128 characters x 8 bytes = 1024 bytes in a heap buffer.
+const FB_FONT_WIDTH = 8
+const FB_FONT_HEIGHT = 8
+var fb_font: Int = 0
+// Font setup moved to font.in
+
+
+// --- Bochs VBE I/O ports (QEMU standard VGA) --------------------------------
+const VBE_INDEX = 0x1CE
+const VBE_DATA = 0x1CF
+
+// Write a VBE register.
+fn vbe_write(idx: Int, val: Int) -> void {
+  outw(VBE_INDEX, idx)
+  outw(VBE_DATA, val)
+  return
+}
+
+// Read a VBE register.
+fn vbe_read(idx: Int) -> Int {
+  outw(VBE_INDEX, idx)
+  return inw(VBE_DATA)
+}
+
+// --- framebuffer initialization ---------------------------------------------
+
+// Enable PCI vendor/device I/O for VGA device.
+fn fb_enable_vga_pci() -> void {
+  let dev = 0
+  while dev < 32 {
+    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
+    if vendor != 0xFFFF {
+      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
+      if class_code == 0x030000 {
+        let cmd = pci_read32(0, dev, 0, 0x04)
+        pci_write32(0, dev, 0, 0x04, cmd | 0x7)
+        return
+      }
+    }
+    dev = dev + 1
+  }
+  return
+}
+
+// Initialize the framebuffer using Bochs VBE I/O ports.
+// Sets a 1920x1080x32 graphics mode with linear framebuffer.
+// Falls back to multiboot VBE info if I/O ports don't respond.
+// Returns 0 on success, -1 if VBE is unavailable.
+fn fb_init(mb_info: Int) -> Int {
+  // Enable PCI VGA I/O (needed for VBE ports to work on some QEMU configs).
+  fb_enable_vga_pci()
+
+  // Check for Bochs VBE by reading the ID register.
+  let vbe_id = vbe_read(0x00)
+
+  // If VBE I/O fails, try multiboot VBE info.
+  if vbe_id == 0 {
+    let mb_flags = load32(mb_info + 0)
+    let vbe_avail = (mb_flags >> 11) & 1
+    if vbe_avail == 0 {
+      return -1
+    }
+    let mode_info = load32(mb_info + 76)
+    if mode_info == 0 {
+      return -1
+    }
+    fb_pitch = load16(mode_info + 16)
+    fb_width = load16(mode_info + 18)
+    fb_height = load16(mode_info + 20)
+    fb_bpp = load8(mode_info + 25)
+    fb_addr = load32(mode_info + 40)
+    if fb_bpp != 32 {
+      return -1
+    }
+    if fb_pitch < fb_width * 4 {
+      return -1
+    }
+    fb_size = fb_pitch * fb_height
+    fb_font_init()
+    fb_ready = 1
+    return 0
+  }
+
+  // VBE I/O ports work — configure mode.
+  // Disable VBE while configuring.
+  vbe_write(0x04, 0x00)
+
+  // Set X resolution, Y resolution, and BPP.
+  let target_w = 1920
+  let target_h = 1080
+  let target_bpp = 32
+  vbe_write(0x01, target_w)
+  vbe_write(0x02, target_h)
+  vbe_write(0x03, target_bpp)
+
+  // Enable VBE with linear framebuffer (bit 6 = LFB, bit 0 = enable).
+  // Bit 7 = clear video memory.
+  vbe_write(0x04, 0xC1)
+
+  // Read back the actual settings.
+  fb_width = vbe_read(0x01)
+  fb_height = vbe_read(0x02)
+  fb_bpp = vbe_read(0x03)
+
+  // Set pitch (bytes per scanline) = width * (bpp / 8).
+  fb_pitch = fb_width * 4
+  let virt_w = vbe_read(0x06)
+  if virt_w != 0 {
+    fb_pitch = virt_w * 4
+  }
+
+  if fb_width == 0 || fb_height == 0 {
+    return -1
+  }
+  if fb_bpp != 32 {
+    return -1
+  }
+  if fb_pitch < fb_width * 4 {
+    return -1
+  }
+
+  // Find the framebuffer address by scanning PCI for a VGA device (class 0x030000).
+  fb_addr = 0
+  let dev = 0
+  while dev < 32 {
+    let vendor = pci_read32(0, dev, 0, 0) & 0xFFFF
+    if vendor != 0xFFFF {
+      let class_code = (pci_read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
+      if class_code == 0x030000 {
+        // Read BAR0 (64-bit memory BAR: BAR0 at 0x10, BAR1 at 0x14).
+        let bar0_raw = pci_read32(0, dev, 0, 0x10)
+        let bar0_lo = bar0_raw & 0xFFFFFFF0
+        let bar0_hi = 0
+        if (bar0_raw & 0x6) == 0x4 {
+          bar0_hi = pci_read32(0, dev, 0, 0x14)
+        }
+        fb_addr = bar0_lo | (bar0_hi << 32)
+        // Enable PCI memory space, I/O space, and bus mastering.
+        pci_write32(0, dev, 0, 0x04, 0x7)
+        break
+      }
+    }
+    dev = dev + 1
+  }
+
+  if fb_addr == 0 {
+    return -1
+  }
+
+  // Calculate framebuffer size.
+  fb_size = fb_pitch * fb_height
+
+  // Initialize the font.
+  fb_font_init()
+  fb_ready = 1
+
+  return 0
+}
+
+// --- drawing primitives -----------------------------------------------------
+
+// Set a single pixel at (x, y) to color. Clips to screen bounds.
+fn fb_put_pixel(x: Int, y: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  if x < 0 || x >= fb_width || y < 0 || y >= fb_height {
+    return
+  }
+  let off = y * fb_pitch + x * 4
+  store32(fb_addr + off, color)
+  return
+}
+
+// Fill a rectangle with a solid color. Clips to screen bounds.
+fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+
+  let x_start = x
+  if x_start < 0 {
+    x_start = 0
+  }
+  let x_end = x + w
+  if x_end > fb_width {
+    x_end = fb_width
+  }
+
+  let y_start = y
+  if y_start < 0 {
+    y_start = 0
+  }
+  let y_end = y + h
+  if y_end > fb_height {
+    y_end = fb_height
+  }
+
+  if x_start >= x_end || y_start >= y_end {
+    return
+  }
+
+  let py = y_start
+  while py < y_end {
+    let px = x_start
+    let row_addr = fb_addr + py * fb_pitch
+    while px < x_end {
+      store32(row_addr + px * 4, color)
+      px = px + 1
+    }
+    py = py + 1
+  }
+  return
+}
+
+// fb_glyph8 moved to font.in
+
+// Draw a single character at (x, y) in the given color.
+fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb_ready == 0 {
+    return
+  }
+  if ch < 0 || ch >= 128 {
+    ch = 63  // '?'
+  }
+
+  // Fast path if the whole character (16x16) is within bounds
+  if x >= 0 && x + 16 <= fb_width && y >= 0 && y + 16 <= fb_height {
+    let row = 0
+    let row_addr = fb_addr + y * fb_pitch + x * 4
+    while row < 8 {
+      let bits = fb_glyph8(ch, row)
+      let col = 0
+      let pixel_addr = row_addr
+      while col < 8 {
+        let bit = (bits >> (7 - col)) & 1
+        if bit != 0 {
+          store32(pixel_addr, color)
+          store32(pixel_addr + 4, color)
+          store32(pixel_addr + fb_pitch, color)
+          store32(pixel_addr + fb_pitch + 4, color)
+        }
+        pixel_addr = pixel_addr + 8
+        col = col + 1
+      }
+      row_addr = row_addr + fb_pitch * 2
+      row = row + 1
+    }
+    return
+  }
+
+  // Fully off-screen check
+  if x + 16 <= 0 || x >= fb_width || y + 16 <= 0 || y >= fb_height {
+    return
+  }
+
+  let row = 0
+  let py = y
+  while row < 8 {
+    if py + 1 >= 0 && py < fb_height {
+      let bits = fb_glyph8(ch, row)
+      let col = 0
+      let px = x
+      let row_addr = fb_addr + py * fb_pitch + px * 4
+      while col < 8 {
+        let bit = (bits >> (7 - col)) & 1
+        if bit != 0 {
+          if px >= 0 && py >= 0 && px + 1 < fb_width && py + 1 < fb_height {
+            store32(row_addr, color)
+            store32(row_addr + 4, color)
+            store32(row_addr + fb_pitch, color)
+            store32(row_addr + fb_pitch + 4, color)
+          } else {
+            fb_put_pixel(px, py, color)
+            fb_put_pixel(px + 1, py, color)
+            fb_put_pixel(px, py + 1, color)
+            fb_put_pixel(px + 1, py + 1, color)
+          }
+        }
+        row_addr = row_addr + 8
+        px = px + 2
+        col = col + 1
+      }
+    }
+    py = py + 2
+    row = row + 1
+  }
+  return
+}
+
+// Clear the entire screen to a color.
+fn fb_clear(color: Int) -> void {
+  fb_fill_rect(0, 0, fb_width, fb_height, color)
+  return
+}
+
+// Print framebuffer info to the serial port.
+fn fb_info(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  fb: not initialized")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "  fb: ")
+  serial_write_dec_wide(port, fb_width)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_height)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_bpp)
+  serial_write_cstr(port, " pitch=")
+  serial_write_dec_wide(port, fb_pitch)
+  serial_write_cstr(port, " addr=0x")
+  serial_write_hex(port, fb_addr)
+  serial_write_cstr(port, " size=")
+  serial_write_dec_wide(port, fb_size)
+  serial_nl(port)
+  return
+}
+
+// Test pattern: fill screen with colored stripes to verify rendering.
+// ponytail: test pattern removed — ~3KB of pixel-loop code that was only
+// used for framebuffer bring-up debugging. Restore when display bring-up
+// needs pixel-level verification.
+
+
+// Store one character's 8-row bitmap data.
+fn fb_font_set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
+  let p = fb_font + ch * 8
+  store8(p + 0, r0)
+  store8(p + 1, r1)
+  store8(p + 2, r2)
+  store8(p + 3, r3)
+  store8(p + 4, r4)
+  store8(p + 5, r5)
+  store8(p + 6, r6)
+  store8(p + 7, r7)
+  return
+}
+
+// Initialize the 8x8 bitmap font with a basic ASCII subset.
+fn fb_font_init() -> void {
+  fb_font = alloc(128 * 8)
+  let i = 0
+  while i < 1024 {
+    store8(fb_font + i, 0)
+    i = i + 1
+  }
+  // Space (32)
+  fb_font_set(32, 0, 0, 0, 0, 0, 0, 0, 0)
+  // ! (33)
+  fb_font_set(33, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00)
+  // " (34)
+  fb_font_set(34, 0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // ( (40)
+  fb_font_set(40, 0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00)
+  // ) (41)
+  fb_font_set(41, 0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x18, 0x30, 0x00)
+  // * (42)
+  fb_font_set(42, 0x00, 0x66, 0x3C, 0xFF, 0x3C, 0x66, 0x00, 0x00)
+  // + (43)
+  fb_font_set(43, 0x00, 0x18, 0x18, 0x7E, 0x18, 0x18, 0x00, 0x00)
+  // , (44)
+  fb_font_set(44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // - (45)
+  fb_font_set(45, 0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00)
+  // . (46)
+  fb_font_set(46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // / (47)
+  fb_font_set(47, 0x00, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x70, 0x60)
+  // 0-9 (48-57)
+  fb_font_set(48, 0x3C, 0x66, 0x6E, 0x76, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(49, 0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00)
+  fb_font_set(50, 0x3C, 0x66, 0x06, 0x0C, 0x30, 0x60, 0x7E, 0x00)
+  fb_font_set(51, 0x3C, 0x66, 0x06, 0x1C, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(52, 0x0E, 0x1E, 0x36, 0x66, 0x7F, 0x06, 0x06, 0x00)
+  fb_font_set(53, 0x7E, 0x60, 0x7C, 0x06, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(54, 0x3C, 0x66, 0x60, 0x7C, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(55, 0x7E, 0x66, 0x0C, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(56, 0x3C, 0x66, 0x66, 0x3C, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(57, 0x3C, 0x66, 0x66, 0x3E, 0x06, 0x66, 0x3C, 0x00)
+  // : (58)
+  fb_font_set(58, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // ; (59)
+  fb_font_set(59, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // < (60)
+  fb_font_set(60, 0x06, 0x0C, 0x18, 0x30, 0x18, 0x0C, 0x06, 0x00)
+  // = (61)
+  fb_font_set(61, 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00)
+  // > (62)
+  fb_font_set(62, 0x60, 0x30, 0x18, 0x0C, 0x18, 0x30, 0x60, 0x00)
+  // ? (63)
+  fb_font_set(63, 0x3C, 0x66, 0x06, 0x0C, 0x18, 0x00, 0x18, 0x00)
+  // A-Z (65-90)
+  fb_font_set(65, 0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00)
+  fb_font_set(66, 0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00)
+  fb_font_set(67, 0x3C, 0x66, 0x60, 0x60, 0x60, 0x66, 0x3C, 0x00)
+  fb_font_set(68, 0x78, 0x6C, 0x66, 0x66, 0x66, 0x6C, 0x78, 0x00)
+  fb_font_set(69, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x7E, 0x00)
+  fb_font_set(70, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(71, 0x3C, 0x66, 0x60, 0x6E, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(72, 0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(73, 0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(74, 0x1E, 0x0C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38, 0x00)
+  fb_font_set(75, 0x66, 0x6C, 0x78, 0x70, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(76, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x7E, 0x00)
+  fb_font_set(77, 0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00)
+  fb_font_set(78, 0x66, 0x76, 0x7E, 0x7E, 0x6E, 0x66, 0x66, 0x00)
+  fb_font_set(79, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(80, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(81, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x0E, 0x00)
+  fb_font_set(82, 0x7C, 0x66, 0x66, 0x7C, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(83, 0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00)
+  fb_font_set(84, 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(85, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(86, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb_font_set(87, 0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00)
+  fb_font_set(88, 0x66, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x66, 0x00)
+  fb_font_set(89, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(90, 0x7E, 0x06, 0x0C, 0x18, 0x30, 0x60, 0x7E, 0x00)
+  // [ (91)
+  fb_font_set(91, 0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00)
+  // ] (93)
+  fb_font_set(93, 0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00)
+  // _ (95)
+  fb_font_set(95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF)
+  // a-z (97-122) -- simplified lowercase (same as uppercase for now)
+  fb_font_set(97, 0x00, 0x00, 0x3C, 0x06, 0x3E, 0x66, 0x3E, 0x00)
+  fb_font_set(98, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00)
+  fb_font_set(99, 0x00, 0x00, 0x3C, 0x60, 0x60, 0x60, 0x3C, 0x00)
+  fb_font_set(100, 0x06, 0x06, 0x3E, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb_font_set(101, 0x00, 0x00, 0x3C, 0x66, 0x7E, 0x60, 0x3C, 0x00)
+  fb_font_set(102, 0x0E, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb_font_set(103, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x3C)
+  fb_font_set(104, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(105, 0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(106, 0x0C, 0x00, 0x1C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38)
+  fb_font_set(107, 0x60, 0x60, 0x66, 0x6C, 0x78, 0x6C, 0x66, 0x00)
+  fb_font_set(108, 0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb_font_set(109, 0x00, 0x00, 0x66, 0x7F, 0x7F, 0x6B, 0x63, 0x00)
+  fb_font_set(110, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb_font_set(111, 0x00, 0x00, 0x3C, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb_font_set(112, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60)
+  fb_font_set(113, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x06)
+  fb_font_set(114, 0x00, 0x00, 0x7C, 0x66, 0x60, 0x60, 0x60, 0x00)
+  fb_font_set(115, 0x00, 0x00, 0x3E, 0x60, 0x3C, 0x06, 0x7C, 0x00)
+  fb_font_set(116, 0x18, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x0E, 0x00)
+  fb_font_set(117, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb_font_set(118, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb_font_set(119, 0x00, 0x00, 0x63, 0x6B, 0x7F, 0x3F, 0x36, 0x00)
+  fb_font_set(120, 0x00, 0x00, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x00)
+  fb_font_set(121, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3E, 0x0C, 0x38)
+  fb_font_set(122, 0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00)
+  // { (123)
+  fb_font_set(123, 0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00)
+  // } (125)
+  fb_font_set(125, 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00)
+  // | (124)
+  fb_font_set(124, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  // ~ (126)
+  fb_font_set(126, 0x00, 0x00, 0x60, 0x7E, 0x06, 0x00, 0x00, 0x00)
+  // # (35)
+  fb_font_set(35, 0x66, 0x66, 0xFF, 0xFF, 0x66, 0x66, 0xFF, 0xFF)
+  return
+}
+
+fn fb_glyph8(ch: Int, row: Int) -> Int {
+  if ch == 33 && row == 0 { return 0x18 }
+  if ch == 33 && row == 1 { return 0x18 }
+  if ch == 33 && row == 2 { return 0x18 }
+  if ch == 33 && row == 3 { return 0x18 }
+  if ch == 33 && row == 4 { return 0x18 }
+  if ch == 33 && row == 6 { return 0x18 }
+  if ch == 34 && row == 0 { return 0x66 }
+  if ch == 34 && row == 1 { return 0x66 }
+  if ch == 34 && row == 2 { return 0x66 }
+  if ch == 35 && row == 0 { return 0x66 }
+  if ch == 35 && row == 1 { return 0x66 }
+  if ch == 35 && row == 2 { return 0xFF }
+  if ch == 35 && row == 3 { return 0xFF }
+  if ch == 35 && row == 4 { return 0x66 }
+  if ch == 35 && row == 5 { return 0x66 }
+  if ch == 35 && row == 6 { return 0xFF }
+  if ch == 35 && row == 7 { return 0xFF }
+  if ch == 40 && row == 0 { return 0x0C }
+  if ch == 40 && row == 1 { return 0x18 }
+  if ch == 40 && row == 2 { return 0x30 }
+  if ch == 40 && row == 3 { return 0x30 }
+  if ch == 40 && row == 4 { return 0x30 }
+  if ch == 40 && row == 5 { return 0x18 }
+  if ch == 40 && row == 6 { return 0x0C }
+  if ch == 41 && row == 0 { return 0x30 }
+  if ch == 41 && row == 1 { return 0x18 }
+  if ch == 41 && row == 2 { return 0x0C }
+  if ch == 41 && row == 3 { return 0x0C }
+  if ch == 41 && row == 4 { return 0x0C }
+  if ch == 41 && row == 5 { return 0x18 }
+  if ch == 41 && row == 6 { return 0x30 }
+  if ch == 42 && row == 1 { return 0x66 }
+  if ch == 42 && row == 2 { return 0x3C }
+  if ch == 42 && row == 3 { return 0xFF }
+  if ch == 42 && row == 4 { return 0x3C }
+  if ch == 42 && row == 5 { return 0x66 }
+  if ch == 43 && row == 1 { return 0x18 }
+  if ch == 43 && row == 2 { return 0x18 }
+  if ch == 43 && row == 3 { return 0x7E }
+  if ch == 43 && row == 4 { return 0x18 }
+  if ch == 43 && row == 5 { return 0x18 }
+  if ch == 44 && row == 5 { return 0x18 }
+  if ch == 44 && row == 6 { return 0x18 }
+  if ch == 44 && row == 7 { return 0x30 }
+  if ch == 45 && row == 3 { return 0x7E }
+  if ch == 46 && row == 5 { return 0x18 }
+  if ch == 46 && row == 6 { return 0x18 }
+  if ch == 47 && row == 1 { return 0x03 }
+  if ch == 47 && row == 2 { return 0x07 }
+  if ch == 47 && row == 3 { return 0x0E }
+  if ch == 47 && row == 4 { return 0x1C }
+  if ch == 47 && row == 5 { return 0x38 }
+  if ch == 47 && row == 6 { return 0x70 }
+  if ch == 47 && row == 7 { return 0x60 }
+  if ch == 48 && row == 0 { return 0x3C }
+  if ch == 48 && row == 1 { return 0x66 }
+  if ch == 48 && row == 2 { return 0x6E }
+  if ch == 48 && row == 3 { return 0x76 }
+  if ch == 48 && row == 4 { return 0x66 }
+  if ch == 48 && row == 5 { return 0x66 }
+  if ch == 48 && row == 6 { return 0x3C }
+  if ch == 49 && row == 0 { return 0x18 }
+  if ch == 49 && row == 1 { return 0x38 }
+  if ch == 49 && row == 2 { return 0x18 }
+  if ch == 49 && row == 3 { return 0x18 }
+  if ch == 49 && row == 4 { return 0x18 }
+  if ch == 49 && row == 5 { return 0x18 }
+  if ch == 49 && row == 6 { return 0x7E }
+  if ch == 50 && row == 0 { return 0x3C }
+  if ch == 50 && row == 1 { return 0x66 }
+  if ch == 50 && row == 2 { return 0x06 }
+  if ch == 50 && row == 3 { return 0x0C }
+  if ch == 50 && row == 4 { return 0x30 }
+  if ch == 50 && row == 5 { return 0x60 }
+  if ch == 50 && row == 6 { return 0x7E }
+  if ch == 51 && row == 0 { return 0x3C }
+  if ch == 51 && row == 1 { return 0x66 }
+  if ch == 51 && row == 2 { return 0x06 }
+  if ch == 51 && row == 3 { return 0x1C }
+  if ch == 51 && row == 4 { return 0x06 }
+  if ch == 51 && row == 5 { return 0x66 }
+  if ch == 51 && row == 6 { return 0x3C }
+  if ch == 52 && row == 0 { return 0x0E }
+  if ch == 52 && row == 1 { return 0x1E }
+  if ch == 52 && row == 2 { return 0x36 }
+  if ch == 52 && row == 3 { return 0x66 }
+  if ch == 52 && row == 4 { return 0x7F }
+  if ch == 52 && row == 5 { return 0x06 }
+  if ch == 52 && row == 6 { return 0x06 }
+  if ch == 53 && row == 0 { return 0x7E }
+  if ch == 53 && row == 1 { return 0x60 }
+  if ch == 53 && row == 2 { return 0x7C }
+  if ch == 53 && row == 3 { return 0x06 }
+  if ch == 53 && row == 4 { return 0x06 }
+  if ch == 53 && row == 5 { return 0x66 }
+  if ch == 53 && row == 6 { return 0x3C }
+  if ch == 54 && row == 0 { return 0x3C }
+  if ch == 54 && row == 1 { return 0x66 }
+  if ch == 54 && row == 2 { return 0x60 }
+  if ch == 54 && row == 3 { return 0x7C }
+  if ch == 54 && row == 4 { return 0x66 }
+  if ch == 54 && row == 5 { return 0x66 }
+  if ch == 54 && row == 6 { return 0x3C }
+  if ch == 55 && row == 0 { return 0x7E }
+  if ch == 55 && row == 1 { return 0x66 }
+  if ch == 55 && row == 2 { return 0x0C }
+  if ch == 55 && row == 3 { return 0x18 }
+  if ch == 55 && row == 4 { return 0x18 }
+  if ch == 55 && row == 5 { return 0x18 }
+  if ch == 55 && row == 6 { return 0x18 }
+  if ch == 56 && row == 0 { return 0x3C }
+  if ch == 56 && row == 1 { return 0x66 }
+  if ch == 56 && row == 2 { return 0x66 }
+  if ch == 56 && row == 3 { return 0x3C }
+  if ch == 56 && row == 4 { return 0x66 }
+  if ch == 56 && row == 5 { return 0x66 }
+  if ch == 56 && row == 6 { return 0x3C }
+  if ch == 57 && row == 0 { return 0x3C }
+  if ch == 57 && row == 1 { return 0x66 }
+  if ch == 57 && row == 2 { return 0x66 }
+  if ch == 57 && row == 3 { return 0x3E }
+  if ch == 57 && row == 4 { return 0x06 }
+  if ch == 57 && row == 5 { return 0x66 }
+  if ch == 57 && row == 6 { return 0x3C }
+  if ch == 58 && row == 1 { return 0x18 }
+  if ch == 58 && row == 2 { return 0x18 }
+  if ch == 58 && row == 5 { return 0x18 }
+  if ch == 58 && row == 6 { return 0x18 }
+  if ch == 59 && row == 1 { return 0x18 }
+  if ch == 59 && row == 2 { return 0x18 }
+  if ch == 59 && row == 5 { return 0x18 }
+  if ch == 59 && row == 6 { return 0x18 }
+  if ch == 59 && row == 7 { return 0x30 }
+  if ch == 60 && row == 0 { return 0x06 }
+  if ch == 60 && row == 1 { return 0x0C }
+  if ch == 60 && row == 2 { return 0x18 }
+  if ch == 60 && row == 3 { return 0x30 }
+  if ch == 60 && row == 4 { return 0x18 }
+  if ch == 60 && row == 5 { return 0x0C }
+  if ch == 60 && row == 6 { return 0x06 }
+  if ch == 61 && row == 2 { return 0x7E }
+  if ch == 61 && row == 4 { return 0x7E }
+  if ch == 62 && row == 0 { return 0x60 }
+  if ch == 62 && row == 1 { return 0x30 }
+  if ch == 62 && row == 2 { return 0x18 }
+  if ch == 62 && row == 3 { return 0x0C }
+  if ch == 62 && row == 4 { return 0x18 }
+  if ch == 62 && row == 5 { return 0x30 }
+  if ch == 62 && row == 6 { return 0x60 }
+  if ch == 63 && row == 0 { return 0x3C }
+  if ch == 63 && row == 1 { return 0x66 }
+  if ch == 63 && row == 2 { return 0x06 }
+  if ch == 63 && row == 3 { return 0x0C }
+  if ch == 63 && row == 4 { return 0x18 }
+  if ch == 63 && row == 6 { return 0x18 }
+  if ch == 65 && row == 0 { return 0x18 }
+  if ch == 65 && row == 1 { return 0x3C }
+  if ch == 65 && row == 2 { return 0x66 }
+  if ch == 65 && row == 3 { return 0x66 }
+  if ch == 65 && row == 4 { return 0x7E }
+  if ch == 65 && row == 5 { return 0x66 }
+  if ch == 65 && row == 6 { return 0x66 }
+  if ch == 66 && row == 0 { return 0x7C }
+  if ch == 66 && row == 1 { return 0x66 }
+  if ch == 66 && row == 2 { return 0x66 }
+  if ch == 66 && row == 3 { return 0x7C }
+  if ch == 66 && row == 4 { return 0x66 }
+  if ch == 66 && row == 5 { return 0x66 }
+  if ch == 66 && row == 6 { return 0x7C }
+  if ch == 67 && row == 0 { return 0x3C }
+  if ch == 67 && row == 1 { return 0x66 }
+  if ch == 67 && row == 2 { return 0x60 }
+  if ch == 67 && row == 3 { return 0x60 }
+  if ch == 67 && row == 4 { return 0x60 }
+  if ch == 67 && row == 5 { return 0x66 }
+  if ch == 67 && row == 6 { return 0x3C }
+  if ch == 68 && row == 0 { return 0x78 }
+  if ch == 68 && row == 1 { return 0x6C }
+  if ch == 68 && row == 2 { return 0x66 }
+  if ch == 68 && row == 3 { return 0x66 }
+  if ch == 68 && row == 4 { return 0x66 }
+  if ch == 68 && row == 5 { return 0x6C }
+  if ch == 68 && row == 6 { return 0x78 }
+  if ch == 69 && row == 0 { return 0x7E }
+  if ch == 69 && row == 1 { return 0x60 }
+  if ch == 69 && row == 2 { return 0x60 }
+  if ch == 69 && row == 3 { return 0x78 }
+  if ch == 69 && row == 4 { return 0x60 }
+  if ch == 69 && row == 5 { return 0x60 }
+  if ch == 69 && row == 6 { return 0x7E }
+  if ch == 70 && row == 0 { return 0x7E }
+  if ch == 70 && row == 1 { return 0x60 }
+  if ch == 70 && row == 2 { return 0x60 }
+  if ch == 70 && row == 3 { return 0x78 }
+  if ch == 70 && row == 4 { return 0x60 }
+  if ch == 70 && row == 5 { return 0x60 }
+  if ch == 70 && row == 6 { return 0x60 }
+  if ch == 71 && row == 0 { return 0x3C }
+  if ch == 71 && row == 1 { return 0x66 }
+  if ch == 71 && row == 2 { return 0x60 }
+  if ch == 71 && row == 3 { return 0x6E }
+  if ch == 71 && row == 4 { return 0x66 }
+  if ch == 71 && row == 5 { return 0x66 }
+  if ch == 71 && row == 6 { return 0x3C }
+  if ch == 72 && row == 0 { return 0x66 }
+  if ch == 72 && row == 1 { return 0x66 }
+  if ch == 72 && row == 2 { return 0x66 }
+  if ch == 72 && row == 3 { return 0x7E }
+  if ch == 72 && row == 4 { return 0x66 }
+  if ch == 72 && row == 5 { return 0x66 }
+  if ch == 72 && row == 6 { return 0x66 }
+  if ch == 73 && row == 0 { return 0x3C }
+  if ch == 73 && row == 1 { return 0x18 }
+  if ch == 73 && row == 2 { return 0x18 }
+  if ch == 73 && row == 3 { return 0x18 }
+  if ch == 73 && row == 4 { return 0x18 }
+  if ch == 73 && row == 5 { return 0x18 }
+  if ch == 73 && row == 6 { return 0x3C }
+  if ch == 74 && row == 0 { return 0x1E }
+  if ch == 74 && row == 1 { return 0x0C }
+  if ch == 74 && row == 2 { return 0x0C }
+  if ch == 74 && row == 3 { return 0x0C }
+  if ch == 74 && row == 4 { return 0x0C }
+  if ch == 74 && row == 5 { return 0x6C }
+  if ch == 74 && row == 6 { return 0x38 }
+  if ch == 75 && row == 0 { return 0x66 }
+  if ch == 75 && row == 1 { return 0x6C }
+  if ch == 75 && row == 2 { return 0x78 }
+  if ch == 75 && row == 3 { return 0x70 }
+  if ch == 75 && row == 4 { return 0x78 }
+  if ch == 75 && row == 5 { return 0x6C }
+  if ch == 75 && row == 6 { return 0x66 }
+  if ch == 76 && row == 0 { return 0x60 }
+  if ch == 76 && row == 1 { return 0x60 }
+  if ch == 76 && row == 2 { return 0x60 }
+  if ch == 76 && row == 3 { return 0x60 }
+  if ch == 76 && row == 4 { return 0x60 }
+  if ch == 76 && row == 5 { return 0x60 }
+  if ch == 76 && row == 6 { return 0x7E }
+  if ch == 77 && row == 0 { return 0x63 }
+  if ch == 77 && row == 1 { return 0x77 }
+  if ch == 77 && row == 2 { return 0x7F }
+  if ch == 77 && row == 3 { return 0x6B }
+  if ch == 77 && row == 4 { return 0x63 }
+  if ch == 77 && row == 5 { return 0x63 }
+  if ch == 77 && row == 6 { return 0x63 }
+  if ch == 78 && row == 0 { return 0x66 }
+  if ch == 78 && row == 1 { return 0x76 }
+  if ch == 78 && row == 2 { return 0x7E }
+  if ch == 78 && row == 3 { return 0x7E }
+  if ch == 78 && row == 4 { return 0x6E }
+  if ch == 78 && row == 5 { return 0x66 }
+  if ch == 78 && row == 6 { return 0x66 }
+  if ch == 79 && row == 0 { return 0x3C }
+  if ch == 79 && row == 1 { return 0x66 }
+  if ch == 79 && row == 2 { return 0x66 }
+  if ch == 79 && row == 3 { return 0x66 }
+  if ch == 79 && row == 4 { return 0x66 }
+  if ch == 79 && row == 5 { return 0x66 }
+  if ch == 79 && row == 6 { return 0x3C }
+  if ch == 80 && row == 0 { return 0x7C }
+  if ch == 80 && row == 1 { return 0x66 }
+  if ch == 80 && row == 2 { return 0x66 }
+  if ch == 80 && row == 3 { return 0x7C }
+  if ch == 80 && row == 4 { return 0x60 }
+  if ch == 80 && row == 5 { return 0x60 }
+  if ch == 80 && row == 6 { return 0x60 }
+  if ch == 81 && row == 0 { return 0x3C }
+  if ch == 81 && row == 1 { return 0x66 }
+  if ch == 81 && row == 2 { return 0x66 }
+  if ch == 81 && row == 3 { return 0x66 }
+  if ch == 81 && row == 4 { return 0x66 }
+  if ch == 81 && row == 5 { return 0x3C }
+  if ch == 81 && row == 6 { return 0x0E }
+  if ch == 82 && row == 0 { return 0x7C }
+  if ch == 82 && row == 1 { return 0x66 }
+  if ch == 82 && row == 2 { return 0x66 }
+  if ch == 82 && row == 3 { return 0x7C }
+  if ch == 82 && row == 4 { return 0x78 }
+  if ch == 82 && row == 5 { return 0x6C }
+  if ch == 82 && row == 6 { return 0x66 }
+  if ch == 83 && row == 0 { return 0x3C }
+  if ch == 83 && row == 1 { return 0x66 }
+  if ch == 83 && row == 2 { return 0x60 }
+  if ch == 83 && row == 3 { return 0x3C }
+  if ch == 83 && row == 4 { return 0x06 }
+  if ch == 83 && row == 5 { return 0x66 }
+  if ch == 83 && row == 6 { return 0x3C }
+  if ch == 84 && row == 0 { return 0x7E }
+  if ch == 84 && row == 1 { return 0x18 }
+  if ch == 84 && row == 2 { return 0x18 }
+  if ch == 84 && row == 3 { return 0x18 }
+  if ch == 84 && row == 4 { return 0x18 }
+  if ch == 84 && row == 5 { return 0x18 }
+  if ch == 84 && row == 6 { return 0x18 }
+  if ch == 85 && row == 0 { return 0x66 }
+  if ch == 85 && row == 1 { return 0x66 }
+  if ch == 85 && row == 2 { return 0x66 }
+  if ch == 85 && row == 3 { return 0x66 }
+  if ch == 85 && row == 4 { return 0x66 }
+  if ch == 85 && row == 5 { return 0x66 }
+  if ch == 85 && row == 6 { return 0x3C }
+  if ch == 86 && row == 0 { return 0x66 }
+  if ch == 86 && row == 1 { return 0x66 }
+  if ch == 86 && row == 2 { return 0x66 }
+  if ch == 86 && row == 3 { return 0x66 }
+  if ch == 86 && row == 4 { return 0x66 }
+  if ch == 86 && row == 5 { return 0x3C }
+  if ch == 86 && row == 6 { return 0x18 }
+  if ch == 87 && row == 0 { return 0x63 }
+  if ch == 87 && row == 1 { return 0x63 }
+  if ch == 87 && row == 2 { return 0x63 }
+  if ch == 87 && row == 3 { return 0x6B }
+  if ch == 87 && row == 4 { return 0x7F }
+  if ch == 87 && row == 5 { return 0x77 }
+  if ch == 87 && row == 6 { return 0x63 }
+  if ch == 88 && row == 0 { return 0x66 }
+  if ch == 88 && row == 1 { return 0x66 }
+  if ch == 88 && row == 2 { return 0x3C }
+  if ch == 88 && row == 3 { return 0x18 }
+  if ch == 88 && row == 4 { return 0x3C }
+  if ch == 88 && row == 5 { return 0x66 }
+  if ch == 88 && row == 6 { return 0x66 }
+  if ch == 89 && row == 0 { return 0x66 }
+  if ch == 89 && row == 1 { return 0x66 }
+  if ch == 89 && row == 2 { return 0x66 }
+  if ch == 89 && row == 3 { return 0x3C }
+  if ch == 89 && row == 4 { return 0x18 }
+  if ch == 89 && row == 5 { return 0x18 }
+  if ch == 89 && row == 6 { return 0x18 }
+  if ch == 90 && row == 0 { return 0x7E }
+  if ch == 90 && row == 1 { return 0x06 }
+  if ch == 90 && row == 2 { return 0x0C }
+  if ch == 90 && row == 3 { return 0x18 }
+  if ch == 90 && row == 4 { return 0x30 }
+  if ch == 90 && row == 5 { return 0x60 }
+  if ch == 90 && row == 6 { return 0x7E }
+  if ch == 91 && row == 0 { return 0x3C }
+  if ch == 91 && row == 1 { return 0x30 }
+  if ch == 91 && row == 2 { return 0x30 }
+  if ch == 91 && row == 3 { return 0x30 }
+  if ch == 91 && row == 4 { return 0x30 }
+  if ch == 91 && row == 5 { return 0x30 }
+  if ch == 91 && row == 6 { return 0x3C }
+  if ch == 93 && row == 0 { return 0x3C }
+  if ch == 93 && row == 1 { return 0x0C }
+  if ch == 93 && row == 2 { return 0x0C }
+  if ch == 93 && row == 3 { return 0x0C }
+  if ch == 93 && row == 4 { return 0x0C }
+  if ch == 93 && row == 5 { return 0x0C }
+  if ch == 93 && row == 6 { return 0x3C }
+  if ch == 95 && row == 7 { return 0xFF }
+  if ch == 97 && row == 2 { return 0x3C }
+  if ch == 97 && row == 3 { return 0x06 }
+  if ch == 97 && row == 4 { return 0x3E }
+  if ch == 97 && row == 5 { return 0x66 }
+  if ch == 97 && row == 6 { return 0x3E }
+  if ch == 98 && row == 0 { return 0x60 }
+  if ch == 98 && row == 1 { return 0x60 }
+  if ch == 98 && row == 2 { return 0x7C }
+  if ch == 98 && row == 3 { return 0x66 }
+  if ch == 98 && row == 4 { return 0x66 }
+  if ch == 98 && row == 5 { return 0x66 }
+  if ch == 98 && row == 6 { return 0x7C }
+  if ch == 99 && row == 2 { return 0x3C }
+  if ch == 99 && row == 3 { return 0x60 }
+  if ch == 99 && row == 4 { return 0x60 }
+  if ch == 99 && row == 5 { return 0x60 }
+  if ch == 99 && row == 6 { return 0x3C }
+  if ch == 100 && row == 0 { return 0x06 }
+  if ch == 100 && row == 1 { return 0x06 }
+  if ch == 100 && row == 2 { return 0x3E }
+  if ch == 100 && row == 3 { return 0x66 }
+  if ch == 100 && row == 4 { return 0x66 }
+  if ch == 100 && row == 5 { return 0x66 }
+  if ch == 100 && row == 6 { return 0x3E }
+  if ch == 101 && row == 2 { return 0x3C }
+  if ch == 101 && row == 3 { return 0x66 }
+  if ch == 101 && row == 4 { return 0x7E }
+  if ch == 101 && row == 5 { return 0x60 }
+  if ch == 101 && row == 6 { return 0x3C }
+  if ch == 102 && row == 0 { return 0x0E }
+  if ch == 102 && row == 1 { return 0x18 }
+  if ch == 102 && row == 2 { return 0x3E }
+  if ch == 102 && row == 3 { return 0x18 }
+  if ch == 102 && row == 4 { return 0x18 }
+  if ch == 102 && row == 5 { return 0x18 }
+  if ch == 102 && row == 6 { return 0x18 }
+  if ch == 103 && row == 2 { return 0x3E }
+  if ch == 103 && row == 3 { return 0x66 }
+  if ch == 103 && row == 4 { return 0x66 }
+  if ch == 103 && row == 5 { return 0x3E }
+  if ch == 103 && row == 6 { return 0x06 }
+  if ch == 103 && row == 7 { return 0x3C }
+  if ch == 104 && row == 0 { return 0x60 }
+  if ch == 104 && row == 1 { return 0x60 }
+  if ch == 104 && row == 2 { return 0x7C }
+  if ch == 104 && row == 3 { return 0x66 }
+  if ch == 104 && row == 4 { return 0x66 }
+  if ch == 104 && row == 5 { return 0x66 }
+  if ch == 104 && row == 6 { return 0x66 }
+  if ch == 105 && row == 0 { return 0x18 }
+  if ch == 105 && row == 2 { return 0x38 }
+  if ch == 105 && row == 3 { return 0x18 }
+  if ch == 105 && row == 4 { return 0x18 }
+  if ch == 105 && row == 5 { return 0x18 }
+  if ch == 105 && row == 6 { return 0x3C }
+  if ch == 106 && row == 0 { return 0x0C }
+  if ch == 106 && row == 2 { return 0x1C }
+  if ch == 106 && row == 3 { return 0x0C }
+  if ch == 106 && row == 4 { return 0x0C }
+  if ch == 106 && row == 5 { return 0x0C }
+  if ch == 106 && row == 6 { return 0x6C }
+  if ch == 106 && row == 7 { return 0x38 }
+  if ch == 107 && row == 0 { return 0x60 }
+  if ch == 107 && row == 1 { return 0x60 }
+  if ch == 107 && row == 2 { return 0x66 }
+  if ch == 107 && row == 3 { return 0x6C }
+  if ch == 107 && row == 4 { return 0x78 }
+  if ch == 107 && row == 5 { return 0x6C }
+  if ch == 107 && row == 6 { return 0x66 }
+  if ch == 108 && row == 0 { return 0x38 }
+  if ch == 108 && row == 1 { return 0x18 }
+  if ch == 108 && row == 2 { return 0x18 }
+  if ch == 108 && row == 3 { return 0x18 }
+  if ch == 108 && row == 4 { return 0x18 }
+  if ch == 108 && row == 5 { return 0x18 }
+  if ch == 108 && row == 6 { return 0x3C }
+  if ch == 109 && row == 2 { return 0x66 }
+  if ch == 109 && row == 3 { return 0x7F }
+  if ch == 109 && row == 4 { return 0x7F }
+  if ch == 109 && row == 5 { return 0x6B }
+  if ch == 109 && row == 6 { return 0x63 }
+  if ch == 110 && row == 2 { return 0x7C }
+  if ch == 110 && row == 3 { return 0x66 }
+  if ch == 110 && row == 4 { return 0x66 }
+  if ch == 110 && row == 5 { return 0x66 }
+  if ch == 110 && row == 6 { return 0x66 }
+  if ch == 111 && row == 2 { return 0x3C }
+  if ch == 111 && row == 3 { return 0x66 }
+  if ch == 111 && row == 4 { return 0x66 }
+  if ch == 111 && row == 5 { return 0x66 }
+  if ch == 111 && row == 6 { return 0x3C }
+  if ch == 112 && row == 2 { return 0x7C }
+  if ch == 112 && row == 3 { return 0x66 }
+  if ch == 112 && row == 4 { return 0x66 }
+  if ch == 112 && row == 5 { return 0x7C }
+  if ch == 112 && row == 6 { return 0x60 }
+  if ch == 112 && row == 7 { return 0x60 }
+  if ch == 113 && row == 2 { return 0x3E }
+  if ch == 113 && row == 3 { return 0x66 }
+  if ch == 113 && row == 4 { return 0x66 }
+  if ch == 113 && row == 5 { return 0x3E }
+  if ch == 113 && row == 6 { return 0x06 }
+  if ch == 113 && row == 7 { return 0x06 }
+  if ch == 114 && row == 2 { return 0x7C }
+  if ch == 114 && row == 3 { return 0x66 }
+  if ch == 114 && row == 4 { return 0x60 }
+  if ch == 114 && row == 5 { return 0x60 }
+  if ch == 114 && row == 6 { return 0x60 }
+  if ch == 115 && row == 2 { return 0x3E }
+  if ch == 115 && row == 3 { return 0x60 }
+  if ch == 115 && row == 4 { return 0x3C }
+  if ch == 115 && row == 5 { return 0x06 }
+  if ch == 115 && row == 6 { return 0x7C }
+  if ch == 116 && row == 0 { return 0x18 }
+  if ch == 116 && row == 1 { return 0x18 }
+  if ch == 116 && row == 2 { return 0x3E }
+  if ch == 116 && row == 3 { return 0x18 }
+  if ch == 116 && row == 4 { return 0x18 }
+  if ch == 116 && row == 5 { return 0x18 }
+  if ch == 116 && row == 6 { return 0x0E }
+  if ch == 117 && row == 2 { return 0x66 }
+  if ch == 117 && row == 3 { return 0x66 }
+  if ch == 117 && row == 4 { return 0x66 }
+  if ch == 117 && row == 5 { return 0x66 }
+  if ch == 117 && row == 6 { return 0x3E }
+  if ch == 118 && row == 2 { return 0x66 }
+  if ch == 118 && row == 3 { return 0x66 }
+  if ch == 118 && row == 4 { return 0x66 }
+  if ch == 118 && row == 5 { return 0x3C }
+  if ch == 118 && row == 6 { return 0x18 }
+  if ch == 119 && row == 2 { return 0x63 }
+  if ch == 119 && row == 3 { return 0x6B }
+  if ch == 119 && row == 4 { return 0x7F }
+  if ch == 119 && row == 5 { return 0x3F }
+  if ch == 119 && row == 6 { return 0x36 }
+  if ch == 120 && row == 2 { return 0x66 }
+  if ch == 120 && row == 3 { return 0x3C }
+  if ch == 120 && row == 4 { return 0x18 }
+  if ch == 120 && row == 5 { return 0x3C }
+  if ch == 120 && row == 6 { return 0x66 }
+  if ch == 121 && row == 2 { return 0x66 }
+  if ch == 121 && row == 3 { return 0x66 }
+  if ch == 121 && row == 4 { return 0x66 }
+  if ch == 121 && row == 5 { return 0x3E }
+  if ch == 121 && row == 6 { return 0x0C }
+  if ch == 121 && row == 7 { return 0x38 }
+  if ch == 122 && row == 2 { return 0x7E }
+  if ch == 122 && row == 3 { return 0x0C }
+  if ch == 122 && row == 4 { return 0x18 }
+  if ch == 122 && row == 5 { return 0x30 }
+  if ch == 122 && row == 6 { return 0x7E }
+  if ch == 123 && row == 0 { return 0x0E }
+  if ch == 123 && row == 1 { return 0x18 }
+  if ch == 123 && row == 2 { return 0x18 }
+  if ch == 123 && row == 3 { return 0x70 }
+  if ch == 123 && row == 4 { return 0x18 }
+  if ch == 123 && row == 5 { return 0x18 }
+  if ch == 123 && row == 6 { return 0x0E }
+  if ch == 124 && row == 0 { return 0x18 }
+  if ch == 124 && row == 1 { return 0x18 }
+  if ch == 124 && row == 2 { return 0x18 }
+  if ch == 124 && row == 3 { return 0x18 }
+  if ch == 124 && row == 4 { return 0x18 }
+  if ch == 124 && row == 5 { return 0x18 }
+  if ch == 124 && row == 6 { return 0x18 }
+  if ch == 125 && row == 0 { return 0x70 }
+  if ch == 125 && row == 1 { return 0x18 }
+  if ch == 125 && row == 2 { return 0x18 }
+  if ch == 125 && row == 3 { return 0x0E }
+  if ch == 125 && row == 4 { return 0x18 }
+  if ch == 125 && row == 5 { return 0x18 }
+  if ch == 125 && row == 6 { return 0x70 }
+  if ch == 126 && row == 2 { return 0x60 }
+  if ch == 126 && row == 3 { return 0x7E }
+  if ch == 126 && row == 4 { return 0x06 }
+  return 0
+}
+
+
+// Wayland-style compositor for the Space nanokernel.
+// Manages windows, renders them to the VBE framebuffer, and handles
+// mouse/keyboard input. This is a minimal display server that demonstrates
+// the Space OS desktop environment.
+// VRO text editor is in vro.in (imported below).
+//
+// Window record (64 bytes):
+//   [0..4]   id
+//   [4..8]   x
+//   [8..12]  y
+//   [12..16] width
+//   [16..20] height
+//   [20..24] flags (bit 0 = visible, bit 1 = focused, bit 2 = dirty)
+//   [24..32] title string address
+//   [32..40] content buffer address (or 0 for auto-rendered)
+//   [40..48] reserved
+//   [48..56] reserved
+//   [56..64] reserved
+
+// --- window constants -------------------------------------------------------
+const COMP_MAX_WINDOWS = 16
+const COMP_WIN_SIZE = 64
+const COMP_TITLE_BAR_H = 28
+const COMP_BORDER_W = 1
+const COMP_TASKBAR_H = 28
+const COMP_COLOR_DESKTOP = 0x000B0909
+const COMP_COLOR_PANEL = 0x001B1818
+const COMP_COLOR_PANEL_LINE = 0x0027272A
+const COMP_COLOR_TITLE = 0x00333336
+const COMP_COLOR_TITLE_ACTIVE = 0x00444444
+const COMP_COLOR_WINDOW = 0x00FFFFFF
+const COMP_COLOR_BORDER = 0x003F3F46
+const COMP_COLOR_ACCENT = 0x00F8BD38
+const COMP_COLOR_TEXT = 0x0018181B
+const COMP_COLOR_MUTED = 0x00AAA1A1
+const COMP_COLOR_SURFACE = 0x00FFFFFF
+const COMP_COLOR_SURFACE_ALT = 0x00E4E4E7
+const COMP_COLOR_TERM_BG = 0x000B0909
+const COMP_COLOR_TERM_TEXT = 0x00F5F4F4
+
+const COMP_WIN_VISIBLE = 1
+const COMP_WIN_FOCUSED = 2
+const COMP_WIN_DIRTY = 4
+const COMP_WIN_MINIMIZED = 8
+const COMP_CURSOR_W = 16
+const COMP_CURSOR_H = 16
+const COMP_ROLE_TEXT = 0
+const COMP_ROLE_UTILITIES = 2
+const COMP_ROLE_TERMINAL = 3
+const COMP_ROLE_VRO = 4
+const COMP_MIN_WIN_W = 280
+const COMP_MIN_WIN_H = 180
+const COMP_MIN_EDITOR_W = 640
+const COMP_MIN_SIDE_W = 520
+
+// --- compositor state -------------------------------------------------------
+var comp_windows: Int = 0    // array of window records
+var comp_count: Int = 0      // number of windows
+var comp_focused: Int = 0    // index of focused window
+// Track drag mode: 1 = move (title bar), 2 = resize (bottom-right corner)
+var comp_drag_mode: Int = 0   // index of window being dragged (-1 = none)
+var comp_drag_off_x: Int = 0 // drag offset from window origin to mouse
+var comp_drag_off_y: Int = 0
+var comp_running: Int = 0    // 1 when compositor loop is active
+// --- window management ------------------------------------------------------
+
+// Initialize the compositor.
+fn comp_init() -> void {
+  // ponytail: backbuffer at top of heap avoids alloc/heap_next (optimizer crash).
+  if fb_width > 0 && fb_height > 0 {
+    let heap_top = 0x0FFE0000
+    let sz = fb_width * fb_height * 4
+    comp_backbuf = heap_top - ((sz + 4095) & -4096)
+  }
+  comp_windows = alloc(COMP_MAX_WINDOWS * COMP_WIN_SIZE)
+  let i = 0
+  while i < COMP_MAX_WINDOWS {
+    comp_win_clear(i)
+    i = i + 1
+  }
+  comp_count = 0
+  comp_focused = -1
+  comp_drag_mode = -1
+  comp_dragging = -1
+  comp_running = 0
+  comp_cur_drawn = 0
+  comp_cursor_init()
+  comp_vro_init()
+  return
+}
+
+
+
+// Clear a window slot.
+fn comp_win_clear(idx: Int) -> void {
+  let base = comp_windows + idx * COMP_WIN_SIZE
+  let i = 0
+  while i < COMP_WIN_SIZE {
+    store8(base + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+// Get the base address of a window record.
+fn comp_win_base(idx: Int) -> Int {
+  return comp_windows + idx * COMP_WIN_SIZE
+}
+
+// Create a new window. Returns the window index or -1 if the table is full.
+fn comp_win_create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
+  if comp_count >= COMP_MAX_WINDOWS {
+    return -1
+  }
+  let idx = comp_count
+  let base = comp_win_base(idx)
+  store32(base + 0, idx)
+  store32(base + 4, x)
+  store32(base + 8, y)
+  store32(base + 12, w)
+  store32(base + 16, h)
+  store32(base + 20, COMP_WIN_VISIBLE | COMP_WIN_DIRTY)
+  store64(base + 24, title)
+  store64(base + 32, 0)
+  store64(base + 40, COMP_ROLE_TEXT)
+  comp_count = comp_count + 1
+  comp_focused = idx
+  return idx
+}
+
+// Set a window's content buffer (for custom rendering).
+fn comp_win_set_content(idx: Int, buf: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  store64(comp_win_base(idx) + 32, buf)
+  return
+}
+
+fn comp_win_set_role(idx: Int, role: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  store64(comp_win_base(idx) + 40, role)
+  return
+}
+
+// Check if a point is inside a window's title bar.
+fn comp_win_in_titlebar(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp_win_base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  if mx >= x && mx < x + w && my >= y && my < y + COMP_TITLE_BAR_H {
+    return 1
+  }
+  return 0
+}
+
+// Check if a point is inside a window (including title bar).
+fn comp_win_contains(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp_win_base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  if mx >= x && mx < x + w && my >= y && my < y + h + COMP_TITLE_BAR_H {
+    return 1
+  }
+  return 0
+}
+
+// Find the topmost window at a point. Returns index or -1.
+fn comp_win_at_point(mx: Int, my: Int) -> Int {
+  let i = comp_count - 1
+  while i >= 0 {
+    let flags = load32(comp_win_base(i) + 20)
+    if (flags & COMP_WIN_VISIBLE) != 0 {
+      if comp_win_contains(i, mx, my) != 0 {
+        return i
+      }
+    }
+    i = i - 1
+  }
+  return -1
+}
+
+// Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp_win_close(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  // Shift remaining windows down
+  let i = idx
+  while i < comp_count - 1 {
+    let src = comp_win_base(i + 1)
+    let dst = comp_win_base(i)
+    let j = 0
+    while j < COMP_WIN_SIZE {
+      store8(dst + j, load8(src + j))
+      j = j + 1
+    }
+    i = i + 1
+  }
+  comp_win_clear(comp_count - 1)
+  comp_count = comp_count - 1
+  // Adjust focused index
+  if comp_focused >= comp_count {
+    comp_focused = comp_count - 1
+  }
+  // Mark full redraw (window removed)
+  comp_full_redraw = 1
+  return
+}
+
+// Minimize window — clear VISIBLE flag, set MINIMIZED.
+fn comp_win_minimize(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags | COMP_WIN_MINIMIZED | COMP_WIN_DIRTY) & -2)
+  comp_full_redraw = 1
+  return
+}
+
+// Restore a minimized window — set VISIBLE, clear MINIMIZED.
+fn comp_win_restore(idx: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags & -9) | COMP_WIN_VISIBLE | COMP_WIN_DIRTY)
+  comp_win_focus(idx)
+  comp_full_redraw = 1
+  return
+}
+
+// Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp_win_focus(idx: Int) -> void {
+  let i = 0
+  while i < comp_count {
+    let base = comp_win_base(i)
+    let flags = load32(base + 20)
+    if i == idx {
+      store32(base + 20, flags | COMP_WIN_FOCUSED | COMP_WIN_DIRTY)
+    } else {
+      store32(base + 20, (flags & -3) | COMP_WIN_DIRTY)
+    }
+    i = i + 1
+  }
+  comp_focused = idx
+  return
+}
+
+fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
+  if idx < 0 || idx >= comp_count {
+    return
+  }
+  if w < COMP_MIN_WIN_W {
+    w = COMP_MIN_WIN_W
+  }
+  if h < COMP_MIN_WIN_H {
+    h = COMP_MIN_WIN_H
+  }
+  let base = comp_win_base(idx)
+  store32(base + 4, x)
+  store32(base + 8, y)
+  store32(base + 12, w)
+  store32(base + 16, h)
+  let flags = load32(base + 20)
+  store32(base + 20, flags | COMP_WIN_DIRTY)
+  return
+}
+
+// --- rendering --------------------------------------------------------------
+
+// Draw the desktop background (flat color, no stripes — ponytail: stripes were 20 loops per frame).
+fn comp_render_background() -> void {
+  fb_clear(COMP_COLOR_DESKTOP)
+}
+
+// X11-style arrow cursor bitmap (16x16, top-left hotspot)
+// MSB = leftmost pixel, row-major, 2 bytes per row, 32 bytes total
+var comp_cursor_bits: Int = 0
+
+fn comp_cursor_init() -> void {
+  comp_cursor_bits = alloc(32)
+  store8(comp_cursor_bits + 0, 0x80); store8(comp_cursor_bits + 1, 0x00)
+  store8(comp_cursor_bits + 2, 0xC0); store8(comp_cursor_bits + 3, 0x00)
+  store8(comp_cursor_bits + 4, 0xE0); store8(comp_cursor_bits + 5, 0x00)
+  store8(comp_cursor_bits + 6, 0xF0); store8(comp_cursor_bits + 7, 0x00)
+  store8(comp_cursor_bits + 8, 0xF8); store8(comp_cursor_bits + 9, 0x00)
+  store8(comp_cursor_bits + 10, 0xFC); store8(comp_cursor_bits + 11, 0x00)
+  store8(comp_cursor_bits + 12, 0xFE); store8(comp_cursor_bits + 13, 0x00)
+  store8(comp_cursor_bits + 14, 0xFF); store8(comp_cursor_bits + 15, 0x00)
+  store8(comp_cursor_bits + 16, 0xFF); store8(comp_cursor_bits + 17, 0x80)
+  store8(comp_cursor_bits + 18, 0xFF); store8(comp_cursor_bits + 19, 0xC0)
+  store8(comp_cursor_bits + 20, 0xFF); store8(comp_cursor_bits + 21, 0xE0)
+  store8(comp_cursor_bits + 22, 0xFC); store8(comp_cursor_bits + 23, 0x00)
+  store8(comp_cursor_bits + 24, 0xFC); store8(comp_cursor_bits + 25, 0x60)
+  store8(comp_cursor_bits + 26, 0xFC); store8(comp_cursor_bits + 27, 0x70)
+  store8(comp_cursor_bits + 28, 0xFC); store8(comp_cursor_bits + 29, 0x38)
+  store8(comp_cursor_bits + 30, 0x00); store8(comp_cursor_bits + 31, 0x1C)
+}
+
+// Draw the X11-style arrow cursor (white, no outline — ponytail: outline was 256 extra pixel calls per frame).
+fn comp_render_cursor() -> void {
+  let x = mouse_x
+  let y = mouse_y
+  let row = 0
+  while row < COMP_CURSOR_H {
+    let b0 = load8(comp_cursor_bits + row * 2)
+    let b1 = load8(comp_cursor_bits + row * 2 + 1)
+    let col = 0
+    while col < COMP_CURSOR_W {
+      let bit = 0
+      if col < 8 {
+        bit = (b0 >> (7 - col)) & 1
+      } else {
+        bit = (b1 >> (15 - col)) & 1
+      }
+      if bit != 0 {
+        let px = x + col
+        let py = y + row
+        fb_put_pixel(px, py, FB_COLOR_WHITE)
+      }
+      col = col + 1
+    }
+    row = row + 1
+  }
+}
+
+// Helper: draw content area background
+fn comp_draw_content_bg(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x + COMP_BORDER_W, content_y, w - COMP_BORDER_W * 2, h - COMP_BORDER_W, COMP_COLOR_WINDOW)
+}
+
+fn comp_draw_label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let cx = x
+  let i = 0
+  while i < 96 {
+    let ch = load8(str + i)
+    if ch == 0 {
+      i = 96
+    } else {
+      fb_fill_rect(cx, y, 18, 18, bg)
+      fb_draw_char(cx, y, ch, fg)
+      cx = cx + 18
+    }
+    i = i + 1
+  }
+  return
+}
+
+fn comp_draw_dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
+  let n = value
+  let cx = x
+  if n == 0 {
+    fb_fill_rect(cx, y, 18, 18, bg)
+    fb_draw_char(cx, y, 48, fg)
+    return cx + 18
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    let q = n / div
+    let digit = q - (q / 10) * 10
+    fb_fill_rect(cx, y, 18, 18, bg)
+    fb_draw_char(cx, y, 48 + digit, fg)
+    cx = cx + 18
+    div = div / 10
+  }
+  return cx
+}
+
+fn comp_term_line_eq(str: Int) -> Int {
+  let i = 0
+  while i < 64 {
+    let a = load8(comp_vro_buf + i)
+    let b = load8(str + i)
+    if a != b {
+      return 0
+    }
+    if a == 0 {
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Helper: draw content text (or default placeholder for empty windows)
+fn comp_draw_content_text(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + COMP_TITLE_BAR_H
+  let content = load64(base + 32)
+  let title = load64(base + 24)
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
+  if content == 0 {
+    // Show window title and instructions
+    if title != 0 {
+      comp_draw_label(x + 16, content_y + lh + 4, title, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+    }
+    comp_draw_label(x + 16, content_y + lh * 2 + 8, "This window has no content", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    comp_draw_label(x + 16, content_y + lh * 3 + 12, "Load a file or close this window", COMP_COLOR_MUTED, COMP_COLOR_WINDOW)
+    return
+  }
+  comp_draw_label(x + 12, content_y + 12, content, COMP_COLOR_TEXT, COMP_COLOR_WINDOW)
+  return
+}
+
+
+
+fn comp_draw_utilities_content(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + COMP_TITLE_BAR_H
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
+  fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
+  // Dark sidebar
+  fb_fill_rect(x, content_y, 136, h, COMP_COLOR_DESKTOP)
+  fb_fill_rect(x + 2, content_y + lh + 20, 3, 16, COMP_COLOR_ACCENT)
+  // Content area — dynamic system info
+  let ty = content_y + lh + 4
+  comp_draw_label(x + 160, ty, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "1920 x 1080", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "32 BPP", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  comp_draw_label(x + 160, ty, "WINDOWS", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "BUFFERED", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "BORDERLESS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  comp_draw_label(x + 160, ty, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "MOUSE", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "KEYBOARD", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh + lh / 2
+  comp_draw_label(x + 160, ty, "PANEL", COMP_COLOR_MUTED, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "BOTTOM", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  ty = ty + lh
+  comp_draw_label(x + 160, ty, "CLICK FOCUS", COMP_COLOR_TEXT, COMP_COLOR_SURFACE)
+  return
+}
+
+fn comp_draw_terminal_content(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content_y = y + COMP_TITLE_BAR_H
+  let cw = fb_font_scale * 8 + 2
+  let lh = cw + 3
+  fb_fill_rect(x, content_y, w, h, COMP_COLOR_TERM_BG)
+  fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
+  comp_draw_label(x + 12, content_y + 6, "TERMINAL", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
+  let prompt_y = content_y + 54
+  if comp_vro_dirty > 1 {
+    comp_draw_label(x + 16, content_y + 54, "SPACEOS", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 260, content_y + 54, "0.2.", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 332, content_y + 54, SPACE_VERSION_PATCH, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 84, "KERNEL", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 260, content_y + 84, "SPACE NANOKERNEL", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 114, "ARCH", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 260, content_y + 114, "X86_64 LONG MODE", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 144, "MEMORY", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    let mx = comp_draw_dec(x + 260, content_y + 144, total_ram / 1048576, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(mx, content_y + 144, " MIB", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 174, "DISPLAY", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    let dx = comp_draw_dec(x + 260, content_y + 174, fb_width, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(dx, content_y + 174, " x ", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    let dx2 = comp_draw_dec(dx + 54, content_y + 174, fb_height, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(dx2, content_y + 174, " x ", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_dec(dx2 + 54, content_y + 174, fb_bpp, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 204, "FRAMEBUFFER", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    let vx = comp_draw_dec(x + 260, content_y + 204, fb_size / 1048576, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(vx, content_y + 204, " MIB", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 234, "STORAGE", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    if nvme_ready != 0 {
+      comp_draw_label(x + 260, content_y + 234, "SPARKFS NVME", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    } else {
+      comp_draw_label(x + 260, content_y + 234, "SPARKFS MEM", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    }
+    comp_draw_label(x + 16, content_y + 264, "INPUT", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 260, content_y + 264, "PS/2 KEYBOARD + MOUSE", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 294, "LINUX ABI", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 260, content_y + 294, "SYSCALL PERSONALITY", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 324, "PROCESSES", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 260, content_y + 324, proc_count, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    comp_draw_label(x + 16, content_y + 354, "DOMAINS", COMP_COLOR_MUTED, COMP_COLOR_TERM_BG)
+    comp_draw_dec(x + 260, content_y + 354, domain_count, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
+    prompt_y = content_y + 414
+  }
+  comp_draw_label(x + 16, prompt_y, "space> ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16 + 7 * 18, prompt_y, comp_vro_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
+  return
+}
+
+// Draw a single window (border + title bar + content).
+fn comp_render_window(idx: Int) -> void {
+  let base = comp_win_base(idx)
+  let flags = load32(base + 20)
+  if (flags & COMP_WIN_VISIBLE) == 0 || (flags & COMP_WIN_MINIMIZED) != 0 {
+    return
+  }
+
+  // Draw window frame (title bar + border + controls)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let wh = load32(base + 16)
+  let wtitle = load64(base + 24)
+  let wflags = load32(base + 20)
+  let wfh = wh + COMP_TITLE_BAR_H
+  fb_fill_rect(wx, wy, ww, COMP_BORDER_W, COMP_COLOR_BORDER)
+  fb_fill_rect(wx, wy + wfh - COMP_BORDER_W, ww, COMP_BORDER_W, COMP_COLOR_BORDER)
+  fb_fill_rect(wx, wy + COMP_BORDER_W, COMP_BORDER_W, wfh - COMP_BORDER_W * 2, COMP_COLOR_BORDER)
+  fb_fill_rect(wx + ww - COMP_BORDER_W, wy + COMP_BORDER_W, COMP_BORDER_W, wfh - COMP_BORDER_W * 2, COMP_COLOR_BORDER)
+  if (wflags & COMP_WIN_FOCUSED) != 0 {
+    fb_fill_rect(wx + COMP_BORDER_W, wy + COMP_BORDER_W, ww - COMP_BORDER_W * 2, COMP_TITLE_BAR_H, COMP_COLOR_TITLE_ACTIVE)
+    if wtitle != 0 {
+      comp_draw_label(wx + 12, wy + COMP_BORDER_W + (COMP_TITLE_BAR_H - 18) / 2, wtitle, FB_COLOR_WHITE, COMP_COLOR_TITLE_ACTIVE)
+    }
+  } else {
+    fb_fill_rect(wx + COMP_BORDER_W, wy + COMP_BORDER_W, ww - COMP_BORDER_W * 2, COMP_TITLE_BAR_H, COMP_COLOR_TITLE)
+    if wtitle != 0 {
+      comp_draw_label(wx + 12, wy + COMP_BORDER_W + (COMP_TITLE_BAR_H - 18) / 2, wtitle, COMP_COLOR_MUTED, COMP_COLOR_TITLE)
+    }
+  }
+  let wmin_x = wx + ww - 52
+  let wbtn_y = wy + COMP_BORDER_W + 5
+  let wbtn_h = COMP_TITLE_BAR_H - 10
+  fb_fill_rect(wmin_x, wbtn_y, 22, wbtn_h, 0x00555555)
+  let wmin_bar_y = wbtn_y + wbtn_h / 2
+  let wmi = 0
+  while wmi < 14 {
+    store32(fb_addr + wmin_bar_y * fb_pitch + (wmin_x + 4 + wmi) * 4, FB_COLOR_WHITE)
+    wmi = wmi + 1
+  }
+  let wbtn_x = wx + ww - 28
+  fb_fill_rect(wbtn_x, wbtn_y, 22, wbtn_h, FB_COLOR_RED)
+  let wcx = wbtn_x + 11
+  let wcy = wbtn_y + wbtn_h / 2
+  let wxi = -3
+  while wxi <= 3 {
+    store32(fb_addr + (wcy + wxi) * fb_pitch + (wcx + wxi) * 4, FB_COLOR_WHITE)
+    store32(fb_addr + (wcy - wxi) * fb_pitch + (wcx + wxi) * 4, FB_COLOR_WHITE)
+    wxi = wxi + 1
+  }
+
+  // Draw content (role-specific drawers handle their own backgrounds)
+  let role = load64(base + 40)
+  if role == COMP_ROLE_UTILITIES {
+    comp_draw_utilities_content(base)
+  } else if role == COMP_ROLE_TERMINAL {
+    comp_draw_terminal_content(base)
+  } else if role == COMP_ROLE_VRO {
+    comp_draw_vro_content(base)
+  } else {
+    comp_draw_content_bg(base)
+    comp_draw_content_text(base)
+  }
+
+  // Clear dirty flag
+  let flags2 = load32(base + 20)
+  store32(base + 20, flags2 & -5)
+  return
+}
+
+var comp_bg_drawn: Int = 0  // 1 after first background render
+var comp_prev_cx: Int = 0   // previous cursor x for restoration
+var comp_prev_cy: Int = 0   // previous cursor y
+var comp_cur_back: Int = 0  // 24x24 pixel save buffer for cursor restore
+var comp_cur_drawn: Int = 0 // 1 if cursor was drawn last frame
+var comp_full_redraw: Int = 0 // 1 to force full redraw (window moved)
+
+// Save pixels behind cursor before drawing.
+fn comp_cur_save() -> void {
+  if comp_cur_back == 0 {
+    comp_cur_back = alloc(24 * 24 * 4)
+  }
+  let x = mouse_x - 2
+  let y = mouse_y - 2
+  let j = 0
+  while j < 24 {
+    let py = y + j
+    let i = 0
+    while i < 24 {
+      let px = x + i
+      let pix = COMP_COLOR_DESKTOP
+      if px >= 0 && px < fb_width && py >= 0 && py < fb_height {
+        pix = load32(fb_addr + py * fb_pitch + px * 4)
+      }
+      store32(comp_cur_back + j * 24 * 4 + i * 4, pix)
+      i = i + 1
+    }
+    j = j + 1
+  }
+  comp_prev_cx = x
+  comp_prev_cy = y
+  return
+}
+
+// Restore pixels behind old cursor (erases cursor cleanly).
+fn comp_cur_restore() -> void {
+  if comp_cur_drawn == 0 || comp_cur_back == 0 {
+    return
+  }
+  let x = comp_prev_cx
+  let y = comp_prev_cy
+  let j = 0
+  while j < 24 {
+    let py = y + j
+    if py >= 0 && py < fb_height {
+      let i = 0
+      while i < 24 {
+        let px = x + i
+        if px >= 0 && px < fb_width {
+          let pix = load32(comp_cur_back + j * 24 * 4 + i * 4)
+          store32(fb_addr + py * fb_pitch + px * 4, pix)
+        }
+        i = i + 1
+      }
+    }
+    j = j + 1
+  }
+  return
+}
+
+// Blit entire backbuffer to real framebuffer (byte-by-byte memcpy for tear-free display).
+fn comp_blit(dst: Int) -> void {
+  let src = comp_backbuf
+  let n = fb_size / 8  // copy as 64-bit qwords
+  let bi = 0
+  while bi < n {
+    store64(dst + bi * 8, load64(src + bi * 8))
+    bi = bi + 1
+  }
+}
+
+// Render the desktop with double-buffering + cursor-only fast path.
+fn comp_render() -> void {
+  // Check if any window needs to be redrawn.
+  let any_dirty = 0
+  let di = 0
+  while di < comp_count {
+    if (load32(comp_win_base(di) + 20) & (COMP_WIN_DIRTY | COMP_WIN_MINIMIZED)) == COMP_WIN_DIRTY {
+      any_dirty = 1
+      di = comp_count
+    }
+    di = di + 1
+  }
+
+  if any_dirty != 0 || comp_full_redraw != 0 || comp_bg_drawn == 0 {
+    // Full render to backbuffer + blit
+    let saved_addr = fb_addr
+    if comp_backbuf != 0 {
+      fb_addr = comp_backbuf
+    }
+    if comp_bg_drawn == 0 || comp_full_redraw != 0 {
+      comp_render_background()
+      comp_bg_drawn = 1
+      comp_full_redraw = 0
+      let k = 0
+      while k < comp_count {
+        store32(comp_win_base(k) + 20, load32(comp_win_base(k) + 20) | COMP_WIN_DIRTY)
+        k = k + 1
+      }
+      comp_cur_drawn = 0
+    }
+    if comp_cur_drawn != 0 {
+      comp_cur_restore()
+    }
+    let i = 0
+    while i < comp_count {
+      if i != comp_focused {
+        let fl = load32(comp_win_base(i) + 20)
+        if (fl & COMP_WIN_DIRTY) != 0 {
+          comp_render_window(i)
+        }
+      }
+      i = i + 1
+    }
+    if comp_focused >= 0 && comp_focused < comp_count {
+      let fl = load32(comp_win_base(comp_focused) + 20)
+      if (fl & COMP_WIN_DIRTY) != 0 {
+        comp_render_window(comp_focused)
+      }
+    }
+    comp_render_topbar()
+    comp_render_taskbar()
+    comp_cur_save()
+    comp_render_cursor()
+    comp_cur_drawn = 1
+    // Blit backbuffer to real framebuffer
+    if comp_backbuf != 0 {
+      comp_blit(saved_addr)
+      fb_addr = saved_addr
+    }
+  } else if comp_cur_drawn != 0 {
+    // Fast path: no changes, just update cursor on real framebuffer
+    comp_cur_restore()
+    comp_cur_save()
+    comp_render_cursor()
+  } else {
+    // First frame with no windows: init cursor
+    comp_cur_save()
+    comp_render_cursor()
+    comp_cur_drawn = 1
+  }
+  return
+}
+
+// Draw the taskbar at the bottom of the screen.
+fn comp_render_taskbar() -> void {
+  let bar_y = fb_height - COMP_TASKBAR_H
+  fb_fill_rect(0, bar_y, fb_width, COMP_TASKBAR_H, COMP_COLOR_PANEL)
+  // Separator line at top of taskbar
+  let tx2 = 0
+  while tx2 < fb_width {
+    store32(fb_addr + bar_y * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
+    tx2 = tx2 + 1
+  }
+  comp_render_taskbar_dot()
+  return
+}
+
+fn comp_render_topbar() -> void {
+  fb_fill_rect(0, 0, fb_width, COMP_TASKBAR_H, COMP_COLOR_PANEL)
+  let tx2 = 0
+  while tx2 < fb_width {
+    store32(fb_addr + (COMP_TASKBAR_H - 1) * fb_pitch + tx2 * 4, COMP_COLOR_PANEL_LINE)
+    tx2 = tx2 + 1
+  }
+  let ty = (COMP_TASKBAR_H - fb_font_scale * 8) / 2
+  comp_draw_label(12, ty, "SPACE OS", FB_COLOR_WHITE, COMP_COLOR_PANEL)
+  comp_draw_label(fb_width / 2 - 40, ty, "WORKSPACE", COMP_COLOR_MUTED, COMP_COLOR_PANEL)
+  comp_draw_label(fb_width - 200, ty, "DESKTOP", COMP_COLOR_ACCENT, COMP_COLOR_PANEL)
+  return
+}
+
+// Handle a taskbar click — focus/restore the window whose title button was clicked.
+fn comp_handle_taskbar_click(mx: Int) -> Int {
+  let btn_x = fb_width / 2 - 80
+  let i2 = 0
+  while i2 < comp_count {
+    let base = comp_win_base(i2)
+    let title = load64(base + 24)
+    let flags3 = load32(base + 20)
+    if title != 0 {
+      if mx >= btn_x && mx < btn_x + 90 {
+        if (flags3 & COMP_WIN_MINIMIZED) != 0 {
+          comp_win_restore(i2)
+        } else {
+          comp_win_focus(i2)
+        }
+        return 1
+      }
+      btn_x = btn_x + 90
+    }
+    i2 = i2 + 1
+  }
+  return 0
+}
+
+fn comp_render_taskbar_dot() -> void {
+  let bar_y = fb_height - COMP_TASKBAR_H
+  if mouse_left_pressed() != 0 {
+    fb_fill_rect(fb_width - 30, bar_y + 12, 10, 10, FB_COLOR_GREEN)
+  } else {
+    fb_fill_rect(fb_width - 30, bar_y + 12, 10, 10, FB_COLOR_DARK_GREEN)
+  }
+  return
+}
+
+// --- input handling ---------------------------------------------------------
+
+// Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
+fn comp_handle_click(mx: Int, my: Int) -> Int {
+  let idx = comp_win_at_point(mx, my)
+  if idx < 0 {
+    // Check taskbar click
+    let bar_y = fb_height - COMP_TASKBAR_H
+    if my >= bar_y && my < fb_height {
+      return comp_handle_taskbar_click(mx)
+    }
+    return 0
+  }
+  // Check close button first (before focusing)
+  let base = comp_win_base(idx)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let btn_x = wx + ww - 28
+  let btn_y = wy + 5
+  let btn_w = 22
+  let btn_h = COMP_TITLE_BAR_H - 10
+  // Check minimize button
+  let min_x = wx + ww - 52
+  if mx >= min_x && mx < min_x + btn_w && my >= btn_y && my < btn_y + btn_h {
+    comp_win_minimize(idx)
+    return 1
+  }
+  // Check close button
+  if mx >= btn_x && mx < btn_x + btn_w && my >= btn_y && my < btn_y + btn_h {
+    comp_win_close(idx)
+    return 1
+  }
+  // Focus the window
+  comp_win_focus(idx)
+  // Check if clicking the title bar (for dragging or resizing)
+  if comp_win_in_titlebar(idx, mx, my) != 0 {
+    comp_drag_off_x = mx - wx
+    comp_drag_off_y = my - wy
+    // Check resize zone (bottom-right 8px corner of window)
+    let wh = load32(base + 16)
+    if mx >= wx + ww - 8 && my >= wy + wh + COMP_TITLE_BAR_H - 8 {
+      comp_drag_mode = 2  // resize
+    } else {
+      comp_drag_mode = 1  // move
+    }
+    comp_dragging = idx
+  }
+  return 1
+}
+
+// Handle mouse movement during drag or resize.
+fn comp_handle_drag(mx: Int, my: Int) -> void {
+  if comp_drag_mode < 0 {
+    return
+  }
+  let base = comp_win_base(comp_dragging)
+  let new_x = mx - comp_drag_off_x
+  let new_y = my - comp_drag_off_y
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  if comp_drag_mode == 1 {
+    // Move mode
+    if new_x < 0 {
+      store32(base + 4, 0)
+    } else {
+      store32(base + 4, new_x)
+    }
+    if new_y < 0 {
+      store32(base + 8, 0)
+    } else {
+      store32(base + 8, new_y)
+    }
+  } else {
+    // Resize mode
+    let new_w = mx - wx
+    let new_h = my - wy - COMP_TITLE_BAR_H
+    if new_w < COMP_MIN_WIN_W {
+      new_w = COMP_MIN_WIN_W
+    }
+    if new_h < COMP_MIN_WIN_H {
+      new_h = COMP_MIN_WIN_H
+    }
+    store32(base + 12, new_w)
+    store32(base + 16, new_h)
+  }
+  // Mark dirty and trigger full redraw
+  let flags = load32(base + 20)
+  store32(base + 20, flags | COMP_WIN_DIRTY)
+  comp_full_redraw = 1
+  return
+}
+
+// Handle a keyboard event (key press). Returns 1 to exit compositor.
+fn comp_handle_key(port: Int, key: Int) -> Int {
+  // Escape key (27) exits the compositor
+  if key == 27 {
+    return 1
+  }
+  let role = COMP_ROLE_TEXT
+  if comp_focused >= 0 {
+    role = load64(comp_win_base(comp_focused) + 40)
+  }
+  if role == COMP_ROLE_TERMINAL || comp_count == 1 {
+    if key == 8 || key == 127 {
+      comp_vro_backspace()
+    } else if key == 13 || key == 10 {
+      if comp_term_line_eq("fetch") != 0 {
+        comp_vro_seed("")
+        comp_vro_dirty = 2
+      } else {
+        comp_vro_seed("")
+        comp_vro_dirty = 0
+      }
+    } else if key >= 32 && key <= 126 {
+      if comp_vro_dirty == 2 {
+        comp_vro_dirty = 0
+        comp_vro_seed("")
+      }
+      comp_vro_append(key)
+    }
+  } else {
+    if key == 19 {
+      let rc = comp_vro_save()
+      serial_write_cstr(port, "space: VRO save notes.txt ")
+      if rc == 0 {
+        serial_write_cstr(port, "ok")
+      } else {
+        serial_write_cstr(port, "failed")
+      }
+      serial_nl(port)
+    } else if key == 8 || key == 127 {
+      comp_vro_backspace()
+    } else if key == 13 {
+      comp_vro_append(10)
+    } else if key == 10 {
+      comp_vro_append(10)
+    } else if key >= 32 && key <= 126 {
+      comp_vro_append(key)
+    }
+  }
+  if comp_focused >= 0 {
+    let base = comp_win_base(comp_focused)
+    let flags = load32(base + 20)
+    store32(base + 20, flags | COMP_WIN_DIRTY)
+  }
+  let ki = 0
+  while ki < comp_count {
+    let kbase = comp_win_base(ki)
+    let kflags = load32(kbase + 20)
+    store32(kbase + 20, kflags | COMP_WIN_DIRTY)
+    ki = ki + 1
+  }
+  comp_full_redraw = 1
+  return 0
+}
+
+// --- compositor main loop ---------------------------------------------------
+
+// Run the compositor. This is a blocking loop that renders the desktop and
+// handles input until the user presses Escape. The serial console is still
+// available for debugging, but the main interaction is via the framebuffer.
+fn comp_run(port: Int) -> void {
+  if fb_ready == 0 {
+    serial_write_cstr(port, "  compositor: framebuffer not ready")
+    serial_nl(port)
+    return
+  }
+  serial_write_cstr(port, "space: compositor running (press ESC to exit)")
+  serial_nl(port)
+
+  comp_bg_drawn = 0  // force initial background render
+
+  // Create default windows with a Crepuscularity-inspired workspace layout
+  let top_y = COMP_TASKBAR_H + 20
+  let usable_h = fb_height - COMP_TASKBAR_H * 2 - 40
+  let left_w = (fb_width - 64) / 2
+  let right_w = fb_width - 64 - left_w
+  let right_h = (usable_h - 16) / 2
+
+  let win_ed = comp_win_create("EDITOR", 48, top_y, left_w, usable_h)
+  comp_win_set_role(win_ed, COMP_ROLE_VRO)
+  comp_win_focus(win_ed)
+
+  let win_util = comp_win_create("UTILITIES", 48 + left_w + 16, top_y, right_w, right_h)
+  comp_win_set_role(win_util, COMP_ROLE_UTILITIES)
+
+  let win_term = comp_win_create("TERMINAL", 48 + left_w + 16, top_y + right_h + 16, right_w, right_h)
+  comp_win_set_role(win_term, COMP_ROLE_TERMINAL)
+
+  comp_running = 1
+  let prev_left = 0
+  comp_render()
+  serial_write_cstr(port, "space: compositor frame ready")
+  serial_nl(port)
+
+  // Main compositor loop
+  while comp_running != 0 {
+    if usb_kbd_ready() != 0 {
+      let key = usb_kbd_getchar()
+      if key >= 0 {
+        if comp_handle_key(port, key) != 0 {
+          comp_running = 0
+        }
+      }
+    }
+    let pkey = ps2_kbd_getchar()
+    if pkey >= 0 {
+      if comp_handle_key(port, pkey) != 0 {
+        comp_running = 0
+      }
+    }
+    if serial_has_byte(com1()) != 0 {
+      let key = inb(com1())
+      if comp_handle_key(port, key) != 0 {
+        comp_running = 0
+      }
+    }
+
+    // Poll mouse
+    mouse_poll()
+
+    // Handle dragging
+    let cur_left = mouse_left_pressed()
+    if cur_left != 0 && prev_left == 0 {
+      // Mouse just pressed — check for window click
+      comp_handle_click(mouse_x, mouse_y)
+    }
+    if cur_left != 0 && comp_drag_mode >= 0 {
+      // Mouse held and dragging
+      comp_handle_drag(mouse_x, mouse_y)
+    }
+    if cur_left == 0 && prev_left != 0 {
+      // Mouse released
+      comp_drag_mode = -1
+    }
+    prev_left = cur_left
+
+    // Render the desktop
+    comp_render()
+
+    // ponytail: pause briefly to avoid burning CPU. hlt wakes on interrupt.
+    sti()
+    pause()
+  }
+
+  serial_write_cstr(port, "space: compositor exited")
+  serial_nl(port)
+  return
+}
+
+
+// VRO text editor for the Space compositor.
+// A minimal built-in text editor with line buffer, save/load, scrollbar,
+// and cursor rendering. Imported by compositor.in.
+
+const COMP_VRO_BUF_SIZE = 512
+
+var comp_vro_buf: Int = 0
+var comp_vro_line_buf: Int = 0
+var comp_vro_len: Int = 0
+var comp_vro_dirty: Int = 0
+
+fn comp_vro_append(ch: Int) -> void {
+  if comp_vro_len >= COMP_VRO_BUF_SIZE - 1 {
+    return
+  }
+  store8(comp_vro_buf + comp_vro_len, ch)
+  comp_vro_len = comp_vro_len + 1
+  store8(comp_vro_buf + comp_vro_len, 0)
+  comp_vro_dirty = 1
+  return
+}
+
+fn comp_vro_init() -> void {
+  if comp_vro_buf == 0 {
+    comp_vro_buf = alloc(COMP_VRO_BUF_SIZE)
+  }
+  if comp_vro_line_buf == 0 {
+    comp_vro_line_buf = alloc(96)
+  }
+  let i = 0
+  while i < COMP_VRO_BUF_SIZE {
+    store8(comp_vro_buf + i, 0)
+    i = i + 1
+  }
+  comp_vro_seed("")
+  return
+}
+
+fn comp_vro_backspace() -> void {
+  if comp_vro_len <= 0 {
+    return
+  }
+  comp_vro_len = comp_vro_len - 1
+  store8(comp_vro_buf + comp_vro_len, 0)
+  comp_vro_dirty = 1
+  return
+}
+
+fn comp_vro_save() -> Int {
+  let rc = fs_write_file("notes.txt", comp_vro_buf, comp_vro_len)
+  if rc == 0 {
+    comp_vro_dirty = 0
+  }
+  return rc
+}
+
+fn comp_vro_seed(src: Int) -> void {
+  comp_vro_len = 0
+  let i = 0
+  while i < COMP_VRO_BUF_SIZE - 1 {
+    let ch = load8(src + i)
+    if ch == 0 {
+      i = COMP_VRO_BUF_SIZE
+    } else {
+      store8(comp_vro_buf + comp_vro_len, ch)
+      comp_vro_len = comp_vro_len + 1
+      i = i + 1
+    }
+  }
+  store8(comp_vro_buf + comp_vro_len, 0)
+  comp_vro_dirty = 0
+  return
+}
+
+fn comp_draw_vro_content(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let cw = fb_font_scale * 8 + 2  // match font spacing
+  let lh = cw + 3
+  let content_y = y + COMP_TITLE_BAR_H
+  fb_fill_rect(x, content_y, w, h, COMP_COLOR_SURFACE)
+  // Line number gutter
+  fb_fill_rect(x, content_y, w, 54, COMP_COLOR_SURFACE_ALT)
+  comp_draw_label(x + 24, content_y + 18, "FETCH", COMP_COLOR_TEXT, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 78, w - 64, 2, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 116, w - 128, 2, COMP_COLOR_SURFACE_ALT)
+  fb_fill_rect(x + 24, content_y + 154, w - 96, 2, COMP_COLOR_SURFACE_ALT)
+  let max_chars = (w - 108) / cw
+  if max_chars > 80 { max_chars = 80 }
+  let start_idx = 0
+  if comp_vro_len > max_chars {
+    start_idx = comp_vro_len - max_chars
+  }
+  let visible_len = 0
+  // Line number
+  let text_y = content_y + 30 + lh * 2 + 4  // 2 lines header + gap
+  // Text content
+  // Cursor
+  let cursor_x = x + 56 + visible_len * cw
+  // Status bar at bottom
+  fb_fill_rect(x, content_y + h - 36, w, 36, COMP_COLOR_SURFACE_ALT)
+  if comp_vro_dirty != 0 {
+    comp_draw_label(x + 16, content_y + h - 28, "EDITING", COMP_COLOR_ACCENT, COMP_COLOR_SURFACE_ALT)
+  } else {
+    comp_draw_label(x + 16, content_y + h - 28, "OK", FB_COLOR_GREEN, COMP_COLOR_SURFACE_ALT)
+  }
+  // Scrollbar track on right side
+  let scroll_x = x + w - 10
+  let scroll_top = content_y + 24
+  let scroll_bot = content_y + h - 40
+  let scroll_ht = scroll_bot - scroll_top
+  let si = 0
+  // Scrollbar thumb (proportional to content length)
+  let total_ch = comp_vro_len
+  if total_ch > max_chars && total_ch > 0 {
+    let thumb_h = scroll_ht * max_chars / total_ch
+    if thumb_h < 8 {
+      thumb_h = 8
+    }
+    let thumb_pos = scroll_ht * visible_len / total_ch
+    let tj = 0
+    while tj < thumb_h {
+      store32(fb_addr + (scroll_top + thumb_pos + tj) * fb_pitch + scroll_x * 4, COMP_COLOR_ACCENT)
+      store32(fb_addr + (scroll_top + thumb_pos + tj) * fb_pitch + (scroll_x + 1) * 4, COMP_COLOR_ACCENT)
+      tj = tj + 1
+    }
+  }
+  return
+}
+
+// Space Display Server — Wayland-inspired compositor service.
+// Handles SPDP protocol messages over channel IPC. Clients send messages
+// to create surfaces, attach buffers, and receive input events.
+// The server runs on top of the kernel framebuffer.
+
+// Display server state: one surface table, SHM pools, seat state.
+const DSP_MAX_SURFACES = 32
+const DSP_MAX_POOLS = 8
+
+var dsp_surfaces: Int = 0
+var dsp_surface_count: Int = 0
+var dsp_pools: Int = 0
+var dsp_mouse_x: Int = 0
+var dsp_mouse_y: Int = 0
+var dsp_running: Int = 0
+
+// Surface record (48 bytes):
+// [0] id, [8] pool_id, [16] buf_offset, [24] w/h packed, [32] x/y, [40] flags
+fn dsp_surface_size() -> Int { return 48 }
+
+// Initialize the display server.
+fn dsp_init() -> void {
+  dsp_surfaces = alloc(DSP_MAX_SURFACES * dsp_surface_size())
+  dsp_pools = alloc(DSP_MAX_POOLS * 8)  // array of pool addresses
+  let i = 0
+  while i < DSP_MAX_POOLS {
+    store64(dsp_pools + i * 8, 0)
+    i = i + 1
+  }
+  dsp_surface_count = 0
+  dsp_mouse_x = 0
+  dsp_mouse_y = 0
+}
+
+// Create a surface. Returns surface_id or -1.
+fn dsp_create_surface() -> Int {
+  if dsp_surface_count >= DSP_MAX_SURFACES {
+    return -1
+  }
+  let id = dsp_surface_count
+  let base = dsp_surfaces + id * dsp_surface_size()
+  store64(base + 0, id)
+  store64(base + 8, -1)   // no pool attached
+  store64(base + 16, 0)   // no buffer offset
+  store64(base + 24, 0)   // w=0, h=0
+  store64(base + 32, 0)   // x=0, y=0
+  store64(base + 40, 0)   // flags=0
+  dsp_surface_count = dsp_surface_count + 1
+  return id
+}
+
+
+// Render all surfaces to the framebuffer.
+fn dsp_composite() -> void {
+  if fb_ready == 0 {
+    return
+  }
+  // Clear to dark blue
+  fb_fill_rect(0, 0, fb_width, fb_height, 0x00000080)
+
+  // Draw surfaces back-to-front
+  let i = 0
+  while i < dsp_surface_count {
+    let base = dsp_surfaces + i * dsp_surface_size()
+    let flags = load64(base + 40)
+    if (flags & 1) != 0 {  // render visible surfaces
+    let pool_id = load64(base + 8)
+    let buf_off = load64(base + 16)
+    let wh = load64(base + 24)
+    let w = wh & 0xFFFF
+    let h = (wh >> 16) & 0xFFFF
+    let xy = load64(base + 32)
+    let sx = xy & 0xFFFF
+    let sy = (xy >> 16) & 0xFFFF
+
+    if w > 0 && h > 0 && pool_id >= 0 && pool_id < DSP_MAX_POOLS {
+      let pool = load64(dsp_pools + pool_id * 8)
+      let buf = pool + buf_off
+      let src_pitch = w * 4
+      // Blit surface to framebuffer with clipping
+      let row = 0
+      while row < h {
+        let dst_y = sy + row
+        if dst_y >= 0 && dst_y < fb_height {
+          let col = 0
+          while col < w {
+            let dst_x = sx + col
+            if dst_x >= 0 && dst_x < fb_width {
+              let pixel = load32(buf + row * src_pitch + col * 4)
+              if pixel != 0 {  // skip transparent pixels
+                store32(fb_addr + dst_y * fb_pitch + dst_x * 4, pixel)
+              }
+            }
+            col = col + 1
+          }
+        }
+        row = row + 1
+      }
+    }
+    }
+    i = i + 1
+  }
+
+  // Draw mouse cursor
+  dsp_draw_cursor()
+}
+
+var dsp_prev_cx: Int = 0
+var dsp_prev_cy: Int = 0
+
+// Clear old cursor position (overwrite with dark blue).
+fn dsp_clear_cursor() -> void {
+  let x = dsp_prev_cx
+  let y = dsp_prev_cy
+  let cs = 8
+  // Redraw background over old cursor area
+  fb_fill_rect(x - cs, y - 1, cs * 2 + 1, 3, 0x00000080)
+  fb_fill_rect(x - 1, y - cs, 3, cs * 2 + 1, 0x00000080)
+  return
+}
+
+// Draw a simple cross-hair cursor.
+fn dsp_draw_cursor() -> void {
+  let cx = 8
+  let cy = 8
+  let x = dsp_mouse_x
+  let y = dsp_mouse_y
+  // Clear old cursor position
+  dsp_clear_cursor()
+  dsp_prev_cx = x
+  dsp_prev_cy = y
+  // Horizontal line
+  let i = 0
+  while i < cx * 2 + 1 {
+    let px = x - cx + i
+    if px >= 0 && px < fb_width && y >= 0 && y < fb_height {
+      store32(fb_addr + y * fb_pitch + px * 4, 0x00FFFFFF)
+    }
+    i = i + 1
+  }
+  // Vertical line
+  let j = 0
+  while j < cy * 2 + 1 {
+    let py = y - cy + j
+    if py >= 0 && py < fb_height && x >= 0 && x < fb_width {
+      store32(fb_addr + py * fb_pitch + x * 4, 0x00FFFFFF)
+    }
+    j = j + 1
+  }
+}
+
+// Main display server loop. Reads SPDP messages from the channel and processes
+// them. Runs until the channel is closed or an error occurs.
+fn dsp_run(ch: Int, port: Int) -> void {
+  dsp_running = 1
+  serial_write_cstr(port, "  display: server running")
+  serial_nl(port)
+
+  while dsp_running != 0 {
+    // Poll mouse
+    mouse_poll()
+    dsp_mouse_x = mouse_x
+    dsp_mouse_y = mouse_y
+
+    // Process pending 32-byte messages (non-blocking)
+    let msg = alloc(SPDP_MSG_SIZE)
+    while chan_count(ch) > 0 {
+      store64(msg + 0, chan_recv(ch))
+      store64(msg + 8, chan_recv(ch))
+      store64(msg + 16, chan_recv(ch))
+      store64(msg + 24, chan_recv(ch))
+      let obj_id = load64(msg + 0)
+      let opcode = load64(msg + 8)
+      let arg0 = load64(msg + 16)
+      let arg1 = load64(msg + 24)
+      dsp_handle_msg(obj_id, opcode, arg0, arg1, port)
+    }
+
+    // Composite and render
+    dsp_composite()
+
+    // HLT until next event
+    sti()
+    hlt()
+  }
+}
+
+fn dsp_shm_create_pool(pool_id: Int, size: Int) -> void {
+  if pool_id < 0 || pool_id >= DSP_MAX_POOLS {
+    return
+  }
+  let p = alloc(size)
+  store64(dsp_pools + pool_id * 8, p)
+  return
+}
+
+fn dsp_surface_attach(sid: Int, packed: Int) -> void {
+  if sid < 0 || sid >= dsp_surface_count {
+    return
+  }
+  let pool_id = (packed >> 32) & 0xFFFFFFFF
+  let offset = packed & 0xFFFFFFFF
+  let base = dsp_surfaces + sid * dsp_surface_size()
+  store64(base + 8, pool_id)
+  store64(base + 16, offset)
+  return
+}
+
+fn dsp_surface_geometry(sid: Int, packed: Int) -> void {
+  if sid < 0 || sid >= dsp_surface_count {
+    return
+  }
+  let x = (packed >> 48) & 0xFFFF
+  let y = (packed >> 32) & 0xFFFF
+  let w = (packed >> 16) & 0xFFFF
+  let h = packed & 0xFFFF
+  let base = dsp_surfaces + sid * dsp_surface_size()
+  store64(base + 24, (w << 16) | h)
+  store64(base + 32, (x << 16) | y)
+  return
+}
+
+fn dsp_surface_commit(sid: Int) -> void {
+  if sid < 0 || sid >= dsp_surface_count {
+    return
+  }
+  let base = dsp_surfaces + sid * dsp_surface_size()
+  let flags = load64(base + 40)
+  store64(base + 40, flags | 1)
+  return
+}
+
+// Handle a single SPDP message.
+fn dsp_handle_msg(obj_id: Int, opcode: Int, arg0: Int, arg1: Int, port: Int) -> void {
+  if obj_id == SPDP_OBJ_COMPOSITOR {
+    if opcode == SPDP_COMPOSITOR_CREATE_SURFACE {
+      dsp_create_surface()
+    }
+  } else if obj_id == SPDP_OBJ_SURFACE {
+    if opcode == SPDP_SURFACE_ATTACH {
+      dsp_surface_attach(arg0, arg1)
+    } else if opcode == SPDP_SURFACE_DAMAGE {
+      dsp_surface_geometry(arg0, arg1)
+    } else if opcode == SPDP_SURFACE_COMMIT {
+      dsp_surface_commit(arg0)
+    }
+  } else if obj_id == SPDP_OBJ_SHM {
+    if opcode == SPDP_SHM_CREATE_POOL {
+      dsp_shm_create_pool(arg0, arg1)
+    }
+  }
+  return
+}
+
+
+fn display_entry(cap_info: Int) -> Int {
+  let port = com1()
+  serial_init(port)
+  serial_write_cstr(port, "display: component entered")
+  serial_nl(port)
+  let rc = fb_init(0)
+  if rc == 0 {
+    serial_write_cstr(port, "display: framebuffer initialized")
+    serial_nl(port)
+    fb_info(port)
+  } else {
+    serial_write_cstr(port, "display: framebuffer not available")
+    serial_nl(port)
+  }
+  dsp_init()
+  let ch = 0
+  if cap_info != 0 {
+    ch = load64(cap_info + 0)
+  }
+  dsp_run(ch, port)
+  serial_write_cstr(port, "display: component exited")
+  serial_nl(port)
+  return 0
+}

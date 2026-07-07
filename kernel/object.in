@@ -100,3 +100,7 @@ fn cap_serial() -> Int { return 1 }
 fn cap_timer() -> Int { return 2 }
 fn cap_memory() -> Int { return 4 }
 fn cap_graph() -> Int { return 8 }
+fn cap_input() -> Int { return 64 }
+fn cap_storage() -> Int { return 32 }
+fn cap_display() -> Int { return 16 }
+fn cap_network() -> Int { return 128 }

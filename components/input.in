@@ -1,0 +1,996 @@
+package space.input
+
+// Standalone input component for the Space nanokernel.
+// Collects xHCI USB HID keyboard and PS/2 mouse input in an isolated domain and
+// publishes normalized input events over a cross-domain shared page channel.
+
+component Input {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+  capability input: InputDevice(publish)
+
+  export entry: InputEntry
+}
+
+interface InputEntry {
+  fn input_entry(cap_info: Int) -> Int
+}
+
+interface InputDevice {
+  fn publish(evt: Int) -> void
+}
+
+// --- cap_info layout (64 bytes) --------------------------------------------
+// [0]   cap_count
+// [8]   cap_table_base
+// [16]  heap_base  (component-local bump allocator)
+// [24]  heap_size
+// [32]  input_shared_page (physical address of cross-domain channel page)
+// [40]  input_domain_id
+// [48]  screen_width  (optional, defaults to INPUT_SCREEN_W)
+// [56]  screen_height (optional, defaults to INPUT_SCREEN_H)
+
+// --- local configuration -----------------------------------------------------
+const INPUT_COM1 = 0x3F8
+const INPUT_SCREEN_W = 800
+const INPUT_SCREEN_H = 600
+
+// --- event protocol --------------------------------------------------------
+const INPUT_EVT_KEY_DOWN = 1
+const INPUT_EVT_KEY_UP = 2
+const INPUT_EVT_MOUSE_MOVE = 3
+const INPUT_EVT_MOUSE_BUTTON = 4
+
+// One 64-bit event word:
+//   bits 0..7    type   (INPUT_EVT_*)
+//   bits 8..15   flags  (modifiers / buttons)
+//   bits 16..31  code   (ASCII / keycode)
+//   bits 32..47  a      (dx or absolute x)
+//   bits 48..63  b      (dy or absolute y)
+
+fn input_event_key(type: Int, ascii: Int, flags: Int) -> Int {
+  let t = type & 0xFF
+  let f = (flags & 0xFF) << 8
+  let c = (ascii & 0xFFFF) << 16
+  return t | f | c
+}
+
+fn input_event_move(x: Int, y: Int, buttons: Int) -> Int {
+  let t = INPUT_EVT_MOUSE_MOVE
+  let f = (buttons & 0xFF) << 8
+  let a = (x & 0xFFFF) << 32
+  let b = (y & 0xFFFF) << 48
+  return t | f | a | b
+}
+
+fn input_event_button(buttons: Int, x: Int, y: Int) -> Int {
+  let t = INPUT_EVT_MOUSE_BUTTON
+  let f = (buttons & 0xFF) << 8
+  let a = (x & 0xFFFF) << 32
+  let b = (y & 0xFFFF) << 48
+  return t | f | a | b
+}
+
+// --- component-local heap ---------------------------------------------------
+var input_heap_base: Int = 0
+var input_heap_next: Int = 0
+var input_heap_end: Int = 0
+
+fn input_heap_init(base: Int, size: Int) -> void {
+  input_heap_base = base
+  input_heap_next = base
+  input_heap_end = base + size
+  return
+}
+
+fn input_alloc(n: Int) -> Int {
+  let aligned = (n + 15) & -16
+  let p = input_heap_next
+  let next = input_heap_next + aligned
+  if next > input_heap_end {
+    return 0
+  }
+  input_heap_next = next
+  return p
+}
+
+fn input_frame_alloc() -> Int {
+  let p = (input_heap_next + 4095) & -4096
+  input_heap_next = p + 4096
+  if input_heap_next > input_heap_end {
+    return 0
+  }
+  let i = 0
+  while i < 512 {
+    store64(p + i * 8, 0)
+    i = i + 1
+  }
+  return p
+}
+
+// --- serial console ---------------------------------------------------------
+fn input_serial_wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn input_serial_put(port: Int, ch: Int) -> void {
+  input_serial_wait(port)
+  outb(port, ch)
+  return
+}
+
+fn input_serial_nl(port: Int) -> void {
+  input_serial_put(port, 10)
+  return
+}
+
+fn input_serial_cstr(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    input_serial_put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn input_serial_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      input_serial_put(port, 48 + nibble)
+    } else {
+      input_serial_put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+// --- PCI -------------------------------------------------------------------
+const PCI_CONFIG_ADDR = 0xCF8
+const PCI_CONFIG_DATA = 0xCFC
+
+fn input_pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
+  return inl(PCI_CONFIG_DATA)
+}
+
+fn input_pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
+  outl(PCI_CONFIG_ADDR, addr)
+  outl(PCI_CONFIG_DATA, val)
+  return
+}
+
+// --- cross-domain channel on shared page -----------------------------------
+// Shared page layout (4096 bytes):
+//   [0]   head
+//   [8]   tail
+//   [16]  capacity
+//   [24]  msg_size
+//   [32]  ring of 8-byte messages
+const INPUT_CHAN_CAPACITY = 508
+
+fn input_chan_bind(page: Int) -> void {
+  store64(page + 0, 0)
+  store64(page + 8, 0)
+  store64(page + 16, INPUT_CHAN_CAPACITY)
+  store64(page + 24, 8)
+  return
+}
+
+fn input_chan_send(page: Int, msg: Int) -> void {
+  if page == 0 {
+    return
+  }
+  let cap = load64(page + 16)
+  let head = load64(page + 0)
+  let tail = load64(page + 8)
+  let next = (head + 1) % cap
+  if next == tail {
+    // channel full: drop the event
+    return
+  }
+  let ring = page + 32
+  store64(ring + head * 8, msg)
+  store64(page + 0, next)
+  return
+}
+
+// --- xHCI driver ------------------------------------------------------------
+var xhci_mmio: Int = 0
+var xhci_op: Int = 0
+var xhci_rts: Int = 0
+var xhci_dboff: Int = 0
+var xhci_max_slots: Int = 0
+var xhci_max_ports: Int = 0
+var xhci_cr: Int = 0
+var xhci_cr_ctrl: Int = 1
+var xhci_cr_index: Int = 0
+var xhci_er: Int = 0
+var xhci_erst: Int = 0
+var xhci_er_index: Int = 0
+var xhci_er_ccs: Int = 1
+var xhci_dcbaa: Int = 0
+var xhci_slot: Int = 0
+var xhci_kbd_ep: Int = 0
+var xhci_kbd_buf: Int = 0
+var xhci_kbd_ready: Int = 0
+var xhci_kbd_prev: Int = 0
+
+const XHCI_NCR = 256
+const XHCI_NER = 256
+
+fn xhci_cap_r32(off: Int) -> Int {
+  return load32(xhci_mmio + off)
+}
+
+fn xhci_op_w32(off: Int, val: Int) -> void {
+  store32(xhci_op + off, val)
+  return
+}
+
+fn xhci_op_r32(off: Int) -> Int {
+  return load32(xhci_op + off)
+}
+
+fn xhci_op_w64(off: Int, val: Int) -> void {
+  store32(xhci_op + off, val & 0xFFFFFFFF)
+  store32(xhci_op + off + 4, (val >> 32) & 0xFFFFFFFF)
+  return
+}
+
+fn xhci_rt_w32(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci_rts + 0x20 + intx * 0x20 + off, val)
+  return
+}
+
+fn xhci_rt_r32(intx: Int, off: Int) -> Int {
+  return load32(xhci_rts + 0x20 + intx * 0x20 + off)
+}
+
+fn xhci_rt_w64(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci_rts + 0x20 + intx * 0x20 + off, val & 0xFFFFFFFF)
+  store32(xhci_rts + 0x20 + intx * 0x20 + off + 4, (val >> 32) & 0xFFFFFFFF)
+  return
+}
+
+fn xhci_doorbell(slot: Int, target: Int) -> void {
+  store32(xhci_mmio + xhci_dboff + slot * 8, target)
+  return
+}
+
+fn xhci_find_pci() -> Int {
+  for dev in 0..32 {
+    let f = input_pci_read32(0, dev, 0, 0x08)
+    let classcode = (f >> 8) & 0xFFFFFF
+    if classcode == 0x0C0330 {
+      return (0 << 16) | (dev << 8) | 0
+    }
+  }
+  return 0
+}
+
+fn xhci_read_bar64(bus: Int, dev: Int, func: Int) -> Int {
+  let lo = input_pci_read32(bus, dev, func, 0x10)
+  let hi = input_pci_read32(bus, dev, func, 0x14)
+  return (lo & 0xFFFFFFF0) | ((hi & 0xFFFFFFFF) << 32)
+}
+
+fn trb_set(addr: Int, param: Int, status: Int, control: Int) -> void {
+  store64(addr + 0, param)
+  store32(addr + 8, status)
+  store32(addr + 12, control)
+  return
+}
+
+fn xhci_reset() -> void {
+  let cmd = xhci_op_r32(0)
+  xhci_op_w32(0, cmd & -2)
+  let tries = 0
+  while (xhci_op_r32(4) & 1) == 0 {
+    tries = tries + 1
+    if tries > 100000 {
+      return
+    }
+  }
+  xhci_op_w32(0, 0x2)
+  let tries2 = 0
+  while (xhci_op_r32(4) & 1) != 0 {
+    tries2 = tries2 + 1
+    if tries2 > 1000000 {
+      return
+    }
+  }
+  return
+}
+
+fn xhci_init_rings() -> void {
+  xhci_cr = input_frame_alloc()
+  for i in 0..XHCI_NCR {
+    trb_set(xhci_cr + i * 16, 0, 0, 0)
+  }
+  trb_set(xhci_cr + XHCI_NCR * 16, xhci_cr, 0, 0x2 | (1 << 1) | (6 << 10))
+  xhci_cr_index = 0
+  xhci_cr_ctrl = 1
+  xhci_op_w64(16, xhci_cr | (xhci_cr_ctrl & 1))
+
+  xhci_er = input_frame_alloc()
+  for i in 0..XHCI_NER {
+    trb_set(xhci_er + i * 16, 0, 0, 0)
+  }
+  xhci_er_index = 0
+  xhci_er_ccs = 1
+  xhci_erst = input_frame_alloc()
+  store64(xhci_erst + 0, xhci_er)
+  store32(xhci_erst + 8, XHCI_NER)
+  store32(xhci_erst + 12, 0)
+  xhci_rt_w32(0, 8, 1)
+  xhci_rt_w64(0, 16, xhci_erst)
+  xhci_rt_w64(0, 24, xhci_er)
+  xhci_rt_w32(0, 0, xhci_rt_r32(0, 0) | 0x2)
+  xhci_rt_w32(0, 0, xhci_rt_r32(0, 0) | 0x8)
+  return
+}
+
+fn xhci_cmd(param: Int, status: Int, typecode: Int) -> Int {
+  let idx = xhci_cr_index
+  let addr = xhci_cr + idx * 16
+  let control = (typecode << 10) | (xhci_cr_ctrl & 1)
+  trb_set(addr, param, status, control)
+  xhci_cr_index = xhci_cr_index + 1
+  if xhci_cr_index >= XHCI_NCR {
+    xhci_cr_index = 0
+    xhci_cr_ctrl = xhci_cr_ctrl ^ 1
+    xhci_op_w64(16, xhci_cr | (xhci_cr_ctrl & 1))
+  }
+  xhci_doorbell(0, 0)
+  return xhci_wait_event()
+}
+
+fn xhci_wait_event() -> Int {
+  let tries = 0
+  while tries < 2000000 {
+    let erdp = xhci_rt_r32(0, 24) | ((xhci_rt_r32(0, 28) & 0xFFFFFFFF) << 32)
+    let head = erdp & -16
+    let tail_off = xhci_er_index * 16
+    if head != (xhci_er + tail_off) {
+      let trb = xhci_er + tail_off
+      let ctrl = load32(trb + 12)
+      let cycle = ctrl & 1
+      if cycle == (xhci_er_ccs & 1) {
+        let code = (load32(trb + 8) >> 24) & 0xFF
+        xhci_er_index = xhci_er_index + 1
+        if xhci_er_index >= XHCI_NER {
+          xhci_er_index = 0
+          xhci_er_ccs = xhci_er_ccs ^ 1
+        }
+        xhci_rt_w64(0, 24, xhci_er + xhci_er_index * 16)
+        return code
+      }
+    }
+    tries = tries + 1
+  }
+  return -1
+}
+
+fn xhci_init_dcbaa() -> void {
+  let n = xhci_max_slots + 1
+  xhci_dcbaa = input_frame_alloc()
+  for i in 0..n {
+    store64(xhci_dcbaa + i * 8, 0)
+  }
+  xhci_op_w64(24, xhci_dcbaa)
+  return
+}
+
+fn xhci_alloc_ctx() -> Int {
+  return input_frame_alloc()
+}
+
+fn xhci_portsc(port: Int) -> Int {
+  return xhci_op + 0x400 + port * 0x10
+}
+
+fn xhci_port_wait_connected(port: Int) -> Int {
+  let tries = 0
+  while tries < 2000000 {
+    if (load32(xhci_portsc(port)) & 1) != 0 {
+      return 1
+    }
+    tries = tries + 1
+  }
+  return 0
+}
+
+fn xhci_port_reset(port: Int) -> void {
+  let p = xhci_portsc(port)
+  store32(p, load32(p) | 0x10)
+  let tries = 0
+  while (load32(p) & 0x10) != 0 {
+    tries = tries + 1
+    if tries > 2000000 {
+      return
+    }
+  }
+  return
+}
+
+fn xhci_port_speed(port: Int) -> Int {
+  return (load32(xhci_portsc(port)) >> 10) & 0xF
+}
+
+fn xhci_address_device(port: Int) -> Int {
+  let code = xhci_cmd(0, 0, 9)
+  if code != 1 {
+    return -1
+  }
+  let ev = xhci_er + ((xhci_er_index + XHCI_NER - 1) % XHCI_NER) * 16
+  let slot = load64(ev) & 0xFF
+  if slot == 0 {
+    return -1
+  }
+  xhci_slot = slot
+
+  let icc = xhci_alloc_ctx()
+  let slot_ctx = xhci_alloc_ctx()
+  let ep_ctx = xhci_alloc_ctx()
+  let dctx = xhci_alloc_ctx()
+  store64(xhci_dcbaa + slot * 8, dctx)
+
+  store32(icc + 0, 0x3)
+  store32(icc + 4, 0x0)
+  let speed = xhci_port_speed(port)
+  store32(icc + 32 + 0, speed & 0xF)
+  store32(icc + 32 + 4, 0)
+  store32(icc + 32 + 8, (port + 1) << 16)
+  store32(dctx + 0, speed & 0xF)
+  store32(dctx + 8, (port + 1) << 16)
+
+  let addr_code = xhci_cmd(icc, 0, 11)
+  if addr_code != 1 {
+    return -1
+  }
+
+  let icc2 = xhci_alloc_ctx()
+  store32(icc2 + 0, 0x2)
+  store32(icc2 + 4, 0x0)
+  store32(icc2 + 32 + 0, speed & 0xF)
+  store32(icc2 + 32 + 8, (port + 1) << 16)
+  let ep0 = 7 | (4 << 3) | (8 << 16)
+  store32(icc2 + 96 + 0, ep0)
+  store32(icc2 + 96 + 4, 8 << 16)
+  let ep_ring = input_frame_alloc()
+  store64(icc2 + 96 + 8, ep_ring | 1)
+  store32(icc2 + 96 + 16, 8)
+  xhci_kbd_ep = ep_ring
+  xhci_kbd_buf = input_frame_alloc()
+
+  let cfg_code = xhci_cmd(icc2, 0, 12)
+  if cfg_code != 1 {
+    return -1
+  }
+  store64(dctx + 64 + 8, ep_ring | 1)
+  return 0
+}
+
+fn xhci_init() -> Int {
+  let port = INPUT_COM1
+  let pci = xhci_find_pci()
+  if pci == 0 {
+    input_serial_cstr(port, "input: no xHCI controller on PCI")
+    input_serial_nl(port)
+    return -1
+  }
+  let bus = (pci >> 16) & 0xFF
+  let dev = (pci >> 8) & 0xFF
+  let func = pci & 0xFF
+  let cmd = input_pci_read32(bus, dev, func, 0x04)
+  input_pci_write32(bus, dev, func, 0x04, cmd | 0x6)
+  let bar = xhci_read_bar64(bus, dev, func)
+  if bar == 0 {
+    input_serial_cstr(port, "input: xHCI BAR0 is zero")
+    return -1
+  }
+  input_serial_cstr(port, "input: xHCI at PCI 00:")
+  input_serial_hex(port, dev)
+  input_serial_cstr(port, ".0 BAR0 0x")
+  input_serial_hex(port, bar)
+  input_serial_put(port, 10)
+  xhci_mmio = bar
+  let hccparams = load32(bar)
+  if hccparams == 0 {
+    input_serial_cstr(port, "input: xHCI MMIO not accessible")
+    input_serial_nl(port)
+    xhci_mmio = 0
+    return -1
+  }
+  let caplen = hccparams & 0xFF
+  let version = (hccparams >> 16) & 0xFFFF
+  let hcs1 = xhci_cap_r32(4)
+  xhci_max_slots = hcs1 & 0xFF
+  xhci_max_ports = (hcs1 >> 24) & 0xFF
+  xhci_dboff = xhci_cap_r32(20) & 0xFFFFFFFF
+  xhci_rts = bar + (xhci_cap_r32(24) & 0xFFFFFFFF)
+  xhci_op = bar + caplen
+  input_serial_cstr(port, "input: xHCI version 0x")
+  input_serial_hex(port, version)
+  input_serial_cstr(port, " slots 0x")
+  input_serial_hex(port, xhci_max_slots)
+  input_serial_cstr(port, " ports 0x")
+  input_serial_hex(port, xhci_max_ports)
+  input_serial_put(port, 10)
+  xhci_reset()
+  xhci_init_dcbaa()
+  xhci_init_rings()
+  xhci_op_w32(0x2C, xhci_max_slots)
+  xhci_op_w32(0, 0x1 | 0x4 | 0x8)
+  input_serial_cstr(port, "input: xHCI started, USBSTS 0x")
+  input_serial_hex(port, xhci_op_r32(4))
+  input_serial_put(port, 10)
+  return 0
+}
+
+fn usb_kbd_init() -> Int {
+  if xhci_mmio == 0 {
+    return -1
+  }
+  let port = INPUT_COM1
+  let p = 0
+  let found = 0
+  while p < xhci_max_ports && found == 0 {
+    if (load32(xhci_portsc(p)) & 1) != 0 {
+      input_serial_cstr(port, "input: USB device connected on port 0x")
+      input_serial_hex(port, p)
+      input_serial_put(port, 10)
+      xhci_port_reset(p)
+      if xhci_address_device(p) == 0 {
+        found = 1
+      }
+    }
+    p = p + 1
+  }
+  if found == 0 {
+    input_serial_cstr(port, "input: no HID keyboard found")
+    input_serial_nl(port)
+    return -1
+  }
+  xhci_kbd_ready = 1
+  xhci_kbd_prev = 0
+  input_serial_cstr(port, "input: HID keyboard configured on slot 0x")
+  input_serial_hex(port, xhci_slot)
+  input_serial_put(port, 10)
+  return 0
+}
+
+fn usb_kbd_ready() -> Int {
+  return xhci_kbd_ready
+}
+
+fn xhci_kbd_poll() -> Int {
+  if xhci_kbd_ready == 0 {
+    return 0
+  }
+  let trb = xhci_kbd_ep
+  trb_set(trb, xhci_kbd_buf, 8, (1 << 10) | (1 << 5) | 1)
+  xhci_doorbell(xhci_slot, 1)
+  let code = xhci_wait_event()
+  if code == 1 {
+    return 1
+  }
+  return 0
+}
+
+fn hid_to_ascii(usage: Int) -> Int {
+  if usage == 0x04 { return 97 }
+  if usage == 0x05 { return 98 }
+  if usage == 0x06 { return 99 }
+  if usage == 0x07 { return 100 }
+  if usage == 0x08 { return 101 }
+  if usage == 0x09 { return 102 }
+  if usage == 0x0A { return 103 }
+  if usage == 0x0B { return 104 }
+  if usage == 0x0C { return 105 }
+  if usage == 0x0D { return 106 }
+  if usage == 0x0E { return 107 }
+  if usage == 0x0F { return 108 }
+  if usage == 0x10 { return 109 }
+  if usage == 0x11 { return 110 }
+  if usage == 0x12 { return 111 }
+  if usage == 0x13 { return 112 }
+  if usage == 0x14 { return 113 }
+  if usage == 0x15 { return 114 }
+  if usage == 0x16 { return 115 }
+  if usage == 0x17 { return 116 }
+  if usage == 0x18 { return 117 }
+  if usage == 0x19 { return 118 }
+  if usage == 0x1A { return 119 }
+  if usage == 0x1B { return 120 }
+  if usage == 0x1C { return 121 }
+  if usage == 0x1D { return 122 }
+  if usage == 0x1E { return 49 }
+  if usage == 0x1F { return 50 }
+  if usage == 0x20 { return 51 }
+  if usage == 0x21 { return 52 }
+  if usage == 0x22 { return 53 }
+  if usage == 0x23 { return 54 }
+  if usage == 0x24 { return 55 }
+  if usage == 0x25 { return 56 }
+  if usage == 0x26 { return 57 }
+  if usage == 0x27 { return 48 }
+  if usage == 0x28 { return 10 }
+  if usage == 0x2A { return 32 }
+  if usage == 0x2B { return 9 }
+  if usage == 0x2C { return 45 }
+  if usage == 0x2D { return 61 }
+  if usage == 0x2E { return 91 }
+  if usage == 0x2F { return 93 }
+  if usage == 0x30 { return 92 }
+  if usage == 0x33 { return 59 }
+  if usage == 0x34 { return 39 }
+  if usage == 0x35 { return 96 }
+  if usage == 0x36 { return 44 }
+  if usage == 0x37 { return 46 }
+  if usage == 0x38 { return 47 }
+  if usage == 0x4C { return 10 }
+  return 0
+}
+
+fn xhci_kbd_report_ascii() -> Int {
+  let mod = load8(xhci_kbd_buf + 0)
+  let k0 = load8(xhci_kbd_buf + 2)
+  let k1 = load8(xhci_kbd_buf + 3)
+  let k2 = load8(xhci_kbd_buf + 4)
+  let k3 = load8(xhci_kbd_buf + 5)
+  let k4 = load8(xhci_kbd_buf + 6)
+  let k5 = load8(xhci_kbd_buf + 7)
+  let prev = xhci_kbd_prev
+  let ch = -1
+  if k0 != 0 && k0 != ((prev >> 0) & 0xFF) {
+    ch = hid_to_ascii(k0)
+  }
+  if ch < 0 && k1 != 0 && k1 != ((prev >> 8) & 0xFF) {
+    ch = hid_to_ascii(k1)
+  }
+  if ch < 0 && k2 != 0 && k2 != ((prev >> 16) & 0xFF) {
+    ch = hid_to_ascii(k2)
+  }
+  if ch < 0 && k3 != 0 && k3 != ((prev >> 24) & 0xFF) {
+    ch = hid_to_ascii(k3)
+  }
+  if ch < 0 && k4 != 0 && k4 != ((prev >> 32) & 0xFF) {
+    ch = hid_to_ascii(k4)
+  }
+  if ch < 0 && k5 != 0 && k5 != ((prev >> 40) & 0xFF) {
+    ch = hid_to_ascii(k5)
+  }
+  xhci_kbd_prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
+  if ch >= 97 && ch <= 122 {
+    if (mod & 0x22) != 0 {
+      ch = ch - 32
+    }
+  }
+  return ch
+}
+
+fn usb_kbd_getchar() -> Int {
+  if xhci_kbd_ready == 0 {
+    return -1
+  }
+  if xhci_kbd_poll() == 0 {
+    return -1
+  }
+  return xhci_kbd_report_ascii()
+}
+
+// --- PS/2 mouse and keyboard ------------------------------------------------
+const PS2_DATA = 0x60
+const PS2_STATUS = 0x64
+const PS2_CMD = 0x64
+
+var mouse_x: Int = 0
+var mouse_y: Int = 0
+var mouse_buttons: Int = 0
+var mouse_ready: Int = 0
+var mouse_cycle: Int = 0
+var mouse_buf0: Int = 0
+var mouse_buf1: Int = 0
+var mouse_buf2: Int = 0
+var mouse_screen_w: Int = INPUT_SCREEN_W
+var mouse_screen_h: Int = INPUT_SCREEN_H
+
+fn mouse_wait_output() -> void {
+  while (inb(PS2_STATUS) & 0x01) == 0 {
+  }
+  return
+}
+
+fn mouse_wait_input() -> void {
+  while (inb(PS2_STATUS) & 0x02) != 0 {
+  }
+  return
+}
+
+fn ps2_cmd(cmd: Int) -> void {
+  mouse_wait_input()
+  outb(PS2_CMD, cmd)
+  return
+}
+
+fn mouse_cmd(cmd: Int) -> void {
+  mouse_wait_input()
+  outb(PS2_CMD, 0xD4)
+  mouse_wait_input()
+  outb(PS2_DATA, cmd)
+  return
+}
+
+fn ps2_read() -> Int {
+  mouse_wait_output()
+  return inb(PS2_DATA)
+}
+
+fn mouse_init() -> Int {
+  ps2_cmd(0xAD)
+  ps2_cmd(0xA7)
+  while (inb(PS2_STATUS) & 0x01) != 0 {
+    inb(PS2_DATA)
+  }
+  ps2_cmd(0x20)
+  let config = ps2_read()
+  let new_config = (config | 0x02 | 0x20) & -0x21
+  ps2_cmd(0x60)
+  mouse_wait_input()
+  outb(PS2_DATA, new_config)
+  ps2_cmd(0xA8)
+  mouse_cmd(0xFF)
+  let ack = ps2_read()
+  if ack != 0xFA {
+    return -1
+  }
+  mouse_cmd(0xF6)
+  ps2_read()
+  mouse_cmd(0xF4)
+  ps2_read()
+  ps2_cmd(0xAE)
+  mouse_x = mouse_screen_w / 2
+  mouse_y = mouse_screen_h / 2
+  mouse_buttons = 0
+  mouse_cycle = 0
+  mouse_ready = 1
+  return 0
+}
+
+fn mouse_has_data() -> Int {
+  let st = inb(PS2_STATUS)
+  if (st & 0x01) != 0 && (st & 0x20) != 0 {
+    return 1
+  }
+  return 0
+}
+
+fn mouse_process_byte(b: Int) -> Int {
+  if mouse_cycle == 0 {
+    if (b & 0x08) == 0 {
+      return 0
+    }
+    mouse_buf0 = b
+    mouse_cycle = 1
+    return 0
+  }
+  if mouse_cycle == 1 {
+    mouse_buf1 = b
+    mouse_cycle = 2
+    return 0
+  }
+  mouse_buf2 = b
+  mouse_cycle = 0
+  mouse_buttons = mouse_buf0 & 0x07
+  let dx = mouse_buf1
+  if (mouse_buf0 & 0x10) != 0 {
+    dx = mouse_buf1 - 256
+  }
+  let dy = mouse_buf2
+  if (mouse_buf0 & 0x20) != 0 {
+    dy = mouse_buf2 - 256
+  }
+  dy = -dy
+  mouse_x = mouse_x + dx
+  if mouse_x < 0 {
+    mouse_x = 0
+  }
+  if mouse_x >= mouse_screen_w {
+    mouse_x = mouse_screen_w - 1
+  }
+  mouse_y = mouse_y + dy
+  if mouse_y < 0 {
+    mouse_y = 0
+  }
+  if mouse_y >= mouse_screen_h {
+    mouse_y = mouse_screen_h - 1
+  }
+  return 1
+}
+
+fn mouse_poll() -> Int {
+  if mouse_ready == 0 {
+    return 0
+  }
+  let count = 0
+  while mouse_has_data() != 0 {
+    let b = inb(PS2_DATA)
+    if mouse_process_byte(b) != 0 {
+      count = count + 1
+    }
+  }
+  return count
+}
+
+fn mouse_left_pressed() -> Int {
+  return mouse_buttons & 0x01
+}
+
+fn mouse_right_pressed() -> Int {
+  return mouse_buttons & 0x02
+}
+
+fn ps2_kbd_init() -> Int {
+  ps2_cmd(0xAE)
+  mouse_wait_input()
+  outb(PS2_DATA, 0xF4)
+  return 0
+}
+
+fn ps2_kbd_has_data() -> Int {
+  let st = inb(PS2_STATUS)
+  if (st & 0x01) != 0 && (st & 0x20) == 0 {
+    return 1
+  }
+  return 0
+}
+
+fn ps2_scancode_ascii(sc: Int) -> Int {
+  if sc == 0x01 { return 27 }
+  if sc == 0x0E { return 8 }
+  if sc == 0x1C { return 10 }
+  if sc == 0x39 { return 32 }
+  if sc == 0x02 { return 49 }
+  if sc == 0x03 { return 50 }
+  if sc == 0x04 { return 51 }
+  if sc == 0x05 { return 52 }
+  if sc == 0x06 { return 53 }
+  if sc == 0x07 { return 54 }
+  if sc == 0x08 { return 55 }
+  if sc == 0x09 { return 56 }
+  if sc == 0x0A { return 57 }
+  if sc == 0x0B { return 48 }
+  if sc == 0x10 { return 113 }
+  if sc == 0x11 { return 119 }
+  if sc == 0x12 { return 101 }
+  if sc == 0x13 { return 114 }
+  if sc == 0x14 { return 116 }
+  if sc == 0x15 { return 121 }
+  if sc == 0x16 { return 117 }
+  if sc == 0x17 { return 105 }
+  if sc == 0x18 { return 111 }
+  if sc == 0x19 { return 112 }
+  if sc == 0x1E { return 97 }
+  if sc == 0x1F { return 115 }
+  if sc == 0x20 { return 100 }
+  if sc == 0x21 { return 102 }
+  if sc == 0x22 { return 103 }
+  if sc == 0x23 { return 104 }
+  if sc == 0x24 { return 106 }
+  if sc == 0x25 { return 107 }
+  if sc == 0x26 { return 108 }
+  if sc == 0x2C { return 122 }
+  if sc == 0x2D { return 120 }
+  if sc == 0x2E { return 99 }
+  if sc == 0x2F { return 118 }
+  if sc == 0x30 { return 98 }
+  if sc == 0x31 { return 110 }
+  if sc == 0x32 { return 109 }
+  if sc == 0x0C { return 45 }
+  if sc == 0x0D { return 61 }
+  if sc == 0x1A { return 91 }
+  if sc == 0x1B { return 93 }
+  if sc == 0x27 { return 59 }
+  if sc == 0x28 { return 39 }
+  if sc == 0x29 { return 96 }
+  if sc == 0x2B { return 92 }
+  if sc == 0x33 { return 44 }
+  if sc == 0x34 { return 46 }
+  if sc == 0x35 { return 47 }
+  return -1
+}
+
+fn ps2_kbd_getchar() -> Int {
+  if ps2_kbd_has_data() == 0 {
+    return -1
+  }
+  let sc = inb(PS2_DATA)
+  if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
+    return -1
+  }
+  if (sc & 0x80) != 0 {
+    return -1
+  }
+  return ps2_scancode_ascii(sc)
+}
+
+// --- component entry --------------------------------------------------------
+fn input_entry(cap_info: Int) -> Int {
+  let port = INPUT_COM1
+  input_serial_cstr(port, "input: component entered")
+  input_serial_nl(port)
+
+  let heap_base = load64(cap_info + 16)
+  let heap_size = load64(cap_info + 24)
+  if heap_base != 0 && heap_size != 0 {
+    input_heap_init(heap_base, heap_size)
+  } else {
+    // Fallback to a small fixed region at 0x600000 (identity-mapped low memory).
+    input_heap_init(0x600000, 0x100000)
+  }
+
+  let sw = load64(cap_info + 48)
+  let sh = load64(cap_info + 56)
+  if sw != 0 { mouse_screen_w = sw }
+  if sh != 0 { mouse_screen_h = sh }
+
+  let shared = load64(cap_info + 32)
+  if shared != 0 {
+    input_chan_bind(shared)
+    input_serial_cstr(port, "input: channel bound at 0x")
+    input_serial_hex(port, shared)
+    input_serial_nl(port)
+  }
+
+  let usb_rc = xhci_init()
+  if usb_rc == 0 {
+    usb_kbd_init()
+  }
+
+  ps2_kbd_init()
+  let mouse_rc = mouse_init()
+  if mouse_rc == 0 {
+    input_serial_cstr(port, "input: PS/2 mouse ready")
+    input_serial_nl(port)
+  }
+
+  let prev_buttons = 0
+  while true {
+    if usb_kbd_ready() != 0 {
+      let key = usb_kbd_getchar()
+      if key >= 0 {
+        input_chan_send(shared, input_event_key(INPUT_EVT_KEY_DOWN, key, 0))
+      }
+    }
+
+    let pkey = ps2_kbd_getchar()
+    if pkey >= 0 {
+      input_chan_send(shared, input_event_key(INPUT_EVT_KEY_DOWN, pkey, 0))
+    }
+
+    let mouse_pkts = mouse_poll()
+    if mouse_pkts != 0 {
+      input_chan_send(shared, input_event_move(mouse_x, mouse_y, mouse_buttons))
+      if mouse_buttons != prev_buttons {
+        input_chan_send(shared, input_event_button(mouse_buttons, mouse_x, mouse_y))
+        prev_buttons = mouse_buttons
+      }
+    }
+
+    hlt()
+  }
+  return 0
+}

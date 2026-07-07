@@ -63,6 +63,11 @@ component KernelRoot {
   capability tables: PageTables(create, activate)
   capability traps: TrapTable(install)
   capability caps: CapabilityTable(create_root, mint_kernel)
+  capability storage: BlockStorage(read, write)
+  capability input: InputDevice(publish)
+  capability network: NetworkDevice(tx, rx, configure)
+  capability display: DisplayDevice(map, present)
+  capability volume: Volume(read, write)
 }
 
 struct KernelState {
@@ -77,6 +82,31 @@ interface BootEntry {
 
 interface DebugConsole {
   fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+interface InputDevice {
+  fn publish(evt: Int) -> void
+}
+
+interface NetworkDevice {
+  fn tx(len: Int) -> void
+  fn rx() -> Int
+  fn configure() -> Int
+}
+
+interface DisplayDevice {
+  fn map(phys: Int, size: Int) -> void
+  fn present() -> void
+}
+
+interface Volume {
+  fn read(fd: Int, buf: Int, count: Int) -> Int
+  fn write(fd: Int, buf: Int, count: Int) -> Int
 }
 
 // --- nanokernel state -------------------------------------------------------
@@ -293,7 +323,7 @@ const COMP_GNOME_TERM_TEXT = 0x00C8D4E0
 const COMP_GNOME_BTN_CLOSE = 0x00C01C28
 const COMP_CURSOR_H = 16
 const COMP_CURSOR_W = 16
-const COMP_WIN_MINIMIZED = 8
+
 
 fn sci_load(port: Int, load_addr: Int) -> Int {
   if load_addr == 0 || load_addr > 0x200000 {

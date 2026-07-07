@@ -1,0 +1,467 @@
+package space.kernel
+
+const POSIX_RPC_OFF_REQ = 0
+const POSIX_RPC_OFF_RESP = 8
+const POSIX_RPC_OFF_NUM = 16
+const POSIX_RPC_OFF_A0 = 24
+const POSIX_RPC_OFF_A1 = 32
+const POSIX_RPC_OFF_A2 = 40
+const POSIX_RPC_OFF_A3 = 48
+const POSIX_RPC_OFF_A4 = 56
+const POSIX_RPC_OFF_A5 = 64
+const POSIX_RPC_OFF_RES = 72
+const POSIX_RPC_SIZE = 80
+
+const LINUX_SYS_READ = 0
+const LINUX_SYS_WRITE = 1
+const LINUX_SYS_OPEN = 2
+const LINUX_SYS_CLOSE = 3
+const LINUX_SYS_STAT = 4
+const LINUX_SYS_FSTAT = 5
+const LINUX_SYS_LSEEK = 8
+const LINUX_SYS_MMAP = 9
+const LINUX_SYS_MUNMAP = 11
+const LINUX_SYS_BRK = 12
+const LINUX_SYS_GETPID = 39
+const LINUX_SYS_FORK = 57
+const LINUX_SYS_EXECVE = 59
+const LINUX_SYS_EXIT = 60
+const LINUX_SYS_WAIT4 = 61
+const LINUX_SYS_KILL = 62
+const LINUX_SYS_GETCWD = 79
+const LINUX_SYS_CHDIR = 80
+
+const LINUX_O_RDONLY = 0
+const LINUX_O_WRONLY = 1
+const LINUX_O_RDWR = 2
+const LINUX_O_CREAT = 64
+const LINUX_O_TRUNC = 512
+
+const LINUX_EPERM = -1
+const LINUX_ENOENT = -2
+const LINUX_EIO = -5
+const LINUX_EBADF = -9
+const LINUX_ENOMEM = -12
+const LINUX_EACCES = -13
+const LINUX_EFAULT = -14
+const LINUX_EBUSY = -16
+const LINUX_EEXIST = -17
+const LINUX_ENOEXEC = -8
+const LINUX_ENOSPC = -28
+const LINUX_ENOSYS = -38
+
+const LINUX_STAT_SIZE = 144
+const LINUX_STAT_OFF_DEV = 0
+const LINUX_STAT_OFF_INO = 8
+const LINUX_STAT_OFF_NLINK = 16
+const LINUX_STAT_OFF_MODE = 24
+const LINUX_STAT_OFF_SIZE = 48
+const LINUX_STAT_OFF_BLKSIZE = 56
+const LINUX_STAT_OFF_BLOCKS = 64
+
+const LINUX_S_IFREG = 0x81A4
+const LINUX_ELF_MAGIC = 0x00010102464C457F
+const LINUX_ELF_LOAD_ADDR = 0x140000
+
+const LINUX_EINVAL = -22
+const LINUX_ESPIPE = -29
+const LINUX_EAGAIN = -11
+const LINUX_ECHILD = -10
+const LINUX_ESRCH = -3
+
+var posix_cwd: Int = 0
+var posix_brk_current: Int = 0
+
+fn posix_init() -> void {
+  posix_cwd = "/"
+  posix_brk_current = 0
+  return
+}
+
+fn posix_fd_valid(fd: Int) -> Int {
+  return vfs_fd_valid(fd)
+}
+
+fn posix_sys_read(fd: Int, buf: Int, count: Int) -> Int {
+  return vfs_read(fd, buf, count)
+}
+
+fn posix_sys_write(fd: Int, buf: Int, count: Int) -> Int {
+  return vfs_write(fd, buf, count)
+}
+
+fn posix_sys_open(pathname: Int, flags: Int, mode: Int) -> Int {
+  return vfs_open(pathname, flags)
+}
+
+fn posix_sys_close(fd: Int) -> Int {
+  return vfs_close(fd)
+}
+
+fn posix_sys_lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  return vfs_lseek(fd, offset, whence)
+}
+
+fn posix_sys_stat(path: Int, statbuf: Int) -> Int {
+  let sfbuf = alloc(64)
+  if sparkfs_stat(path, sfbuf) != 0 {
+    return LINUX_ENOENT
+  }
+  let file_size = load64(sfbuf + SF_ST_SIZE)
+  let ino = sf_lookup_path(path)
+  let i = 0
+  while i < LINUX_STAT_SIZE {
+    store8(statbuf + i, 0)
+    i = i + 1
+  }
+  store64(statbuf + LINUX_STAT_OFF_DEV, 0)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
+  store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
+  store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
+  store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
+  store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
+  let blocks = (file_size + 511) / 512
+  store64(statbuf + LINUX_STAT_OFF_BLOCKS, blocks)
+  return 0
+}
+
+fn posix_sys_fstat(fd: Int, statbuf: Int) -> Int {
+  if posix_fd_valid(fd) == 0 {
+    return LINUX_EBADF
+  }
+  if fd < 3 {
+    let i = 0
+    while i < LINUX_STAT_SIZE {
+      store8(statbuf + i, 0)
+      i = i + 1
+    }
+    store64(statbuf + LINUX_STAT_OFF_INO, fd + 1)
+    store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
+    store32(statbuf + LINUX_STAT_OFF_MODE, 0x2190)
+    store64(statbuf + LINUX_STAT_OFF_SIZE, 0)
+    store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
+    return 0
+  }
+  let base = vfs_fd_table + fd * 32
+  let fpath = load64(base + 0)
+  let sfbuf = alloc(64)
+  if sparkfs_stat(fpath, sfbuf) != 0 {
+    return LINUX_EIO
+  }
+  let file_size = load64(sfbuf + SF_ST_SIZE)
+  let ino = sf_lookup_path(fpath)
+  let i = 0
+  while i < LINUX_STAT_SIZE {
+    store8(statbuf + i, 0)
+    i = i + 1
+  }
+  store64(statbuf + LINUX_STAT_OFF_DEV, 0)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
+  store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
+  store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
+  store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
+  store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
+  let blocks = (file_size + 511) / 512
+  store64(statbuf + LINUX_STAT_OFF_BLOCKS, blocks)
+  return 0
+}
+
+fn posix_sys_getpid() -> Int {
+  return current_task
+}
+
+fn posix_sys_exit(code: Int) -> Int {
+  let port = com1()
+  serial_write_cstr(port, "posix: sys_exit(code=")
+  serial_write_dec_wide(port, code)
+  serial_write_cstr(port, ") from pid ")
+  serial_write_dec_wide(port, current_task)
+  serial_nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return 0
+}
+
+fn posix_sys_fork() -> Int {
+  let pid = proc_create("posix-fork", proc_dummy_entry, cap_serial())
+  if pid < 0 {
+    return LINUX_EAGAIN
+  }
+  return pid
+}
+
+fn posix_load16(addr: Int) -> Int {
+  return load8(addr) | (load8(addr + 1) << 8)
+}
+
+fn posix_elf_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
+  if size < 120 {
+    return LINUX_ENOEXEC
+  }
+  if load64(image + 0) != LINUX_ELF_MAGIC {
+    return LINUX_ENOEXEC
+  }
+  if posix_load16(image + 16) != 2 {
+    return LINUX_ENOEXEC
+  }
+  if posix_load16(image + 18) != 0x3E {
+    return LINUX_ENOEXEC
+  }
+  let entry = load64(image + 24)
+  let phoff = load64(image + 32)
+  let phentsize = posix_load16(image + 54)
+  let phnum = posix_load16(image + 56)
+  if entry == 0 || phoff == 0 || phentsize < 56 || phnum == 0 {
+    return LINUX_ENOEXEC
+  }
+  let i = 0
+  while i < phnum {
+    let ph = image + phoff + i * phentsize
+    if ph + 56 > image + size {
+      return LINUX_ENOEXEC
+    }
+    if load32(ph + 0) == 1 {
+      let off = load64(ph + 8)
+      let vaddr = load64(ph + 16)
+      let filesz = load64(ph + 32)
+      let memsz = load64(ph + 40)
+      if off + filesz > size {
+        return LINUX_ENOEXEC
+      }
+      if entry >= vaddr && entry < vaddr + memsz {
+        serial_write_cstr(port, "posix: execve loading ELF from ")
+        serial_write_cstr(port, path)
+        serial_nl(port)
+        return invoke1(entry, 0)
+      }
+    }
+    i = i + 1
+  }
+  return LINUX_ENOEXEC
+}
+
+fn posix_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
+  if size < 64 {
+    return LINUX_ENOEXEC
+  }
+  let magic = load64(image + 0)
+  if magic == LINUX_ELF_MAGIC {
+    return posix_elf_exec_image(port, image, size, path)
+  }
+  if magic != 0x5343490000000001 {
+    return LINUX_ENOEXEC
+  }
+  serial_write_cstr(port, "posix: execve loading SCI from ")
+  serial_write_cstr(port, path)
+  serial_nl(port)
+  return sci_load(port, image)
+}
+
+fn posix_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
+  let ino = sf_lookup_path(path)
+  if ino < 0 {
+    return LINUX_ENOENT
+  }
+  let addr = sf_inode_addr(ino)
+  let file_size = load64(addr + SF_IN_SIZE)
+  if file_size < 64 {
+    return LINUX_ENOEXEC
+  }
+  let buf = load_arena_alloc(file_size)
+  let got = sparkfs_read(path, buf, file_size)
+  if got < file_size {
+    return LINUX_EIO
+  }
+  let port = com1()
+  return posix_exec_image(port, buf, file_size, path)
+}
+
+fn posix_sys_wait4(pid: Int, wstatus: Int, options: Int, rusage: Int) -> Int {
+  if pid < 0 || pid >= proc_count {
+    return LINUX_ECHILD
+  }
+  let code = proc_wait(pid)
+  if wstatus != 0 {
+    store32(wstatus, code & 0xFF)
+  }
+  return pid
+}
+
+fn posix_sys_kill(pid: Int, sig: Int) -> Int {
+  if pid < 0 || pid >= proc_count {
+    return LINUX_ESRCH
+  }
+  if sig == 9 || sig == 15 {
+    proc_kill(pid)
+    return 0
+  }
+  return 0
+}
+
+fn posix_sys_getcwd(buf: Int, size: Int) -> Int {
+  let cwd = posix_cwd
+  let i = 0
+  while load8(cwd + i) != 0 {
+    if i >= size - 1 {
+      return 0
+    }
+    store8(buf + i, load8(cwd + i))
+    i = i + 1
+  }
+  store8(buf + i, 0)
+  return buf
+}
+
+fn posix_sys_chdir(path: Int) -> Int {
+  let c = load8(path + 0)
+  if c == 47 || c == 0 {
+    posix_cwd = "/"
+    return 0
+  }
+  let found = fs_open_path(path)
+  if found >= 0 {
+    posix_cwd = path
+    return 0
+  }
+  return LINUX_ENOENT
+}
+
+fn posix_sys_brk(addr: Int) -> Int {
+  if addr == 0 {
+    if posix_brk_current == 0 {
+      posix_brk_current = heap_next
+    }
+    return posix_brk_current
+  }
+  if addr < posix_brk_current {
+    return posix_brk_current
+  }
+  posix_brk_current = addr
+  return posix_brk_current
+}
+
+fn posix_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset: Int) -> Int {
+  let aligned = (length + 4095) & -4096
+  let p = alloc(aligned)
+  let i = 0
+  while i < aligned {
+    store8(p + i, 0)
+    i = i + 1
+  }
+  if fd >= 3 && posix_fd_valid(fd) != 0 {
+    let base = vfs_fd_table + fd * 32
+    let fpath = load64(base + 0)
+    let file_size = vfs_sparkfs_file_size(fpath)
+    let remaining = file_size - offset
+    if remaining < 0 {
+      remaining = 0
+    }
+    if remaining > aligned {
+      remaining = aligned
+    }
+    if remaining > 0 {
+      sparkfs_pread(fpath, p, remaining, offset)
+    }
+  }
+  return p
+}
+
+fn posix_sys_munmap(addr: Int, length: Int) -> Int {
+  let start = addr
+  let end = addr + length
+  let page = (start + 4095) & -4096
+  while page < end {
+    frame_free(page)
+    page = page + 4096
+  }
+  return 0
+}
+
+fn posix_dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int) -> Int {
+  if num == LINUX_SYS_READ {
+    return posix_sys_read(a0, a1, a2)
+  }
+  if num == LINUX_SYS_WRITE {
+    return posix_sys_write(a0, a1, a2)
+  }
+  if num == LINUX_SYS_OPEN {
+    return posix_sys_open(a0, a1, a2)
+  }
+  if num == LINUX_SYS_CLOSE {
+    return posix_sys_close(a0)
+  }
+  if num == LINUX_SYS_STAT {
+    return posix_sys_stat(a0, a1)
+  }
+  if num == LINUX_SYS_FSTAT {
+    return posix_sys_fstat(a0, a1)
+  }
+  if num == LINUX_SYS_LSEEK {
+    return posix_sys_lseek(a0, a1, a2)
+  }
+  if num == LINUX_SYS_MMAP {
+    return posix_sys_mmap(a0, a1, a2, a3, a4, a5)
+  }
+  if num == LINUX_SYS_MUNMAP {
+    return posix_sys_munmap(a0, a1)
+  }
+  if num == LINUX_SYS_BRK {
+    return posix_sys_brk(a0)
+  }
+  if num == LINUX_SYS_GETPID {
+    return posix_sys_getpid()
+  }
+  if num == LINUX_SYS_FORK {
+    return posix_sys_fork()
+  }
+  if num == LINUX_SYS_EXECVE {
+    return posix_sys_execve(a0, a1, a2)
+  }
+  if num == LINUX_SYS_EXIT {
+    return posix_sys_exit(a0)
+  }
+  if num == LINUX_SYS_WAIT4 {
+    return posix_sys_wait4(a0, a1, a2, a3)
+  }
+  if num == LINUX_SYS_KILL {
+    return posix_sys_kill(a0, a1)
+  }
+  if num == LINUX_SYS_GETCWD {
+    return posix_sys_getcwd(a0, a1)
+  }
+  if num == LINUX_SYS_CHDIR {
+    return posix_sys_chdir(a0)
+  }
+  let port = com1()
+  serial_write_cstr(port, "posix: unknown syscall ")
+  serial_write_dec_wide(port, num)
+  serial_nl(port)
+  return LINUX_ENOSYS
+}
+
+fn posix_service(shared_page: Int) -> Int {
+  let num = load64(shared_page + POSIX_RPC_OFF_NUM)
+  let a0 = load64(shared_page + POSIX_RPC_OFF_A0)
+  let a1 = load64(shared_page + POSIX_RPC_OFF_A1)
+  let a2 = load64(shared_page + POSIX_RPC_OFF_A2)
+  let a3 = load64(shared_page + POSIX_RPC_OFF_A3)
+  let a4 = load64(shared_page + POSIX_RPC_OFF_A4)
+  let a5 = load64(shared_page + POSIX_RPC_OFF_A5)
+  let res = posix_dispatch(num, a0, a1, a2, a3, a4, a5)
+  store64(shared_page + POSIX_RPC_OFF_RES, res)
+  store64(shared_page + POSIX_RPC_OFF_RESP, 1)
+  store64(shared_page + POSIX_RPC_OFF_REQ, 0)
+  return 0
+}
+
+fn posix_entry(cap_info: Int) -> Int {
+  let shared_page = load64(cap_info + 16)
+  posix_init()
+  if shared_page != 0 {
+    store64(shared_page + POSIX_RPC_OFF_REQ, 0)
+    store64(shared_page + POSIX_RPC_OFF_RESP, 0)
+  }
+  return 0
+}
