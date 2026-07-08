@@ -2,29 +2,41 @@ package space.kernel
 
 // RTC-based wall-clock time service.
 // Reads CMOS RTC registers and converts to Unix timestamp.
-//
-// NOTE: The Inauguration x86_64 backend has a calling convention bug where
-// function calls clobber local variables. This module avoids ALL function
-// calls during RTC reading and timestamp computation, using only inline
-// outb/inb and store64/load64 builtins.
 
 fn rtc_read(reg: Int) -> Int {
   outb(0x70, reg)
   return inb(0x71)
 }
 
-// Static buffer for RTC values — 16 Ints (128 bytes)
-// Using a static array avoids alloc() which clobbers registers.
-var rtc_buf_0: Int = 0
-var rtc_buf_1: Int = 0
-var rtc_buf_2: Int = 0
-var rtc_buf_3: Int = 0
-var rtc_buf_4: Int = 0
-var rtc_buf_5: Int = 0
-var rtc_buf_6: Int = 0
-var rtc_buf_7: Int = 0
+fn bcd_to_bin(bcd: Int) -> Int {
+  return (bcd & 0x0F) + ((bcd / 16) * 10)
+}
 
-// Formatted time fields
+fn is_leap_year(y: Int) -> Int {
+  if (y % 4) != 0 { return 0 }
+  if (y % 100) != 0 { return 1 }
+  if (y % 400) == 0 { return 1 }
+  return 0
+}
+
+fn days_before_month(mo: Int, leap: Int) -> Int {
+  let dbm = 0
+  if mo > 1  { dbm = dbm + 31 }
+  if mo > 2  { if leap != 0 { dbm = dbm + 29 } else { dbm = dbm + 28 } }
+  if mo > 3  { dbm = dbm + 31 }
+  if mo > 4  { dbm = dbm + 30 }
+  if mo > 5  { dbm = dbm + 31 }
+  if mo > 6  { dbm = dbm + 30 }
+  if mo > 7  { dbm = dbm + 31 }
+  if mo > 8  { dbm = dbm + 31 }
+  if mo > 9  { dbm = dbm + 30 }
+  if mo > 10 { dbm = dbm + 31 }
+  if mo > 11 { dbm = dbm + 30 }
+  return dbm
+}
+
+// Formatted time fields — set by time_wallclock, read by time_print.
+// ponytail: globals instead of struct return until struct return works.
 var rtc_ts: Int = 0
 var rtc_y: Int = 0
 var rtc_mo: Int = 0
@@ -38,45 +50,25 @@ fn time_init() -> void {
 }
 
 fn time_wallclock() -> Int {
-  // Read RTC registers using inline I/O — no function calls.
-  outb(0x70, 0x00)
-  rtc_buf_0 = inb(0x71)
-  outb(0x70, 0x02)
-  rtc_buf_1 = inb(0x71)
-  outb(0x70, 0x04)
-  rtc_buf_2 = inb(0x71)
-  outb(0x70, 0x07)
-  rtc_buf_3 = inb(0x71)
-  outb(0x70, 0x08)
-  rtc_buf_4 = inb(0x71)
-  outb(0x70, 0x09)
-  rtc_buf_5 = inb(0x71)
-  outb(0x70, 0x32)
-  rtc_buf_6 = inb(0x71)
-  outb(0x70, 0x0B)
-  rtc_buf_7 = inb(0x71)
+  // Read RTC registers
+  let s = rtc_read(0x00)
+  let m = rtc_read(0x02)
+  let h = rtc_read(0x04)
+  let d = rtc_read(0x07)
+  let mo = rtc_read(0x08)
+  let y = rtc_read(0x09)
+  let c = rtc_read(0x32)
+  let rb = rtc_read(0x0B)
 
-  // Reload from globals
-  let s = rtc_buf_0
-  let m = rtc_buf_1
-  let h = rtc_buf_2
-  let d = rtc_buf_3
-  let mo = rtc_buf_4
-  let y = rtc_buf_5
-  let c = rtc_buf_6
-  let rb = rtc_buf_7
-
-  // BCD to binary (inlined)
+  // BCD to binary
   if (rb & 0x04) == 0 {
-    s = (s & 0x0F) + ((s / 16) * 10)
-    m = (m & 0x0F) + ((m / 16) * 10)
+    s = bcd_to_bin(s)
+    m = bcd_to_bin(m)
     h = ((h & 0x7F) & 0x0F) + (((h & 0x7F) / 16) * 10) | (h & 0x80)
-    d = (d & 0x0F) + ((d / 16) * 10)
-    mo = (mo & 0x0F) + ((mo / 16) * 10)
-    y = (y & 0x0F) + ((y / 16) * 10)
-    if c != 0 {
-      c = (c & 0x0F) + ((c / 16) * 10)
-    }
+    d = bcd_to_bin(d)
+    mo = bcd_to_bin(mo)
+    y = bcd_to_bin(y)
+    if c != 0 { c = bcd_to_bin(c) }
   }
 
   // 12-hour to 24-hour
@@ -94,25 +86,14 @@ fn time_wallclock() -> Int {
   if c != 0 {
     y = c * 100 + y
   } else {
-    if y < 80 {
-      y = y + 2000
-    } else {
-      y = y + 1900
-    }
+    if y < 80 { y = y + 2000 } else { y = y + 1900 }
   }
 
-  // Days from 1970 to Jan 1 of y (inlined leap year)
+  // Days from 1970 to Jan 1 of y
   let total_days = 0
   let i = 1970
   while i < y {
-    let leap = 0
-    if (i % 4) == 0 {
-      leap = 1
-      if (i % 100) == 0 {
-        if (i % 400) != 0 { leap = 0 }
-      }
-    }
-    if leap != 0 {
+    if is_leap_year(i) != 0 {
       total_days = total_days + 366
     } else {
       total_days = total_days + 365
@@ -120,40 +101,13 @@ fn time_wallclock() -> Int {
     i = i + 1
   }
 
-  // Leap flag for y
-  let y_leap = 0
-  if (y % 4) == 0 {
-    y_leap = 1
-    if (y % 100) == 0 {
-      if (y % 400) != 0 { y_leap = 0 }
-    }
-  }
-
-  // Days before month
-  let dbm = 0
-  if mo > 1 { dbm = dbm + 31 }
-  if mo > 2 {
-    if y_leap != 0 {
-      dbm = dbm + 29
-    } else {
-      dbm = dbm + 28
-    }
-  }
-  if mo > 3 { dbm = dbm + 31 }
-  if mo > 4 { dbm = dbm + 30 }
-  if mo > 5 { dbm = dbm + 31 }
-  if mo > 6 { dbm = dbm + 30 }
-  if mo > 7 { dbm = dbm + 31 }
-  if mo > 8 { dbm = dbm + 31 }
-  if mo > 9 { dbm = dbm + 30 }
-  if mo > 10 { dbm = dbm + 31 }
-  if mo > 11 { dbm = dbm + 30 }
-
+  // Days this year
+  let dbm = days_before_month(mo, is_leap_year(y))
   total_days = total_days + dbm + (d - 1)
 
   let ts = (total_days * 86400) + (h * 3600) + (m * 60) + s
 
-  // Store formatted fields for time_print (using globals)
+  // Store formatted fields for time_print
   rtc_ts = ts
   rtc_y = y
   rtc_mo = mo
@@ -168,7 +122,7 @@ fn time_wallclock() -> Int {
 fn time_print(port: Int) -> void {
   let ts = time_wallclock()
 
-  // Reload from globals (function call may have clobbered registers)
+  // Reload from globals (inter-function data transfer)
   let y = rtc_y
   let mo = rtc_mo
   let d = rtc_d
