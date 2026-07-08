@@ -317,7 +317,10 @@ fn shell(port: Int) -> void {
     } else if line_eq("halt") != 0 {
       serial_write_cstr(port, "  halting on request")
       serial_nl(port)
-      return
+      outb(0xf4, 0)      // QEMU isa-debug-exit (harmless if absent)
+      outw(0x604, 0x2000) // QEMU ACPI power-off
+      cli()
+      while true { hlt() }
     } else if line_eq("uptime") != 0 {
       serial_write_cstr(port, "  ")
       serial_write_dec_wide(port, ticks)

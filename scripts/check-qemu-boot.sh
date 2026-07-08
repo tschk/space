@@ -25,6 +25,7 @@ mkfifo "$FIFO"
 # Keep fd 3 open for writing to the FIFO so QEMU's stdin does not see EOF.
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
   -rtc base=utc \
+  -device isa-debug-exit,iobase=0xf4 \
   -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
 QPID=$!
 exec 3>"$FIFO"

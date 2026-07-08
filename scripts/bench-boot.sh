@@ -56,6 +56,7 @@ for i in $(seq 1 "$ITERATIONS"); do
   t0=$(date +%s%N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1e9))')
   qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
     -rtc base=utc \
+    -device isa-debug-exit,iobase=0xf4 \
     -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
   QPID=$!
   exec 3>"$FIFO"
@@ -88,6 +89,7 @@ for i in $(seq 1 "$ITERATIONS"); do
   t0=$(date +%s%N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1e9))')
   qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
     -rtc base=utc \
+    -device isa-debug-exit,iobase=0xf4 \
     -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
   QPID=$!
   exec 3>"$FIFO"
@@ -97,26 +99,25 @@ for i in $(seq 1 "$ITERATIONS"); do
     kill -0 "$QPID" 2>/dev/null || break
     sleep 0.01
   done
-  # Run commands (skip libc — pre-existing printf crash on native backend)
+  # Send commands immediately (no sleep delays), wait for halt
   echo "linux" >&3
-  sleep 0.3
   echo "vfs" >&3
-  sleep 0.2
   echo "time" >&3
-  sleep 0.2
   echo "halt" >&3
-  exec 3>&-
-  # Wait for halt to return (graceful exit) with timeout
-  for _ in $(seq 1 50); do
+  # Wait for halt message (output-driven timing, no sleeps)
+  for _ in $(seq 1 300); do
+    grep -qF "halting on request" "$SERIAL" 2>/dev/null && break
     kill -0 "$QPID" 2>/dev/null || break
-    sleep 0.1
+    sleep 0.01
   done
-  kill "$QPID" 2>/dev/null || true
-  wait "$QPID" 2>/dev/null || true
   t1=$(date +%s%N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1e9))')
   elapsed_ms=$(( (t1 - t0) / 1000000 ))
   halt_times+=("$elapsed_ms")
   printf "  iter %d: %d ms\n" "$i" "$elapsed_ms"
+  # Clean up
+  exec 3>&- 2>/dev/null || true
+  kill "$QPID" 2>/dev/null || true
+  wait "$QPID" 2>/dev/null || true
   rm -f "$FIFO"
   sleep 0.2
 done

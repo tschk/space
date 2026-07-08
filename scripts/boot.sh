@@ -134,6 +134,7 @@ QEMU_ARGS=(
   -kernel "$KERNEL_IMAGE"
   -m 256M
   -no-reboot
+  -device isa-debug-exit,iobase=0xf4
   -serial stdio
 )
 
