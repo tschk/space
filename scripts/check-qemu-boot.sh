@@ -43,11 +43,19 @@ for _ in $(seq 1 100); do
 done
 # Send 'fb' command to show framebuffer info.
 echo "linuxelf" >&3
-for _ in $(seq 1 100); do
+
+for _ in $(seq 1 100);
+do
   grep -qF "linux: ELF execve probe" "$SERIAL" 2>/dev/null && break
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
+
+echo "vfs" >&3
+sleep 0.5
+
+
+
 echo "fb" >&3
 sleep 0.5
 echo "fetch" >&3
@@ -73,6 +81,7 @@ for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "linux: open(hello.txt" \
          "linux: personality demo complete" \
          "linux: ELF execve probe = -8" \
+         "vfs self-test passed" \
          "SpaceOS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi

@@ -212,7 +212,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm write read mv stat libc usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
+      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm write read mv stat libc vfs usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
       serial_nl(port)
 
     } else if line_eq("snapshot") != 0 {
@@ -429,6 +429,14 @@ fn shell(port: Int) -> void {
         serial_write_cstr(port, "  libc self-test passed")
       } else {
         serial_write_cstr(port, "  libc self-test FAILED")
+      }
+      serial_nl(port)
+    } else if line_eq("vfs") != 0 {
+      let rc = vfs_selftest()
+      if rc != 0 {
+        serial_write_cstr(port, "  vfs self-test passed")
+      } else {
+        serial_write_cstr(port, "  vfs self-test FAILED")
       }
       serial_nl(port)
     } else if line_eq("usb") != 0 {

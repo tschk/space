@@ -1,0 +1,48 @@
+fn vfs_selftest() -> Int {
+  let port = com1()
+  serial_write_cstr(port, "vfs: running self-test")
+  serial_nl(port)
+  let pass = 1
+
+  // Save the current state of fd_table
+  let old_table = vfs_fd_table
+
+  // Re-initialize for isolated testing
+  vfs_fd_table_alloc()
+
+  // Test 1: fd allocation logic
+  let fd1 = vfs_fd_alloc()
+  pass = pass & libc_check(fd1 == 3, "vfs_fd_alloc first available is 3")
+
+  // Set fd 3 as in-use (path pointer != -1)
+  let base3 = vfs_fd_table + 3 * 32
+  store64(base3 + 0, 0x1234) // dummy path pointer
+
+  let fd2 = vfs_fd_alloc()
+  pass = pass & libc_check(fd2 == 4, "vfs_fd_alloc next available is 4")
+
+  // Test 2: validity checks
+  pass = pass & libc_check(vfs_fd_valid(-1) == 0, "vfs_fd_valid rejects negative")
+  pass = pass & libc_check(vfs_fd_valid(VFS_MAX_FDS) == 0, "vfs_fd_valid rejects out of bounds")
+  pass = pass & libc_check(vfs_fd_valid(0) == 1, "vfs_fd_valid accepts stdin")
+  pass = pass & libc_check(vfs_fd_valid(1) == 1, "vfs_fd_valid accepts stdout")
+  pass = pass & libc_check(vfs_fd_valid(2) == 1, "vfs_fd_valid accepts stderr")
+
+  pass = pass & libc_check(vfs_fd_valid(3) == 1, "vfs_fd_valid accepts in-use fd")
+  pass = pass & libc_check(vfs_fd_valid(4) == 0, "vfs_fd_valid rejects unused fd")
+
+  // Test 3: fd clear logic
+  vfs_fd_clear(3)
+  pass = pass & libc_check(vfs_fd_valid(3) == 0, "vfs_fd_valid rejects cleared fd")
+  pass = pass & libc_check(load64(base3 + 0) == -1, "vfs_fd_clear sets path to -1")
+  pass = pass & libc_check(load64(base3 + 8) == 0, "vfs_fd_clear resets offset")
+
+  // Restore original state (just in case other tests depend on it)
+  // Or rather, we just leak the small allocation and restore pointer
+  vfs_fd_table = old_table
+
+  if pass != 0 {
+    return 1
+  }
+  return 0
+}
