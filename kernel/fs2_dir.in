@@ -28,6 +28,10 @@ fn sf_dir_find(dir_ino: Int, name: Int, out_ino: Int) -> Int {
           let i = 0
           while i < name_len {
             let a = load8(name + i)
+            if a == 0 {
+              is_match = 0
+              break
+            }
             let b = load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i)
             if a != b {
               is_match = 0
