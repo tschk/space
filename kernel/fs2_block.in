@@ -165,10 +165,6 @@ fn sf_bitmap_byte(bno: Int) -> Int {
   return bno >> 3
 }
 
-fn sf_bitmap_bit(bno: Int) -> Int {
-  return 1 << (bno & 7)
-}
-
 fn sf_mark_used(bno: Int) -> void {
   let addr = sf_bitmap + (bno >> 3)
   let b = load8(addr)
