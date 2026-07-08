@@ -18,8 +18,14 @@ fn linux_init() -> void {
   if posix_active != 0 {
     return
   }
-  posix_domain = 0
-  posix_shared_page = alloc(4096)
+  posix_domain = domain_create()
+  if posix_domain == 0 {
+    posix_domain = 1
+  }
+  posix_shared_page = domain_create_shared_page(0, posix_domain, LINUX_POSIX_VIRT, LINUX_POSIX_VIRT)
+  if posix_shared_page == 0 {
+    posix_shared_page = alloc(4096)
+  }
   let i = 0
   while i < 512 {
     store64(posix_shared_page + i * 8, 0)
