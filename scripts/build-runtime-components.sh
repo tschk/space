@@ -4,6 +4,10 @@ set -euo pipefail
 # build-runtime-components.sh — Compile Space display/input components into
 # SCI binaries and assemble them into a combined boot image after the nanokernel.
 #
+# Components are built as static-lib ELF objects, linked with ld.lld using a
+# custom linker script, converted to raw binary with objcopy, and then prepended
+# with a 32-byte SCI manifest.
+#
 # The kernel probes fixed physical addresses for SCI manifests:
 #   display component at 0x1a0000
 #   input component   at 0x1e0000
@@ -17,10 +21,14 @@ INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-runtime}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
+SCI_MAGIC=0x5343490000000001
 DISPLAY_PHYS=0x1a0000
 INPUT_PHYS=0x1e0000
 DISPLAY_ENTRY=0x40000020
 INPUT_ENTRY=0x50000020
+
+OBJCOPY="${OBJCOPY:-llvm-objcopy}"
+command -v "$OBJCOPY" >/dev/null 2>&1 || OBJCOPY="objcopy"
 
 mkdir -p "$BUILD_DIR"
 
@@ -35,13 +43,42 @@ NASM="${NASM:-nasm}"
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
 
-"$IN" compile --path "$SPACE_DIR/components/display.in" --entry display_entry \
-  --target native --target-triple x86_64-unknown-none --emit sci \
-  --base "$DISPLAY_ENTRY" --out "$BUILD_DIR/display.sci" >/dev/null
+build_component() {
+  local name=$1
+  local src=$2
+  local entry=$3
+  local base=$4
+  local out=$5
 
-"$IN" compile --path "$SPACE_DIR/components/input.in" --entry input_entry \
-  --target native --target-triple x86_64-unknown-none --emit sci \
-  --base "$INPUT_ENTRY" --out "$BUILD_DIR/input.sci" >/dev/null
+  echo "[component] building $name at entry 0x$(printf '%x' "$base")..."
+
+  "$IN" compile --path "$src" --entry "$entry" \
+    --target native --target-triple x86_64-unknown-none --linkage static-lib \
+    --base "$base" --out "$BUILD_DIR/$name.o" >/dev/null
+
+  ld.lld -e "$entry" --defsym BASE="$base" \
+    -T "$SPACE_DIR/scripts/runtime-component.ld" \
+    -o "$BUILD_DIR/$name.elf" "$BUILD_DIR/$name.o"
+
+  "$OBJCOPY" -O binary "$BUILD_DIR/$name.elf" "$BUILD_DIR/$name.body"
+
+  python3 - "$BUILD_DIR/$name.body" "$base" "$out" "$SCI_MAGIC" <<'PY'
+import sys, struct, os
+body_path, base_str, out_path, magic_str = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+base = int(base_str, 0)
+magic = int(magic_str, 0)
+body = open(body_path, "rb").read()
+pages = (len(body) + 4095) // 4096
+image_size = pages * 4096
+body = body + b"\x00" * (image_size - len(body))
+# entry point is the load base; the 32-byte manifest precedes it.
+manifest = struct.pack("<QQQQ", magic, 1, base, 32 + len(body))
+open(out_path, "wb").write(manifest + body)
+PY
+}
+
+build_component "display" "$SPACE_DIR/components/display.in" display_entry "$DISPLAY_ENTRY" "$BUILD_DIR/display.sci"
+build_component "input" "$SPACE_DIR/components/input.in" input_entry "$INPUT_ENTRY" "$BUILD_DIR/input.sci"
 
 echo "[3/3] Assembling combined boot image..."
 python3 - "$BUILD_DIR" "$DISPLAY_PHYS" "$INPUT_PHYS" <<'PY'
