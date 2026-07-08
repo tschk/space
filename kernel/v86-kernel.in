@@ -1407,8 +1407,12 @@ fn cstr_eq(a: Int, b: Int) -> Bool {
 }
 
 fn cstr_copy(dst: Int, src: Int, max: Int) -> Int {
+  if max <= 0 {
+    return 0
+  }
   let i = 0
-  while i < max {
+  let limit = max - 1
+  while i < limit {
     let ch = load8(src + i)
     store8(dst + i, ch)
     if ch == 0 {
@@ -1416,8 +1420,8 @@ fn cstr_copy(dst: Int, src: Int, max: Int) -> Int {
     }
     i = i + 1
   }
-  store8(dst + max, 0)
-  return max
+  store8(dst + limit, 0)
+  return limit
 }
 
 fn arg_at(idx: Int) -> Int {
