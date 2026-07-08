@@ -1,344 +1,68 @@
 package space.kernel
 
+import "../components/posix.in"
+
 // Linux personality layer for the Space nanokernel.
-// Translates Linux x86_64 syscall numbers into Space kernel primitives,
-// providing a POSIX-compatible interface on top of the native component model.
-//
-// This is the first OS personality (Phase 5). It demonstrates that Space can
-// host foreign ABIs by mapping their conventions onto the underlying
-// capability/domain/channel substrate without modifying the nanokernel.
-//
-// Linux x86_64 syscall numbers (subset):
-//   0  read        1  write       2  open        3  close
-//   4  stat        5  fstat       8  lseek       9  mmap
-//   11 munmap      12 brk         39 getpid      57 fork
-//   59 execve      60 exit        61 wait4       62 kill
-//   79 getcwd      80 chdir
-//
-// File descriptor table:
-//   fd 0 = stdin (serial)
-//   fd 1 = stdout (serial)
-//   fd 2 = stderr (serial)
-//   fd 3+ = open files on the Space filesystem
-//
-// FD table entry (32 bytes):
-//   [0..4]  file index in fs table (-1 = unused)
-//   [8..16] current file offset
-//   [16..24] flags (O_RDONLY=0, O_WRONLY=1, O_RDWR=2)
-//   [24..32] reserved
+// This file is now a thin dispatch wrapper over the extracted Posix component.
+// The component runs in its own domain and services POSIX syscall requests over
+// a cross-domain shared page at LINUX_POSIX_VIRT.
 
-// --- Linux syscall number constants -----------------------------------------
-const LINUX_SYS_READ = 0
-const LINUX_SYS_WRITE = 1
-const LINUX_SYS_OPEN = 2
-const LINUX_SYS_CLOSE = 3
-const LINUX_SYS_STAT = 4
-const LINUX_SYS_FSTAT = 5
-const LINUX_SYS_LSEEK = 8
-const LINUX_SYS_MMAP = 9
-const LINUX_SYS_MUNMAP = 11
-const LINUX_SYS_BRK = 12
-const LINUX_SYS_GETPID = 39
-const LINUX_SYS_FORK = 57
-const LINUX_SYS_EXECVE = 59
-const LINUX_SYS_EXIT = 60
-const LINUX_SYS_WAIT4 = 61
-const LINUX_SYS_KILL = 62
-const LINUX_SYS_GETCWD = 79
-const LINUX_SYS_CHDIR = 80
+const LINUX_POSIX_VIRT = 0xFFFFA000
 
-// --- Linux open flags -------------------------------------------------------
-const LINUX_O_RDONLY = 0
-const LINUX_O_WRONLY = 1
-const LINUX_O_RDWR = 2
-const LINUX_O_CREAT = 64
-const LINUX_O_TRUNC = 512
+var posix_domain: Int = 0
+var posix_shared_page: Int = 0
+var posix_cap_info: Int = 0
+var posix_active: Int = 0
 
-// --- Linux errno values (negative return) -----------------------------------
-const LINUX_EPERM = -1
-const LINUX_ENOENT = -2
-const LINUX_EIO = -5
-const LINUX_EBADF = -9
-const LINUX_ENOMEM = -12
-const LINUX_EACCES = -13
-const LINUX_EFAULT = -14
-const LINUX_EBUSY = -16
-const LINUX_EEXIST = -17
-const LINUX_ENOEXEC = -8
-const LINUX_ENOSPC = -28
-const LINUX_ENOSYS = -38
-
-// --- Linux stat struct layout (144 bytes, x86_64) ---------------------------
-//   [0..8]    st_dev
-//   [8..16]   st_ino
-//   [16..24]  st_nlink
-//   [24..28]  st_mode
-//   [28..32]  st_uid
-//   [32..36]  st_gid
-//   [36..48]  __pad0
-//   [48..56]  st_size
-//   [56..64]  st_blksize
-//   [64..72]  st_blocks
-//   ... (timestamps omitted for brevity)
-const LINUX_STAT_SIZE = 144
-const LINUX_STAT_OFF_DEV = 0
-const LINUX_STAT_OFF_INO = 8
-const LINUX_STAT_OFF_NLINK = 16
-const LINUX_STAT_OFF_MODE = 24
-const LINUX_STAT_OFF_SIZE = 48
-const LINUX_STAT_OFF_BLKSIZE = 56
-const LINUX_STAT_OFF_BLOCKS = 64
-
-// S_IFREG = 0100644 (regular file, rw-r--r--)
-const LINUX_S_IFREG = 0x81A4
-const LINUX_ELF_MAGIC = 0x00010102464C457F
-const LINUX_ELF_LOAD_ADDR = 0x140000
-
-// --- personality state ------------------------------------------------------
-var linux_cwd: Int = 0        // current working directory string (always "/" for now)
-var linux_active: Int = 0     // 1 when personality is initialized
-var linux_brk_current: Int = 0  // current program break
-
-// Initialize the Linux personality.
 fn linux_init() -> void {
-  linux_cwd = "/"
-  linux_active = 1
-  linux_brk_current = 0
+  if posix_active != 0 {
+    return
+  }
+  posix_domain = domain_create()
+  if posix_domain == 0 {
+    posix_domain = 1
+  }
+  posix_shared_page = domain_create_shared_page(0, posix_domain, LINUX_POSIX_VIRT, LINUX_POSIX_VIRT)
+  if posix_shared_page == 0 {
+    posix_shared_page = alloc(4096)
+  }
+  let i = 0
+  while i < 512 {
+    store64(posix_shared_page + i * 8, 0)
+    i = i + 1
+  }
+  posix_cap_info = alloc(24)
+  store64(posix_cap_info + 0, cap_count)
+  store64(posix_cap_info + 8, cap_table_base)
+  store64(posix_cap_info + 16, posix_shared_page)
+  component_register("posix", posix_entry, cap_serial() | cap_memory())
+  invoke1(posix_entry, posix_cap_info)
+  posix_active = 1
   return
 }
 
-
-fn linux_fd_valid(fd: Int) -> Int {
-  return vfs_fd_valid(fd)
-}
-
-// --- Linux syscall implementations -----------------------------------------
-
-// sys_read(fd, buf, count) — read from fd into buf.
-fn linux_sys_read(fd: Int, buf: Int, count: Int) -> Int {
-  return vfs_read(fd, buf, count)
-}
-
-// sys_write(fd, buf, count) — write buf to fd.
-fn linux_sys_write(fd: Int, buf: Int, count: Int) -> Int {
-  return vfs_write(fd, buf, count)
-}
-
-// sys_open(pathname, flags, mode) — open a file on the filesystem.
-fn linux_sys_open(pathname: Int, flags: Int, mode: Int) -> Int {
-  return vfs_open(pathname, flags)
-}
-
-// sys_close(fd) — close a file descriptor. Returns 0 on success.
-fn linux_sys_close(fd: Int) -> Int {
-  return vfs_close(fd)
-}
-
-// sys_lseek(fd, offset, whence) — reposition file offset.
-fn linux_sys_lseek(fd: Int, offset: Int, whence: Int) -> Int {
-  return vfs_lseek(fd, offset, whence)
-}
-
-// Linux EINVAL (not in the main constants since it's used only here)
-const LINUX_EINVAL = -22
-const LINUX_ESPIPE = -29
-
-// sys_stat(path, statbuf) — get file status.
-// Fills a 144-byte stat structure at statbuf.
-fn linux_sys_stat(path: Int, statbuf: Int) -> Int {
-  let sfbuf = alloc(64)
-  if sparkfs_stat(path, sfbuf) != 0 {
-    return LINUX_ENOENT
+fn linux_dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int) -> Int {
+  if posix_active == 0 {
+    linux_init()
   }
-  let file_size = load64(sfbuf + SF_ST_SIZE)
-  let ino = sf_lookup_path(path)
-  let i = 0
-  while i < LINUX_STAT_SIZE {
-    store8(statbuf + i, 0)
-    i = i + 1
+  while load64(posix_shared_page + POSIX_RPC_OFF_REQ) != 0 {
   }
-  store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
-  store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
-  store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
-  store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
-  store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
-  let blocks = (file_size + 511) / 512
-  store64(statbuf + LINUX_STAT_OFF_BLOCKS, blocks)
-  return 0
-}
-
-// sys_fstat(fd, statbuf) — get file status by fd.
-fn linux_sys_fstat(fd: Int, statbuf: Int) -> Int {
-  if linux_fd_valid(fd) == 0 {
-    return LINUX_EBADF
-  }
-  if fd < 3 {
-    // std streams: report as character device with size 0
-    let i = 0
-    while i < LINUX_STAT_SIZE {
-      store8(statbuf + i, 0)
-      i = i + 1
-    }
-    store64(statbuf + LINUX_STAT_OFF_INO, fd + 1)
-    store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
-    store32(statbuf + LINUX_STAT_OFF_MODE, 0x2190)  // S_IFCHR | rw-r--r--
-    store64(statbuf + LINUX_STAT_OFF_SIZE, 0)
-    store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
-    return 0
-  }
-  let base = vfs_fd_table + fd * 32
-  let fpath = load64(base + 0)
-  let sfbuf = alloc(64)
-  if sparkfs_stat(fpath, sfbuf) != 0 {
-    return LINUX_EIO
-  }
-  let file_size = load64(sfbuf + SF_ST_SIZE)
-  let ino = sf_lookup_path(fpath)
-  let i = 0
-  while i < LINUX_STAT_SIZE {
-    store8(statbuf + i, 0)
-    i = i + 1
-  }
-  store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
-  store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
-  store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
-  store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
-  store64(statbuf + LINUX_STAT_OFF_BLKSIZE, 512)
-  let blocks = (file_size + 511) / 512
-  store64(statbuf + LINUX_STAT_OFF_BLOCKS, blocks)
-  return 0
-}
-
-// sys_getpid() — return the current process/thread ID.
-fn linux_sys_getpid() -> Int {
-  return current_task
-}
-
-// sys_exit(code) — exit the current process.
-fn linux_sys_exit(code: Int) -> Int {
-  let port = com1()
-  serial_write_cstr(port, "linux: sys_exit(code=")
-  serial_write_dec_wide(port, code)
-  serial_write_cstr(port, ") from pid ")
-  serial_write_dec_wide(port, current_task)
-  serial_nl(port)
-  cli()
-  while true {
-    hlt()
-  }
-  return 0
-}
-
-// sys_fork() — create a child process (simplified: creates a new thread).
-// Returns child PID to parent, 0 to child.
-fn linux_sys_fork() -> Int {
-  // ponytail: real fork needs COW page tables + per-process address spaces;
-  // current simulation creates a new thread sharing the parent's code.
-  let pid = proc_create("linux-fork", proc_dummy_entry, cap_serial())
-  if pid < 0 {
-    return LINUX_EAGAIN
-  }
-  // In a real fork, the child gets 0. Since our simulation runs the child
-  // separately, we return the child PID to the parent.
-  return pid
-}
-
-const LINUX_EAGAIN = -11
-
-fn linux_load16(addr: Int) -> Int {
-  return load8(addr) | (load8(addr + 1) << 8)
-}
-
-fn linux_elf_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  if size < 120 {
-    return LINUX_ENOEXEC
-  }
-  if load64(image + 0) != LINUX_ELF_MAGIC {
-    return LINUX_ENOEXEC
-  }
-  if linux_load16(image + 16) != 2 {
-    return LINUX_ENOEXEC
-  }
-  if linux_load16(image + 18) != 0x3E {
-    return LINUX_ENOEXEC
-  }
-  let entry = load64(image + 24)
-  let phoff = load64(image + 32)
-  let phentsize = linux_load16(image + 54)
-  let phnum = linux_load16(image + 56)
-  if entry == 0 || phoff == 0 || phentsize < 56 || phnum == 0 {
-    return LINUX_ENOEXEC
-  }
-  let i = 0
-  while i < phnum {
-    let ph = image + phoff + i * phentsize
-    if ph + 56 > image + size {
-      return LINUX_ENOEXEC
-    }
-    if load32(ph + 0) == 1 {
-      let off = load64(ph + 8)
-      let vaddr = load64(ph + 16)
-      let filesz = load64(ph + 32)
-      let memsz = load64(ph + 40)
-      if off + filesz > size {
-        return LINUX_ENOEXEC
-      }
-      if entry >= vaddr && entry < vaddr + memsz {
-        serial_write_cstr(port, "linux: execve loading ELF from ")
-        serial_write_cstr(port, path)
-        serial_nl(port)
-        return invoke1(entry, 0)
-      }
-    }
-    i = i + 1
-  }
-  return LINUX_ENOEXEC
-}
-
-fn linux_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  if size < 64 {
-    return LINUX_ENOEXEC
-  }
-  let magic = load64(image + 0)
-  if magic == LINUX_ELF_MAGIC {
-    return linux_elf_exec_image(port, image, size, path)
-  }
-  if magic != 0x5343490000000001 {
-    return LINUX_ENOEXEC
-  }
-  serial_write_cstr(port, "linux: execve loading SCI from ")
-  serial_write_cstr(port, path)
-  serial_nl(port)
-  return sci_load(port, image)
-}
-
-// sys_execve(path, argv, envp) — replace current process image.
-// Reads an SCI component from the filesystem and loads it via sci_load.
-// Falls back to ENOSYS if the file doesn't exist or isn't a valid SCI binary.
-fn linux_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
-  let ino = sf_lookup_path(path)
-  if ino < 0 {
-    return LINUX_ENOENT
-  }
-  let addr = sf_inode_addr(ino)
-  let file_size = load64(addr + SF_IN_SIZE)
-  if file_size < 64 {
-    return LINUX_ENOEXEC
-  }
-  let buf = load_arena_alloc(file_size)
-  let got = sparkfs_read(path, buf, file_size)
-  if got < file_size {
-    return LINUX_EIO
-  }
-  let port = com1()
-  return linux_exec_image(port, buf, file_size, path)
+  store64(posix_shared_page + POSIX_RPC_OFF_NUM, num)
+  store64(posix_shared_page + POSIX_RPC_OFF_A0, a0)
+  store64(posix_shared_page + POSIX_RPC_OFF_A1, a1)
+  store64(posix_shared_page + POSIX_RPC_OFF_A2, a2)
+  store64(posix_shared_page + POSIX_RPC_OFF_A3, a3)
+  store64(posix_shared_page + POSIX_RPC_OFF_A4, a4)
+  store64(posix_shared_page + POSIX_RPC_OFF_A5, a5)
+  store64(posix_shared_page + POSIX_RPC_OFF_REQ, 1)
+  store64(posix_shared_page + POSIX_RPC_OFF_RESP, 0)
+  posix_service(posix_shared_page)
+  return load64(posix_shared_page + POSIX_RPC_OFF_RES)
 }
 
 fn linux_elf_probe(port: Int) -> void {
   if load64(LINUX_ELF_LOAD_ADDR) == LINUX_ELF_MAGIC {
-    let rc2 = linux_exec_image(port, LINUX_ELF_LOAD_ADDR, 4096, "space-minimal-elf")
+    let rc2 = posix_exec_image(port, LINUX_ELF_LOAD_ADDR, 4096, "space-minimal-elf")
     serial_write_cstr(port, "linux: ELF exec returned ")
     serial_write_dec_wide(port, rc2)
     serial_nl(port)
@@ -357,7 +81,7 @@ fn linux_elf_probe(port: Int) -> void {
   store8(elf + 4, 2)
   store8(elf + 5, 1)
   store8(elf + 6, 1)
-  let rc = linux_exec_image(port, elf, 64, "helium-probe")
+  let rc = posix_exec_image(port, elf, 64, "helium-probe")
   serial_write_cstr(port, "linux: ELF execve probe = ")
   serial_write_dec_wide(port, rc)
   if rc == LINUX_ENOEXEC {
@@ -367,216 +91,10 @@ fn linux_elf_probe(port: Int) -> void {
   return
 }
 
-// sys_wait4(pid, status, options, rusage) — wait for child to change state.
-fn linux_sys_wait4(pid: Int, wstatus: Int, options: Int, rusage: Int) -> Int {
-  if pid < 0 || pid >= proc_count {
-    return LINUX_ECHILD
-  }
-  let code = proc_wait(pid)
-  if wstatus != 0 {
-    // Store exit code in wstatus (simplified: low 8 bits = exit code)
-    store32(wstatus, code & 0xFF)
-  }
-  return pid
-}
-
-const LINUX_ECHILD = -10
-
-// sys_kill(pid, sig) — send a signal to a process.
-fn linux_sys_kill(pid: Int, sig: Int) -> Int {
-  if pid < 0 || pid >= proc_count {
-    return LINUX_ESRCH
-  }
-  // SIGTERM=15, SIGKILL=9 — both kill the process
-  if sig == 9 || sig == 15 {
-    proc_kill(pid)
-    return 0
-  }
-  // Other signals: acknowledged but no-op
-  return 0
-}
-
-const LINUX_ESRCH = -3
-
-// sys_getcwd(buf, size) — get current working directory.
-fn linux_sys_getcwd(buf: Int, size: Int) -> Int {
-  let cwd = linux_cwd
-  let i = 0
-  while load8(cwd + i) != 0 {
-    if i >= size - 1 {
-      return 0  // buffer too small
-    }
-    store8(buf + i, load8(cwd + i))
-    i = i + 1
-  }
-  store8(buf + i, 0)
-  return buf
-}
-
-// sys_chdir(path) — change current working directory.
-// Uses VFS path resolution: accepts "/subdir" as valid if the path resolves
-// to an existing file (flat fs treats dirs as files for now).
-fn linux_sys_chdir(path: Int) -> Int {
-  let c = load8(path + 0)
-  if c == 47 || c == 0 {
-    linux_cwd = "/"
-    return 0
-  }
-  // Check if a file exists at this path (flat fs: dirs not supported,
-  // but we accept valid file paths as future directory anchors)
-  let found = fs_open_path(path)
-  if found >= 0 {
-    linux_cwd = path
-    return 0
-  }
-  return LINUX_ENOENT
-}
-
-// sys_brk(addr) — change the program break.
-// If addr is 0, returns the current break. Otherwise sets it (bump only).
-fn linux_sys_brk(addr: Int) -> Int {
-  if addr == 0 {
-    if linux_brk_current == 0 {
-      linux_brk_current = heap_next
-    }
-    return linux_brk_current
-  }
-  if addr < linux_brk_current {
-    return linux_brk_current  // cannot shrink
-  }
-  linux_brk_current = addr
-  return linux_brk_current
-}
-
-// sys_mmap(addr, length, prot, flags, fd, offset) — map memory.
-// ponytail: allocates from kernel bump heap — no per-process VM yet.
-// Real mmap would use domain_map for proper process isolation.
-fn linux_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset: Int) -> Int {
-  let aligned = (length + 4095) & -4096
-  let p = alloc(aligned)
-  // Zero the allocated region
-  let i = 0
-  while i < aligned {
-    store8(p + i, 0)
-    i = i + 1
-  }
-  // If fd is valid, read file contents into the mapping
-  if fd >= 3 && linux_fd_valid(fd) != 0 {
-    let base = vfs_fd_table + fd * 32
-    let fpath = load64(base + 0)
-    let file_size = vfs_sparkfs_file_size(fpath)
-    let remaining = file_size - offset
-    if remaining < 0 {
-      remaining = 0
-    }
-    if remaining > aligned {
-      remaining = aligned
-    }
-    if remaining > 0 {
-      sparkfs_pread(fpath, p, remaining, offset)
-    }
-  }
-  return p
-}
-
-// sys_munmap(addr, length) — unmap memory.
-// Free each 4K page in the range back to the frame free list.
-fn linux_sys_munmap(addr: Int, length: Int) -> Int {
-  let start = addr
-  let end = addr + length
-  let page = (start + 4095) & -4096
-  while page < end {
-    frame_free(page)
-    page = page + 4096
-  }
-  return 0
-}
-
-// --- Linux personality syscall dispatch ------------------------------------
-// Dispatch a Linux x86_64 syscall. The syscall number is in `num`, and
-// arguments are passed as individual Int values (already extracted from
-// the saved register frame). Returns the syscall result.
-fn linux_dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int) -> Int {
-  if num == LINUX_SYS_READ {
-    return linux_sys_read(a0, a1, a2)
-  }
-  if num == LINUX_SYS_WRITE {
-    return linux_sys_write(a0, a1, a2)
-  }
-  if num == LINUX_SYS_OPEN {
-    return linux_sys_open(a0, a1, a2)
-  }
-  if num == LINUX_SYS_CLOSE {
-    return linux_sys_close(a0)
-  }
-  if num == LINUX_SYS_STAT {
-    return linux_sys_stat(a0, a1)
-  }
-  if num == LINUX_SYS_FSTAT {
-    return linux_sys_fstat(a0, a1)
-  }
-  if num == LINUX_SYS_LSEEK {
-    return linux_sys_lseek(a0, a1, a2)
-  }
-  if num == LINUX_SYS_MMAP {
-    return linux_sys_mmap(a0, a1, a2, a3, a4, a5)
-  }
-  if num == LINUX_SYS_MUNMAP {
-    return linux_sys_munmap(a0, a1)
-  }
-  if num == LINUX_SYS_BRK {
-    return linux_sys_brk(a0)
-  }
-  if num == LINUX_SYS_GETPID {
-    return linux_sys_getpid()
-  }
-  if num == LINUX_SYS_FORK {
-    return linux_sys_fork()
-  }
-  if num == LINUX_SYS_EXECVE {
-    return linux_sys_execve(a0, a1, a2)
-  }
-  if num == LINUX_SYS_EXIT {
-    return linux_sys_exit(a0)
-  }
-  if num == LINUX_SYS_WAIT4 {
-    return linux_sys_wait4(a0, a1, a2, a3)
-  }
-  if num == LINUX_SYS_KILL {
-    return linux_sys_kill(a0, a1)
-  }
-  if num == LINUX_SYS_GETCWD {
-    return linux_sys_getcwd(a0, a1)
-  }
-  if num == LINUX_SYS_CHDIR {
-    return linux_sys_chdir(a0)
-  }
-  // Unknown syscall
-  let port = com1()
-  serial_write_cstr(port, "linux: unknown syscall ")
-  serial_write_dec_wide(port, num)
-  serial_nl(port)
-  return LINUX_ENOSYS
-}
-
-// --- Linux personality demo ------------------------------------------------
-// Demonstrates the Linux personality by calling POSIX syscalls directly:
-//   1. write(1, "hello from linux personality\n", ...) to stdout
-//   2. getpid() to get the current PID
-//   3. open("hello.txt", O_CREAT|O_RDWR, 0) to create a file
-//   4. write(fd, "linux file content", ...) to write to the file
-//   5. close(fd) to close it
-//   6. open("hello.txt", O_RDONLY, 0) to reopen
-//   7. read(fd, buf, 64) to read back
-//   8. write(1, buf, n) to print the content
-//   9. close(fd)
-//  10. stat("hello.txt", statbuf) and print file size
-//  11. getcwd(buf, 64) and print the working directory
 fn linux_demo(port: Int) -> void {
   serial_write_cstr(port, "linux: personality demo starting")
   serial_nl(port)
 
-  // 1. write to stdout
   let msg = "  hello from linux personality (POSIX write syscall)\n"
   let mlen = 0
   while load8(msg + mlen) != 0 {
@@ -589,13 +107,11 @@ fn linux_demo(port: Int) -> void {
   serial_write_dec_wide(port, wrc)
   serial_nl(port)
 
-  // 2. getpid
   let pid = linux_dispatch(LINUX_SYS_GETPID, 0, 0, 0, 0, 0, 0)
   serial_write_cstr(port, "linux: getpid() = ")
   serial_write_dec_wide(port, pid)
   serial_nl(port)
 
-  // 3. open a file with O_CREAT | O_RDWR
   let fname = "hello.txt"
   let fd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_CREAT | LINUX_O_RDWR, 0, 0, 0, 0)
   serial_write_cstr(port, "linux: open(hello.txt, O_CREAT|O_RDWR) = ")
@@ -603,7 +119,6 @@ fn linux_demo(port: Int) -> void {
   serial_nl(port)
 
   if fd >= 0 {
-    // 4. write to the file
     let content = "linux file content"
     let clen = 0
     while load8(content + clen) != 0 {
@@ -616,20 +131,17 @@ fn linux_demo(port: Int) -> void {
     serial_write_dec_wide(port, fwrc)
     serial_nl(port)
 
-    // 5. close
     linux_dispatch(LINUX_SYS_CLOSE, fd, 0, 0, 0, 0, 0)
     serial_write_cstr(port, "linux: close(fd) = 0")
     serial_nl(port)
   }
 
-  // 6. reopen for reading
   let rfd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_RDONLY, 0, 0, 0, 0)
   serial_write_cstr(port, "linux: open(hello.txt, O_RDONLY) = ")
   serial_write_dec_wide(port, rfd)
   serial_nl(port)
 
   if rfd >= 0 {
-    // 7. read back
     let rbuf = alloc(256)
     let rlen = linux_dispatch(LINUX_SYS_READ, rfd, rbuf, 255, 0, 0, 0)
     serial_write_cstr(port, "linux: read(fd, buf, 255) = ")
@@ -643,17 +155,14 @@ fn linux_demo(port: Int) -> void {
     serial_write_cstr(port, "'")
     serial_nl(port)
 
-    // 8. write the content to stdout
     linux_dispatch(LINUX_SYS_WRITE, 1, rbuf, rlen, 0, 0, 0)
     serial_nl(port)
 
-    // 9. close
     linux_dispatch(LINUX_SYS_CLOSE, rfd, 0, 0, 0, 0, 0)
     serial_write_cstr(port, "linux: close(fd) = 0")
     serial_nl(port)
   }
 
-  // 10. stat
   let statbuf = alloc(LINUX_STAT_SIZE)
   let src = linux_dispatch(LINUX_SYS_STAT, fname, statbuf, 0, 0, 0, 0)
   serial_write_cstr(port, "linux: stat(hello.txt) = ")
@@ -668,7 +177,6 @@ fn linux_demo(port: Int) -> void {
   }
   serial_nl(port)
 
-  // 11. getcwd
   let cwdbuf = alloc(64)
   let cwdrc = linux_dispatch(LINUX_SYS_GETCWD, cwdbuf, 64, 0, 0, 0, 0)
   serial_write_cstr(port, "linux: getcwd() = '")
@@ -676,7 +184,6 @@ fn linux_demo(port: Int) -> void {
   serial_write_cstr(port, "'")
   serial_nl(port)
 
-  // 12. lseek demo (if file exists)
   let sfd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_RDONLY, 0, 0, 0, 0)
   if sfd >= 0 {
     let pos = linux_dispatch(LINUX_SYS_LSEEK, sfd, 6, 0, 0, 0, 0)
