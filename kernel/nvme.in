@@ -18,15 +18,20 @@ fn nvme_start_storage_component(port: Int) -> Int {
     storage_domain = 1
   }
 
-  storage_mailbox = domain_create_shared_page(0, storage_domain, STORAGE_MAILBOX_VIRT, STORAGE_MAILBOX_VIRT)
-  if storage_mailbox == 0 {
+  let shared_mailbox = domain_create_shared_page(0, storage_domain, STORAGE_MAILBOX_VIRT, STORAGE_MAILBOX_VIRT)
+  if shared_mailbox == 0 {
     storage_mailbox = alloc(4096)
+  } else {
+    storage_mailbox = STORAGE_MAILBOX_VIRT
   }
-  storage_data_page = domain_create_shared_page(0, storage_domain, STORAGE_DATA_VIRT, STORAGE_DATA_VIRT)
-  if storage_data_page == 0 {
+  let shared_data = domain_create_shared_page(0, storage_domain, STORAGE_DATA_VIRT, STORAGE_DATA_VIRT)
+  if shared_data == 0 {
     storage_data_page = alloc(4096)
+    storage_data_phys = storage_data_page
+  } else {
+    storage_data_page = STORAGE_DATA_VIRT
+    storage_data_phys = shared_data
   }
-  storage_data_phys = storage_data_page
 
   let i = 0
   while i < 512 {
