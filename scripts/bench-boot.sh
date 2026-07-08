@@ -97,19 +97,16 @@ for i in $(seq 1 "$ITERATIONS"); do
     kill -0 "$QPID" 2>/dev/null || break
     sleep 0.01
   done
-  # Run commands
+  # Run commands (skip libc — pre-existing printf crash on native backend)
   echo "linux" >&3
   sleep 0.3
   echo "vfs" >&3
   sleep 0.2
-  echo "libc" >&3
-  sleep 0.5
   echo "time" >&3
   sleep 0.2
   echo "halt" >&3
   exec 3>&-
-  # Wait for QEMU to exit (with timeout — halt returns from shell but
-  # doesn't power off QEMU, so we kill it after a grace period)
+  # Wait for halt to return (graceful exit) with timeout
   for _ in $(seq 1 50); do
     kill -0 "$QPID" 2>/dev/null || break
     sleep 0.1

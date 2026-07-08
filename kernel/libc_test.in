@@ -233,7 +233,7 @@ fn libc_selftest_printf() -> Int {
   serial_write_cstr(port, "  printf tests (visual check):")
   serial_nl(port)
   serial_write_cstr(port, "    ")
-  printf("str=%s dec=%d hex=%x char=%c pct=%%", 42, 42, 255, 65)
+  printf("str=%s dec=%d hex=%x char=%c pct=%%", "test", 42, 255, 65)
   serial_nl(port)
   serial_write_cstr(port, "    ")
   printf("pad: %08x | %8d | %d", 0xCAFE, 42, -7)
