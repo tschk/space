@@ -70,10 +70,16 @@ const LINUX_ECHILD = -10
 const LINUX_ESRCH = -3
 
 var posix_cwd: Int = 0
+var posix_cwd_buf: Int = 0
 var posix_brk_current: Int = 0
 
 fn posix_init() -> void {
-  posix_cwd = "/"
+  if posix_cwd_buf == 0 {
+    posix_cwd_buf = alloc(2)
+    store8(posix_cwd_buf, 47)
+    store8(posix_cwd_buf + 1, 0)
+  }
+  posix_cwd = posix_cwd_buf
   posix_brk_current = 0
   return
 }
@@ -317,7 +323,7 @@ fn posix_sys_getcwd(buf: Int, size: Int) -> Int {
 fn posix_sys_chdir(path: Int) -> Int {
   let c = load8(path + 0)
   if c == 47 || c == 0 {
-    posix_cwd = "/"
+    posix_cwd = posix_cwd_buf
     return 0
   }
   let found = fs_open_path(path)
