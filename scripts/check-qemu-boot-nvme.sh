@@ -25,6 +25,7 @@ truncate -s 64M "$NVME_IMG"
 mkfifo "$FIFO"
 # Start QEMU with an NVMe controller backed by a raw disk image.
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
+  -rtc base=utc \
   -vga std -serial stdio -display none -no-reboot \
   -drive file="$NVME_IMG",format=raw,if=none,id=nvme0 \
   -device nvme,drive=nvme0,serial=testserial \

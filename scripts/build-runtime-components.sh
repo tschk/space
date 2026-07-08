@@ -72,4 +72,4 @@ print(f"  input SCI at physical 0x{input_phys:x}")
 PY
 
 echo "Done. Boot with:"
-echo "  qemu-system-x86_64 -kernel $BUILD_DIR/combined.bin -m 512M -vga std -serial stdio -display none"
+echo "  qemu-system-x86_64 -kernel $BUILD_DIR/combined.bin -m 512M -rtc base=utc -vga std -serial stdio -display none"

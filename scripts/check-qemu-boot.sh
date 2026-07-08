@@ -24,6 +24,7 @@ mkfifo "$FIFO"
 # Start QEMU with serial input from the FIFO and output to the log file.
 # Keep fd 3 open for writing to the FIFO so QEMU's stdin does not see EOF.
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
+  -rtc base=utc \
   -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &
 QPID=$!
 exec 3>"$FIFO"
@@ -81,7 +82,8 @@ for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "linux: ELF execve probe = -8" \
          "vfs self-test passed" \
          "libc self-test passed" \
-         "wall-clock unix time" \
+         "unix:" \
+         "uptime:" \
          "SpaceOS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi

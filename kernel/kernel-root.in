@@ -704,6 +704,7 @@ fn kernel_entry(mb_info: Int) -> Int {
   fs_init()
   serial_write_cstr(port, "space: filesystem initialized")
   serial_nl(port)
+  time_init()
   if sf_mem_disk != 0 {
     serial_write_cstr(port, "space: sparkfs mem volume at 0x")
     serial_write_hex(port, sf_mem_disk)
