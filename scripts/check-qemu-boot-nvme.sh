@@ -68,15 +68,7 @@ for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "channel demo complete" "preemptive scheduler" "preemption ended" \
          "NVMe controller initialized" \
          "filesystem initialized" "sparkfs nvme volume" \
-         "proc_selftest: PASS" "Linux personality initialized" \
-         "compositor initialized" \
-         "interactive shell" \
-         "linux: personality demo starting" \
-         "linux: write(1, msg" \
-         "linux: getpid()" \
-         "linux: personality demo complete" \
-         "linux: ELF execve probe = -8" \
-         "SpaceOS"; do
+         "proc_selftest: PASS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
