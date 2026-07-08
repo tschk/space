@@ -4,10 +4,6 @@ package space.kernel
 
 // --- directory entries ------------------------------------------------------
 
-fn sf_dir_entry_size(nlen: Int) -> Int {
-  return 32
-}
-
 const SF_DIR_ENTRY_SIZE = 32
 
 // Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
