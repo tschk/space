@@ -200,7 +200,7 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm write read mv stat libc usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
+      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat libc usb linux linuxelf fetch syscall uptime fb fb test desktop display dsp test comp halt")
       serial_nl(port)
 
     } else if line_eq("snapshot") != 0 {
@@ -362,6 +362,20 @@ fn shell(port: Int) -> void {
       serial_nl(port)
     } else if line_prefix("read ") >= 0 {
       let arg = line_prefix("read ")
+      let buf = alloc(4096)
+      let n = fs_read_file(line + arg, buf)
+      if n < 0 {
+        serial_write_cstr(port, "  failed")
+      } else {
+        let i = 0
+        while i < n {
+          serial_put(port, load8(buf + i))
+          i = i + 1
+        }
+      }
+      serial_nl(port)
+    } else if line_prefix("cat ") >= 0 {
+      let arg = line_prefix("cat ")
       let buf = alloc(4096)
       let n = fs_read_file(line + arg, buf)
       if n < 0 {

@@ -561,7 +561,34 @@ fn sparkfs_rename(old_path: Int, new_path: Int) -> Int {
     return -1
   }
   let tmp = alloc(4)
-  if sf_dir_find(new_parent, new_name, tmp) >= 0 {
+  let dst_off = sf_dir_find(new_parent, new_name, tmp)
+  if dst_off >= 0 {
+    let dst_ino = load32(tmp)
+    let dst_addr = sf_inode_addr(dst_ino)
+    if load32(dst_addr + SF_IN_TYPE) == SF_TYPE_DIR {
+      let old_base = alloc(SF_NAME_MAX + 1)
+      let old_slash = sf_last_slash(old_path)
+      if old_slash >= 0 {
+        sf_copy_name(old_base, old_path + old_slash + 1)
+      } else {
+        sf_copy_name(old_base, old_path)
+      }
+      if sf_dir_find(dst_ino, old_base, tmp) >= 0 {
+        return -1
+      }
+      let old_name = alloc(SF_NAME_MAX + 1)
+      let old_parent = sf_lookup_parent(old_path, old_name)
+      if old_parent < 0 {
+        return -1
+      }
+      if sf_dir_add(dst_ino, old_base, old_ino, old_type) != 0 {
+        return -1
+      }
+      sf_dir_remove(old_parent, old_name)
+      store64(old_addr + SF_IN_MTIME, ticks)
+      sf_write_inode(old_ino)
+      return 0
+    }
     return -1
   }
   let old_name = alloc(SF_NAME_MAX + 1)
