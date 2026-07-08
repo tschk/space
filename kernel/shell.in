@@ -95,18 +95,6 @@ fn line_prefix(prefix: Int) -> Int {
   return i
 }
 
-// Return the index of the first argument after the command, or 0 if none.
-fn cmd_arg() -> Int {
-  let i = 0
-  while load8(line + i) != 0 && load8(line + i) != 32 {
-    i = i + 1
-  }
-  if load8(line + i) == 32 {
-    return i + 1
-  }
-  return 0
-}
-
 // Return the index of the next argument after `start`, or 0 if none.
 fn next_arg(start: Int) -> Int {
   let i = start
