@@ -33,24 +33,22 @@ Measured on macOS ARM64 (M3), Inauguration v0.7.1.
 
 | Metric | Value |
 |--------|-------|
-| Boot image size | 259,316 B (trampoline 4,096 + kernel 254,964) |
-| Kernel compile (cold) | ~50 ms |
-| Kernel compile (warm, cached) | ~30 ms |
-| Boot to interactive shell (QEMU TCG, Apple Silicon) | ~4 s |
+| Boot image size | 230,662 B (trampoline 4,096 + kernel 226,566) |
+| Kernel compile (warm, cached) | ~27 ms |
+| Boot to interactive shell (QEMU TCG, Apple Silicon) | ~1,920 ms |
 | Boot to interactive shell (QEMU + KVM, x86_64) | ~40 ms |
+| Boot to interactive shell + halt | ~1,935 ms |
 
-The kernel is ~1,300 lines of `.in` across 15+ files, lowered to x86_64 machine
-code and linked into a single bootable binary.
+The kernel is compiled from `.in` source to x86_64 machine code by
+[Inauguration](https://github.com/tschk/inauguration) and linked into a single
+bootable binary.  Serial output-driven timing via `scripts/bench-boot.sh`.
 
 ### Performance notes
 
-- Most of the cold compile wall time is `in` process startup; the actual parse +
-  lower + link is a few milliseconds. `in daemon start` in the Inauguration repo
-  removes that startup cost for repeated builds.
-- The warm path is already cached by source hash, so repeated edits of the same
-  file are fast.
-- Next low-hanging fruit: reduce the number of separate files merged into the
-  kernel root, and avoid re-allocating the string table across cache hits.
+- Most boot time (~1.5 s) is QEMU (SeaBIOS + TCG on ARM64).  Real kernel init
+  is ~400 ms.  On x86_64 with KVM acceleration, the same image boots in ~40 ms.
+- `scripts/boot.sh` drops into an interactive shell.  Type `halt` to exit QEMU.
+- The warm compile path is cached by source hash; repeated edits rebuild fast.
 
 ## Target architectures
 
