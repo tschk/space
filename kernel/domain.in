@@ -29,6 +29,7 @@ fn domain_init() -> void {
     k = k + 1
   }
   invoke1(load64(0x4060), kernel_pml4)
+  store64(0x40B8, kernel_pml4)
   store64(domain_table + 0, kernel_pml4)
   store64(domain_table + 8, DOMAIN_ACTIVE)
   store64(domain_table + 16, 0)

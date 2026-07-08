@@ -128,6 +128,13 @@ var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
 
+const MAX_PREEMPT_COMPS = 8
+var preempt_entry: Int = 0
+var preempt_cap_info: Int = 0
+var preempt_domain: Int = 0
+var preempt_pml4: Int = 0
+var preempt_count: Int = 0
+
 // --- PRNG and determinism ---------------------------------------------------
 fn det_next(s: Int) -> Int {
   let x = s
@@ -235,16 +242,20 @@ fn run_supervisor(port: Int) -> void {
 }
 
 // --- preemptive scheduler ---------------------------------------------------
-fn build_preempt_task(entry: Int, stack_top: Int) -> Int {
+fn build_preempt_task(entry: Int, stack_top: Int, arg: Int) -> Int {
   let sp = stack_top - 160
   for i in 0..15 {
     store64(sp + i * 8, 0)
   }
-  store64(sp + 120, entry)
-  store64(sp + 128, 0x08)
-  store64(sp + 136, 0x202)
-  store64(sp + 144, stack_top)
-  store64(sp + 152, 0x10)
+  // The isr_timer_preempt stub pushes RAX,RBX,RCX,RDX,RSI,RDI,RBP,R8-R15 and
+  // pops them in reverse order (R15..RAX), so the saved-register layout is:
+  // sp+0 = R15, sp+8 = R14, ..., sp+72 = RDI, ..., sp+112 = RAX.
+  store64(sp + 72, arg)       // RDI slot: first argument to the entry function
+  store64(sp + 120, entry)    // RIP
+  store64(sp + 128, 0x08)     // CS
+  store64(sp + 136, 0x202)    // RFLAGS (interrupts enabled; component stub cli's before switching)
+  store64(sp + 144, stack_top) // RSP
+  store64(sp + 152, 0x10)     // SS
   return sp
 }
 
@@ -252,12 +263,55 @@ fn schedule_tick(ctx: Int) -> Int {
   ticks = ticks + 1
   outb(0x20, 0x20)
   store64(ptasks + pcurrent * 8, ctx)
-  if ticks >= preempt_deadline {
-    pcurrent = 0
-    return load64(ptasks)
-  }
   pcurrent = (pcurrent + 1) % pcount
+  if preempt_domain != 0 {
+    domain_switch(preempt_domain[pcurrent])
+  }
   return load64(ptasks + pcurrent * 8)
+}
+
+fn preempt_register_component(port: Int, entry: Int, cap_info: Int, domain: Int, stack_top: Int) -> Int {
+  let i = pcount
+  store64(preempt_entry + i * 8, entry)
+  store64(preempt_cap_info + i * 8, cap_info)
+  store64(preempt_domain + i * 8, domain)
+  store64(preempt_pml4 + i * 8, load64(domain_table + domain * 24))
+  let ctx = build_preempt_task(load64(0x4080), stack_top, i)
+  store64(ptasks + i * 8, ctx)
+  pcount = pcount + 1
+  preempt_count = preempt_count + 1
+  serial_write_cstr(port, "  preempt: registered component i=0x")
+  serial_write_hex(port, i)
+  serial_write_cstr(port, " pcount=0x")
+  serial_write_hex(port, pcount)
+  serial_write_cstr(port, " ctx=0x")
+  serial_write_hex(port, ctx)
+  serial_nl(port)
+  return i
+}
+
+fn preempt_start(port: Int) -> void {
+  ptasks = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  pcount = 1
+  pcurrent = 0
+  preempt_count = 0
+  preempt_entry = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  preempt_cap_info = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  preempt_domain = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  preempt_pml4 = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  store64(ptasks, 0)
+  store64(preempt_domain, 0)
+  store64(0x40A0, preempt_entry)
+  store64(0x40A8, preempt_cap_info)
+  store64(0x40B0, preempt_pml4)
+  store64(0x40C0, load64(0x40B8))
+  cli()
+  store64(0x4028, schedule_tick)
+  idt_set(32, load64(0x4020))
+  sti()
+  serial_write_cstr(port, "space: preemptive scheduler active")
+  serial_nl(port)
+  return
 }
 
 fn preempt_worker_a() -> Int {
@@ -435,6 +489,8 @@ fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int) -> Int {
   comp_domain_arg = domain
   let tid = thr_create(comp_thread_wrapper)
   store64(component + 48, tid)
+  let stack = alloc(65536)
+  preempt_register_component(port, entry, cap_info, domain, stack + 65536)
   serial_write_cstr(port, "  SCI: ")
   serial_write_cstr(port, name)
   serial_write_cstr(port, " thread 0x")
@@ -698,6 +754,8 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
+  preempt_start(port)
+
   let display_load = load64(0x1a0000)
   if display_load == SCI_MAGIC {
     sci_load_runtime_component(port, 0x1a0000, "display")

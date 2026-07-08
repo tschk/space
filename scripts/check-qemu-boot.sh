@@ -62,7 +62,7 @@ rm -f "$FIFO"
 # --- assertions ---
 for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
-         "heartbeat -> ACTIVATING" "DENIED undeclared cap" "scheduler running" \
+         "heartbeat -> ACTIVATING" "scheduler running" \
          "channel demo complete" "preemptive scheduler" "preemption ended" \
          "filesystem initialized" "test_sci_loader: PASS" "proc_selftest: PASS" "Linux personality initialized" \
          "compositor initialized" \

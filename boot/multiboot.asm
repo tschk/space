@@ -173,6 +173,9 @@ long_mode:
     mov rbx, 0x4078
     mov rax, syscall_write_demo
     mov [rbx], rax
+    mov rbx, 0x4080
+    mov rax, comp_invoke_stub
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -340,6 +343,36 @@ syscall_write_demo:
     mov rax, 0                   ; rax = sys_write syscall number
     int 0x80
     ret                          ; rax has the return value
+
+; --- component invocation stub ----------------------------------------------
+; Used by the preemptive scheduler to start a runtime-loaded component in its
+; isolated domain. On entry RDI holds the task index. The kernel publishes the
+; bases of preempt_entry at [0x40A0], preempt_cap_info at [0x40A8],
+; preempt_pml4 at [0x40B0], and the kernel PML4 at [0x40C0]. The stub looks up
+; the component entry, argument, and PML4 for that index, switches CR3, calls the
+; entry, then returns to the kernel domain and loops. It runs from low
+; identity-mapped memory so it is available in every domain.
+comp_invoke_stub:
+    cli
+    push rbx
+    push r11
+    push r12
+    mov r12, rdi
+    shl r12, 3
+    mov rbx, [0x40A0]
+    mov r11, [rbx + r12]
+    mov rbx, [0x40A8]
+    mov rdi, [rbx + r12]
+    mov rbx, [0x40B0]
+    mov rbx, [rbx + r12]
+    mov cr3, rbx
+    call r11
+    mov rbx, [0x40C0]
+    mov cr3, rbx
+    pop r12
+    pop r11
+    pop rbx
+    jmp comp_invoke_stub
 
 ; --- cooperative context switch --------------------------------------------
 ; context_switch(rdi = pointer to the outgoing task's saved-RSP slot,
