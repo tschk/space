@@ -288,6 +288,22 @@ fn libc_selftest_utility() -> Int {
   return 1
 }
 
+fn libc_selftest_panic() -> Int {
+  let pass = 1
+
+  panic_test_mode = 1
+  panic_test_msg = 0
+  panic_test_halted = 0
+
+  panic("test panic message")
+
+  pass = pass & libc_check(panic_test_halted == 1, "panic early exit in test mode")
+  pass = pass & libc_check(strcmp(panic_test_msg, "test panic message") == 0, "panic stores correct message")
+
+  panic_test_mode = 0
+  return pass
+}
+
 fn libc_selftest_malloc() -> Int {
   let pass = 1
 
@@ -335,6 +351,7 @@ fn libc_selftest() -> Int {
   pass = pass & libc_selftest_math()
   pass = pass & libc_selftest_time()
   pass = pass & libc_selftest_utility()
+  pass = pass & libc_selftest_panic()
   pass = pass & libc_selftest_malloc()
 
   if pass != 0 {

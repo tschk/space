@@ -48,6 +48,8 @@ import "syscall.in"
 import "libc_test.in"
 import "font.in"
 import "vfs.in"
+import "vfs_test.in"
+import "../services/time.in"
 
 
 // The nanokernel root component.

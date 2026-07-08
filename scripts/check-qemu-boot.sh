@@ -48,6 +48,12 @@ for _ in $(seq 1 100); do
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
+echo "vfs" >&3
+sleep 0.5
+echo "libc" >&3
+sleep 1
+echo "time" >&3
+sleep 0.5
 echo "fb" >&3
 sleep 0.5
 echo "fetch" >&3
@@ -73,6 +79,9 @@ for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
          "linux: open(hello.txt" \
          "linux: personality demo complete" \
          "linux: ELF execve probe = -8" \
+         "vfs self-test passed" \
+         "libc self-test passed" \
+         "wall-clock unix time" \
          "SpaceOS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
