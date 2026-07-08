@@ -8,11 +8,6 @@ fn sf_inode_addr(ino: Int) -> Int {
   return sf_inodes + ino * SF_INODE_SIZE
 }
 
-fn sf_inode_is_inline(ino: Int) -> Int {
-  let addr = sf_inode_addr(ino)
-  return load32(addr + SF_IN_INLINE)
-}
-
 fn sf_inode_set_inline(ino: Int, is_inline: Int) -> void {
   let addr = sf_inode_addr(ino)
   store32(addr + SF_IN_INLINE, is_inline)
