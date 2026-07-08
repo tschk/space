@@ -2732,7 +2732,7 @@ fn display_entry(cap_info: Int) -> Int {
   dsp_init()
   let ch = 0
   if cap_info != 0 {
-    ch = load64(cap_info + 0)
+    ch = load64(cap_info + 32)
   }
   dsp_run(ch, port)
   serial_write_cstr(port, "display: component exited")

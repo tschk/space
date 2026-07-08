@@ -222,7 +222,7 @@ fn svc_pager() -> Int {
 }
 
 fn run_supervisor(port: Int) -> void {
-  realm_grants = cap_serial() | cap_timer() | cap_graph()
+  realm_grants = cap_serial() | cap_timer() | cap_graph() | cap_memory() | cap_display() | cap_storage() | cap_input() | cap_network() | cap_volume()
   let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
   let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
   let c3 = component_register("pager", svc_pager, cap_memory())
