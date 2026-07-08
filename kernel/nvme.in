@@ -147,6 +147,7 @@ fn nvme_admin_submit(opcode: Int, nsid: Int, prp1: Int, prp2: Int, cdw10: Int, c
       nvme_w32(nvme_cq_db(0), nvme_cq_head)
       done = 1
     }
+    pause()
     to = to + 1
   }
   if done == 0 {
@@ -203,6 +204,7 @@ fn nvme_io_submit(opcode: Int, lba: Int, count: Int, buf: Int) -> Int {
       nvme_w32(nvme_cq_db(1), nvme_io_cq_head)
       done = 1
     }
+    pause()
     to = to + 1
   }
   if done == 0 {
