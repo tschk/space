@@ -372,6 +372,7 @@ fn nvme_init() -> Int {
 
   nvme_ready = 1
   serial_write_cstr(port, "  nvme: initialization complete\n")
+  domain_switch(0)
   return 0
 }
 

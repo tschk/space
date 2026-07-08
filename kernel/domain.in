@@ -19,7 +19,17 @@ fn domain_init() -> void {
     store64(domain_table + i * 24 + 16, 0)
     i = i + 1
   }
-  store64(domain_table + 0, 0x1000)
+  // The bootloader left the kernel PML4 at 0x1000, but the compiler may place
+  // globals in low memory and overwrite it. Relocate the kernel PML4 to a
+  // heap frame before any kernel code can corrupt the page tables.
+  let kernel_pml4 = frame_alloc()
+  let k = 0
+  while k < 512 {
+    store64(kernel_pml4 + k * 8, load64(0x1000 + k * 8))
+    k = k + 1
+  }
+  invoke1(load64(0x4060), kernel_pml4)
+  store64(domain_table + 0, kernel_pml4)
   store64(domain_table + 8, DOMAIN_ACTIVE)
   store64(domain_table + 16, 0)
   domain_count = 1
@@ -35,7 +45,8 @@ fn create_domain_pml4() -> Int {
     store64(dst_pdpt + i * 8, 0)
     i = i + 1
   }
-  let src_pdpt = load64(0x1000) & -4096
+  let src_pml4 = load64(domain_table)
+  let src_pdpt = load64(src_pml4) & -4096
   let j = 0
   while j < 4 {
     let src_pd = load64(src_pdpt + j * 8) & -4096
