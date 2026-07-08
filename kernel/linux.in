@@ -22,9 +22,11 @@ fn linux_init() -> void {
   if posix_domain == 0 {
     posix_domain = 1
   }
-  posix_shared_page = domain_create_shared_page(0, posix_domain, LINUX_POSIX_VIRT, LINUX_POSIX_VIRT)
-  if posix_shared_page == 0 {
+  let shared_phys = domain_create_shared_page(0, posix_domain, LINUX_POSIX_VIRT, LINUX_POSIX_VIRT)
+  if shared_phys == 0 {
     posix_shared_page = alloc(4096)
+  } else {
+    posix_shared_page = LINUX_POSIX_VIRT
   }
   let i = 0
   while i < 512 {
