@@ -80,9 +80,9 @@ fn sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> Int {
       if eino == 0 {
         let new_len = 0
         let k = 0
-        while k < SF_NAME_MAX {
+        while k < SF_DIR_ENTRY_SIZE - SF_DIR_ENTRY_HEAD {
           if load8(name + k) == 0 {
-            k = SF_NAME_MAX
+            k = SF_DIR_ENTRY_SIZE - SF_DIR_ENTRY_HEAD
           } else {
             new_len = new_len + 1
             k = k + 1
