@@ -17,11 +17,9 @@ reference for NT semantics and bug-compatibility.
              │ syscall (x86_64)        │ int 0x80
              ▼                         ▼
 ┌────────────────────────────────────────────────────────┐
-│  Space Syscall Dispatcher  (kernel, ring 0)            │
-│  Routes by syscall number range:                       │
-│    0-31   → native Space syscalls                      │
-│    32-63  → Linux personality (forward to posix svc)   │
-│    64-127 → Windows NT personality (forward to nt svc) │
+│  Space Kernel  (ring 0)                                │
+│  Stub catches PE syscall → calls fn endpoint           │
+│  Kernel forwards fn call via shared-page RPC           │
 └────────────┬──────────────────────────┬────────────────┘
              │                          │
              ▼                          ▼
@@ -45,16 +43,25 @@ Safety: personality server runs in isolated memory domain. Kernel gates
 all cross-domain IPC through capability checks. Personality cannot touch
 kernel state or other personalities.
 
-### Syscall flow
+### Function endpoint dispatch
 
-1. Windows PE issues `syscall` (x86_64: `syscall` instruction with NT number in RAX)
-2. Space kernel traps the instruction, reads RAX
-3. Range check: 64-127 → NT personality
-4. Kernel writes args to shared page, sets REQ flag
-5. NT personality server (polling or woken by kernel) reads shared page
-6. Dispatches to appropriate NT executive function
-7. Writes result, sets RESP flag
-8. Kernel reads result, writes to RAX, returns to PE
+Each NT syscall is a named `.in` function, called directly. No central
+dispatcher. No syscall numbers.
+
+```
+PE .exe                          NT personality (.in)
+  Import: ntdll.NtReadFile         fn NtReadFile(fd, buf, len) -> Int
+  PE stub generator writes           return vfs_read(fd, buf, len)
+  trampoline → calls fn
+  directly
+  (or channels for cross-domain)
+```
+
+1. PE loader resolves `ntdll.NtReadFile` → generates trampoline to `fn NtReadFile`
+2. For in-domain calls: trampoline just calls the function address
+3. For cross-domain (future): each function is a channel endpoint, IPC handles args
+4. Kernel handles interrupt dispatch for `syscall` instruction, forward to personality
+5. No enumeration, no number table — function names ARE the API
 
 ## Reference Material
 
@@ -66,7 +73,7 @@ kernel state or other personalities.
 | ntdll (NT-side) | ReactOS | `ref/reactos/dll/ntdll/ldr/`, `rtl/` |
 | kernel32 (Win32 base) | Wine | `ref/wine/dlls/kernel32/` |
 | user32 (window management) | Wine | `ref/wine/dlls/user32/` |
-| NT syscall table | Wine | `ref/wine/dlls/ntdll/ntsyscalls.h` |
+| NT syscall numbers → function mapping | Wine | `ref/wine/dlls/ntdll/ntsyscalls.h` |
 | Win32k (GUI kernel) | ReactOS | `ref/reactos/win32ss/` |
 | PE loader | Wine | `ref/wine/dlls/ntdll/loader.c` |
 | PE loader | ReactOS | `ref/reactos/dll/ntdll/ldr/` |
@@ -75,7 +82,7 @@ kernel state or other personalities.
 
 ```
 components/ntos/
-├── ntoskrnl.in          NT executive entry + shared-page RPC loop
+├── ntoskrnl.in          NT executive entry — hosts all function endpoints, no dispatch table
 ├── ob/                   Object Manager
 │   ├── ob.in             Directory namespace, object types, handles
 │   └── ob_types.in      Predefined types: File, Process, Thread, Event, Key, Section
@@ -101,7 +108,7 @@ components/ntos/
 │   ├── pe.in             PE32+ parser: DOS/PE/NT headers, sections
 │   ├── ldr.in            Loader: import resolution, relocation, TLS
 │   └── ldr_init.in       LdrInitializeThunk — process startup
-├── ntdll.in              NT syscall stub layer (for PE binaries)
+├── ntdll.in              NT function stubs — each is a named .in fn endpoint
 ├── kernel32.in           Win32 base API (console, file, process, sync)
 ├── user32.in             Window management stubs → compositor
 ├── gdi32.in              GDI stubs → framebuffer primitives
@@ -122,13 +129,14 @@ components/ntos/
    - Resolve import table against ntdll stubs
    - Call entry point
 
-2. **ntdll stubs** (`ntdll.in`)
-   - Process: `NtTerminateProcess`, `NtQueryInformationProcess`
-   - Thread: `NtCreateThread`, `NtTerminateThread`
-   - File: `NtCreateFile`, `NtReadFile`, `NtWriteFile`, `NtClose`
-   - Memory: `NtAllocateVirtualMemory`, `NtFreeVirtualMemory`, `NtProtectVirtualMemory`
-   - Misc: `NtQuerySystemInformation`, `NtQueryPerformanceCounter`
-   - RTL: `RtlInitUnicodeString`, `RtlCompareMemory`, `RtlMoveMemory`, `RtlZeroMemory`
+2. **NT function stubs** (`ntdll.in`)
+   Each is a named `.in` function, self-documenting, called directly by PE stubs:
+   - Process: `fn NtTerminateProcess(handle, code)`, `fn NtQueryInformationProcess(...)`
+   - Thread: `fn NtCreateThread(...)`, `fn NtTerminateThread(...)`
+   - File: `fn NtCreateFile(...)`, `fn NtReadFile(...)`, `fn NtWriteFile(...)`, `fn NtClose(handle)`
+   - Memory: `fn NtAllocateVirtualMemory(...)`, `fn NtFreeVirtualMemory(...)`, `fn NtProtectVirtualMemory(...)`
+   - Misc: `fn NtQuerySystemInformation(...)`, `fn NtQueryPerformanceCounter()`
+   - RTL: `fn RtlInitUnicodeString(...)`, `fn RtlCompareMemory(...)`, `fn RtlMoveMemory(...)`, `fn RtlZeroMemory(...)`
 
 3. **NT Executive skeleton** (`ntoskrnl.in`, `ob/`, `ps/`)
    - Object Manager: root directory, object types, handle table per-process
@@ -136,45 +144,46 @@ components/ntos/
    - I/O Manager: minimal IRP dispatch (file → VFS passthrough)
 
 4. **kernel32** (`kernel32.in`)
-   - Console: `WriteConsoleA`, `GetStdHandle`
-   - File: `CreateFileA`, `ReadFile`, `WriteFile`, `CloseHandle`
-   - Process: `GetCurrentProcessId`, `ExitProcess`
-   - Heap: `GetProcessHeap`, `HeapAlloc`, `HeapFree`
+   - Console: `fn WriteConsoleA(...)`, `fn GetStdHandle(...)`
+   - File: `fn CreateFileA(...)`, `fn ReadFile(...)`, `fn WriteFile(...)`, `fn CloseHandle(...)`
+   - Process: `fn GetCurrentProcessId(...)`, `fn ExitProcess(...)`
+   - Heap: `fn GetProcessHeap(...)`, `fn HeapAlloc(...)`, `fn HeapFree(...)`
 
-5. **Syscall plumbing**
-   - Shared-page RPC between kernel and ntoskrnl
-   - NT syscall table (first 50 entries)
-   - Kernel dispatcher range 128-255 → NT forward
+5. **PE stub generation**
+   - PE loader resolves imports: sees `ntdll.NtWriteFile`
+   - Generates trampoline: loads args from PE ABI, calls `fn NtWriteFile(...)` directly
+   - No syscall number table, no central dispatcher
+   - Compiler can inline simple stubs (e.g., `NtClose` → direct `ob_close` call)
 
 6. **Demo**
    - `nt_demo` shell command loads `hello.exe` from filesystem
-   - PE loaded, mapped, imports resolved
-   - ntdll → ntoskrnl → VFS → serial output
+   - PE loaded, mapped, imports resolved to function endpoints
+   - ntdll fns → ntoskrnl → VFS → serial output
    - Prints "Hello from Windows on Space!" and exits
 
-### Syscalls implemented (≈30)
+### NT functions implemented (≈30)
 
-| NT # | Name | Mapping |
-|------|------|---------|
-| 0x00 | NtCreateFile | ob → VFS open |
-| 0x03 | NtReadFile | ob → VFS read |
-| 0x04 | NtWriteFile | ob → VFS write |
-| 0x06 | NtClose | ob handle close |
-| 0x13 | NtAllocateVirtualMemory | mm → domain alloc |
-| 0x1B | NtFreeVirtualMemory | mm → no-op (bump) |
-| 0x26 | NtTerminateProcess | ps → proc_exit |
-| 0x2D | NtCreateThread | ps → thr_create |
-| 0x34 | NtQueryInformationProcess | ps query |
-| 0x36 | NtQuerySystemInformation | basic system info |
-| 0x48 | NtTerminateThread | ps → thr_exit |
-| 0x4E | NtQueryPerformanceCounter | rdtsc or ticks |
-| 0x50 | NtProtectVirtualMemory | no-op (no page prot yet) |
+| Function | Mapping |
+|----------|---------|
+| NtCreateFile | ob → VFS open |
+| NtReadFile | ob → VFS read |
+| NtWriteFile | ob → VFS write |
+| NtClose | ob handle close |
+| NtAllocateVirtualMemory | mm → domain alloc |
+| NtFreeVirtualMemory | mm → no-op (bump) |
+| NtTerminateProcess | ps → proc_exit |
+| NtCreateThread | ps → thr_create |
+| NtQueryInformationProcess | ps query |
+| NtQuerySystemInformation | basic system info |
+| NtTerminateThread | ps → thr_exit |
+| NtQueryPerformanceCounter | rdtsc or ticks |
+| NtProtectVirtualMemory | no-op (no page prot yet) |
 
 ### Reference files
 
 - PE loader logic: `ref/wine/dlls/ntdll/loader.c` (LdrLoadDll, LdrInitializeThunk)
 - PE header parsing: `ref/reactos/dll/ntdll/ldr/`
-- NT syscall numbers: `ref/wine/dlls/ntdll/ntsyscalls.h`
+- NT syscall numbers → function stubs: `ref/wine/dlls/ntdll/ntsyscalls.h`
 - Object Manager types: `ref/reactos/ntoskrnl/ob/obdir.c`, `obhandle.c`
 - Process Manager: `ref/reactos/ntoskrnl/ps/process.c`, `thread.c`
 - kernel32 console: `ref/wine/dlls/kernel32/console.c`
@@ -253,9 +262,14 @@ components/ntos/
    - Window creation (CreateWindowExA/W) — defer to compositor when ready
    - All GUI operations return success but are no-ops for now
 
-### Syscalls (≈80 new)
+### NT functions (≈80 new)
 
-Roughly 110 total NT syscalls by end of M2. Covers the NT executive API surface that kernel32 and user32 depend on.
+Roughly 110 total named `.in` functions by end of M2. Each maps to one NT
+syscall name (`NtCreateFile`, `NtWaitForSingleObject`, etc.). No numbered
+table — the function name IS the identity. PE stub generator resolves
+import names directly to function addresses.
+
+Covers the NT executive API surface that kernel32 and user32 depend on.
 
 ### Reference files
 
@@ -321,6 +335,18 @@ Roughly 110 total NT syscalls by end of M2. Covers the NT executive API surface 
 
 ## Design Decisions
 
+### Function endpoints instead of numbered syscalls
+
+NT operations are named `.in` functions, not numbers. A PE stub calls
+`fn NtReadFile(...)` directly. No dispatcher, no switch statement.
+
+- Self-documenting: `fn NtCreateFile(...)` is clearer than dispatch table
+- Compiler-optimized: each function is a real call target, inlinable
+- Each function can be its own channel endpoint for cross-domain IPC
+- PE compatibility: stub generator maps `ntdll.NtReadFile` import → function address
+- Numbers still exist in the PE binary (x86_64 `mov eax, n; syscall`),
+  but the stub layer maps them to named functions, not a central dispatcher
+
 ### Why ring-3 for NT executive?
 - Isolation: a bug in the personality can't corrupt the kernel
 - Matches existing pattern: Linux personality already runs ring-3
@@ -372,7 +398,7 @@ Roughly 110 total NT syscalls by end of M2. Covers the NT executive API surface 
 ## Tests
 
 - `nt_demo hello.exe` — smoke test, runs on every boot
-- `nt_syscall_selftest` — exercises each implemented syscall
+- `nt_fn_selftest` — exercises each implemented NT function by name
 - `nt_pe_loader_test` — loads a test PE and verifies sections
 - `nt_ob_test` — creates/destroys objects, walks directory namespace
 - `nt_ps_test` — creates process, queries info, terminates
@@ -381,7 +407,7 @@ Roughly 110 total NT syscalls by end of M2. Covers the NT executive API surface 
 
 | Risk | Mitigation |
 |------|-----------|
-| NT syscall surface is enormous (~400+) | Implement on-demand, guided by what kernel32 calls |
+| NT syscall surface is enormous (~400+) | Implement on-demand as function endpoints, guided by what kernel32 calls |
 | PE format edge cases (relocations, TLS, SEH) | Narrow MVP: only statically-linked, no-SEH binaries |
 | Unicode everywhere in NT | Rtl unicode in M2, ASCII-only in M1 |
 | Async I/O complexity | Sync-only in M1, APC-based async in M2 |
