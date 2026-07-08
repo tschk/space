@@ -194,9 +194,11 @@ fn worker_a() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <worker A> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space:   <worker A> round 0x")
+      serial_write_hex(port, round)
+      serial_nl(port)
+    }
     round = round + 1
     thr_yield()
   }
@@ -207,9 +209,11 @@ fn worker_b() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <worker B> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space:   <worker B> round 0x")
+      serial_write_hex(port, round)
+      serial_nl(port)
+    }
     round = round + 1
     thr_yield()
   }
@@ -220,9 +224,11 @@ fn worker_c() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    serial_write_cstr(port, "space:   <worker C> round 0x")
-    serial_write_hex(port, round)
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space:   <worker C> round 0x")
+      serial_write_hex(port, round)
+      serial_nl(port)
+    }
     round = round + 1
     thr_yield()
   }
@@ -234,11 +240,15 @@ fn run_scheduler(port: Int) -> void {
   thr_create(worker_a)
   thr_create(worker_b)
   thr_create(worker_c)
-  serial_write_cstr(port, "space: scheduler running 3 threads, round-robin")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: scheduler running 3 threads, round-robin")
+    serial_nl(port)
+  }
   thr_run()
-  serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
+    serial_nl(port)
+  }
   return
 }
 
@@ -247,9 +257,11 @@ fn task_producer() -> Int {
   while i < 8 {
     chan_send(chan0, 0x100 + i)
     let port = com1()
-    serial_write_cstr(port, "space:   <producer> sent 0x")
-    serial_write_hex(port, 0x100 + i)
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space:   <producer> sent 0x")
+      serial_write_hex(port, 0x100 + i)
+      serial_nl(port)
+    }
     i = i + 1
     thr_yield()
   }
@@ -261,27 +273,35 @@ fn task_consumer() -> Int {
   while m < 8 {
     let v = chan_recv(chan0)
     let port = com1()
-    serial_write_cstr(port, "space:   <consumer> recv 0x")
-    serial_write_hex(port, v)
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space:   <consumer> recv 0x")
+      serial_write_hex(port, v)
+      serial_nl(port)
+    }
     m = m + 1
   }
   return 0
 }
 
 fn run_channels(port: Int) -> void {
-  serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
+    serial_nl(port)
+  }
   thr_reset()
   chan0 = chan_new(4)
   thr_create(task_consumer)
   thr_create(task_producer)
-  serial_write_cstr(port, "space:   running threads...")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space:   running threads...")
+    serial_nl(port)
+  }
   thr_run()
-  let cnt = chan_count(chan0)
-  serial_write_cstr(port, "space: channel demo complete, remaining 0x")
-  serial_write_hex(port, cnt)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    let cnt = chan_count(chan0)
+    serial_write_cstr(port, "space: channel demo complete, remaining 0x")
+    serial_write_hex(port, cnt)
+    serial_nl(port)
+  }
   return
 }

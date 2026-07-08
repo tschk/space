@@ -6,3 +6,4 @@ kernel/target/
 .DS_Store
 
 build/
+.pi-subagents/

@@ -200,7 +200,26 @@ fn shell(port: Int) -> void {
     serial_write_cstr(port, "space> ")
     let n = read_line(port)
     if line_eq("help") != 0 {
-      serial_write_cstr(port, "help status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial_write_cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial_nl(port)
+    } else if line_eq("verbose") != 0 {
+      boot_quiet = 0
+      serial_write_cstr(port, "  verbose mode enabled")
+      serial_nl(port)
+    } else if line_eq("quiet") != 0 {
+      boot_quiet = 1
+      serial_write_cstr(port, "  quiet mode enabled")
+      serial_nl(port)
+    } else if line_eq("selftest") != 0 {
+      serial_write_cstr(port, "  running boot diagnostics...")
+      serial_nl(port)
+      run_supervisor(port)
+      run_scheduler(port)
+      run_channels(port)
+      run_preemptive(port)
+      proc_selftest()
+      test_sci_loader(port)
+      serial_write_cstr(port, "  diagnostics complete")
       serial_nl(port)
 
     } else if line_eq("snapshot") != 0 {

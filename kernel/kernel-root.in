@@ -129,6 +129,7 @@ var pcurrent: Int = 0
 var preempt_deadline: Int = 0
 var work_a: Int = 0
 var work_b: Int = 0
+var boot_quiet: Int = 1
 
 const MAX_PREEMPT_COMPS = 8
 var preempt_entry: Int = 0
@@ -188,8 +189,10 @@ fn supervisor_activate(port: Int, c: Int) -> void {
   let entry = load64(c + 16)
   let required = load64(c + 24)
   let missing = required & (-1 ^ realm_grants)
-  serial_write_cstr(port, "space: supervisor evaluating ")
-  serial_write_cstr(port, name)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: supervisor evaluating ")
+    serial_write_cstr(port, name)
+  }
   if missing != 0 {
     serial_write_cstr(port, " -> DENIED undeclared cap 0x")
     serial_write_hex(port, missing)
@@ -197,32 +200,40 @@ fn supervisor_activate(port: Int, c: Int) -> void {
     return
   }
   cap_mint(c, required)
-  serial_write_cstr(port, " -> ACTIVATING")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, " -> ACTIVATING")
+    serial_nl(port)
+  }
   let status = invoke(entry)
-  serial_write_cstr(port, "space:   ")
-  serial_write_cstr(port, name)
-  serial_write_cstr(port, " returned status 0x")
-  serial_write_hex(port, status)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space:   ")
+    serial_write_cstr(port, name)
+    serial_write_cstr(port, " returned status 0x")
+    serial_write_hex(port, status)
+    serial_nl(port)
+  }
   return
 }
 
 fn svc_heartbeat() -> Int {
   let port = com1()
-  serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
-  serial_write_hex(port, ticks)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
+    serial_write_hex(port, ticks)
+    serial_nl(port)
+  }
   return 0
 }
 
 fn svc_logger() -> Int {
   let port = com1()
-  serial_write_cstr(port, "space:   [logger] objects 0x")
-  serial_write_hex(port, obj_counter)
-  serial_write_cstr(port, " caps 0x")
-  serial_write_hex(port, cap_count)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space:   [logger] objects 0x")
+    serial_write_hex(port, obj_counter)
+    serial_write_cstr(port, " caps 0x")
+    serial_write_hex(port, cap_count)
+    serial_nl(port)
+  }
   return 0
 }
 
@@ -235,8 +246,10 @@ fn run_supervisor(port: Int) -> void {
   let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
   let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
   let c3 = component_register("pager", svc_pager, cap_memory())
-  serial_write_cstr(port, "space: supervisor activating component graph")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: supervisor activating component graph")
+    serial_nl(port)
+  }
   supervisor_activate(port, c1)
   supervisor_activate(port, c2)
   supervisor_activate(port, c3)
@@ -285,13 +298,15 @@ fn preempt_register_component(port: Int, entry: Int, cap_info: Int, domain: Int,
   store64(ptasks + i * 8, ctx)
   pcount = pcount + 1
   preempt_count = preempt_count + 1
-  serial_write_cstr(port, "  preempt: registered component i=0x")
-  serial_write_hex(port, i)
-  serial_write_cstr(port, " pcount=0x")
-  serial_write_hex(port, pcount)
-  serial_write_cstr(port, " ctx=0x")
-  serial_write_hex(port, ctx)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "  preempt: registered component i=0x")
+    serial_write_hex(port, i)
+    serial_write_cstr(port, " pcount=0x")
+    serial_write_hex(port, pcount)
+    serial_write_cstr(port, " ctx=0x")
+    serial_write_hex(port, ctx)
+    serial_nl(port)
+  }
   return i
 }
 
@@ -315,8 +330,10 @@ fn preempt_start(port: Int) -> void {
   store64(0x4028, schedule_tick)
   idt_set(32, load64(0x4020))
   sti()
-  serial_write_cstr(port, "space: preemptive scheduler active")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: preemptive scheduler active")
+    serial_nl(port)
+  }
   return
 }
 
@@ -337,8 +354,10 @@ fn preempt_worker_b() -> Int {
 }
 
 fn run_preemptive(port: Int) -> void {
-  serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
+    serial_nl(port)
+  }
   ptasks = alloc(3 * 8)
   pcount = 3
   pcurrent = 0
@@ -349,7 +368,7 @@ fn run_preemptive(port: Int) -> void {
   let ctx_b = build_preempt_task(preempt_worker_b, sb + 16384)
   store64(ptasks + 8, ctx_a)
   store64(ptasks + 16, ctx_b)
-  preempt_deadline = ticks + 10
+  preempt_deadline = ticks + 2
   cli()
   store64(0x4028, schedule_tick)
   idt_set(32, load64(0x4020))
@@ -604,18 +623,21 @@ fn kernel_entry(mb_info: Int) -> Int {
     store64(0x200000 + g, 0)
     g = g + 8
   }
+  boot_quiet = 1
 
   discover_memory(mb_info)
-  serial_write_cstr(port, "space: available RAM bytes 0x")
-  serial_write_hex(port, total_ram)
-  serial_write_cstr(port, " across regions 0x")
-  serial_write_hex(port, region_count)
-  serial_nl(port)
-  serial_write_cstr(port, "space: heap window 0x")
-  serial_write_hex(port, heap_next)
-  serial_write_cstr(port, " .. 0x")
-  serial_write_hex(port, heap_end)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: available RAM bytes 0x")
+    serial_write_hex(port, total_ram)
+    serial_write_cstr(port, " across regions 0x")
+    serial_write_hex(port, region_count)
+    serial_nl(port)
+    serial_write_cstr(port, "space: heap window 0x")
+    serial_write_hex(port, heap_next)
+    serial_write_cstr(port, " .. 0x")
+    serial_write_hex(port, heap_end)
+    serial_nl(port)
+  }
 
   obj_arena_init(65536)
   cap_table_init(64)
@@ -624,38 +646,46 @@ fn kernel_entry(mb_info: Int) -> Int {
   store64(root_realm + 16, cap_table_obj)
   let kernel_cap = cap_mint(root_realm, 0xF)
 
-  serial_write_cstr(port, "space: bootstrap realm object id 0x")
-  serial_write_hex(port, obj_id(root_realm))
-  serial_nl(port)
-  serial_write_cstr(port, "space: root cap table at 0x")
-  serial_write_hex(port, cap_table_base)
-  serial_write_cstr(port, " caps 0x")
-  serial_write_hex(port, cap_count)
-  serial_nl(port)
-  serial_write_cstr(port, "space: objects allocated 0x")
-  serial_write_hex(port, obj_counter)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: bootstrap realm object id 0x")
+    serial_write_hex(port, obj_id(root_realm))
+    serial_nl(port)
+    serial_write_cstr(port, "space: root cap table at 0x")
+    serial_write_hex(port, cap_table_base)
+    serial_write_cstr(port, " caps 0x")
+    serial_write_hex(port, cap_count)
+    serial_nl(port)
+    serial_write_cstr(port, "space: objects allocated 0x")
+    serial_write_hex(port, obj_counter)
+    serial_nl(port)
+  }
 
   domain_init()
-  serial_write_cstr(port, "space: domain subsystem init, ")
-  serial_write_dec_wide(port, domain_count)
-  serial_write_cstr(port, " domains (kernel + ")
-  let available_domains = 63
-  serial_write_dec_wide(port, available_domains)
-  serial_write_cstr(port, " available)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: domain subsystem init, ")
+    serial_write_dec_wide(port, domain_count)
+    serial_write_cstr(port, " domains (kernel + ")
+    let available_domains = 63
+    serial_write_dec_wide(port, available_domains)
+    serial_write_cstr(port, " available)")
+    serial_nl(port)
+  }
 
   interrupts_init()
-  serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
+    serial_nl(port)
+  }
 
   let shown = 0
   while shown < 1 {
     hlt()
-    if ticks >= (shown + 1) * 20 {
-      serial_write_cstr(port, "space: timer ticks 0x")
-      serial_write_hex(port, ticks)
-      serial_nl(port)
+    if ticks >= (shown + 1) * 2 {
+      if boot_quiet == 0 {
+        serial_write_cstr(port, "space: timer ticks 0x")
+        serial_write_hex(port, ticks)
+        serial_nl(port)
+      }
       shown = shown + 1
     }
   }
@@ -671,47 +701,61 @@ fn kernel_entry(mb_info: Int) -> Int {
 
 
   proc_init(16)
-  serial_write_cstr(port, "space: process table initialized (max 16)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: process table initialized (max 16)")
+    serial_nl(port)
+  }
 
-  proc_selftest()
+  if boot_quiet == 0 {
+    proc_selftest()
+  }
 
   net_component_start(port)
 
   let nvme_rc = nvme_init()
-  if nvme_rc == 0 {
-    serial_write_cstr(port, "space: NVMe controller initialized")
-    serial_nl(port)
-  } else {
-    serial_write_cstr(port, "space: NVMe not found")
-    serial_nl(port)
+  if boot_quiet == 0 {
+    if nvme_rc == 0 {
+      serial_write_cstr(port, "space: NVMe controller initialized")
+      serial_nl(port)
+    } else {
+      serial_write_cstr(port, "space: NVMe not found")
+      serial_nl(port)
+    }
   }
 
   let usb_rc = xhci_init()
-  if usb_rc == 0 {
-    serial_write_cstr(port, "space: USB xHCI controller initialized")
-    serial_nl(port)
-  } else {
-    serial_write_cstr(port, "space: USB xHCI not found")
-    serial_nl(port)
+  if boot_quiet == 0 {
+    if usb_rc == 0 {
+      serial_write_cstr(port, "space: USB xHCI controller initialized")
+      serial_nl(port)
+    } else {
+      serial_write_cstr(port, "space: USB xHCI not found")
+      serial_nl(port)
+    }
   }
 
   load_arena_init(4 * 1024 * 1024)
-  serial_write_cstr(port, "space: load arena reserved (4 MiB) at 0x")
-  serial_write_hex(port, load_arena_base)
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: load arena reserved (4 MiB) at 0x")
+    serial_write_hex(port, load_arena_base)
+    serial_nl(port)
+  }
 
   fs_init()
-  serial_write_cstr(port, "space: filesystem initialized")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: filesystem initialized")
+    serial_nl(port)
+  }
   time_init()
-  if sf_mem_disk != 0 {
-    serial_write_cstr(port, "space: sparkfs mem volume at 0x")
-    serial_write_hex(port, sf_mem_disk)
-    serial_nl(port)
-  } else {
-    serial_write_cstr(port, "space: sparkfs nvme volume")
-    serial_nl(port)
+  if boot_quiet == 0 {
+    if sf_mem_disk != 0 {
+      serial_write_cstr(port, "space: sparkfs mem volume at 0x")
+      serial_write_hex(port, sf_mem_disk)
+      serial_nl(port)
+    } else {
+      serial_write_cstr(port, "space: sparkfs nvme volume")
+      serial_nl(port)
+    }
   }
 
   vfs_init()
@@ -720,44 +764,60 @@ fn kernel_entry(mb_info: Int) -> Int {
 
 
   linux_init()
-  serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
+    serial_nl(port)
+  }
 
   let fb_rc = fb_init(mb_info)
   if fb_rc == 0 {
-    serial_write_cstr(port, "space: framebuffer initialized")
-    fb_info(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space: framebuffer initialized")
+      fb_info(port)
+    }
   } else {
-    serial_write_cstr(port, "space: framebuffer not available (no VBE info)")
-    serial_nl(port)
+    if boot_quiet == 0 {
+      serial_write_cstr(port, "space: framebuffer not available (no VBE info)")
+      serial_nl(port)
+    }
   }
 
   if fb_ready != 0 {
     let mouse_rc = mouse_init()
     if mouse_rc == 0 {
-      serial_write_cstr(port, "space: PS/2 mouse initialized")
-      serial_nl(port)
+      if boot_quiet == 0 {
+        serial_write_cstr(port, "space: PS/2 mouse initialized")
+        serial_nl(port)
+      }
     } else {
-      serial_write_cstr(port, "space: PS/2 mouse not found")
-      serial_nl(port)
+      if boot_quiet == 0 {
+        serial_write_cstr(port, "space: PS/2 mouse not found")
+        serial_nl(port)
+      }
     }
     if ps2_kbd_init() == 0 {
-      serial_write_cstr(port, "space: PS/2 keyboard initialized")
-      serial_nl(port)
+      if boot_quiet == 0 {
+        serial_write_cstr(port, "space: PS/2 keyboard initialized")
+        serial_nl(port)
+      }
     }
   }
 
   if usb_rc == 0 {
     let kbd_rc = usb_kbd_init()
     if kbd_rc == 0 {
-      serial_write_cstr(port, "space: USB HID keyboard ready")
-      serial_nl(port)
+      if boot_quiet == 0 {
+        serial_write_cstr(port, "space: USB HID keyboard ready")
+        serial_nl(port)
+      }
     }
   }
 
   comp_init()
-  serial_write_cstr(port, "space: compositor initialized")
-  serial_nl(port)
+  if boot_quiet == 0 {
+    serial_write_cstr(port, "space: compositor initialized")
+    serial_nl(port)
+  }
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
