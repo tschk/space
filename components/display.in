@@ -107,6 +107,12 @@ fn serial_has_byte(port: Int) -> Int {
 var heap_next: Int = 0x300000
 var heap_end: Int = 0x400000
 
+fn display_heap_init(base: Int, size: Int) -> void {
+  heap_next = base
+  heap_end = base + size
+  return
+}
+
 fn alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
   let p = heap_next
@@ -2707,6 +2713,13 @@ fn display_entry(cap_info: Int) -> Int {
   serial_init(port)
   serial_write_cstr(port, "display: component entered")
   serial_nl(port)
+  if cap_info != 0 {
+    let heap_base = load64(cap_info + 16)
+    let heap_size = load64(cap_info + 24)
+    if heap_base != 0 && heap_size != 0 {
+      display_heap_init(heap_base, heap_size)
+    }
+  }
   let rc = fb_init(0)
   if rc == 0 {
     serial_write_cstr(port, "display: framebuffer initialized")

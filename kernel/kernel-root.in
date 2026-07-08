@@ -324,6 +324,124 @@ const COMP_GNOME_BTN_CLOSE = 0x00C01C28
 const COMP_CURSOR_H = 16
 const COMP_CURSOR_W = 16
 
+// Runtime-loaded components get an isolated heap and a cross-domain shared
+// page mapped at the same virtual address in both domains.
+const COMP_HEAP_VIRT = 0x80000000
+const COMP_HEAP_SIZE = 0x200000
+const COMP_SHARED_VIRT = 0x70000000
+
+var comp_entry_arg: Int = 0
+var comp_cap_info_arg: Int = 0
+var comp_domain_arg: Int = 0
+
+fn comp_thread_wrapper() -> Int {
+  domain_switch(comp_domain_arg)
+  return invoke1(comp_entry_arg, comp_cap_info_arg)
+}
+
+fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int) -> Int {
+  serial_write_cstr(port, "  SCI: loading ")
+  serial_write_cstr(port, name)
+  serial_nl(port)
+  if load_addr == 0 {
+    serial_write_cstr(port, "  SCI: null load address")
+    serial_nl(port)
+    return -1
+  }
+  let magic = load64(load_addr + 0)
+  if magic != SCI_MAGIC {
+    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
+    serial_write_hex(port, load_addr)
+    serial_nl(port)
+    return -1
+  }
+  let required = load64(load_addr + 8)
+  let entry = load64(load_addr + 16)
+  let image_size = load64(load_addr + 24)
+  serial_write_cstr(port, "  SCI: manifest ok entry 0x")
+  serial_write_hex(port, entry)
+  serial_nl(port)
+
+  let missing = required & (-1 ^ realm_grants)
+  if missing != 0 {
+    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial_write_hex(port, missing)
+    serial_nl(port)
+    return -1
+  }
+  let domain = domain_create()
+  if domain == 0 {
+    serial_write_cstr(port, "  SCI: domain_create failed")
+    serial_nl(port)
+    return -1
+  }
+  serial_write_cstr(port, "  SCI: domain created")
+  serial_nl(port)
+
+  let component = component_register(name, entry, required)
+  let virt_load = entry - 32
+  let image_pages = (image_size + 4096 - 1) / 4096
+  let i = 0
+  while i < image_pages {
+    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+    i = i + 1
+  }
+  serial_write_cstr(port, "  SCI: image mapped")
+  serial_nl(port)
+
+  // Allocate and map a 2 MiB heap for the component.
+  let heap_pages = COMP_HEAP_SIZE / 4096
+  let j = 0
+  while j < heap_pages {
+    let p = frame_alloc()
+    domain_map(domain, COMP_HEAP_VIRT + j * 4096, p, 0x7)
+    j = j + 1
+  }
+  serial_write_cstr(port, "  SCI: heap mapped")
+  serial_nl(port)
+
+  // Create a cross-domain shared page and initialize it as a ring channel.
+  let shared = domain_create_shared_page(0, domain, COMP_SHARED_VIRT, COMP_SHARED_VIRT)
+  store64(shared + 0, 0)   // head
+  store64(shared + 8, 0)   // tail
+  store64(shared + 16, 508)  // capacity
+  store64(shared + 24, 8)      // msg_size
+  let k = 0
+  while k < 504 {
+    store64(shared + 32 + k * 8, 0)
+    k = k + 1
+  }
+  serial_write_cstr(port, "  SCI: shared page mapped")
+  serial_nl(port)
+
+  store64(component + 40, domain)
+  obj_link(root_realm, component)
+
+  let cap_info = alloc(64)
+  store64(cap_info + 0, cap_count)
+  store64(cap_info + 8, cap_table_base)
+  store64(cap_info + 16, COMP_HEAP_VIRT)
+  store64(cap_info + 24, COMP_HEAP_SIZE)
+  store64(cap_info + 32, COMP_SHARED_VIRT)
+  store64(cap_info + 40, domain)
+  store64(cap_info + 48, 800)
+  store64(cap_info + 56, 600)
+
+  serial_write_cstr(port, "  SCI: starting ")
+  serial_write_cstr(port, name)
+  serial_nl(port)
+  comp_entry_arg = entry
+  comp_cap_info_arg = cap_info
+  comp_domain_arg = domain
+  let tid = thr_create(comp_thread_wrapper)
+  store64(component + 48, tid)
+  serial_write_cstr(port, "  SCI: ")
+  serial_write_cstr(port, name)
+  serial_write_cstr(port, " thread 0x")
+  serial_write_hex(port, tid)
+  serial_nl(port)
+  return 0
+}
 
 fn sci_load(port: Int, load_addr: Int) -> Int {
   if load_addr == 0 || load_addr > 0x200000 {
@@ -577,6 +695,18 @@ fn kernel_entry(mb_info: Int) -> Int {
   comp_init()
   serial_write_cstr(port, "space: compositor initialized")
   serial_nl(port)
+
+  // Optional runtime-loaded Display / Input components (probed at fixed
+  // physical addresses). If present, they are started in isolated domains.
+  let display_load = load64(0x1a0000)
+  if display_load == SCI_MAGIC {
+    sci_load_runtime_component(port, 0x1a0000, "display")
+  }
+
+  let input_load = load64(0x1e0000)
+  if input_load == SCI_MAGIC {
+    sci_load_runtime_component(port, 0x1e0000, "input")
+  }
 
   shell(port)
 
