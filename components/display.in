@@ -2490,15 +2490,13 @@ fn dsp_composite() -> void {
   if fb_ready == 0 {
     return
   }
-  // Clear to dark blue
   fb_fill_rect(0, 0, fb_width, fb_height, 0x00000080)
 
-  // Draw surfaces back-to-front
   let i = 0
   while i < dsp_surface_count {
     let base = dsp_surfaces + i * dsp_surface_size()
     let flags = load64(base + 40)
-    if (flags & 1) != 0 {  // render visible surfaces
+    if (flags & 1) != 0 {
     let pool_id = load64(base + 8)
     let buf_off = load64(base + 16)
     let wh = load64(base + 24)
@@ -2512,7 +2510,6 @@ fn dsp_composite() -> void {
       let pool = load64(dsp_pools + pool_id * 8)
       let buf = pool + buf_off
       let src_pitch = w * 4
-      // Blit surface to framebuffer with clipping
       let row = 0
       while row < h {
         let dst_y = sy + row
@@ -2522,7 +2519,7 @@ fn dsp_composite() -> void {
             let dst_x = sx + col
             if dst_x >= 0 && dst_x < fb_width {
               let pixel = load32(buf + row * src_pitch + col * 4)
-              if pixel != 0 {  // skip transparent pixels
+              if pixel != 0 {
                 store32(fb_addr + dst_y * fb_pitch + dst_x * 4, pixel)
               }
             }
@@ -2536,8 +2533,8 @@ fn dsp_composite() -> void {
     i = i + 1
   }
 
-  // Draw mouse cursor
   dsp_draw_cursor()
+  return
 }
 
 var dsp_prev_cx: Int = 0

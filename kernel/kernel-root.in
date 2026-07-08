@@ -264,8 +264,11 @@ fn schedule_tick(ctx: Int) -> Int {
   outb(0x20, 0x20)
   store64(ptasks + pcurrent * 8, ctx)
   pcurrent = (pcurrent + 1) % pcount
-  if preempt_domain != 0 {
-    domain_switch(preempt_domain[pcurrent])
+  if preempt_pml4 != 0 {
+    let pml4 = load64(preempt_pml4 + pcurrent * 8)
+    if pml4 != 0 {
+      invoke1(load64(0x4060), pml4)
+    }
   }
   return load64(ptasks + pcurrent * 8)
 }
@@ -301,6 +304,7 @@ fn preempt_start(port: Int) -> void {
   preempt_pml4 = alloc((MAX_PREEMPT_COMPS + 1) * 8)
   store64(ptasks, 0)
   store64(preempt_domain, 0)
+  store64(preempt_pml4, load64(0x40B8))
   store64(0x40A0, preempt_entry)
   store64(0x40A8, preempt_cap_info)
   store64(0x40B0, preempt_pml4)
