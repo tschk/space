@@ -832,8 +832,17 @@ fn time_sleep_ms(ms: Int) -> void {
 // Utility functions
 // ====================================================================================
 
+var panic_test_mode: Int = 0
+var panic_test_msg: Int = 0
+var panic_test_halted: Int = 0
+
 // Print a panic message and halt the nanokernel.
 fn panic(msg: Int) -> void {
+  if panic_test_mode != 0 {
+    panic_test_msg = msg
+    panic_test_halted = 1
+    return
+  }
   let port = com1()
   serial_nl(port)
   serial_write_cstr(port, "space: *** PANIC: ")
