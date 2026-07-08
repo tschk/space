@@ -33,22 +33,24 @@ Measured on macOS ARM64 (M3), Inauguration v0.7.1.
 
 | Metric | Value |
 |--------|-------|
-| Boot image size | 230,662 B (trampoline 4,096 + kernel 226,566) |
-| Kernel compile (warm, cached) | ~27 ms |
-| Boot to interactive shell (QEMU TCG, Apple Silicon) | ~1,920 ms |
-| Boot to interactive shell (QEMU + KVM, x86_64) | ~40 ms |
-| Boot to interactive shell + halt | ~1,935 ms |
+| Metric | x86_64 KVM | Apple Silicon TCG |
+|--------|-----------|-------------------|
+| Boot image size | 230,662 B | 230,662 B |
+| Kernel compile (warm, cached) | ~27 ms | ~27 ms |
+| Boot to interactive shell | ~2,000 ms | ~1,900 ms |
+| SeaBIOS + boot | ~200 ms | ~200 ms |
+| Kernel init to shell | ~1,800 ms | ~1,700 ms |
 
-The kernel is compiled from `.in` source to x86_64 machine code by
-[Inauguration](https://github.com/tschk/inauguration) and linked into a single
-bootable binary.  Serial output-driven timing via `scripts/bench-boot.sh`.
+Measured via serial output polling.  KVM on Intel i9-7960X (Fedora 43, WSL2).
+TCG on Apple M3 (macOS 15).  Boot time is dominated by SeaBIOS firmware init
+and serial output through the emulated 16550 UART.
 
 ### Performance notes
 
-- Most boot time (~1.5 s) is QEMU (SeaBIOS + TCG on ARM64).  Real kernel init
-  is ~400 ms.  On x86_64 with KVM acceleration, the same image boots in ~40 ms.
-- `scripts/boot.sh` drops into an interactive shell.  Type `halt` to exit QEMU.
+- Most kernel init time is waiting for PIT ticks for timer calibration.
 - The warm compile path is cached by source hash; repeated edits rebuild fast.
+- `scripts/boot.sh` drops into an interactive shell.  Type `halt` to exit.
+- `scripts/bench-boot.sh` runs 5 iterations and reports median/min/max.
 
 ## Target architectures
 
