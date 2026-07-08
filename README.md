@@ -25,7 +25,12 @@ The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), boots to x86_64 long
 mode under QEMU and verifies the boot-critical subsystems on every boot.
 
-Subsystem status is tracked in [`architecture.md`](architecture.md).
+Subsystem status is tracked in [`architecture.md`](architecture.md). The
+architecture roadmap is in [`ROADMAP.md`](ROADMAP.md).
+
+**Direction:** Ring 0 contains only the nanokernel core — boot, memory,
+traps, domains, channels, scheduler. All drivers, filesystems, personalities,
+and services are ring-3 components with isolated memory domains.
 
 ## Benchmarks
 
@@ -51,6 +56,21 @@ and serial output through the emulated 16550 UART.
 - The warm compile path is cached by source hash; repeated edits rebuild fast.
 - `scripts/boot.sh` drops into an interactive shell.  Type `halt` to exit.
 - `scripts/bench-boot.sh` runs 5 iterations and reports median/min/max.
+
+### Known limitations
+
+- **Compositor is a QEMU-only demo.** Uses Bochs VBE extensions, which only
+  QEMU emulates. Real GPUs (Intel, AMD, NVIDIA) are not supported.
+- **All code runs in ring 0.** Memory domains provide page-table isolation,
+  but no hardware ring 3 yet. Ring-3 components are the roadmap priority.
+- **Networking: UDP only.** e1000 driver sends raw UDP and ARP. No TCP, no
+  sockets, no IP stack.
+- **Deterministic execution is a demo.** xorshift PRNG on single core. Real
+  determinism needs deadline scheduling and hardware with guaranteed timing.
+- **NVMe: tested on QEMU emulation only.** Real NVMe hardware may differ.
+- **USB: keyboard-only.** xHCI works for HID boot protocol. No mass storage,
+  no hubs.
+- **PCI: configuration scan only.** No MSI-X, no ACPI, no hotplug.
 
 ## Target architectures
 

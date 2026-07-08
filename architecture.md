@@ -254,6 +254,50 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
 
 ---
 
+## Ring Architecture
+
+Space enforces a strict ring separation. Ring 0 is the smallest possible
+nanokernel. Everything else is a ring-3 SCI component.
+
+### Ring 0 — Nanokernel Core
+
+```
+boot/multiboot.asm      x86_64 bring-up
+serial.in               debug console (COM1)
+memory.in               physical memory discovery + frame allocator
+interrupts.in           IDT, PIC, PIT
+syscall.in              trap dispatcher (int 0x80, DPL=3)
+domain.in               page table management, memory domains
+channel.in              cross-domain shared-page IPC
+sched.in                cooperative scheduler
+object.in               object arena + capability table
+kernel-root.in          bootstrap + SCI component loader
+```
+
+These are the only files that run in ring 0. Everything below is a
+ring-3 component.
+
+### Ring 3 — Components
+
+All drivers, filesystems, services, and personalities live in isolated
+memory domains with declared capabilities and channel-based IPC:
+
+| Category | Components |
+|----------|-----------|
+| Drivers | PCI, NVMe, e1000, USB, framebuffer, PS/2 mouse |
+| Filesystem | SparkFS block/inode/dir/path, VFS |
+| Services | Process manager, shell, compositor, time, display, input |
+| Personalities | Linux/POSIX, Windows NT |
+| Libraries | libc (compiled via Inauguration's C/C++/Rust frontend, not .in) |
+
+Ring-3 components cannot access kernel memory, cannot modify page tables,
+and can only communicate via shared-page channels with capability-gated
+IPC. The kernel validates every component's declared capabilities at
+load time.
+
+This architecture ensures that a bug in the USB driver, e1000 driver, or
+personality server cannot corrupt the kernel.
+
 ## Current Status
 
 ### Running Today
@@ -261,20 +305,19 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
 - Serial console, physical memory discovery, page tables
 - Object graph arena, capability table, bootstrap realm
 - Cooperative + preemptive multitasking
-- Typed in-address-space channel IPC demo
 - Cross-domain shared-page channels
 - SCI manifest loader with capability-mask validation
 - Interactive shell (20+ commands)
 - e1000 NIC driver (UDP transmit, ARP)
-- Deterministic execution subsystem
-- Memory domain isolation (Phase 0)
-- NVMe storage driver and flat filesystem
+- Memory domain isolation
+- NVMe storage driver and SparkFS filesystem
 - Process abstraction with lifecycle management
-- Syscall interface (int 0x80) with DPL=3 user-mode access
-- Linux personality layer (POSIX syscall translation)
-- VBE framebuffer (1024x768x32 graphics mode)
+- Syscall interface (int 0x80) with DPL=3
+- VBE framebuffer (1024x768x32 — QEMU-only)
+- Wayland-style compositor (QEMU-only demo, not real GPU HW)
 - PS/2 mouse driver
-- Wayland-style compositor with desktop environment
+- Linux personality (POSIX syscall translation — currently in-kernel, moving to ring 3)
+- Deterministic execution demo (xorshift64 PRNG, single-core only)
 
 ### Repository Layout
 

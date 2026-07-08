@@ -1,0 +1,56 @@
+package space.kernel
+
+// det.in — deterministic execution demo.
+//
+// THIS IS A DEMO ONLY.  Real deterministic execution requires:
+//   - deadline-based scheduling with priority inheritance
+//   - hardware with guaranteed instruction timing
+//   - interrupt-free critical sections
+//   - no DMA, no asynchronous I/O
+//
+// The current test runs an xorshift64 PRNG workload twice with the same
+// seed and verifies identical output.  This proves the PRNG is deterministic
+// on a single core with no interrupts, which is trivial — not that the
+// kernel as a whole is deterministic.
+//
+// Use for: testing that the compiler's code generation is repeatable.
+// Do NOT use for: security, real-time, or any correctness-critical path.
+
+// xorshift64 PRNG step.
+fn det_next(s: Int) -> Int {
+  let x = s
+  x = x ^ (x << 13)
+  x = x ^ (x >> 7)
+  x = x ^ (x << 17)
+  return x
+}
+
+// Run 1000 PRNG iterations and sum the low byte.
+fn det_workload(seed: Int) -> Int {
+  let s = seed
+  let sum = 0
+  for i in 0..1000 {
+    s = det_next(s)
+    sum = sum + (s & 0xFF)
+  }
+  return sum
+}
+
+// Shell command `det`: verify that two identical PRNG runs match.
+fn run_determinism(port: Int) -> void {
+  serial_write_cstr(port, "space: determinism demo (xorshift64 PRNG)")
+  serial_nl(port)
+  let sum1 = det_workload(42)
+  let sum2 = det_workload(42)
+  serial_write_cstr(port, "space: seed 42 run 1 sum 0x")
+  serial_write_hex(port, sum1)
+  serial_write_cstr(port, " run 2 sum 0x")
+  serial_write_hex(port, sum2)
+  if sum1 == sum2 {
+    serial_write_cstr(port, " MATCH (PRNG is deterministic on single core)")
+  } else {
+    serial_write_cstr(port, " MISMATCH (compiler bug or memory corruption)")
+  }
+  serial_nl(port)
+  return
+}
