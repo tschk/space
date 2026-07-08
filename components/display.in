@@ -1523,26 +1523,6 @@ fn comp_win_focus(idx: Int) -> void {
   return
 }
 
-fn comp_win_place(idx: Int, x: Int, y: Int, w: Int, h: Int) -> void {
-  if idx < 0 || idx >= comp_count {
-    return
-  }
-  if w < COMP_MIN_WIN_W {
-    w = COMP_MIN_WIN_W
-  }
-  if h < COMP_MIN_WIN_H {
-    h = COMP_MIN_WIN_H
-  }
-  let base = comp_win_base(idx)
-  store32(base + 4, x)
-  store32(base + 8, y)
-  store32(base + 12, w)
-  store32(base + 16, h)
-  let flags = load32(base + 20)
-  store32(base + 20, flags | COMP_WIN_DIRTY)
-  return
-}
-
 // --- rendering --------------------------------------------------------------
 
 // Draw the desktop background (flat color, no stripes — ponytail: stripes were 20 loops per frame).
