@@ -321,6 +321,46 @@ fn libc_selftest_malloc() -> Int {
 
 // Run a battery of tests for every libc function. Prints diagnostic output
 // and "libc self-test passed" on success. Returns 1 on pass, 0 on fail.
+
+fn libc_selftest_fmt_unsigned_base() -> Int {
+  let pass = 1
+  let buf = malloc(64)
+  let len = 0
+
+  // val = 0
+  len = fmt_unsigned_base(0, 10, buf)
+  pass = pass & libc_check(len == 1, "fmt_unsigned_base 0 length")
+  pass = pass & libc_check(strcmp(buf, "0") == 0, "fmt_unsigned_base 0 value")
+
+  // base 10
+  len = fmt_unsigned_base(12345, 10, buf)
+  pass = pass & libc_check(len == 5, "fmt_unsigned_base base 10 length")
+  pass = pass & libc_check(strcmp(buf, "12345") == 0, "fmt_unsigned_base base 10 value")
+
+  // base 16
+  len = fmt_unsigned_base(255, 16, buf)
+  pass = pass & libc_check(len == 2, "fmt_unsigned_base base 16 length")
+  pass = pass & libc_check(strcmp(buf, "ff") == 0, "fmt_unsigned_base base 16 value")
+
+  // base 2
+  len = fmt_unsigned_base(10, 2, buf)
+  pass = pass & libc_check(len == 4, "fmt_unsigned_base base 2 length")
+  pass = pass & libc_check(strcmp(buf, "1010") == 0, "fmt_unsigned_base base 2 value")
+
+  // negative value (treated as absolute by current implementation)
+  len = fmt_unsigned_base(-42, 10, buf)
+  pass = pass & libc_check(len == 2, "fmt_unsigned_base negative length")
+  pass = pass & libc_check(strcmp(buf, "42") == 0, "fmt_unsigned_base negative value")
+
+  // large base
+  len = fmt_unsigned_base(35, 36, buf)
+  pass = pass & libc_check(len == 1, "fmt_unsigned_base base 36 length")
+  pass = pass & libc_check(strcmp(buf, "z") == 0, "fmt_unsigned_base base 36 value")
+
+  free(buf)
+  return pass
+}
+
 fn libc_selftest() -> Int {
   let port = com1()
   serial_write_cstr(port, "libc: running comprehensive self-test")
@@ -332,6 +372,7 @@ fn libc_selftest() -> Int {
   pass = pass & libc_selftest_ctype()
   pass = pass & libc_selftest_conversion()
   pass = pass & libc_selftest_printf()
+  pass = pass & libc_selftest_fmt_unsigned_base()
   pass = pass & libc_selftest_math()
   pass = pass & libc_selftest_time()
   pass = pass & libc_selftest_utility()
