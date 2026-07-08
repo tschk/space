@@ -350,12 +350,6 @@ fn vol_sf_inode_is_inline(ino: Int) -> Int {
   return load32(addr + SF_IN_INLINE)
 }
 
-fn vol_sf_inode_set_inline(ino: Int, is_inline: Int) -> void {
-  let addr = vol_sf_inode_addr(ino)
-  store32(addr + SF_IN_INLINE, is_inline)
-  return
-}
-
 fn vol_sf_read_inode(ino: Int) -> void {
   let table_start = load64(vol_sf_super + SF_SB_INODE_TABLE_START)
   let ino_bytes = ino * SF_INODE_SIZE
