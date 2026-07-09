@@ -31,6 +31,28 @@ The smallest thing that boots x86_64 long mode and enforces isolation.
 
 **Ring 0 scope ends here.** Everything below is a ring-3 component.
 
+### Benchmarks (current — Inauguration v0.7.8, x86_64-unknown-none)
+
+| Workload | Time | Notes |
+|----------|-----:|------|
+| Space kernel boot image | **~76 ms** | 35+ .in files: kernel-root, serial, memory, domains, scheduler, PCI, NVMe, USB, framebuffer, compositor, shell, 7 SparkFS files, process, VFS, linux, libc, tests |
+| libc/libc.in (41 fn → SCI) | **~10 ms** | Full C stdlib: string, memory, ctype, stdlib, stdio, math |
+| libc/std.in (25 fn → SCI) | **~6 ms** | .in-native API: Str, Vec, Maybe, format, parse |
+| libc/demo/ (.in + .c multi-file) | **~75 ms** | 3 functions, .in extern + C body merged at compile time |
+| libc/posix.in (56 fn → SCI) | **~12 ms** | POSIX C compat on top of std.in |
+
+| Artifact | Size | Notes |
+|----------|-----:|------|
+| Boot image | **228,884 B** | 4,096 B trampoline + 224,532 B kernel code and data |
+| libc/libc.in → SCI | **~12 KB** | 41 functions, 11832 bytes |
+| libc/std.in → SCI | **~8 KB** | 25 functions, 8136 bytes |
+| libc/posix.in → SCI | **~15 KB** | 56 functions, 14936 bytes |
+
+The kernel build time (76 ms) already includes parsing 35+ source files through
+imports, full typechecking, native x86_64 lowering, and boot-image assembly.
+Warm compiler daemon (`in daemon start`) eliminates process startup overhead,
+dropping successive compiles to under 30 ms.
+
 ---
 
 ## Phase 1: Ring-3 Component Migration
