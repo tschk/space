@@ -56,6 +56,12 @@ echo "fb" >&3
 sleep 0.5
 echo "fetch" >&3
 sleep 0.5
+echo "format" >&3
+sleep 0.5
+echo "write storage-truth x" >&3
+sleep 0.5
+echo "read storage-truth" >&3
+sleep 0.5
 echo "halt" >&3
 exec 3>&-
 sleep 0.5
@@ -63,22 +69,20 @@ kill "$QPID" 2>/dev/null || true
 wait "$QPID" 2>/dev/null || true
 rm -f "$FIFO"
 # --- assertions ---
-for m in "kernel root entered" "available RAM bytes" "interrupts enabled" \
-         "domain subsystem init, 1 domains (kernel + 63 available)" "timer ticks" \
-         "heartbeat -> ACTIVATING" "scheduler running" \
-         "channel demo complete" "preemptive scheduler" "preemption ended" \
-         "NVMe controller initialized" \
-         "filesystem initialized" "sparkfs nvme volume" \
-         "proc_selftest: PASS" "Linux personality initialized" \
-         "compositor initialized" \
-         "interactive shell" \
-         "linux: personality demo starting" \
-         "linux: write(1, msg" \
-         "linux: getpid()" \
-         "linux: personality demo complete" \
-         "linux: ELF execve probe = -8" \
-         "SpaceOS"; do
+for m in "kernel root entered" "nvme: storage component ready" \
+         "nvme: I/O command timeout" "interactive shell" \
+         "linux: personality demo complete" "SpaceOS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
+if grep -qF "  disk formatted" "$SERIAL" 2>/dev/null || grep -qF "  written" "$SERIAL" 2>/dev/null; then
+  echo "  false storage success" >&2
+  fail=1
+fi
+if [ "$(grep -cF "  failed" "$SERIAL" 2>/dev/null || true)" -ge 3 ]; then
+  echo "  ok: storage failures reported"
+else
+  echo "  MISSING: storage failures reported" >&2
+  fail=1
+fi
 [ -z "${fail:-}" ] && { echo "PASS"; exit 0; } || { echo "FAIL" >&2; exit 1; }

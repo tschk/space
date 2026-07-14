@@ -305,8 +305,11 @@ fn shell(port: Int) -> void {
     } else if line_eq("nvme") != 0 {
       nvme_shell(port)
     } else if line_eq("format") != 0 {
-      fs_format()
-      serial_write_cstr(port, "  disk formatted")
+      if fs_format() == 0 {
+        serial_write_cstr(port, "  disk formatted")
+      } else {
+        serial_write_cstr(port, "  failed")
+      }
       serial_nl(port)
     } else if line_prefix("ls ") >= 0 {
       let ls_arg = line_prefix("ls ")

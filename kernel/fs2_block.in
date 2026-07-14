@@ -103,6 +103,7 @@ fn sf_read_block(bno: Int, buf: Int) -> Int {
   let sector = bno * SF_SECTORS_PER_BLOCK
   let rc = nvme_read(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
   if rc != 0 {
+    sf_disk_ready = 0
     return -1
   }
   let i = 0
@@ -133,6 +134,7 @@ fn sf_write_block(bno: Int, buf: Int) -> Int {
   }
   let rc = nvme_write(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
   if rc != 0 {
+    sf_disk_ready = 0
     return -1
   }
   let cached = sf_cache_lookup(bno)

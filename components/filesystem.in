@@ -7,9 +7,8 @@ fn fs_init() -> void {
   return
 }
 
-fn fs_format() -> void {
-  sparkfs_format()
-  return
+fn fs_format() -> Int {
+  return sparkfs_format()
 }
 
 fn fs_list(port: Int) -> void {

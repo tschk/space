@@ -59,7 +59,8 @@ fn sparkfs_init() -> void {
   return
 }
 
-fn sf_do_format(total: Int, ino_count: Int) -> void {
+fn sf_do_format(total: Int, ino_count: Int) -> Int {
+  sf_disk_ready = 0
   if sf_super == 0 {
     sf_super = alloc(SF_BLOCK_SIZE)
   }
@@ -108,7 +109,9 @@ fn sf_do_format(total: Int, ino_count: Int) -> void {
       store8(sf_block_buf + k, load8(sf_bitmap + b * SF_BLOCK_SIZE + k))
       k = k + 1
     }
-    sf_write_block(bitmap_start + b, sf_block_buf)
+    if sf_write_block(bitmap_start + b, sf_block_buf) != 0 {
+      return -1
+    }
     b = b + 1
   }
 
@@ -131,21 +134,23 @@ fn sf_do_format(total: Int, ino_count: Int) -> void {
   store64(root + SF_IN_MTIME, 0)
   store64(root + SF_IN_ATIME, 0)
   store32(root + SF_IN_NLINK, 1)
-  sf_write_inode(0)
+  if sf_write_inode(0) != 0 {
+    return -1
+  }
   store32(sf_super + SF_SB_ROOT_INODE, 0)
-  sf_write_block(0, sf_super)
+  if sf_write_block(0, sf_super) != 0 {
+    return -1
+  }
   sf_disk_ready = 1
-  return
+  return 0
 }
 
-fn sparkfs_format() -> void {
-  sf_do_format(SF_DEFAULT_TOTAL_BLOCKS, SF_DEFAULT_INODE_COUNT)
-  return
+fn sparkfs_format() -> Int {
+  return sf_do_format(SF_DEFAULT_TOTAL_BLOCKS, SF_DEFAULT_INODE_COUNT)
 }
 
-fn sparkfs_format_mem_disk() -> void {
-  sf_do_format(256, 256)
-  return
+fn sparkfs_format_mem_disk() -> Int {
+  return sf_do_format(256, 256)
 }
 
 fn sparkfs_create(path: Int, is_dir: Int) -> Int {
@@ -224,7 +229,9 @@ fn sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
     if bno < 0 {
       return n
     }
-    sf_read_block(bno, sf_block_buf)
+    if sf_read_block(bno, sf_block_buf) != 0 {
+      return -1
+    }
     let off = n & (SF_BLOCK_SIZE - 1)
     let to_copy = SF_BLOCK_SIZE - off
     if n + to_copy > size {
@@ -479,6 +486,9 @@ fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
   }
   store64(addr + SF_IN_MTIME, ticks)
   sf_write_inode(ino)
+  if sf_disk_ready == 0 {
+    return -1
+  }
   return 0
 }
 

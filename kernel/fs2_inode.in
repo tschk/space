@@ -28,20 +28,21 @@ fn sf_read_inode(ino: Int) -> void {
   return
 }
 
-fn sf_write_inode(ino: Int) -> void {
+fn sf_write_inode(ino: Int) -> Int {
   let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
   let ino_bytes = ino * SF_INODE_SIZE
   let block = table_start + (ino_bytes >> 12)
   let offset = ino_bytes & 4095
-  sf_read_block(block, sf_block_buf)
+  if sf_read_block(block, sf_block_buf) != 0 {
+    return -1
+  }
   let i = 0
   let addr = sf_inode_addr(ino)
   while i < SF_INODE_SIZE {
     store8(sf_block_buf + offset + i, load8(addr + i))
     i = i + 1
   }
-  sf_write_block(block, sf_block_buf)
-  return
+  return sf_write_block(block, sf_block_buf)
 }
 
 // --- inode block addressing -------------------------------------------------
