@@ -153,6 +153,7 @@ var vol_sf_cache_misses: Int = 0
 var vol_sf_nvme_buf: Int = 0
 var vol_heap_next: Int = 0
 var vol_heap_end: Int = 0
+var vol_mount_existing: Int = 0
 var ticks: Int = 0
 
 fn vol_heap_init(base: Int, size: Int) -> void {
@@ -750,6 +751,31 @@ fn vol_sparkfs_init() -> void {
   vol_sf_initialized = 1
   vol_sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
   vol_sf_disk_ready = 1
+  if vol_mount_existing != 0 && load32(vol_sf_mem_disk + SF_SB_MAGIC) == SF_MAGIC {
+    let k = 0
+    while k < SF_BLOCK_SIZE {
+      store8(vol_sf_super + k, load8(vol_sf_mem_disk + k))
+      k = k + 1
+    }
+    let total = load64(vol_sf_super + SF_SB_TOTAL_BLOCKS)
+    let ino_count = load32(vol_sf_super + SF_SB_INODE_COUNT)
+    let bitmap_bytes = (total + 7) / 8
+    let bitmap_start = load64(vol_sf_super + SF_SB_BITMAP_START)
+    vol_sf_bitmap = alloc(bitmap_bytes)
+    let i = 0
+    while i < bitmap_bytes {
+      store8(vol_sf_bitmap + i, load8(vol_sf_mem_disk + bitmap_start * SF_BLOCK_SIZE + i))
+      i = i + 1
+    }
+    vol_sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+    let ino = 0
+    while ino < ino_count {
+      vol_sf_read_inode(ino)
+      ino = ino + 1
+    }
+    vol_vfs_init()
+    return
+  }
   vol_sparkfs_format_mem_disk()
   vol_vfs_init()
   return
@@ -1610,6 +1636,7 @@ fn volume_entry(cap_info: Int) -> Int {
   if heap == 0 || heap_size < SF_MEM_DISK_SIZE + 131072 || page == 0 {
     return -1
   }
+  vol_mount_existing = load64(cap_info + 40)
   vol_heap_init(heap, heap_size)
   vol_sparkfs_init()
   volume_dispatch_once(page)

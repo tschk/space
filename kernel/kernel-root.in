@@ -364,6 +364,7 @@ const SCI_GUEST_GRANTS = 1
 const SCI_DISPLAY_GRANTS = 1
 const SCI_INPUT_GRANTS = 3
 const SCI_VOLUME_GRANTS = 0
+const VOLUME_NVME_LBA = 65536
 
 const COMP_GNOME_DESKTOP = 0x001E1E2E
 const COMP_GNOME_PANEL = 0x00181825
@@ -499,6 +500,40 @@ fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int, grants: Int)
   return 0
 }
 
+fn sci_volume_nvme_load(heap_frames: Int) -> Int {
+  let i = 0
+  while i < 256 {
+    if nvme_read(VOLUME_NVME_LBA + i * 8, 8, storage_data_page) != 0 {
+      return -1
+    }
+    let dst = load64(heap_frames + (i + 2) * 8)
+    let k = 0
+    while k < 4096 {
+      store8(dst + k, load8(storage_data_page + k))
+      k = k + 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn sci_volume_nvme_flush(heap_frames: Int) -> Int {
+  let i = 0
+  while i < 256 {
+    let src = load64(heap_frames + (i + 2) * 8)
+    let k = 0
+    while k < 4096 {
+      store8(storage_data_page + k, load8(src + k))
+      k = k + 1
+    }
+    if nvme_write(VOLUME_NVME_LBA + i * 8, 8, storage_data_page) != 0 {
+      return -1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
 fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   let required = load64(load_addr + 8)
   let entry = load64(load_addr + 16)
@@ -515,9 +550,12 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
     i = i + 1
   }
   let heap = COMP_HEAP_VIRT
+  let heap_frames = alloc(COMP_HEAP_SIZE / 4096 * 8)
   let j = 0
   while j < COMP_HEAP_SIZE / 4096 {
-    domain_map(domain, heap + j * 4096, frame_alloc(), 0x7)
+    let frame = frame_alloc()
+    store64(heap_frames + j * 8, frame)
+    domain_map(domain, heap + j * 4096, frame, 0x7)
     j = j + 1
   }
   let shared = domain_create_shared_page(0, domain, COMP_SHARED_VIRT, COMP_SHARED_VIRT)
@@ -526,6 +564,19 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   store64(cap_info + 16, heap)
   store64(cap_info + 24, COMP_HEAP_SIZE)
   store64(cap_info + 32, COMP_SHARED_VIRT)
+  let mounted = 0
+  if nvme_ready != 0 {
+    serial_write_cstr(port, "volume: loading NVMe backing")
+    serial_nl(port)
+    if sci_volume_nvme_load(heap_frames) == 0 {
+      if load32(load64(heap_frames + 16)) == 0x53504146 {
+        mounted = 1
+      }
+    }
+    serial_write_cstr(port, "volume: NVMe backing loaded")
+    serial_nl(port)
+  }
+  store64(cap_info + 40, mounted)
 
   store64(COMP_SHARED_VIRT + 0, 1)
   store64(COMP_SHARED_VIRT + 8, 0)
@@ -534,6 +585,10 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   let init_rc = invoke1(entry, cap_info)
   domain_switch(0)
   if init_rc != 0 || load64(COMP_SHARED_VIRT + 24) != 0 { return -1 }
+  if mounted != 0 {
+    serial_write_cstr(port, "volume: persistent mount passed")
+    serial_nl(port)
+  }
 
   store8(COMP_SHARED_VIRT + 256, 47)
   store8(COMP_SHARED_VIRT + 257, 118)
@@ -567,6 +622,11 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   let write_rc = invoke1(entry, cap_info)
   domain_switch(0)
   if write_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 { return -1 }
+  if nvme_ready != 0 {
+    if sci_volume_nvme_flush(heap_frames) != 0 { return -1 }
+    serial_write_cstr(port, "volume: NVMe backing flushed")
+    serial_nl(port)
+  }
 
   store8(COMP_SHARED_VIRT + 768, 0)
   store64(COMP_SHARED_VIRT + 40, 6)
@@ -578,6 +638,15 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   domain_switch(0)
   if read_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 || load8(COMP_SHARED_VIRT + 768) != 118 || load8(COMP_SHARED_VIRT + 773) != 101 { return -1 }
   serial_write_cstr(port, "volume: component init/write/read passed")
+  serial_nl(port)
+
+  volume_ready = 1
+  volume_domain = domain
+  volume_entry_addr = entry
+  volume_cap_info = cap_info
+  volume_heap_frames = heap_frames
+  volume_shared = COMP_SHARED_VIRT
+  serial_write_cstr(port, "volume: client bound")
   serial_nl(port)
   return 0
 }
@@ -882,6 +951,11 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
+  let volume_load = load64(0x220000)
+  if volume_load == SCI_MAGIC {
+    sci_volume_rpc(port, 0x220000)
+  }
+
   preempt_start(port)
 
   let display_load = load64(0x1a0000)
@@ -892,11 +966,6 @@ fn kernel_entry(mb_info: Int) -> Int {
   let input_load = load64(0x1e0000)
   if input_load == SCI_MAGIC {
     sci_load_runtime_component(port, 0x1e0000, "input", SCI_INPUT_GRANTS)
-  }
-
-  let volume_load = load64(0x220000)
-  if volume_load == SCI_MAGIC {
-    sci_volume_rpc(port, 0x220000)
   }
 
   shell(port)
