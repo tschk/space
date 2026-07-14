@@ -46,12 +46,11 @@ fn nvme_start_storage_component(port: Int) -> Int {
 
   let comp = component_register("storage", storage_entry, cap_storage() | cap_memory() | cap_serial())
   cap_mint(comp, cap_storage() | cap_memory() | cap_serial())
-  storage_tid = thr_create(storage_thread_wrapper)
+  domain_switch(storage_domain)
+  storage_entry(storage_cap_info)
+  domain_switch(0)
   storage_started = 1
 
-  while storage_ready == 0 {
-    thr_switch(storage_tid)
-  }
   if storage_ready != 1 {
     serial_write_cstr(port, "  storage: component failed to become ready")
     serial_nl(port)
@@ -67,9 +66,9 @@ fn nvme_submit(op: Int, lba: Int, count: Int) -> Int {
   store64(storage_mailbox + STORAGE_COUNT_OFF, count)
   store64(storage_mailbox + STORAGE_STATUS_OFF, 0)
   store64(storage_mailbox + STORAGE_OP_OFF, op)
-  while load64(storage_mailbox + STORAGE_OP_OFF) != 0 {
-    thr_switch(storage_tid)
-  }
+  domain_switch(storage_domain)
+  storage_service()
+  domain_switch(0)
   return load64(storage_mailbox + STORAGE_STATUS_OFF)
 }
 

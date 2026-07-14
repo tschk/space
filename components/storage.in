@@ -55,7 +55,6 @@ var storage_domain: Int = 0
 var storage_mailbox: Int = 0
 var storage_data_page: Int = 0
 var storage_data_phys: Int = 0
-var storage_tid: Int = 0
 var storage_ready: Int = 0
 var storage_started: Int = 0
 var storage_cap_info: Int = 0
@@ -422,38 +421,29 @@ fn storage_entry(cap_info: Int) -> Int {
   }
 
   storage_ready = 1
-
-  while true {
-    domain_switch(storage_domain)
-
-    let op = load64(storage_mailbox + STORAGE_OP_OFF)
-    if op == 0 {
-      domain_switch(0)
-      thr_yield()
-    } else {
-      let lba = load64(storage_mailbox + STORAGE_LBA_OFF)
-      let count = load64(storage_mailbox + STORAGE_COUNT_OFF)
-      store64(storage_mailbox + STORAGE_STATUS_OFF, 0)
-
-      let rc = 0
-      if op == STORAGE_OP_READ {
-        rc = nvme_io_submit(NVME_CMD_READ, lba, count, storage_data_phys)
-      } else if op == STORAGE_OP_WRITE {
-        rc = nvme_io_submit(NVME_CMD_WRITE, lba, count, storage_data_phys)
-      } else {
-        rc = -1
-      }
-
-      store64(storage_mailbox + STORAGE_STATUS_OFF, rc)
-      store64(storage_mailbox + STORAGE_OP_OFF, 0)
-      domain_switch(0)
-      thr_yield()
-    }
-  }
-
   return 0
 }
 
-fn storage_thread_wrapper() -> Int {
-  return storage_entry(storage_cap_info)
+fn storage_service() -> void {
+  let op = load64(storage_mailbox + STORAGE_OP_OFF)
+  if op == 0 {
+    return
+  }
+
+  let lba = load64(storage_mailbox + STORAGE_LBA_OFF)
+  let count = load64(storage_mailbox + STORAGE_COUNT_OFF)
+  store64(storage_mailbox + STORAGE_STATUS_OFF, 0)
+
+  let rc = 0
+  if op == STORAGE_OP_READ {
+    rc = nvme_io_submit(NVME_CMD_READ, lba, count, storage_data_phys)
+  } else if op == STORAGE_OP_WRITE {
+    rc = nvme_io_submit(NVME_CMD_WRITE, lba, count, storage_data_phys)
+  } else {
+    rc = -1
+  }
+
+  store64(storage_mailbox + STORAGE_STATUS_OFF, rc)
+  store64(storage_mailbox + STORAGE_OP_OFF, 0)
+  return
 }
