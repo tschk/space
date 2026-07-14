@@ -1,0 +1,48 @@
+package space.kernel
+
+fn diagnostics_fetch(port: Int) -> void {
+  serial_write_cstr(port, "  SpaceOS")
+  serial_write_cstr(port, " 0.2.")
+  serial_write_dec_wide(port, SPACE_VERSION_PATCH)
+  serial_nl(port)
+  serial_write_cstr(port, "  kernel      Space nanokernel")
+  serial_nl(port)
+  serial_write_cstr(port, "  arch        x86_64 long mode")
+  serial_nl(port)
+  serial_write_cstr(port, "  memory      ")
+  serial_write_dec_wide(port, total_ram / 1048576)
+  serial_write_cstr(port, " MiB")
+  serial_nl(port)
+  serial_write_cstr(port, "  display     ")
+  serial_write_dec_wide(port, fb_width)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_height)
+  serial_write_cstr(port, "x")
+  serial_write_dec_wide(port, fb_bpp)
+  serial_nl(port)
+  serial_write_cstr(port, "  framebuffer ")
+  serial_write_dec_wide(port, fb_size / 1048576)
+  serial_write_cstr(port, " MiB")
+  serial_nl(port)
+  serial_write_cstr(port, "  storage     sparkfs ")
+  if nvme_ready != 0 {
+    serial_write_cstr(port, "nvme")
+  } else {
+    serial_write_cstr(port, "mem")
+  }
+  serial_nl(port)
+  serial_write_cstr(port, "  input       PS/2 keyboard + mouse")
+  serial_nl(port)
+  serial_write_cstr(port, "  linux abi   syscall personality")
+  serial_nl(port)
+  serial_write_cstr(port, "  processes   ")
+  serial_write_dec_wide(port, proc_count)
+  serial_nl(port)
+  serial_write_cstr(port, "  domains     ")
+  serial_write_dec_wide(port, domain_count)
+  serial_nl(port)
+  serial_write_cstr(port, "  objects     0x")
+  serial_write_hex(port, obj_counter)
+  serial_nl(port)
+  return
+}

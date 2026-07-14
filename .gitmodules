@@ -1,0 +1,3 @@
+[submodule "ci-recipes"]
+	path = ci-recipes
+	url = https://github.com/tschk/ci-recipes.git

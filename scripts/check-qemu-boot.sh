@@ -47,6 +47,8 @@ echo "vfs" >&3
 sleep 0.5
 echo "time" >&3
 sleep 0.5
+echo "fetch" >&3
+sleep 0.5
 # Send 'halt' to cleanly stop the shell.
 echo "halt" >&3
 exec 3>&-
@@ -63,7 +65,9 @@ for m in "kernel root entered" \
          "linux: write(1, msg" \
          "linux: personality demo complete" \
          "unix:" \
-         "uptime:"; do
+         "uptime:" \
+         "SpaceOS" \
+         "kernel      Space nanokernel"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done

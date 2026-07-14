@@ -51,6 +51,7 @@ import "vfs.in"
 import "vfs_test.in"
 import "../services/time.in"
 import "../components/editor.in"
+import "../components/diagnostics.in"
 
 
 // The nanokernel root component.
