@@ -22,8 +22,10 @@ into Space primitives.
 ## Status
 
 The nanokernel root, written in `.in` and compiled by
-[Inauguration](https://github.com/tschk/inauguration), boots to x86_64 long
-mode under QEMU and verifies the boot-critical subsystems on every boot.
+[Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
+under QEMU. The maintained boot check verifies the shell, in-kernel SCI loader
+self-test, Linux-personality demo, VFS, and time service. NVMe-backed storage,
+networking, and component deny-policy checks are not currently verified.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 
@@ -57,7 +59,7 @@ and serial output through the emulated 16550 UART.
 | Arch | Compiler status | Kernel status |
 |------|-----------------|---------------|
 | x86_64 | Native lowering, boot image, ELF object | Boots verified subsystems |
-| ARM64 | Native lowering, boot image, ELF object | Boots verified subsystems |
+| ARM64 | Native lowering, boot image, ELF object | Platform boot work remains |
 | RISC-V | Planned | — |
 
 ## Build and run

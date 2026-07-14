@@ -256,25 +256,25 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
 
 ## Current Status
 
-### Running Today
-- Nanokernel boots x86_64 long mode under QEMU
-- Serial console, physical memory discovery, page tables
-- Object graph arena, capability table, bootstrap realm
-- Cooperative + preemptive multitasking
-- Typed in-address-space channel IPC demo
-- Cross-domain shared-page channels
-- SCI manifest loader with capability-mask validation
-- Interactive shell (20+ commands)
-- e1000 NIC driver (UDP transmit, ARP)
-- Deterministic execution subsystem
-- Memory domain isolation (Phase 0)
-- NVMe storage driver and flat filesystem
-- Process abstraction with lifecycle management
-- Syscall interface (int 0x80) with DPL=3 user-mode access
-- Linux personality layer (POSIX syscall translation)
-- VBE framebuffer (1024x768x32 graphics mode)
-- PS/2 mouse driver
-- Wayland-style compositor with desktop environment
+### Verified Today
+- Nanokernel enters x86_64 long mode under QEMU.
+- The maintained boot check verifies the serial shell, in-kernel SCI loader
+  self-test, Linux-personality demo, VFS, and time service.
+- SCI metadata-sidecar validation passes.
+- Display and input SCI components have been manually booted in isolated
+  domains; their execution lacks a maintained automated check.
+
+### Component Transition
+- Storage, network, and POSIX source has moved into `components/`, with
+  kernel-side transition wrappers.
+- Storage fails on the NVMe QEMU path while creating its I/O completion queue;
+  the successful Linux demo uses the memory-backed SparkFS fallback.
+- The network and POSIX wrappers are transitional: the network path lacks a
+  passing runtime check, and POSIX dispatch remains synchronous.
+- Display and input are optional boot-image SCI components. Volume is extracted
+  source but is not loaded by the kernel.
+- The SCI allow path is proven. The deny-policy check is currently invalid
+  because the root realm grants every capability.
 
 ### Repository Layout
 

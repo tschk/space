@@ -2,10 +2,12 @@
 
 ## Tagged: 0.0.1 — Nanokernel Foundation
 
-Working today: x86_64 boot, serial shell, memory domains, capabilities,
-cooperative + preemptive scheduling, channels, SCI loader, e1000 NIC,
-PCI, NVMe, USB xHCI, deterministic execution, checkpoint/restore, framebuffer
-compositor (GNOME-style), display server service, VRO editor.
+Verified today: x86_64 boot, serial shell, memory domains, capabilities,
+cooperative + preemptive scheduling, channels, the in-kernel SCI loader,
+the Linux-personality demo, VFS, and time service. Display and input SCI
+components have manual QEMU proof. NVMe-backed storage, network runtime,
+component deny-policy enforcement, and the remaining component split are not
+yet verified.
 
 ## Phase 1: Storage
 
