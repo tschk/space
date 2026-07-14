@@ -69,6 +69,13 @@ fn vfs_fd_valid(fd: Int) -> Int {
 }
 
 fn vfs_sparkfs_file_size(path: Int) -> Int {
+  if volume_ready != 0 {
+    let st = alloc(64)
+    if volume_rpc_stat(path, st) != 0 {
+      return -1
+    }
+    return load64(st + SF_ST_SIZE)
+  }
   let ino = sf_lookup_path(path)
   if ino < 0 {
     return -1
@@ -81,6 +88,26 @@ fn vfs_sparkfs_file_size(path: Int) -> Int {
 }
 
 fn vfs_open(pathname: Int, flags: Int) -> Int {
+  if volume_ready != 0 {
+    let vrc = volume_rpc_open(pathname, flags)
+    if vrc < 0 {
+      if (flags & VFS_O_CREAT) != 0 {
+        return -28
+      }
+      return -2
+    }
+    let fd = vfs_fd_alloc()
+    if fd < 0 {
+      return -16
+    }
+    let path_copy = strdup(pathname)
+    let base = vfs_fd_table + fd * 32
+    store64(base + 0, path_copy)
+    store64(base + 8, 0)
+    store64(base + 16, flags)
+    store64(base + 24, 0)
+    return fd
+  }
   if sf_disk_ready == 0 {
     return -5
   }
@@ -146,7 +173,12 @@ fn vfs_read(fd: Int, buf: Int, count: Int) -> Int {
   let base = vfs_fd_table + fd * 32
   let path = load64(base + 0)
   let offset = load64(base + 8)
-  let n = sparkfs_pread(path, buf, count, offset)
+  let n = 0
+  if volume_ready != 0 {
+    n = volume_rpc_pread(path, buf, count, offset)
+  } else {
+    n = sparkfs_pread(path, buf, count, offset)
+  }
   if n < 0 {
     return -5
   }
@@ -173,7 +205,12 @@ fn vfs_write(fd: Int, buf: Int, count: Int) -> Int {
   let base = vfs_fd_table + fd * 32
   let path = load64(base + 0)
   let offset = load64(base + 8)
-  let n = sparkfs_pwrite(path, buf, count, offset)
+  let n = 0
+  if volume_ready != 0 {
+    n = volume_rpc_pwrite(path, buf, count, offset)
+  } else {
+    n = sparkfs_pwrite(path, buf, count, offset)
+  }
   if n < 0 {
     return -5
   }

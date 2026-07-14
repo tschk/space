@@ -22,34 +22,62 @@ fn fs_list_path(path: Int, port: Int) -> void {
 }
 
 fn fs_read_file(name: Int, buf: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_read_file(name, buf, 0x100000)
+  }
   return sparkfs_read(name, buf, 0x7FFFFFFF)
 }
 
 fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
+  if volume_ready != 0 {
+    let n = volume_rpc_write_file(name, buf, size)
+    if n < 0 {
+      return -1
+    }
+    return 0
+  }
   return sparkfs_write(name, buf, size)
 }
 
 fn fs_delete(name: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_delete(name)
+  }
   return sparkfs_delete(name)
 }
 
 fn fs_mkdir(path: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_mkdir(path)
+  }
   return sparkfs_mkdir(path)
 }
 
 fn fs_rmdir(path: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_rmdir(path)
+  }
   return sparkfs_rmdir(path)
 }
 
 fn fs_rename(old: Int, new: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_rename(old, new)
+  }
   return sparkfs_rename(old, new)
 }
 
 fn fs_stat(path: Int, buf: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_stat(path, buf)
+  }
   return sparkfs_stat(path, buf)
 }
 
 fn fs_open_path(path: Int) -> Int {
+  if volume_ready != 0 {
+    return volume_rpc_open(path, 0)
+  }
   let ino = sf_lookup_path(path)
   if ino < 0 {
     return -1

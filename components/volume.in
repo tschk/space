@@ -154,6 +154,10 @@ var vol_sf_nvme_buf: Int = 0
 var vol_heap_next: Int = 0
 var vol_heap_end: Int = 0
 var vol_mount_existing: Int = 0
+var vol_name_a: Int = 0
+var vol_name_b: Int = 0
+var vol_name_c: Int = 0
+var vol_tmp4: Int = 0
 var ticks: Int = 0
 
 fn vol_heap_init(base: Int, size: Int) -> void {
@@ -616,7 +620,7 @@ fn vol_sf_dir_add(dir_ino: Int, name: Int, entry_ino: Int, entry_type: Int) -> I
 
 // Remove an entry from directory `dir_ino`. Returns 0 on success.
 fn vol_sf_dir_remove(dir_ino: Int, name: Int) -> Int {
-  let tmp = alloc(4)
+  let tmp = vol_tmp4
   let off = vol_sf_dir_find(dir_ino, name, tmp)
   if off < 0 {
     return -1
@@ -682,7 +686,7 @@ fn vol_sf_lookup_path(path: Int) -> Int {
   if load8(path) == 47 && load8(path + 1) == 0 {
     return ino
   }
-  let name_buf = alloc(SF_NAME_MAX + 1)
+  let name_buf = vol_name_a
   let i = 0
   if load8(path) == 47 {
     i = 1
@@ -704,7 +708,7 @@ fn vol_sf_lookup_path(path: Int) -> Int {
     if seg_len == 0 {
       return ino
     }
-    let tmp = alloc(4)
+    let tmp = vol_tmp4
     let off = vol_sf_dir_find(ino, name_buf, tmp)
     if off < 0 {
       return -1
@@ -728,7 +732,7 @@ fn vol_sf_lookup_parent(path: Int, name_out: Int) -> Int {
     vol_sf_copy_name(name_out, path)
     return 0
   }
-  let parent_path = alloc(SF_NAME_MAX + 1)
+  let parent_path = vol_name_c
   let i = 0
   while i < slash {
     store8(parent_path + i, load8(path + i))
@@ -750,6 +754,10 @@ fn vol_sparkfs_init() -> void {
   vol_sf_disk_ready = 0
   vol_sf_initialized = 1
   vol_sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
+  vol_name_a = alloc(SF_NAME_MAX + 1)
+  vol_name_b = alloc(SF_NAME_MAX + 1)
+  vol_name_c = alloc(SF_NAME_MAX + 1)
+  vol_tmp4 = alloc(4)
   vol_sf_disk_ready = 1
   if vol_mount_existing != 0 && load32(vol_sf_mem_disk + SF_SB_MAGIC) == SF_MAGIC {
     let k = 0
@@ -874,12 +882,12 @@ fn vol_sparkfs_create(path: Int, is_dir: Int) -> Int {
   if vol_sf_disk_ready == 0 {
     return -1
   }
-  let name = alloc(SF_NAME_MAX + 1)
+  let name = vol_name_b
   let parent = vol_sf_lookup_parent(path, name)
   if parent < 0 {
     return -1
   }
-  let tmp = alloc(4)
+  let tmp = vol_tmp4
   if vol_sf_dir_find(parent, name, tmp) >= 0 {
     return -1
   }
@@ -1218,7 +1226,7 @@ fn vol_sparkfs_delete(path: Int) -> Int {
       return -1
     }
   }
-  let name = alloc(SF_NAME_MAX + 1)
+  let name = vol_name_b
   let parent = vol_sf_lookup_parent(path, name)
   if parent < 0 {
     return -1
@@ -1277,16 +1285,16 @@ fn vol_sparkfs_rename(old_path: Int, new_path: Int) -> Int {
   if old_type != SF_TYPE_FILE && old_type != SF_TYPE_DIR {
     return -1
   }
-  let new_name = alloc(SF_NAME_MAX + 1)
+  let new_name = vol_name_b
   let new_parent = vol_sf_lookup_parent(new_path, new_name)
   if new_parent < 0 {
     return -1
   }
-  let tmp = alloc(4)
+  let tmp = vol_tmp4
   if vol_sf_dir_find(new_parent, new_name, tmp) >= 0 {
     return -1
   }
-  let old_name = alloc(SF_NAME_MAX + 1)
+  let old_name = vol_name_a
   let old_parent = vol_sf_lookup_parent(old_path, old_name)
   if old_parent < 0 {
     return -1

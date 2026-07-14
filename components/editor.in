@@ -317,7 +317,17 @@ fn editor_find(port: Int) -> void {
 }
 
 fn editor_save() -> Int {
-  let rc = sparkfs_write(editor_name, editor_buf, editor_len)
+  let rc = 0
+  if volume_ready != 0 {
+    let n = volume_rpc_write_file(editor_name, editor_buf, editor_len)
+    if n < 0 {
+      rc = -1
+    } else {
+      rc = 0
+    }
+  } else {
+    rc = sparkfs_write(editor_name, editor_buf, editor_len)
+  }
   if rc == 0 { editor_dirty = 0 }
   return rc
 }
@@ -329,13 +339,26 @@ fn editor_run(port: Int, name: Int) -> void {
     return
   }
   if editor_buf == 0 { editor_buf = alloc(EDITOR_BUF_SIZE); editor_name = alloc(EDITOR_NAME_SIZE); editor_query = alloc(128) }
-  editor_len = sparkfs_read(name, editor_buf, EDITOR_BUF_SIZE - 1)
+  if volume_ready != 0 {
+    editor_len = volume_rpc_read_file(name, editor_buf, EDITOR_BUF_SIZE - 1)
+  } else {
+    editor_len = sparkfs_read(name, editor_buf, EDITOR_BUF_SIZE - 1)
+  }
   if editor_len < 0 { editor_len = 0; store8(editor_buf, 0) }
-  let inode = sf_lookup_path(name)
-  if inode >= 0 && load32(sf_inode_addr(inode) + SF_IN_TYPE) != SF_TYPE_FILE {
-    serial_write_cstr(port, "edit: not a file")
-    serial_nl(port)
-    return
+  if volume_ready != 0 {
+    let st = alloc(64)
+    if volume_rpc_stat(name, st) == 0 && load32(st + SF_ST_TYPE) != SF_TYPE_FILE {
+      serial_write_cstr(port, "edit: not a file")
+      serial_nl(port)
+      return
+    }
+  } else {
+    let inode = sf_lookup_path(name)
+    if inode >= 0 && load32(sf_inode_addr(inode) + SF_IN_TYPE) != SF_TYPE_FILE {
+      serial_write_cstr(port, "edit: not a file")
+      serial_nl(port)
+      return
+    }
   }
   editor_copy(editor_name, name, EDITOR_NAME_SIZE)
   editor_row = 0

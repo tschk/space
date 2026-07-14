@@ -424,7 +424,12 @@ fn test_sci_loader(port: Int) -> Int {
   store8(buf + 39, 0xC3)
 
   // Write the file to flat filesystem
-  fs_write_file("test.sci", buf, 40)
+  let wrc = fs_write_file("test.sci", buf, 40)
+  if wrc != 0 {
+    serial_write_cstr(port, "test_sci_loader: write failed")
+    serial_nl(port)
+    return 0
+  }
 
   // Now load and run it via sci_load_file!
   let status = sci_load_file(port, "test.sci")

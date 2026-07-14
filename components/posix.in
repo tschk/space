@@ -110,18 +110,27 @@ fn posix_sys_lseek(fd: Int, offset: Int, whence: Int) -> Int {
 
 fn posix_sys_stat(path: Int, statbuf: Int) -> Int {
   let sfbuf = alloc(64)
-  if sparkfs_stat(path, sfbuf) != 0 {
+  let st = 0
+  if volume_ready != 0 {
+    st = volume_rpc_stat(path, sfbuf)
+  } else {
+    st = sparkfs_stat(path, sfbuf)
+  }
+  if st != 0 {
     return LINUX_ENOENT
   }
   let file_size = load64(sfbuf + SF_ST_SIZE)
-  let ino = sf_lookup_path(path)
+  let ino = 1
+  if volume_ready == 0 {
+    ino = sf_lookup_path(path) + 1
+  }
   let i = 0
   while i < LINUX_STAT_SIZE {
     store8(statbuf + i, 0)
     i = i + 1
   }
   store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino)
   store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
   store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
   store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
@@ -151,18 +160,27 @@ fn posix_sys_fstat(fd: Int, statbuf: Int) -> Int {
   let base = vfs_fd_table + fd * 32
   let fpath = load64(base + 0)
   let sfbuf = alloc(64)
-  if sparkfs_stat(fpath, sfbuf) != 0 {
+  let st = 0
+  if volume_ready != 0 {
+    st = volume_rpc_stat(fpath, sfbuf)
+  } else {
+    st = sparkfs_stat(fpath, sfbuf)
+  }
+  if st != 0 {
     return LINUX_EIO
   }
   let file_size = load64(sfbuf + SF_ST_SIZE)
-  let ino = sf_lookup_path(fpath)
+  let ino = 1
+  if volume_ready == 0 {
+    ino = sf_lookup_path(fpath) + 1
+  }
   let i = 0
   while i < LINUX_STAT_SIZE {
     store8(statbuf + i, 0)
     i = i + 1
   }
   store64(statbuf + LINUX_STAT_OFF_DEV, 0)
-  store64(statbuf + LINUX_STAT_OFF_INO, ino + 1)
+  store64(statbuf + LINUX_STAT_OFF_INO, ino)
   store64(statbuf + LINUX_STAT_OFF_NLINK, 1)
   store32(statbuf + LINUX_STAT_OFF_MODE, LINUX_S_IFREG)
   store64(statbuf + LINUX_STAT_OFF_SIZE, file_size)
@@ -266,17 +284,31 @@ fn posix_exec_image(port: Int, image: Int, size: Int, path: Int) -> Int {
 }
 
 fn posix_sys_execve(path: Int, argv: Int, envp: Int) -> Int {
-  let ino = sf_lookup_path(path)
-  if ino < 0 {
-    return LINUX_ENOENT
+  let stbuf = alloc(64)
+  let file_size = 0
+  if volume_ready != 0 {
+    if volume_rpc_stat(path, stbuf) != 0 {
+      return LINUX_ENOENT
+    }
+    file_size = load64(stbuf + SF_ST_SIZE)
+  } else {
+    let ino = sf_lookup_path(path)
+    if ino < 0 {
+      return LINUX_ENOENT
+    }
+    let addr = sf_inode_addr(ino)
+    file_size = load64(addr + SF_IN_SIZE)
   }
-  let addr = sf_inode_addr(ino)
-  let file_size = load64(addr + SF_IN_SIZE)
   if file_size < 64 {
     return LINUX_ENOEXEC
   }
   let buf = load_arena_alloc(file_size)
-  let got = sparkfs_read(path, buf, file_size)
+  let got = 0
+  if volume_ready != 0 {
+    got = volume_rpc_read_file(path, buf, file_size)
+  } else {
+    got = sparkfs_read(path, buf, file_size)
+  }
   if got < file_size {
     return LINUX_EIO
   }
@@ -368,7 +400,11 @@ fn posix_sys_mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
       remaining = aligned
     }
     if remaining > 0 {
-      sparkfs_pread(fpath, p, remaining, offset)
+      if volume_ready != 0 {
+        volume_rpc_pread(fpath, p, remaining, offset)
+      } else {
+        sparkfs_pread(fpath, p, remaining, offset)
+      }
     }
   }
   return p

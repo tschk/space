@@ -14,8 +14,8 @@ qemu-system-x86_64 -kernel "$BUILD_DIR/combined.bin" -m 512M -rtc base=utc \
   <"$FIFO" >"$SERIAL" 2>/dev/null &
 QPID=$!
 exec 3>"$FIFO"
-for _ in $(seq 1 300); do
-  grep -qF "input: PS/2 mouse ready" "$SERIAL" 2>/dev/null && break
+for _ in $(seq 1 400); do
+  grep -qF "interactive shell" "$SERIAL" 2>/dev/null && break
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
@@ -29,7 +29,11 @@ rm -f "$FIFO"
 for marker in "interactive shell" "display: component entered" \
   "display: framebuffer initialized" "display: server running" \
   "input: component entered" "input: channel bound" "input: PS/2 mouse ready" \
-  "volume: component init/write/read passed"; do
+  "volume: component init/write/read passed" "volume: client bound" \
+  "volume: filesystem op via Volume RPC" \
+  "test_sci_loader: PASS" \
+  "linux: personality demo complete" \
+  "linux: open(hello.txt"; do
   grep -qF "$marker" "$SERIAL" || { echo "MISSING: $marker" >&2; exit 1; }
 done
 echo "PASS"

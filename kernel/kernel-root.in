@@ -141,6 +141,14 @@ var preempt_domain: Int = 0
 var preempt_pml4: Int = 0
 var preempt_count: Int = 0
 
+var volume_ready: Int = 0
+var volume_domain: Int = 0
+var volume_entry_addr: Int = 0
+var volume_cap_info: Int = 0
+var volume_heap_frames: Int = 0
+var volume_shared: Int = 0
+var volume_via_marker: Int = 0
+
 // --- component supervisor ---------------------------------------------------
 fn component_register(name: Int, entry: Int, required: Int) -> Int {
   let c = obj_bump(56)
@@ -651,6 +659,193 @@ fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
   return 0
 }
 
+fn volume_copy_path(dst: Int, src: Int) -> void {
+  let i = 0
+  while i < 255 && load8(src + i) != 0 {
+    store8(dst + i, load8(src + i))
+    i = i + 1
+  }
+  store8(dst + i, 0)
+  return
+}
+
+fn volume_rpc_call(op: Int, flush: Int) -> Int {
+  if volume_ready == 0 {
+    return -1
+  }
+  store64(volume_shared + 0, 1)
+  store64(volume_shared + 8, 0)
+  store64(volume_shared + 16, op)
+  store64(volume_shared + 24, 0)
+  store64(volume_shared + 56, 0)
+  let prev = domain_get_current()
+  domain_switch(volume_domain)
+  let rc = invoke1(volume_entry_addr, volume_cap_info)
+  domain_switch(prev)
+  if rc != 0 {
+    return -1
+  }
+  if flush != 0 && nvme_ready != 0 && volume_heap_frames != 0 {
+    if sci_volume_nvme_flush(volume_heap_frames) != 0 {
+      return -1
+    }
+  }
+  if volume_via_marker == 0 {
+    volume_via_marker = 1
+    serial_write_cstr(com1(), "volume: filesystem op via Volume RPC")
+    serial_nl(com1())
+  }
+  let status = load64(volume_shared + 24)
+  let result = load64(volume_shared + 56)
+  if status != 0 {
+    if result < 0 {
+      return result
+    }
+    return -1
+  }
+  return result
+}
+
+fn volume_rpc_open(path: Int, flags: Int) -> Int {
+  volume_copy_path(volume_shared + 256, path)
+  store64(volume_shared + 32, flags)
+  let r = volume_rpc_call(2, 0)
+  if r < 0 {
+    return -1
+  }
+  return r
+}
+
+fn volume_rpc_pread(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+  let total = 0
+  let remaining = count
+  let off = offset
+  while remaining > 0 {
+    volume_copy_path(volume_shared + 256, path)
+    store64(volume_shared + 32, off)
+    let n = remaining
+    if n > 3328 {
+      n = 3328
+    }
+    store64(volume_shared + 40, n)
+    store64(volume_shared + 48, 0)
+    let got = volume_rpc_call(4, 0)
+    if got < 0 {
+      if total > 0 {
+        return total
+      }
+      return got
+    }
+    if got == 0 {
+      return total
+    }
+    if got > n {
+      got = n
+    }
+    let i = 0
+    while i < got {
+      store8(buf + total + i, load8(volume_shared + 768 + i))
+      i = i + 1
+    }
+    total = total + got
+    off = off + got
+    remaining = remaining - got
+    if got < n {
+      return total
+    }
+  }
+  return total
+}
+
+fn volume_rpc_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+  let total = 0
+  let remaining = count
+  let off = offset
+  while remaining > 0 {
+    volume_copy_path(volume_shared + 256, path)
+    store64(volume_shared + 32, off)
+    let n = remaining
+    if n > 3328 {
+      n = 3328
+    }
+    store64(volume_shared + 40, n)
+    store64(volume_shared + 48, 0)
+    let i = 0
+    while i < n {
+      store8(volume_shared + 768 + i, load8(buf + total + i))
+      i = i + 1
+    }
+    let wrote = volume_rpc_call(5, 1)
+    if wrote < 0 {
+      if total > 0 {
+        return total
+      }
+      return wrote
+    }
+    if wrote == 0 {
+      return total
+    }
+    if wrote > n {
+      wrote = n
+    }
+    total = total + wrote
+    off = off + wrote
+    remaining = remaining - wrote
+  }
+  return total
+}
+
+fn volume_rpc_stat(path: Int, stat_buf: Int) -> Int {
+  volume_copy_path(volume_shared + 256, path)
+  let rc = volume_rpc_call(7, 0)
+  if rc < 0 {
+    return -1
+  }
+  let i = 0
+  while i < 64 {
+    store8(stat_buf + i, load8(volume_shared + 768 + i))
+    i = i + 1
+  }
+  return rc
+}
+
+fn volume_rpc_delete(path: Int) -> Int {
+  volume_copy_path(volume_shared + 256, path)
+  return volume_rpc_call(9, 1)
+}
+
+fn volume_rpc_mkdir(path: Int) -> Int {
+  volume_copy_path(volume_shared + 256, path)
+  return volume_rpc_call(10, 1)
+}
+
+fn volume_rpc_rmdir(path: Int) -> Int {
+  volume_copy_path(volume_shared + 256, path)
+  return volume_rpc_call(11, 1)
+}
+
+fn volume_rpc_rename(old_path: Int, new_path: Int) -> Int {
+  volume_copy_path(volume_shared + 256, old_path)
+  volume_copy_path(volume_shared + 512, new_path)
+  return volume_rpc_call(12, 1)
+}
+
+fn volume_rpc_read_file(path: Int, buf: Int, max: Int) -> Int {
+  return volume_rpc_pread(path, buf, max, 0)
+}
+
+fn volume_rpc_write_file(path: Int, buf: Int, size: Int) -> Int {
+  let open_rc = volume_rpc_open(path, 64)
+  if open_rc < 0 {
+    return -1
+  }
+  let wrote = volume_rpc_pwrite(path, buf, size, 0)
+  if wrote < size {
+    return -1
+  }
+  return wrote
+}
+
 fn sci_load(port: Int, load_addr: Int) -> Int {
   if load_addr == 0 || load_addr > 0x200000 {
     serial_write_cstr(port, "  SCI: load address out of range 0x")
@@ -871,6 +1066,11 @@ fn kernel_entry(mb_info: Int) -> Int {
     serial_nl(port)
   }
 
+  let volume_load_early = load64(0x220000)
+  if volume_load_early == SCI_MAGIC {
+    sci_volume_rpc(port, 0x220000)
+  }
+
   fs_init()
   if boot_quiet == 0 {
     serial_write_cstr(port, "space: filesystem initialized")
@@ -878,7 +1078,10 @@ fn kernel_entry(mb_info: Int) -> Int {
   }
   time_init()
   if boot_quiet == 0 {
-    if sf_mem_disk != 0 {
+    if volume_ready != 0 {
+      serial_write_cstr(port, "space: volume SCI is filesystem backend")
+      serial_nl(port)
+    } else if sf_mem_disk != 0 {
       serial_write_cstr(port, "space: sparkfs mem volume at 0x")
       serial_write_hex(port, sf_mem_disk)
       serial_nl(port)
@@ -897,6 +1100,9 @@ fn kernel_entry(mb_info: Int) -> Int {
   if boot_quiet == 0 {
     serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
     serial_nl(port)
+  }
+  if volume_ready != 0 {
+    linux_demo(port)
   }
 
   let fb_rc = fb_init(mb_info)
@@ -951,11 +1157,6 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
-  let volume_load = load64(0x220000)
-  if volume_load == SCI_MAGIC {
-    sci_volume_rpc(port, 0x220000)
-  }
-
   preempt_start(port)
 
   let display_load = load64(0x1a0000)
