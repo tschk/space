@@ -1,7 +1,5 @@
 package space.kernel
 
-import "vro.in"
-
 const COMP_MAX_WINDOWS = 16
 const COMP_WIN_SIZE = 64
 const COMP_TITLE_BAR_H = 28

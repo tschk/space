@@ -1,0 +1,142 @@
+package space.time
+
+component Time {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability time: TimeSource(read)
+
+  export entry: TimeEntry
+}
+
+interface TimeEntry {
+  fn time_component_entry(cap_info: Int) -> Int
+}
+
+interface TimeSource {
+  fn read() -> Int
+}
+
+// RTC-based wall-clock time service.
+// Reads CMOS RTC registers and converts to Unix timestamp.
+
+fn time_component_rtc_read(reg: Int) -> Int {
+  outb(0x70, reg)
+  return inb(0x71)
+}
+
+fn time_component_bcd_to_bin(bcd: Int) -> Int {
+  return (bcd & 0x0F) + ((bcd / 16) * 10)
+}
+
+fn time_component_is_leap_year(y: Int) -> Int {
+  if (y % 4) != 0 { return 0 }
+  if (y % 100) != 0 { return 1 }
+  if (y % 400) == 0 { return 1 }
+  return 0
+}
+
+fn time_component_days_before_month(mo: Int, leap: Int) -> Int {
+  let dbm = 0
+  if mo > 1  { dbm = dbm + 31 }
+  if mo > 2  { if leap != 0 { dbm = dbm + 29 } else { dbm = dbm + 28 } }
+  if mo > 3  { dbm = dbm + 31 }
+  if mo > 4  { dbm = dbm + 30 }
+  if mo > 5  { dbm = dbm + 31 }
+  if mo > 6  { dbm = dbm + 30 }
+  if mo > 7  { dbm = dbm + 31 }
+  if mo > 8  { dbm = dbm + 31 }
+  if mo > 9  { dbm = dbm + 30 }
+  if mo > 10 { dbm = dbm + 31 }
+  if mo > 11 { dbm = dbm + 30 }
+  return dbm
+}
+
+// Formatted time fields — set by time_wallclock, read by time_print.
+// ponytail: globals instead of struct return until struct return works.
+var time_component_ts: Int = 0
+var time_component_y: Int = 0
+var time_component_mo: Int = 0
+var time_component_d: Int = 0
+var time_component_h: Int = 0
+var time_component_mi: Int = 0
+var time_component_s: Int = 0
+
+fn time_component_wallclock() -> Int {
+  // Read RTC registers
+  let s = time_component_rtc_read(0x00)
+  let m = time_component_rtc_read(0x02)
+  let h = time_component_rtc_read(0x04)
+  let d = time_component_rtc_read(0x07)
+  let mo = time_component_rtc_read(0x08)
+  let y = time_component_rtc_read(0x09)
+  let c = time_component_rtc_read(0x32)
+  let rb = time_component_rtc_read(0x0B)
+
+  // BCD to binary
+  if (rb & 0x04) == 0 {
+    s = time_component_bcd_to_bin(s)
+    m = time_component_bcd_to_bin(m)
+    h = ((h & 0x7F) & 0x0F) + (((h & 0x7F) / 16) * 10) | (h & 0x80)
+    d = time_component_bcd_to_bin(d)
+    mo = time_component_bcd_to_bin(mo)
+    y = time_component_bcd_to_bin(y)
+    if c != 0 { c = time_component_bcd_to_bin(c) }
+  }
+
+  // 12-hour to 24-hour
+  if (rb & 0x02) == 0 {
+    let pm = (h & 0x80)
+    h = h & 0x7F
+    if pm != 0 {
+      if h != 12 { h = h + 12 }
+    } else {
+      if h == 12 { h = 0 }
+    }
+  }
+
+  // Full year
+  if c != 0 {
+    y = c * 100 + y
+  } else {
+    if y < 80 { y = y + 2000 } else { y = y + 1900 }
+  }
+
+  // Days from 1970 to Jan 1 of y
+  let total_days = 0
+  let i = 1970
+  while i < y {
+    if time_component_is_leap_year(i) != 0 {
+      total_days = total_days + 366
+    } else {
+      total_days = total_days + 365
+    }
+    i = i + 1
+  }
+
+  // Days this year
+  let dbm = time_component_days_before_month(mo, time_component_is_leap_year(y))
+  total_days = total_days + dbm + (d - 1)
+
+  let ts = (total_days * 86400) + (h * 3600) + (m * 60) + s
+
+  // Store formatted fields for time_print
+  time_component_ts = ts
+  time_component_y = y
+  time_component_mo = mo
+  time_component_d = d
+  time_component_h = h
+  time_component_mi = m
+  time_component_s = s
+
+  return ts
+}
+
+fn time_component_entry(cap_info: Int) -> Int {
+  let ts = time_component_wallclock()
+  if ts <= 0 {
+    return -1
+  }
+  return 0
+}

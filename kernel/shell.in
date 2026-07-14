@@ -500,7 +500,6 @@ fn shell(port: Int) -> void {
     } else {
       let rest = line_prefix("desktop ")
       if rest >= 0 {
-        comp_vro_seed(line + rest)
         comp_run(port)
       } else {
         let rest = line_prefix("echo ")

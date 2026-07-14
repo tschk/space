@@ -1,4 +1,4 @@
-package space.kernel
+package space.display
 
 // VRO text editor for the Space compositor.
 // A minimal built-in text editor with line buffer, save/load, scrollbar,

@@ -1,134 +1,25 @@
 package space.kernel
 
-// RTC-based wall-clock time service.
-// Reads CMOS RTC registers and converts to Unix timestamp.
-
-fn rtc_read(reg: Int) -> Int {
-  outb(0x70, reg)
-  return inb(0x71)
-}
-
-fn bcd_to_bin(bcd: Int) -> Int {
-  return (bcd & 0x0F) + ((bcd / 16) * 10)
-}
-
-fn is_leap_year(y: Int) -> Int {
-  if (y % 4) != 0 { return 0 }
-  if (y % 100) != 0 { return 1 }
-  if (y % 400) == 0 { return 1 }
-  return 0
-}
-
-fn days_before_month(mo: Int, leap: Int) -> Int {
-  let dbm = 0
-  if mo > 1  { dbm = dbm + 31 }
-  if mo > 2  { if leap != 0 { dbm = dbm + 29 } else { dbm = dbm + 28 } }
-  if mo > 3  { dbm = dbm + 31 }
-  if mo > 4  { dbm = dbm + 30 }
-  if mo > 5  { dbm = dbm + 31 }
-  if mo > 6  { dbm = dbm + 30 }
-  if mo > 7  { dbm = dbm + 31 }
-  if mo > 8  { dbm = dbm + 31 }
-  if mo > 9  { dbm = dbm + 30 }
-  if mo > 10 { dbm = dbm + 31 }
-  if mo > 11 { dbm = dbm + 30 }
-  return dbm
-}
-
-// Formatted time fields — set by time_wallclock, read by time_print.
-// ponytail: globals instead of struct return until struct return works.
-var rtc_ts: Int = 0
-var rtc_y: Int = 0
-var rtc_mo: Int = 0
-var rtc_d: Int = 0
-var rtc_h: Int = 0
-var rtc_mi: Int = 0
-var rtc_s: Int = 0
+import "../components/time.in"
 
 fn time_init() -> void {
   return
 }
 
 fn time_wallclock() -> Int {
-  // Read RTC registers
-  let s = rtc_read(0x00)
-  let m = rtc_read(0x02)
-  let h = rtc_read(0x04)
-  let d = rtc_read(0x07)
-  let mo = rtc_read(0x08)
-  let y = rtc_read(0x09)
-  let c = rtc_read(0x32)
-  let rb = rtc_read(0x0B)
-
-  // BCD to binary
-  if (rb & 0x04) == 0 {
-    s = bcd_to_bin(s)
-    m = bcd_to_bin(m)
-    h = ((h & 0x7F) & 0x0F) + (((h & 0x7F) / 16) * 10) | (h & 0x80)
-    d = bcd_to_bin(d)
-    mo = bcd_to_bin(mo)
-    y = bcd_to_bin(y)
-    if c != 0 { c = bcd_to_bin(c) }
-  }
-
-  // 12-hour to 24-hour
-  if (rb & 0x02) == 0 {
-    let pm = (h & 0x80)
-    h = h & 0x7F
-    if pm != 0 {
-      if h != 12 { h = h + 12 }
-    } else {
-      if h == 12 { h = 0 }
-    }
-  }
-
-  // Full year
-  if c != 0 {
-    y = c * 100 + y
-  } else {
-    if y < 80 { y = y + 2000 } else { y = y + 1900 }
-  }
-
-  // Days from 1970 to Jan 1 of y
-  let total_days = 0
-  let i = 1970
-  while i < y {
-    if is_leap_year(i) != 0 {
-      total_days = total_days + 366
-    } else {
-      total_days = total_days + 365
-    }
-    i = i + 1
-  }
-
-  // Days this year
-  let dbm = days_before_month(mo, is_leap_year(y))
-  total_days = total_days + dbm + (d - 1)
-
-  let ts = (total_days * 86400) + (h * 3600) + (m * 60) + s
-
-  // Store formatted fields for time_print
-  rtc_ts = ts
-  rtc_y = y
-  rtc_mo = mo
-  rtc_d = d
-  rtc_h = h
-  rtc_mi = m
-  rtc_s = s
-
-  return ts
+  return time_component_wallclock()
 }
 
 fn time_print(port: Int) -> void {
   let ts = time_wallclock()
 
   // Reload from globals (inter-function data transfer)
-  let y = rtc_y
-  let mo = rtc_mo
-  let d = rtc_d
-  let h = rtc_h
-  let mi = rtc_mi
-  let s = rtc_s
+  let y = time_component_y
+  let mo = time_component_mo
+  let d = time_component_d
+  let h = time_component_h
+  let mi = time_component_mi
+  let s = time_component_s
 
   // Formatted date: Wed Jul 08 07:51:38 2026
   serial_write_cstr(port, "  ")
