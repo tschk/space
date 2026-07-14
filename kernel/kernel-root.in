@@ -363,6 +363,7 @@ const SCI_MAGIC = 0x5343490000000001
 const SCI_GUEST_GRANTS = 1
 const SCI_DISPLAY_GRANTS = 1
 const SCI_INPUT_GRANTS = 3
+const SCI_VOLUME_GRANTS = 0
 
 const COMP_GNOME_DESKTOP = 0x001E1E2E
 const COMP_GNOME_PANEL = 0x00181825
@@ -494,6 +495,71 @@ fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int, grants: Int)
   serial_write_cstr(port, name)
   serial_write_cstr(port, " thread 0x")
   serial_write_hex(port, tid)
+  serial_nl(port)
+  return 0
+}
+
+fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
+  let required = load64(load_addr + 8)
+  let entry = load64(load_addr + 16)
+  let image_size = load64(load_addr + 24)
+  if load64(load_addr) != SCI_MAGIC || (required & (-1 ^ SCI_VOLUME_GRANTS)) != 0 {
+    return -1
+  }
+  let domain = domain_create()
+  if domain == 0 { return -1 }
+  let pages = (image_size + 4095) / 4096
+  let i = 0
+  while i < pages {
+    domain_map(domain, entry - 32 + i * 4096, load_addr + i * 4096, 0x7)
+    i = i + 1
+  }
+  let heap = COMP_HEAP_VIRT
+  let j = 0
+  while j < COMP_HEAP_SIZE / 4096 {
+    domain_map(domain, heap + j * 4096, frame_alloc(), 0x7)
+    j = j + 1
+  }
+  let shared = domain_create_shared_page(0, domain, COMP_SHARED_VIRT, COMP_SHARED_VIRT)
+  if shared == 0 { return -1 }
+  let cap_info = alloc(64)
+  store64(cap_info + 16, heap)
+  store64(cap_info + 24, COMP_HEAP_SIZE)
+  store64(cap_info + 32, COMP_SHARED_VIRT)
+
+  store64(COMP_SHARED_VIRT + 0, 1)
+  store64(COMP_SHARED_VIRT + 8, 0)
+  store64(COMP_SHARED_VIRT + 16, 1)
+  domain_switch(domain)
+  let init_rc = invoke1(entry, cap_info)
+  domain_switch(0)
+  if init_rc != 0 || load64(COMP_SHARED_VIRT + 24) != 0 { return -1 }
+
+  store8(COMP_SHARED_VIRT + 768, 118)
+  store8(COMP_SHARED_VIRT + 769, 111)
+  store8(COMP_SHARED_VIRT + 770, 108)
+  store8(COMP_SHARED_VIRT + 771, 117)
+  store8(COMP_SHARED_VIRT + 772, 109)
+  store8(COMP_SHARED_VIRT + 773, 101)
+  store64(COMP_SHARED_VIRT + 40, 6)
+  store64(COMP_SHARED_VIRT + 0, 1)
+  store64(COMP_SHARED_VIRT + 8, 0)
+  store64(COMP_SHARED_VIRT + 16, 5)
+  domain_switch(domain)
+  let write_rc = invoke1(entry, cap_info)
+  domain_switch(0)
+  if write_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 { return -1 }
+
+  store8(COMP_SHARED_VIRT + 768, 0)
+  store64(COMP_SHARED_VIRT + 40, 6)
+  store64(COMP_SHARED_VIRT + 0, 1)
+  store64(COMP_SHARED_VIRT + 8, 0)
+  store64(COMP_SHARED_VIRT + 16, 4)
+  domain_switch(domain)
+  let read_rc = invoke1(entry, cap_info)
+  domain_switch(0)
+  if read_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 || load8(COMP_SHARED_VIRT + 768) != 118 || load8(COMP_SHARED_VIRT + 773) != 101 { return -1 }
+  serial_write_cstr(port, "volume: component init/write/read passed")
   serial_nl(port)
   return 0
 }
@@ -808,6 +874,11 @@ fn kernel_entry(mb_info: Int) -> Int {
   let input_load = load64(0x1e0000)
   if input_load == SCI_MAGIC {
     sci_load_runtime_component(port, 0x1e0000, "input", SCI_INPUT_GRANTS)
+  }
+
+  let volume_load = load64(0x220000)
+  if volume_load == SCI_MAGIC {
+    sci_volume_rpc(port, 0x220000)
   }
 
   shell(port)

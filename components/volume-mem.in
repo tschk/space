@@ -1,0 +1,75 @@
+package space.volume
+
+component Volume {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  export entry: VolumeEntry
+}
+
+interface VolumeEntry {
+  fn volume_mem_entry(cap_info: Int) -> Int
+}
+
+const VOL_REQ_READY = 0
+const VOL_RESP_READY = 8
+const VOL_OPCODE = 16
+const VOL_STATUS = 24
+const VOL_ARG1 = 40
+const VOL_RESULT = 56
+const VOL_DATA = 768
+const VOL_INIT = 1
+const VOL_READ = 4
+const VOL_WRITE = 5
+const VOL_MAX = 256
+
+var volume_mem_data: Int = 0
+var volume_mem_len: Int = 0
+
+fn volume_mem_entry(cap_info: Int) -> Int {
+  let heap = load64(cap_info + 16)
+  let heap_size = load64(cap_info + 24)
+  let page = load64(cap_info + 32)
+  if heap == 0 || heap_size < VOL_MAX || page == 0 {
+    return -1
+  }
+  let op = load64(page + VOL_OPCODE)
+  store64(page + VOL_STATUS, 0)
+  store64(page + VOL_RESULT, 0)
+  if op == VOL_INIT {
+    volume_mem_data = heap
+    volume_mem_len = 0
+  } else if op == VOL_WRITE {
+    if volume_mem_data == 0 || load64(page + VOL_ARG1) > VOL_MAX {
+      store64(page + VOL_STATUS, 1)
+    } else {
+      let n = load64(page + VOL_ARG1)
+      let i = 0
+      while i < n {
+        store8(volume_mem_data + i, load8(page + VOL_DATA + i))
+        i = i + 1
+      }
+      volume_mem_len = n
+      store64(page + VOL_RESULT, n)
+    }
+  } else if op == VOL_READ {
+    if volume_mem_data == 0 {
+      store64(page + VOL_STATUS, 1)
+    } else {
+      let n = volume_mem_len
+      if load64(page + VOL_ARG1) < n { n = load64(page + VOL_ARG1) }
+      let i = 0
+      while i < n {
+        store8(page + VOL_DATA + i, load8(volume_mem_data + i))
+        i = i + 1
+      }
+      store64(page + VOL_RESULT, n)
+    }
+  } else {
+    store64(page + VOL_STATUS, 2)
+  }
+  store64(page + VOL_REQ_READY, 0)
+  store64(page + VOL_RESP_READY, 1)
+  return 0
+}

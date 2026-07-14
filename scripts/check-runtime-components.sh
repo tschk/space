@@ -28,7 +28,8 @@ rm -f "$FIFO"
 
 for marker in "interactive shell" "display: component entered" \
   "display: framebuffer initialized" "display: server running" \
-  "input: component entered" "input: channel bound" "input: PS/2 mouse ready"; do
+  "input: component entered" "input: channel bound" "input: PS/2 mouse ready" \
+  "volume: component init/write/read passed"; do
   grep -qF "$marker" "$SERIAL" || { echo "MISSING: $marker" >&2; exit 1; }
 done
 echo "PASS"
