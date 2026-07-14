@@ -2,193 +2,193 @@ package space.kernel
 
 // SparkFS high-level file operations: init, format, create, read, write, delete, list.
 
-fn sparkfs_init() -> void {
-  sf_super = alloc(SF_BLOCK_SIZE)
-  sf_block_buf = alloc(SF_BLOCK_SIZE)
-  sf_disk_ready = 0
-  sf_initialized = 1
-  if nvme_ready == 0 {
-    sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
+fn sparkfs-init() -> void {
+  sf-super = alloc(SF-BLOCK-SIZE)
+  sf-block-buf = alloc(SF-BLOCK-SIZE)
+  sf-disk-ready = 0
+  sf-initialized = 1
+  if nvme-ready == 0 {
+    sf-mem-disk = alloc(SF-MEM-DISK-SIZE)
     let i = 0
-    while i < SF_MEM_DISK_SIZE {
-      store8(sf_mem_disk + i, 0)
+    while i < SF-MEM-DISK-SIZE {
+      store8(sf-mem-disk + i, 0)
       i = i + 1
     }
-    sf_disk_ready = 1
-    sparkfs_format_mem_disk()
+    sf-disk-ready = 1
+    sparkfs-format-mem-disk()
     return
   }
-  sf_nvme_buf = frame_alloc()
-  sf_cache_init()
-  if sf_read_block(0, sf_super) != 0 {
+  sf-nvme-buf = frame-alloc()
+  sf-cache-init()
+  if sf-read-block(0, sf-super) != 0 {
     return
   }
-  let magic = load32(sf_super + SF_SB_MAGIC)
-  if magic != SF_MAGIC {
-    sparkfs_format()
+  let magic = load32(sf-super + SF-SB-MAGIC)
+  if magic != SF-MAGIC {
+    sparkfs-format()
     return
   }
-  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
-  let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
-  let bitmap_bytes = (total + 7) / 8
-  sf_bitmap = alloc(bitmap_bytes)
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  let ino-count = load32(sf-super + SF-SB-INODE-COUNT)
+  let bitmap-bytes = (total + 7) / 8
+  sf-bitmap = alloc(bitmap-bytes)
   let i = 0
-  while i < bitmap_bytes {
-    store8(sf_bitmap + i, 0)
+  while i < bitmap-bytes {
+    store8(sf-bitmap + i, 0)
     i = i + 1
   }
-  let bitmap_start = load64(sf_super + SF_SB_BITMAP_START)
-  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let bitmap-start = load64(sf-super + SF-SB-BITMAP-START)
+  let bitmap-blocks = (bitmap-bytes + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
   let b = 0
-  while b < bitmap_blocks {
-    sf_read_block(bitmap_start + b, sf_block_buf)
+  while b < bitmap-blocks {
+    sf-read-block(bitmap-start + b, sf-block-buf)
     let k = 0
-    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
-      store8(sf_bitmap + b * SF_BLOCK_SIZE + k, load8(sf_block_buf + k))
+    while k < SF-BLOCK-SIZE && b * SF-BLOCK-SIZE + k < bitmap-bytes {
+      store8(sf-bitmap + b * SF-BLOCK-SIZE + k, load8(sf-block-buf + k))
       k = k + 1
     }
     b = b + 1
   }
-  sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  sf-inodes = alloc(ino-count * SF-INODE-SIZE)
   let ino = 0
-  while ino < ino_count {
-    sf_read_inode(ino)
+  while ino < ino-count {
+    sf-read-inode(ino)
     ino = ino + 1
   }
-  sf_disk_ready = 1
+  sf-disk-ready = 1
   return
 }
 
-fn sf_do_format(total: Int, ino_count: Int) -> Int {
-  sf_disk_ready = 0
-  if sf_super == 0 {
-    sf_super = alloc(SF_BLOCK_SIZE)
+fn sf-do-format(total: Int, ino-count: Int) -> Int {
+  sf-disk-ready = 0
+  if sf-super == 0 {
+    sf-super = alloc(SF-BLOCK-SIZE)
   }
-  if sf_block_buf == 0 {
-    sf_block_buf = alloc(SF_BLOCK_SIZE)
+  if sf-block-buf == 0 {
+    sf-block-buf = alloc(SF-BLOCK-SIZE)
   }
-  sf_zero_block(sf_super)
-  store32(sf_super + SF_SB_MAGIC, SF_MAGIC)
-  store32(sf_super + SF_SB_VERSION, SF_VERSION)
-  store32(sf_super + SF_SB_BLOCK_SIZE, SF_BLOCK_SIZE)
-  store64(sf_super + SF_SB_TOTAL_BLOCKS, total)
-  store32(sf_super + SF_SB_INODE_COUNT, ino_count)
-  let bitmap_bytes = (total + 7) / 8
-  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
-  let inode_table_blocks = (ino_count * SF_INODE_SIZE + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
-  let journal_blocks = SF_DEFAULT_JOURNAL_BLOCKS
-  let bitmap_start = 1
-  let journal_start = bitmap_start + bitmap_blocks
-  let inode_table_start = journal_start + journal_blocks
-  let data_start = inode_table_start + inode_table_blocks
-  store64(sf_super + SF_SB_BITMAP_START, bitmap_start)
-  store64(sf_super + SF_SB_JOURNAL_START, journal_start)
-  store64(sf_super + SF_SB_INODE_TABLE_START, inode_table_start)
-  store64(sf_super + SF_SB_DATA_START, data_start)
-  store32(sf_super + SF_SB_ROOT_INODE, 0)
-  store32(sf_super + SF_SB_JOURNAL_SEQ, 0)
-  sf_write_block(0, sf_super)
+  sf-zero-block(sf-super)
+  store32(sf-super + SF-SB-MAGIC, SF-MAGIC)
+  store32(sf-super + SF-SB-VERSION, SF-VERSION)
+  store32(sf-super + SF-SB-BLOCK-SIZE, SF-BLOCK-SIZE)
+  store64(sf-super + SF-SB-TOTAL-BLOCKS, total)
+  store32(sf-super + SF-SB-INODE-COUNT, ino-count)
+  let bitmap-bytes = (total + 7) / 8
+  let bitmap-blocks = (bitmap-bytes + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
+  let inode-table-blocks = (ino-count * SF-INODE-SIZE + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
+  let journal-blocks = SF-DEFAULT-JOURNAL-BLOCKS
+  let bitmap-start = 1
+  let journal-start = bitmap-start + bitmap-blocks
+  let inode-table-start = journal-start + journal-blocks
+  let data-start = inode-table-start + inode-table-blocks
+  store64(sf-super + SF-SB-BITMAP-START, bitmap-start)
+  store64(sf-super + SF-SB-JOURNAL-START, journal-start)
+  store64(sf-super + SF-SB-INODE-TABLE-START, inode-table-start)
+  store64(sf-super + SF-SB-DATA-START, data-start)
+  store32(sf-super + SF-SB-ROOT-INODE, 0)
+  store32(sf-super + SF-SB-JOURNAL-SEQ, 0)
+  sf-write-block(0, sf-super)
 
-  sf_bitmap = alloc(bitmap_bytes)
+  sf-bitmap = alloc(bitmap-bytes)
   let i = 0
-  while i < bitmap_bytes {
-    store8(sf_bitmap + i, 0)
+  while i < bitmap-bytes {
+    store8(sf-bitmap + i, 0)
     i = i + 1
   }
-  sf_mark_used(0)
+  sf-mark-used(0)
   let b = 1
-  while b < data_start {
-    sf_mark_used(b)
+  while b < data-start {
+    sf-mark-used(b)
     b = b + 1
   }
   b = 0
-  while b < bitmap_blocks {
-    sf_zero_block(sf_block_buf)
+  while b < bitmap-blocks {
+    sf-zero-block(sf-block-buf)
     let k = 0
-    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
-      store8(sf_block_buf + k, load8(sf_bitmap + b * SF_BLOCK_SIZE + k))
+    while k < SF-BLOCK-SIZE && b * SF-BLOCK-SIZE + k < bitmap-bytes {
+      store8(sf-block-buf + k, load8(sf-bitmap + b * SF-BLOCK-SIZE + k))
       k = k + 1
     }
-    if sf_write_block(bitmap_start + b, sf_block_buf) != 0 {
+    if sf-write-block(bitmap-start + b, sf-block-buf) != 0 {
       return -1
     }
     b = b + 1
   }
 
-  sf_inodes = alloc(ino_count * SF_INODE_SIZE)
+  sf-inodes = alloc(ino-count * SF-INODE-SIZE)
   let ino = 0
-  while ino < ino_count {
-    let addr = sf_inode_addr(ino)
+  while ino < ino-count {
+    let addr = sf-inode-addr(ino)
     let j = 0
-    while j < SF_INODE_SIZE {
+    while j < SF-INODE-SIZE {
       store8(addr + j, 0)
       j = j + 1
     }
     ino = ino + 1
   }
-  let root = sf_inode_addr(0)
-  store32(root + SF_IN_TYPE, SF_TYPE_DIR)
-  store32(root + SF_IN_MODE, 0o755)
-  store64(root + SF_IN_SIZE, 0)
-  store64(root + SF_IN_CTIME, 0)
-  store64(root + SF_IN_MTIME, 0)
-  store64(root + SF_IN_ATIME, 0)
-  store32(root + SF_IN_NLINK, 1)
-  if sf_write_inode(0) != 0 {
+  let root = sf-inode-addr(0)
+  store32(root + SF-IN-TYPE, SF-TYPE-DIR)
+  store32(root + SF-IN-MODE, 0o755)
+  store64(root + SF-IN-SIZE, 0)
+  store64(root + SF-IN-CTIME, 0)
+  store64(root + SF-IN-MTIME, 0)
+  store64(root + SF-IN-ATIME, 0)
+  store32(root + SF-IN-NLINK, 1)
+  if sf-write-inode(0) != 0 {
     return -1
   }
-  store32(sf_super + SF_SB_ROOT_INODE, 0)
-  if sf_write_block(0, sf_super) != 0 {
+  store32(sf-super + SF-SB-ROOT-INODE, 0)
+  if sf-write-block(0, sf-super) != 0 {
     return -1
   }
-  sf_disk_ready = 1
+  sf-disk-ready = 1
   return 0
 }
 
-fn sparkfs_format() -> Int {
-  return sf_do_format(SF_DEFAULT_TOTAL_BLOCKS, SF_DEFAULT_INODE_COUNT)
+fn sparkfs-format() -> Int {
+  return sf-do-format(SF-DEFAULT-TOTAL-BLOCKS, SF-DEFAULT-INODE-COUNT)
 }
 
-fn sparkfs_format_mem_disk() -> Int {
-  return sf_do_format(256, 256)
+fn sparkfs-format-mem-disk() -> Int {
+  return sf-do-format(256, 256)
 }
 
-fn sparkfs_create(path: Int, is_dir: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-create(path: Int, is-dir: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let name = alloc(SF_NAME_MAX + 1)
-  let parent = sf_lookup_parent(path, name)
+  let name = alloc(SF-NAME-MAX + 1)
+  let parent = sf-lookup-parent(path, name)
   if parent < 0 {
     return -1
   }
   let tmp = alloc(4)
-  if sf_dir_find(parent, name, tmp) >= 0 {
+  if sf-dir-find(parent, name, tmp) >= 0 {
     return -1
   }
-  let ino_count = load32(sf_super + SF_SB_INODE_COUNT)
+  let ino-count = load32(sf-super + SF-SB-INODE-COUNT)
   let ino = 1
-  while ino < ino_count {
-    let addr = sf_inode_addr(ino)
-    if load32(addr + SF_IN_TYPE) == SF_TYPE_FREE {
+  while ino < ino-count {
+    let addr = sf-inode-addr(ino)
+    if load32(addr + SF-IN-TYPE) == SF-TYPE-FREE {
       let j = 0
-      while j < SF_INODE_SIZE {
+      while j < SF-INODE-SIZE {
         store8(addr + j, 0)
         j = j + 1
       }
-      store32(addr + SF_IN_TYPE, is_dir)
-      store32(addr + SF_IN_MODE, 0o644)
-      if is_dir == SF_TYPE_DIR {
-        store32(addr + SF_IN_MODE, 0o755)
+      store32(addr + SF-IN-TYPE, is-dir)
+      store32(addr + SF-IN-MODE, 0o644)
+      if is-dir == SF-TYPE-DIR {
+        store32(addr + SF-IN-MODE, 0o755)
       }
-      store64(addr + SF_IN_SIZE, 0)
-      store32(addr + SF_IN_NLINK, 1)
-      store64(addr + SF_IN_CTIME, ticks)
-      store64(addr + SF_IN_MTIME, ticks)
-      store64(addr + SF_IN_ATIME, ticks)
-      store32(addr + SF_IN_INLINE, 0)
-      sf_write_inode(ino)
-      sf_dir_add(parent, name, ino, is_dir)
+      store64(addr + SF-IN-SIZE, 0)
+      store32(addr + SF-IN-NLINK, 1)
+      store64(addr + SF-IN-CTIME, ticks)
+      store64(addr + SF-IN-MTIME, ticks)
+      store64(addr + SF-IN-ATIME, ticks)
+      store32(addr + SF-IN-INLINE, 0)
+      sf-write-inode(ino)
+      sf-dir-add(parent, name, ino, is-dir)
       return ino
     }
     ino = ino + 1
@@ -196,498 +196,498 @@ fn sparkfs_create(path: Int, is_dir: Int) -> Int {
   return -1
 }
 
-fn sparkfs_read(path: Int, buf: Int, max: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-read(path: Int, buf: Int, max: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  let size = load64(addr + SF_IN_SIZE)
+  let size = load64(addr + SF-IN-SIZE)
   if max < size {
     size = max
   }
-  if load32(addr + SF_IN_INLINE) != 0 {
+  if load32(addr + SF-IN-INLINE) != 0 {
     let i = 0
     while i < size {
-      store8(buf + i, load8(addr + SF_IN_DIRECT + i))
+      store8(buf + i, load8(addr + SF-IN-DIRECT + i))
       i = i + 1
     }
-    store64(addr + SF_IN_ATIME, ticks)
-    sf_write_inode(ino)
+    store64(addr + SF-IN-ATIME, ticks)
+    sf-write-inode(ino)
     return size
   }
   let n = 0
   while n < size {
-    let fbn = n / SF_BLOCK_SIZE
-    let bno = sf_inode_block(ino, fbn)
+    let fbn = n / SF-BLOCK-SIZE
+    let bno = sf-inode-block(ino, fbn)
     if bno < 0 {
       return n
     }
-    if sf_read_block(bno, sf_block_buf) != 0 {
+    if sf-read-block(bno, sf-block-buf) != 0 {
       return -1
     }
-    let off = n & (SF_BLOCK_SIZE - 1)
-    let to_copy = SF_BLOCK_SIZE - off
-    if n + to_copy > size {
-      to_copy = size - n
+    let off = n & (SF-BLOCK-SIZE - 1)
+    let to-copy = SF-BLOCK-SIZE - off
+    if n + to-copy > size {
+      to-copy = size - n
     }
     let i = 0
-    while i < to_copy {
-      store8(buf + n + i, load8(sf_block_buf + off + i))
+    while i < to-copy {
+      store8(buf + n + i, load8(sf-block-buf + off + i))
       i = i + 1
     }
-    n = n + to_copy
+    n = n + to-copy
   }
   return size
 }
 
 // Read up to `max` bytes from file `path` starting at `offset`. Returns byte count or -1.
-fn sparkfs_pread(path: Int, buf: Int, max: Int, offset: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-pread(path: Int, buf: Int, max: Int, offset: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  let size = load64(addr + SF_IN_SIZE)
+  let size = load64(addr + SF-IN-SIZE)
   if offset >= size {
     return 0
   }
   let avail = size - offset
-  let to_read = max
-  if to_read > avail {
-    to_read = avail
+  let to-read = max
+  if to-read > avail {
+    to-read = avail
   }
-  if load32(addr + SF_IN_INLINE) != 0 {
+  if load32(addr + SF-IN-INLINE) != 0 {
     let i = 0
-    while i < to_read {
-      store8(buf + i, load8(addr + SF_IN_DIRECT + offset + i))
+    while i < to-read {
+      store8(buf + i, load8(addr + SF-IN-DIRECT + offset + i))
       i = i + 1
     }
-    store64(addr + SF_IN_ATIME, ticks)
-    sf_write_inode(ino)
-    return to_read
+    store64(addr + SF-IN-ATIME, ticks)
+    sf-write-inode(ino)
+    return to-read
   }
   let n = 0
-  while n < to_read {
+  while n < to-read {
     let pos = offset + n
-    let fbn = pos / SF_BLOCK_SIZE
-    let bno = sf_inode_block(ino, fbn)
+    let fbn = pos / SF-BLOCK-SIZE
+    let bno = sf-inode-block(ino, fbn)
     if bno < 0 {
       return n
     }
-    sf_read_block(bno, sf_block_buf)
-    let off = pos & (SF_BLOCK_SIZE - 1)
-    let chunk = SF_BLOCK_SIZE - off
-    let left = to_read - n
+    sf-read-block(bno, sf-block-buf)
+    let off = pos & (SF-BLOCK-SIZE - 1)
+    let chunk = SF-BLOCK-SIZE - off
+    let left = to-read - n
     if chunk > left {
       chunk = left
     }
     let i = 0
     while i < chunk {
-      store8(buf + n + i, load8(sf_block_buf + off + i))
+      store8(buf + n + i, load8(sf-block-buf + off + i))
       i = i + 1
     }
     n = n + chunk
   }
-  store64(addr + SF_IN_ATIME, ticks)
-  sf_write_inode(ino)
-  return to_read
+  store64(addr + SF-IN-ATIME, ticks)
+  sf-write-inode(ino)
+  return to-read
 }
 
 // Write `count` bytes from `buf` at `offset`. Grows file if needed. Returns count or -1.
-fn sparkfs_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
-    ino = sparkfs_create(path, SF_TYPE_FILE)
+    ino = sparkfs-create(path, SF-TYPE-FILE)
     if ino < 0 {
       return -1
     }
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  let old_size = load64(addr + SF_IN_SIZE)
+  let old-size = load64(addr + SF-IN-SIZE)
   let end = offset + count
-  if end > old_size {
-    let hole_buf = alloc(SF_BLOCK_SIZE)
+  if end > old-size {
+    let hole-buf = alloc(SF-BLOCK-SIZE)
     let z = 0
-    while z < SF_BLOCK_SIZE {
-      store8(hole_buf + z, 0)
+    while z < SF-BLOCK-SIZE {
+      store8(hole-buf + z, 0)
       z = z + 1
     }
-    let pos = old_size
+    let pos = old-size
     while pos < offset {
       let chunk = offset - pos
-      if chunk > SF_BLOCK_SIZE {
-        chunk = SF_BLOCK_SIZE
+      if chunk > SF-BLOCK-SIZE {
+        chunk = SF-BLOCK-SIZE
       }
-      let rc = sparkfs_pwrite(path, hole_buf, chunk, pos)
+      let rc = sparkfs-pwrite(path, hole-buf, chunk, pos)
       if rc < 0 {
         return -1
       }
       pos = pos + chunk
     }
-    old_size = load64(addr + SF_IN_SIZE)
+    old-size = load64(addr + SF-IN-SIZE)
   }
-  if end <= SF_INLINE_MAX && load32(addr + SF_IN_INLINE) != 0 {
+  if end <= SF-INLINE-MAX && load32(addr + SF-IN-INLINE) != 0 {
     let i = 0
     while i < count {
-      store8(addr + SF_IN_DIRECT + offset + i, load8(buf + i))
+      store8(addr + SF-IN-DIRECT + offset + i, load8(buf + i))
       i = i + 1
     }
-    if end > load64(addr + SF_IN_SIZE) {
-      store64(addr + SF_IN_SIZE, end)
+    if end > load64(addr + SF-IN-SIZE) {
+      store64(addr + SF-IN-SIZE, end)
     }
-    store64(addr + SF_IN_MTIME, ticks)
-    sf_write_inode(ino)
+    store64(addr + SF-IN-MTIME, ticks)
+    sf-write-inode(ino)
     return count
   }
-  if end <= SF_INLINE_MAX && offset == 0 && count <= SF_INLINE_MAX {
+  if end <= SF-INLINE-MAX && offset == 0 && count <= SF-INLINE-MAX {
     let i = 0
     while i < count {
-      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      store8(addr + SF-IN-DIRECT + i, load8(buf + i))
       i = i + 1
     }
-    store64(addr + SF_IN_SIZE, count)
-    store32(addr + SF_IN_INLINE, 1)
-    store64(addr + SF_IN_MTIME, ticks)
-    sf_write_inode(ino)
+    store64(addr + SF-IN-SIZE, count)
+    store32(addr + SF-IN-INLINE, 1)
+    store64(addr + SF-IN-MTIME, ticks)
+    sf-write-inode(ino)
     return count
   }
   let n = 0
   while n < count {
     let pos = offset + n
-    let fbn = pos / SF_BLOCK_SIZE
-    let bno = sf_inode_block(ino, fbn)
+    let fbn = pos / SF-BLOCK-SIZE
+    let bno = sf-inode-block(ino, fbn)
     if bno < 0 {
-      bno = sf_alloc_block()
+      bno = sf-alloc-block()
       if bno < 0 {
         return -1
       }
-      sf_set_inode_block(ino, fbn, bno)
-      sf_zero_block(sf_block_buf)
-      sf_write_block(bno, sf_block_buf)
+      sf-set-inode-block(ino, fbn, bno)
+      sf-zero-block(sf-block-buf)
+      sf-write-block(bno, sf-block-buf)
     }
-    sf_read_block(bno, sf_block_buf)
-    let off = pos & (SF_BLOCK_SIZE - 1)
-    let chunk = SF_BLOCK_SIZE - off
+    sf-read-block(bno, sf-block-buf)
+    let off = pos & (SF-BLOCK-SIZE - 1)
+    let chunk = SF-BLOCK-SIZE - off
     let left = count - n
     if chunk > left {
       chunk = left
     }
     let i = 0
     while i < chunk {
-      store8(sf_block_buf + off + i, load8(buf + n + i))
+      store8(sf-block-buf + off + i, load8(buf + n + i))
       i = i + 1
     }
-    sf_write_block(bno, sf_block_buf)
+    sf-write-block(bno, sf-block-buf)
     n = n + chunk
   }
-  if end > load64(addr + SF_IN_SIZE) {
-    store64(addr + SF_IN_SIZE, end)
-    store32(addr + SF_IN_INLINE, 0)
+  if end > load64(addr + SF-IN-SIZE) {
+    store64(addr + SF-IN-SIZE, end)
+    store32(addr + SF-IN-INLINE, 0)
   }
-  store64(addr + SF_IN_MTIME, ticks)
-  sf_write_inode(ino)
+  store64(addr + SF-IN-MTIME, ticks)
+  sf-write-inode(ino)
   return count
 }
 
-fn sparkfs_write(path: Int, buf: Int, size: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-write(path: Int, buf: Int, size: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
-    ino = sparkfs_create(path, SF_TYPE_FILE)
+    ino = sparkfs-create(path, SF-TYPE-FILE)
     if ino < 0 {
       return -1
     }
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  let old_size = load64(addr + SF_IN_SIZE)
+  let old-size = load64(addr + SF-IN-SIZE)
 
-  if size <= SF_INLINE_MAX {
+  if size <= SF-INLINE-MAX {
     let i = 0
     while i < size {
-      store8(addr + SF_IN_DIRECT + i, load8(buf + i))
+      store8(addr + SF-IN-DIRECT + i, load8(buf + i))
       i = i + 1
     }
-    store64(addr + SF_IN_SIZE, size)
-    store32(addr + SF_IN_INLINE, 1)
-    store64(addr + SF_IN_MTIME, ticks)
-    sf_write_inode(ino)
+    store64(addr + SF-IN-SIZE, size)
+    store32(addr + SF-IN-INLINE, 1)
+    store64(addr + SF-IN-MTIME, ticks)
+    sf-write-inode(ino)
     return 0
   }
 
-  if load32(addr + SF_IN_INLINE) != 0 {
-    let bno = sf_alloc_block()
+  if load32(addr + SF-IN-INLINE) != 0 {
+    let bno = sf-alloc-block()
     if bno < 0 {
       return -1
     }
-    sf_read_block(bno, sf_block_buf)
+    sf-read-block(bno, sf-block-buf)
     let i = 0
-    while i < old_size {
-      store8(sf_block_buf + i, load8(addr + SF_IN_DIRECT + i))
+    while i < old-size {
+      store8(sf-block-buf + i, load8(addr + SF-IN-DIRECT + i))
       i = i + 1
     }
-    sf_write_block(bno, sf_block_buf)
-    store64(addr + SF_IN_DIRECT, bno)
-    store32(addr + SF_IN_INLINE, 0)
-    store64(addr + SF_IN_INDIRECT, 0)
-    store64(addr + SF_IN_DINDIRECT, 0)
+    sf-write-block(bno, sf-block-buf)
+    store64(addr + SF-IN-DIRECT, bno)
+    store32(addr + SF-IN-INLINE, 0)
+    store64(addr + SF-IN-INDIRECT, 0)
+    store64(addr + SF-IN-DINDIRECT, 0)
   }
 
   let n = 0
   while n < size {
-    let fbn = n / SF_BLOCK_SIZE
-    let bno = sf_inode_block(ino, fbn)
+    let fbn = n / SF-BLOCK-SIZE
+    let bno = sf-inode-block(ino, fbn)
     if bno < 0 {
-      bno = sf_alloc_block()
+      bno = sf-alloc-block()
       if bno < 0 {
         return -1
       }
-      sf_set_inode_block(ino, fbn, bno)
+      sf-set-inode-block(ino, fbn, bno)
     }
-    sf_read_block(bno, sf_block_buf)
-    let off = n & (SF_BLOCK_SIZE - 1)
-    let to_copy = SF_BLOCK_SIZE - off
-    if n + to_copy > size {
-      to_copy = size - n
+    sf-read-block(bno, sf-block-buf)
+    let off = n & (SF-BLOCK-SIZE - 1)
+    let to-copy = SF-BLOCK-SIZE - off
+    if n + to-copy > size {
+      to-copy = size - n
     }
     let i = 0
-    while i < to_copy {
-      store8(sf_block_buf + off + i, load8(buf + n + i))
+    while i < to-copy {
+      store8(sf-block-buf + off + i, load8(buf + n + i))
       i = i + 1
     }
-    sf_write_block(bno, sf_block_buf)
-    n = n + to_copy
+    sf-write-block(bno, sf-block-buf)
+    n = n + to-copy
   }
-  if size > old_size {
-    store64(addr + SF_IN_SIZE, size)
+  if size > old-size {
+    store64(addr + SF-IN-SIZE, size)
   }
-  store64(addr + SF_IN_MTIME, ticks)
-  sf_write_inode(ino)
-  if sf_disk_ready == 0 {
+  store64(addr + SF-IN-MTIME, ticks)
+  sf-write-inode(ino)
+  if sf-disk-ready == 0 {
     return -1
   }
   return 0
 }
 
-fn sparkfs_delete(path: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-delete(path: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino <= 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) == SF_TYPE_DIR {
-    if load64(addr + SF_IN_SIZE) != 0 {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) == SF-TYPE-DIR {
+    if load64(addr + SF-IN-SIZE) != 0 {
       return -1
     }
   }
-  let name = alloc(SF_NAME_MAX + 1)
-  let parent = sf_lookup_parent(path, name)
+  let name = alloc(SF-NAME-MAX + 1)
+  let parent = sf-lookup-parent(path, name)
   if parent < 0 {
     return -1
   }
-  sf_dir_remove(parent, name)
-  let size = load64(addr + SF_IN_SIZE)
-  let sectors = (size + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  sf-dir-remove(parent, name)
+  let size = load64(addr + SF-IN-SIZE)
+  let sectors = (size + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
   let fbn = 0
   while fbn < sectors {
-    let bno = sf_inode_block(ino, fbn)
+    let bno = sf-inode-block(ino, fbn)
     if bno > 0 {
-      sf_free_block(bno)
+      sf-free-block(bno)
     }
     fbn = fbn + 1
   }
-  let indirect = load64(addr + SF_IN_INDIRECT)
+  let indirect = load64(addr + SF-IN-INDIRECT)
   if indirect > 0 {
-    sf_free_block(indirect)
+    sf-free-block(indirect)
   }
   let j = 0
-  while j < SF_INODE_SIZE {
+  while j < SF-INODE-SIZE {
     store8(addr + j, 0)
     j = j + 1
   }
-  sf_write_inode(ino)
-  sf_flush_bitmap()
+  sf-write-inode(ino)
+  sf-flush-bitmap()
   return 0
 }
 
-fn sparkfs_mkdir(path: Int) -> Int {
-  return sparkfs_create(path, SF_TYPE_DIR)
+fn sparkfs-mkdir(path: Int) -> Int {
+  return sparkfs-create(path, SF-TYPE-DIR)
 }
 
-fn sparkfs_rmdir(path: Int) -> Int {
-  let ino = sf_lookup_path(path)
+fn sparkfs-rmdir(path: Int) -> Int {
+  let ino = sf-lookup-path(path)
   if ino <= 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-DIR {
     return -1
   }
-  return sparkfs_delete(path)
+  return sparkfs-delete(path)
 }
 
-fn sparkfs_rename(old_path: Int, new_path: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-rename(old-path: Int, new-path: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let old_ino = sf_lookup_path(old_path)
-  if old_ino <= 0 {
+  let old-ino = sf-lookup-path(old-path)
+  if old-ino <= 0 {
     return -1
   }
-  let old_addr = sf_inode_addr(old_ino)
-  let old_type = load32(old_addr + SF_IN_TYPE)
-  if old_type != SF_TYPE_FILE && old_type != SF_TYPE_DIR {
+  let old-addr = sf-inode-addr(old-ino)
+  let old-type = load32(old-addr + SF-IN-TYPE)
+  if old-type != SF-TYPE-FILE && old-type != SF-TYPE-DIR {
     return -1
   }
-  let new_name = alloc(SF_NAME_MAX + 1)
-  let new_parent = sf_lookup_parent(new_path, new_name)
-  if new_parent < 0 {
+  let new-name = alloc(SF-NAME-MAX + 1)
+  let new-parent = sf-lookup-parent(new-path, new-name)
+  if new-parent < 0 {
     return -1
   }
   let tmp = alloc(4)
-  let dst_off = sf_dir_find(new_parent, new_name, tmp)
-  if dst_off >= 0 {
-    let dst_ino = load32(tmp)
-    let dst_addr = sf_inode_addr(dst_ino)
-    if load32(dst_addr + SF_IN_TYPE) == SF_TYPE_DIR {
-      let old_base = alloc(SF_NAME_MAX + 1)
-      let old_slash = sf_last_slash(old_path)
-      if old_slash >= 0 {
-        sf_copy_name(old_base, old_path + old_slash + 1)
+  let dst-off = sf-dir-find(new-parent, new-name, tmp)
+  if dst-off >= 0 {
+    let dst-ino = load32(tmp)
+    let dst-addr = sf-inode-addr(dst-ino)
+    if load32(dst-addr + SF-IN-TYPE) == SF-TYPE-DIR {
+      let old-base = alloc(SF-NAME-MAX + 1)
+      let old-slash = sf-last-slash(old-path)
+      if old-slash >= 0 {
+        sf-copy-name(old-base, old-path + old-slash + 1)
       } else {
-        sf_copy_name(old_base, old_path)
+        sf-copy-name(old-base, old-path)
       }
-      if sf_dir_find(dst_ino, old_base, tmp) >= 0 {
+      if sf-dir-find(dst-ino, old-base, tmp) >= 0 {
         return -1
       }
-      let old_name = alloc(SF_NAME_MAX + 1)
-      let old_parent = sf_lookup_parent(old_path, old_name)
-      if old_parent < 0 {
+      let old-name = alloc(SF-NAME-MAX + 1)
+      let old-parent = sf-lookup-parent(old-path, old-name)
+      if old-parent < 0 {
         return -1
       }
-      if sf_dir_add(dst_ino, old_base, old_ino, old_type) != 0 {
+      if sf-dir-add(dst-ino, old-base, old-ino, old-type) != 0 {
         return -1
       }
-      sf_dir_remove(old_parent, old_name)
-      store64(old_addr + SF_IN_MTIME, ticks)
-      sf_write_inode(old_ino)
+      sf-dir-remove(old-parent, old-name)
+      store64(old-addr + SF-IN-MTIME, ticks)
+      sf-write-inode(old-ino)
       return 0
     }
     return -1
   }
-  let old_name = alloc(SF_NAME_MAX + 1)
-  let old_parent = sf_lookup_parent(old_path, old_name)
-  if old_parent < 0 {
+  let old-name = alloc(SF-NAME-MAX + 1)
+  let old-parent = sf-lookup-parent(old-path, old-name)
+  if old-parent < 0 {
     return -1
   }
-  if sf_dir_add(new_parent, new_name, old_ino, old_type) != 0 {
+  if sf-dir-add(new-parent, new-name, old-ino, old-type) != 0 {
     return -1
   }
-  sf_dir_remove(old_parent, old_name)
-  store64(old_addr + SF_IN_MTIME, ticks)
-  sf_write_inode(old_ino)
+  sf-dir-remove(old-parent, old-name)
+  store64(old-addr + SF-IN-MTIME, ticks)
+  sf-write-inode(old-ino)
   return 0
 }
 
-fn sparkfs_stat(path: Int, stat_buf: Int) -> Int {
-  if sf_disk_ready == 0 {
+fn sparkfs-stat(path: Int, stat-buf: Int) -> Int {
+  if sf-disk-ready == 0 {
     return -1
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  store32(stat_buf + SF_ST_TYPE, load32(addr + SF_IN_TYPE))
-  store32(stat_buf + SF_ST_MODE, load32(addr + SF_IN_MODE))
-  store64(stat_buf + SF_ST_SIZE, load64(addr + SF_IN_SIZE))
-  store32(stat_buf + SF_ST_NLINK, load32(addr + SF_IN_NLINK))
-  store64(stat_buf + SF_ST_CTIME, load64(addr + SF_IN_CTIME))
-  store64(stat_buf + SF_ST_MTIME, load64(addr + SF_IN_MTIME))
-  store64(stat_buf + SF_ST_ATIME, load64(addr + SF_IN_ATIME))
+  let addr = sf-inode-addr(ino)
+  store32(stat-buf + SF-ST-TYPE, load32(addr + SF-IN-TYPE))
+  store32(stat-buf + SF-ST-MODE, load32(addr + SF-IN-MODE))
+  store64(stat-buf + SF-ST-SIZE, load64(addr + SF-IN-SIZE))
+  store32(stat-buf + SF-ST-NLINK, load32(addr + SF-IN-NLINK))
+  store64(stat-buf + SF-ST-CTIME, load64(addr + SF-IN-CTIME))
+  store64(stat-buf + SF-ST-MTIME, load64(addr + SF-IN-MTIME))
+  store64(stat-buf + SF-ST-ATIME, load64(addr + SF-IN-ATIME))
   return 0
 }
 
-fn sparkfs_list(path: Int, port: Int) -> void {
-  if sf_disk_ready == 0 {
-    serial_write_cstr(port, "  (no disk)")
-    serial_nl(port)
+fn sparkfs-list(path: Int, port: Int) -> void {
+  if sf-disk-ready == 0 {
+    serial-write-cstr(port, "  (no disk)")
+    serial-nl(port)
     return
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
-    serial_write_cstr(port, "  (not found)")
-    serial_nl(port)
+    serial-write-cstr(port, "  (not found)")
+    serial-nl(port)
     return
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_DIR {
-    serial_write_cstr(port, "  (not a directory)")
-    serial_nl(port)
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-DIR {
+    serial-write-cstr(port, "  (not a directory)")
+    serial-nl(port)
     return
   }
-  let size = load64(addr + SF_IN_SIZE)
+  let size = load64(addr + SF-IN-SIZE)
   let fbn = 0
-  while fbn * SF_BLOCK_SIZE < size {
-    let bno = sf_inode_block(ino, fbn)
+  while fbn * SF-BLOCK-SIZE < size {
+    let bno = sf-inode-block(ino, fbn)
     if bno > 0 {
-      sf_read_block(bno, sf_block_buf)
+      sf-read-block(bno, sf-block-buf)
       let off = 0
-      while off < SF_BLOCK_SIZE {
-        let eino = load32(sf_block_buf + off)
-        let name_len = load8(sf_block_buf + off + 4)
-        let etype = load8(sf_block_buf + off + 5)
+      while off < SF-BLOCK-SIZE {
+        let eino = load32(sf-block-buf + off)
+        let name-len = load8(sf-block-buf + off + 4)
+        let etype = load8(sf-block-buf + off + 5)
         if eino == 0 {
-          off = SF_BLOCK_SIZE
+          off = SF-BLOCK-SIZE
         } else {
-          serial_write_cstr(port, "  ")
+          serial-write-cstr(port, "  ")
           let i = 0
-          while i < name_len {
-            serial_put(port, load8(sf_block_buf + off + SF_DIR_ENTRY_HEAD + i))
+          while i < name-len {
+            serial-put(port, load8(sf-block-buf + off + SF-DIR-ENTRY-HEAD + i))
             i = i + 1
           }
-          serial_write_cstr(port, "  size=")
-          let eaddr = sf_inode_addr(eino)
-          serial_write_dec_wide(port, load64(eaddr + SF_IN_SIZE))
-          serial_write_cstr(port, "  type=")
-          if etype == SF_TYPE_DIR {
-            serial_write_cstr(port, "dir")
+          serial-write-cstr(port, "  size=")
+          let eaddr = sf-inode-addr(eino)
+          serial-write-dec-wide(port, load64(eaddr + SF-IN-SIZE))
+          serial-write-cstr(port, "  type=")
+          if etype == SF-TYPE-DIR {
+            serial-write-cstr(port, "dir")
           } else {
-            serial_write_cstr(port, "file")
+            serial-write-cstr(port, "file")
           }
-          if load32(eaddr + SF_IN_INLINE) != 0 {
-            serial_write_cstr(port, "  inline")
+          if load32(eaddr + SF-IN-INLINE) != 0 {
+            serial-write-cstr(port, "  inline")
           }
-          serial_write_cstr(port, "  mtime=")
-          serial_write_hex(port, load64(eaddr + SF_IN_MTIME))
-          serial_nl(port)
-          off = off + SF_DIR_ENTRY_SIZE
+          serial-write-cstr(port, "  mtime=")
+          serial-write-hex(port, load64(eaddr + SF-IN-MTIME))
+          serial-nl(port)
+          off = off + SF-DIR-ENTRY-SIZE
         }
       }
     }
@@ -696,30 +696,30 @@ fn sparkfs_list(path: Int, port: Int) -> void {
   return
 }
 
-fn sf_flush_bitmap() -> void {
-  if sf_disk_ready == 0 {
+fn sf-flush-bitmap() -> void {
+  if sf-disk-ready == 0 {
     return
   }
-  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
-  let bitmap_bytes = (total + 7) / 8
-  let bitmap_start = load64(sf_super + SF_SB_BITMAP_START)
-  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  let bitmap-bytes = (total + 7) / 8
+  let bitmap-start = load64(sf-super + SF-SB-BITMAP-START)
+  let bitmap-blocks = (bitmap-bytes + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
   let b = 0
-  while b < bitmap_blocks {
-    sf_zero_block(sf_block_buf)
+  while b < bitmap-blocks {
+    sf-zero-block(sf-block-buf)
     let k = 0
-    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
-      store8(sf_block_buf + k, load8(sf_bitmap + b * SF_BLOCK_SIZE + k))
+    while k < SF-BLOCK-SIZE && b * SF-BLOCK-SIZE + k < bitmap-bytes {
+      store8(sf-block-buf + k, load8(sf-bitmap + b * SF-BLOCK-SIZE + k))
       k = k + 1
     }
-    sf_write_block(bitmap_start + b, sf_block_buf)
+    sf-write-block(bitmap-start + b, sf-block-buf)
     b = b + 1
   }
   return
 }
 
-fn sparkfs_sync() -> void {
-  sf_flush_bitmap()
-  sf_write_block(0, sf_super)
+fn sparkfs-sync() -> void {
+  sf-flush-bitmap()
+  sf-write-block(0, sf-super)
   return
 }

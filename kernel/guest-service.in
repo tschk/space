@@ -9,30 +9,30 @@ component GuestService {
   capability serial: DebugConsole(write)
 }
 
-fn g_wait(port: Int) -> void {
+fn g-wait(port: Int) -> void {
   while (inb(port + 5) & 0x20) == 0 { }
   return
 }
 
-fn g_put(port: Int, ch: Int) -> void {
-  g_wait(port)
+fn g-put(port: Int, ch: Int) -> void {
+  g-wait(port)
   outb(port, ch)
   return
 }
 
 // Validate SCI manifest against realm's capability table.
-fn sci_validate_manifest(sci_ptr: Int, realm_cap_info: Int) -> Int {
-  let magic = load64(sci_ptr + 0)
+fn sci-validate-manifest(sci-ptr: Int, realm-cap-info: Int) -> Int {
+  let magic = load64(sci-ptr + 0)
   if magic != 0x5343490000000001 {
     return 0
   }
-  let cap_count = load64(realm_cap_info + 0)
-  let cap_table = load64(realm_cap_info + 8)
-  let required = load64(sci_ptr + 8)
+  let cap-count = load64(realm-cap-info + 0)
+  let cap-table = load64(realm-cap-info + 8)
+  let required = load64(sci-ptr + 8)
   let granted = 0
   let i = 0
-  while i < cap_count {
-    let rights = load64(cap_table + i * 16 + 8)
+  while i < cap-count {
+    let rights = load64(cap-table + i * 16 + 8)
     granted = granted | rights
     i = i + 1
   }
@@ -44,9 +44,9 @@ fn sci_validate_manifest(sci_ptr: Int, realm_cap_info: Int) -> Int {
 }
 
 // Component entry: validate manifest, then return success code.
-fn guest_entry(realm_cap_info: Int) -> Int {
-  let sci_ptr = 0x40000000
-  if sci_validate_manifest(sci_ptr, realm_cap_info) == 0 {
+fn guest-entry(realm-cap-info: Int) -> Int {
+  let sci-ptr = 0x40000000
+  if sci-validate-manifest(sci-ptr, realm-cap-info) == 0 {
     return 0xDEAD
   }
   return 0x1042

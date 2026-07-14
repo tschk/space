@@ -32,19 +32,19 @@ cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 echo "[2/3] Compiling nanokernel and runtime components..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
 
-"$IN" compile --path "$SPACE_DIR/components/display.in" --entry display_entry \
+"$IN" compile --path "$SPACE_DIR/components/display.in" --entry display-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$DISPLAY_ENTRY" --out "$BUILD_DIR/display.sci"
 
-"$IN" compile --path "$SPACE_DIR/components/input.in" --entry input_entry \
+"$IN" compile --path "$SPACE_DIR/components/input.in" --entry input-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$INPUT_ENTRY" --out "$BUILD_DIR/input.sci"
-"$IN" compile --path "$SPACE_DIR/components/volume.in" --entry volume_entry \
+"$IN" compile --path "$SPACE_DIR/components/volume.in" --entry volume-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$VOLUME_ENTRY" --out "$BUILD_DIR/volume.sci"
 

@@ -10,17 +10,17 @@ package space.kernel
 import "../components/network.in"
 
 // Cross-domain channel state to the network component.
-var net_req_ch: Int = 0
-var net_resp_ch: Int = 0
-var net_component_started: Int = 0
-var net_component_obj: Int = 0
-var net_component_tid: Int = 0
+var net-req-ch: Int = 0
+var net-resp-ch: Int = 0
+var net-component-started: Int = 0
+var net-component-obj: Int = 0
+var net-component-tid: Int = 0
 
 // --- channel helpers --------------------------------------------------------
 // The shared page ring header is initialized by chan_cross_bind in the kernel
 // domain; these helpers simply follow head/tail.
 
-fn net_chan_send(ch: Int, msg: Int) -> void {
+fn net-chan-send(ch: Int, msg: Int) -> void {
   let page = load64(ch + 0)
   let cap = load64(page + 16)
   while true {
@@ -28,170 +28,170 @@ fn net_chan_send(ch: Int, msg: Int) -> void {
     let head = load64(page + 0)
     let next = (tail + 1) % cap
     if next != head {
-      store64(page + CROSS_PAGE_RING_OFFSET + tail * 8, msg)
+      store64(page + CROSS-PAGE-RING-OFFSET + tail * 8, msg)
       store64(page + 8, next)
       return
     }
   }
 }
 
-fn net_chan_recv(ch: Int) -> Int {
+fn net-chan-recv(ch: Int) -> Int {
   let page = load64(ch + 0)
   let cap = load64(page + 16)
   while true {
     let head = load64(page + 0)
     let tail = load64(page + 8)
     if head != tail {
-      let msg = load64(page + CROSS_PAGE_RING_OFFSET + head * 8)
+      let msg = load64(page + CROSS-PAGE-RING-OFFSET + head * 8)
       store64(page + 0, (head + 1) % cap)
       return msg
     }
-    thr_switch(net_component_tid)
+    thr-switch(net-component-tid)
   }
 }
 
-fn net_component_step() -> void {
-  thr_switch(net_component_tid)
+fn net-component-step() -> void {
+  thr-switch(net-component-tid)
   return
 }
 
 // --- component lifecycle ----------------------------------------------------
 // Start the network component in its own domain and wire up request/response
 // cross-domain channels.  Returns 1 on success, 0 on failure.
-fn net_component_start(port: Int) -> Int {
-  if net_component_started != 0 {
+fn net-component-start(port: Int) -> Int {
+  if net-component-started != 0 {
     return 1
   }
-  let domain = domain_create()
+  let domain = domain-create()
   if domain == 0 {
     return 0
   }
-  let req_page = domain_create_shared_page(0, domain, 0xFFFF8000, 0xFFFF8000)
-  let resp_page = domain_create_shared_page(0, domain, 0xFFFF9000, 0xFFFF9000)
-  if req_page == 0 || resp_page == 0 {
+  let req-page = domain-create-shared-page(0, domain, 0xFFFF8000, 0xFFFF8000)
+  let resp-page = domain-create-shared-page(0, domain, 0xFFFF9000, 0xFFFF9000)
+  if req-page == 0 || resp-page == 0 {
     return 0
   }
-  net_req_ch = chan_cross_bind(req_page, 0, 16)
-  net_resp_ch = chan_cross_bind(resp_page, 0, 16)
+  net-req-ch = chan-cross-bind(req-page, 0, 16)
+  net-resp-ch = chan-cross-bind(resp-page, 0, 16)
 
-  let cap_info = alloc(24)
-  store64(cap_info + 0, req_page)
-  store64(cap_info + 8, resp_page)
-  store64(cap_info + 16, port)
+  let cap-info = alloc(24)
+  store64(cap-info + 0, req-page)
+  store64(cap-info + 8, resp-page)
+  store64(cap-info + 16, port)
 
-  net_component_obj = component_register("network", network_component_entry, cap_serial() | cap_memory() | cap_network())
-  store64(net_component_obj + 40, domain)
+  net-component-obj = component-register("network", network-component-entry, cap-serial() | cap-memory() | cap-network())
+  store64(net-component-obj + 40, domain)
 
-  net_component_cap_info = cap_info
-  net_component_tid = thr_create(network_component_thread)
-  net_component_started = 1
+  net-component-cap-info = cap-info
+  net-component-tid = thr-create(network-component-thread)
+  net-component-started = 1
   return 1
 }
 
 // --- public stubs -----------------------------------------------------------
 
-fn e1000_init(port: Int) -> Int {
-  if net_component_started == 0 {
-    return e1000_init_impl(port)
+fn e1000-init(port: Int) -> Int {
+  if net-component-started == 0 {
+    return e1000-init-impl(port)
   }
-  net_chan_send(net_req_ch, NET_OP_INIT)
-  return net_chan_recv(net_resp_ch)
+  net-chan-send(net-req-ch, NET-OP-INIT)
+  return net-chan-recv(net-resp-ch)
 }
 
-fn e1000_tx(len: Int) -> void {
-  if net_component_started == 0 {
-    e1000_tx_impl(len)
+fn e1000-tx(len: Int) -> void {
+  if net-component-started == 0 {
+    e1000-tx-impl(len)
     return
   }
-  net_chan_send(net_req_ch, NET_OP_TX)
-  net_chan_send(net_req_ch, len)
-  net_component_step()
+  net-chan-send(net-req-ch, NET-OP-TX)
+  net-chan-send(net-req-ch, len)
+  net-component-step()
   return
 }
 
-fn e1000_rx_poll() -> Int {
-  if net_component_started == 0 {
-    let buf = e1000_rx_poll_impl()
-    nic_rx_len = net_get_rx_len_impl()
+fn e1000-rx-poll() -> Int {
+  if net-component-started == 0 {
+    let buf = e1000-rx-poll-impl()
+    nic-rx-len = net-get-rx-len-impl()
     return buf
   }
-  net_chan_send(net_req_ch, NET_OP_RX_POLL)
-  let buf = net_chan_recv(net_resp_ch)
-  nic_rx_len = net_chan_recv(net_resp_ch)
+  net-chan-send(net-req-ch, NET-OP-RX-POLL)
+  let buf = net-chan-recv(net-resp-ch)
+  nic-rx-len = net-chan-recv(net-resp-ch)
   return buf
 }
 
-fn e1000_rx_wait() -> Int {
-  if net_component_started == 0 {
-    let buf = e1000_rx_wait_impl()
-    nic_rx_len = net_get_rx_len_impl()
+fn e1000-rx-wait() -> Int {
+  if net-component-started == 0 {
+    let buf = e1000-rx-wait-impl()
+    nic-rx-len = net-get-rx-len-impl()
     return buf
   }
-  net_chan_send(net_req_ch, NET_OP_RX_WAIT)
-  let buf = net_chan_recv(net_resp_ch)
-  nic_rx_len = net_chan_recv(net_resp_ch)
+  net-chan-send(net-req-ch, NET-OP-RX-WAIT)
+  let buf = net-chan-recv(net-resp-ch)
+  nic-rx-len = net-chan-recv(net-resp-ch)
   return buf
 }
 
-fn build_arp() -> Int {
-  if net_component_started == 0 {
-    return build_arp_impl()
+fn build-arp() -> Int {
+  if net-component-started == 0 {
+    return build-arp-impl()
   }
-  net_chan_send(net_req_ch, NET_OP_BUILD_ARP)
-  return net_chan_recv(net_resp_ch)
+  net-chan-send(net-req-ch, NET-OP-BUILD-ARP)
+  return net-chan-recv(net-resp-ch)
 }
 
-fn build_udp(payload: Int) -> Int {
-  if net_component_started == 0 {
-    return build_udp_impl(payload)
+fn build-udp(payload: Int) -> Int {
+  if net-component-started == 0 {
+    return build-udp-impl(payload)
   }
-  net_chan_send(net_req_ch, NET_OP_BUILD_UDP)
-  net_chan_send(net_req_ch, payload)
-  return net_chan_recv(net_resp_ch)
+  net-chan-send(net-req-ch, NET-OP-BUILD-UDP)
+  net-chan-send(net-req-ch, payload)
+  return net-chan-recv(net-resp-ch)
 }
 
-fn net_store_mac(p: Int) -> void {
-  if net_component_started == 0 {
-    net_store_mac_impl(p)
+fn net-store-mac(p: Int) -> void {
+  if net-component-started == 0 {
+    net-store-mac-impl(p)
     return
   }
-  net_chan_send(net_req_ch, NET_OP_STORE_MAC)
-  net_chan_send(net_req_ch, p)
-  net_component_step()
+  net-chan-send(net-req-ch, NET-OP-STORE-MAC)
+  net-chan-send(net-req-ch, p)
+  net-component-step()
   return
 }
 
-fn net_print_mac(port: Int) -> void {
-  if net_component_started == 0 {
-    net_print_mac_impl(port)
+fn net-print-mac(port: Int) -> void {
+  if net-component-started == 0 {
+    net-print-mac-impl(port)
     return
   }
-  net_chan_send(net_req_ch, NET_OP_GET_MAC)
-  let lo = net_chan_recv(net_resp_ch)
-  let hi = net_chan_recv(net_resp_ch)
-  serial_write_hex(port, lo & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (lo >> 8) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (lo >> 16) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (lo >> 24) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, hi & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (hi >> 8) & 0xFF)
+  net-chan-send(net-req-ch, NET-OP-GET-MAC)
+  let lo = net-chan-recv(net-resp-ch)
+  let hi = net-chan-recv(net-resp-ch)
+  serial-write-hex(port, lo & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (lo >> 8) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (lo >> 16) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (lo >> 24) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, hi & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (hi >> 8) & 0xFF)
   return
 }
 
-fn run_net(port: Int) -> void {
+fn run-net(port: Int) -> void {
   // Until the scheduler wires the component as a long-running process, drive
   // the demo by invoking the implementation directly so the shell command
   // remains usable.
-  if net_component_started == 0 {
-    run_net_impl(port)
+  if net-component-started == 0 {
+    run-net-impl(port)
     return
   }
-  net_chan_send(net_req_ch, NET_OP_RUN)
-  net_component_step()
+  net-chan-send(net-req-ch, NET-OP-RUN)
+  net-component-step()
   return
 }

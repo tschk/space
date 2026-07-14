@@ -2,83 +2,83 @@ package space.kernel
 
 // SparkFS public compatibility API.
 
-fn fs_init() -> void {
-  sparkfs_init()
+fn fs-init() -> void {
+  sparkfs-init()
   return
 }
 
-fn fs_format() -> Int {
-  return sparkfs_format()
+fn fs-format() -> Int {
+  return sparkfs-format()
 }
 
-fn fs_list(port: Int) -> void {
-  sparkfs_list("/", port)
+fn fs-list(port: Int) -> void {
+  sparkfs-list("/", port)
   return
 }
 
-fn fs_list_path(path: Int, port: Int) -> void {
-  sparkfs_list(path, port)
+fn fs-list-path(path: Int, port: Int) -> void {
+  sparkfs-list(path, port)
   return
 }
 
-fn fs_read_file(name: Int, buf: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_read_file(name, buf, 0x100000)
+fn fs-read-file(name: Int, buf: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-read-file(name, buf, 0x100000)
   }
-  return sparkfs_read(name, buf, 0x7FFFFFFF)
+  return sparkfs-read(name, buf, 0x7FFFFFFF)
 }
 
-fn fs_write_file(name: Int, buf: Int, size: Int) -> Int {
-  if volume_ready != 0 {
-    let n = volume_rpc_write_file(name, buf, size)
+fn fs-write-file(name: Int, buf: Int, size: Int) -> Int {
+  if volume-ready != 0 {
+    let n = volume-rpc-write-file(name, buf, size)
     if n < 0 {
       return -1
     }
     return 0
   }
-  return sparkfs_write(name, buf, size)
+  return sparkfs-write(name, buf, size)
 }
 
-fn fs_delete(name: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_delete(name)
+fn fs-delete(name: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-delete(name)
   }
-  return sparkfs_delete(name)
+  return sparkfs-delete(name)
 }
 
-fn fs_mkdir(path: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_mkdir(path)
+fn fs-mkdir(path: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-mkdir(path)
   }
-  return sparkfs_mkdir(path)
+  return sparkfs-mkdir(path)
 }
 
-fn fs_rmdir(path: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_rmdir(path)
+fn fs-rmdir(path: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-rmdir(path)
   }
-  return sparkfs_rmdir(path)
+  return sparkfs-rmdir(path)
 }
 
-fn fs_rename(old: Int, new: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_rename(old, new)
+fn fs-rename(old: Int, new: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-rename(old, new)
   }
-  return sparkfs_rename(old, new)
+  return sparkfs-rename(old, new)
 }
 
-fn fs_stat(path: Int, buf: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_stat(path, buf)
+fn fs-stat(path: Int, buf: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-stat(path, buf)
   }
-  return sparkfs_stat(path, buf)
+  return sparkfs-stat(path, buf)
 }
 
-fn fs_open_path(path: Int) -> Int {
-  if volume_ready != 0 {
-    return volume_rpc_open(path, 0)
+fn fs-open-path(path: Int) -> Int {
+  if volume-ready != 0 {
+    return volume-rpc-open(path, 0)
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
     return -1
   }

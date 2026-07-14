@@ -1,39 +1,39 @@
 package space.kernel
 
-const VFS_O_RDONLY = 0
-const VFS_O_WRONLY = 1
-const VFS_O_RDWR = 2
-const VFS_O_CREAT = 64
+const VFS-O-RDONLY = 0
+const VFS-O-WRONLY = 1
+const VFS-O-RDWR = 2
+const VFS-O-CREAT = 64
 
-const VFS_MAX_FDS = 16
-var vfs_fd_table: Int = 0
+const VFS-MAX-FDS = 16
+var vfs-fd-table: Int = 0
 
-fn vfs_init() -> void {
-  vfs_fd_table_alloc()
-  store64(vfs_fd_table + 0 * 32 + 0, 0)
-  store64(vfs_fd_table + 0 * 32 + 8, 0)
-  store64(vfs_fd_table + 0 * 32 + 16, VFS_O_RDONLY)
-  store64(vfs_fd_table + 1 * 32 + 0, 0)
-  store64(vfs_fd_table + 1 * 32 + 8, 0)
-  store64(vfs_fd_table + 1 * 32 + 16, VFS_O_WRONLY)
-  store64(vfs_fd_table + 2 * 32 + 0, 0)
-  store64(vfs_fd_table + 2 * 32 + 8, 0)
-  store64(vfs_fd_table + 2 * 32 + 16, VFS_O_WRONLY)
+fn vfs-init() -> void {
+  vfs-fd-table-alloc()
+  store64(vfs-fd-table + 0 * 32 + 0, 0)
+  store64(vfs-fd-table + 0 * 32 + 8, 0)
+  store64(vfs-fd-table + 0 * 32 + 16, VFS-O-RDONLY)
+  store64(vfs-fd-table + 1 * 32 + 0, 0)
+  store64(vfs-fd-table + 1 * 32 + 8, 0)
+  store64(vfs-fd-table + 1 * 32 + 16, VFS-O-WRONLY)
+  store64(vfs-fd-table + 2 * 32 + 0, 0)
+  store64(vfs-fd-table + 2 * 32 + 8, 0)
+  store64(vfs-fd-table + 2 * 32 + 16, VFS-O-WRONLY)
   return
 }
 
-fn vfs_fd_table_alloc() -> void {
-  vfs_fd_table = alloc(VFS_MAX_FDS * 32)
+fn vfs-fd-table-alloc() -> void {
+  vfs-fd-table = alloc(VFS-MAX-FDS * 32)
   let i = 0
-  while i < VFS_MAX_FDS {
-    vfs_fd_clear(i)
+  while i < VFS-MAX-FDS {
+    vfs-fd-clear(i)
     i = i + 1
   }
   return
 }
 
-fn vfs_fd_clear(fd: Int) -> void {
-  let base = vfs_fd_table + fd * 32
+fn vfs-fd-clear(fd: Int) -> void {
+  let base = vfs-fd-table + fd * 32
   store64(base + 0, -1)
   store64(base + 8, 0)
   store64(base + 16, 0)
@@ -41,10 +41,10 @@ fn vfs_fd_clear(fd: Int) -> void {
   return
 }
 
-fn vfs_fd_alloc() -> Int {
+fn vfs-fd-alloc() -> Int {
   let i = 3
-  while i < VFS_MAX_FDS {
-    if load64(vfs_fd_table + i * 32 + 0) == -1 {
+  while i < VFS-MAX-FDS {
+    if load64(vfs-fd-table + i * 32 + 0) == -1 {
       return i
     }
     i = i + 1
@@ -52,73 +52,73 @@ fn vfs_fd_alloc() -> Int {
   return -1
 }
 
-fn vfs_fd_valid(fd: Int) -> Int {
+fn vfs-fd-valid(fd: Int) -> Int {
   if fd < 0 {
     return 0
   }
-  if fd >= VFS_MAX_FDS {
+  if fd >= VFS-MAX-FDS {
     return 0
   }
   if fd < 3 {
     return 1
   }
-  if load64(vfs_fd_table + fd * 32 + 0) == -1 {
+  if load64(vfs-fd-table + fd * 32 + 0) == -1 {
     return 0
   }
   return 1
 }
 
-fn vfs_sparkfs_file_size(path: Int) -> Int {
-  if volume_ready != 0 {
+fn vfs-sparkfs-file-size(path: Int) -> Int {
+  if volume-ready != 0 {
     let st = alloc(64)
-    if volume_rpc_stat(path, st) != 0 {
+    if volume-rpc-stat(path, st) != 0 {
       return -1
     }
-    return load64(st + SF_ST_SIZE)
+    return load64(st + SF-ST-SIZE)
   }
-  let ino = sf_lookup_path(path)
+  let ino = sf-lookup-path(path)
   if ino < 0 {
     return -1
   }
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_TYPE) != SF_TYPE_FILE {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  return load64(addr + SF_IN_SIZE)
+  return load64(addr + SF-IN-SIZE)
 }
 
-fn vfs_open(pathname: Int, flags: Int) -> Int {
-  if volume_ready != 0 {
-    let vrc = volume_rpc_open(pathname, flags)
+fn vfs-open(pathname: Int, flags: Int) -> Int {
+  if volume-ready != 0 {
+    let vrc = volume-rpc-open(pathname, flags)
     if vrc < 0 {
-      if (flags & VFS_O_CREAT) != 0 {
+      if (flags & VFS-O-CREAT) != 0 {
         return -28
       }
       return -2
     }
-    let fd = vfs_fd_alloc()
+    let fd = vfs-fd-alloc()
     if fd < 0 {
       return -16
     }
-    let path_copy = strdup(pathname)
-    let base = vfs_fd_table + fd * 32
-    store64(base + 0, path_copy)
+    let path-copy = strdup(pathname)
+    let base = vfs-fd-table + fd * 32
+    store64(base + 0, path-copy)
     store64(base + 8, 0)
     store64(base + 16, flags)
     store64(base + 24, 0)
     return fd
   }
-  if sf_disk_ready == 0 {
+  if sf-disk-ready == 0 {
     return -5
   }
-  let ino = sf_lookup_path(pathname)
+  let ino = sf-lookup-path(pathname)
   if ino < 0 {
-    if (flags & VFS_O_CREAT) != 0 {
-      let rc = fs_write_file(pathname, pathname, 0)
+    if (flags & VFS-O-CREAT) != 0 {
+      let rc = fs-write-file(pathname, pathname, 0)
       if rc != 0 {
         return -28
       }
-      ino = sf_lookup_path(pathname)
+      ino = sf-lookup-path(pathname)
       if ino < 0 {
         return -5
       }
@@ -126,39 +126,39 @@ fn vfs_open(pathname: Int, flags: Int) -> Int {
       return -2
     }
   }
-  let fd = vfs_fd_alloc()
+  let fd = vfs-fd-alloc()
   if fd < 0 {
     return -16
   }
-  let path_copy = strdup(pathname)
-  let base = vfs_fd_table + fd * 32
-  store64(base + 0, path_copy)
+  let path-copy = strdup(pathname)
+  let base = vfs-fd-table + fd * 32
+  store64(base + 0, path-copy)
   store64(base + 8, 0)
   store64(base + 16, flags)
   store64(base + 24, 0)
   return fd
 }
 
-fn vfs_close(fd: Int) -> Int {
-  if vfs_fd_valid(fd) == 0 {
+fn vfs-close(fd: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
     return -9
   }
   if fd < 3 {
     return 0
   }
-  vfs_fd_clear(fd)
+  vfs-fd-clear(fd)
   return 0
 }
 
-fn vfs_read(fd: Int, buf: Int, count: Int) -> Int {
-  if vfs_fd_valid(fd) == 0 {
+fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
     return -9
   }
   if fd == 0 {
     let port = com1()
     let i = 0
     while i < count {
-      let c = serial_read(port)
+      let c = serial-read(port)
       store8(buf + i, c)
       i = i + 1
       if c == 10 || c == 13 {
@@ -170,14 +170,14 @@ fn vfs_read(fd: Int, buf: Int, count: Int) -> Int {
   if fd < 3 {
     return -9
   }
-  let base = vfs_fd_table + fd * 32
+  let base = vfs-fd-table + fd * 32
   let path = load64(base + 0)
   let offset = load64(base + 8)
   let n = 0
-  if volume_ready != 0 {
-    n = volume_rpc_pread(path, buf, count, offset)
+  if volume-ready != 0 {
+    n = volume-rpc-pread(path, buf, count, offset)
   } else {
-    n = sparkfs_pread(path, buf, count, offset)
+    n = sparkfs-pread(path, buf, count, offset)
   }
   if n < 0 {
     return -5
@@ -186,15 +186,15 @@ fn vfs_read(fd: Int, buf: Int, count: Int) -> Int {
   return n
 }
 
-fn vfs_write(fd: Int, buf: Int, count: Int) -> Int {
-  if vfs_fd_valid(fd) == 0 {
+fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
     return -9
   }
   if fd == 1 || fd == 2 {
     let port = com1()
     let i = 0
     while i < count {
-      serial_put(port, load8(buf + i))
+      serial-put(port, load8(buf + i))
       i = i + 1
     }
     return count
@@ -202,14 +202,14 @@ fn vfs_write(fd: Int, buf: Int, count: Int) -> Int {
   if fd == 0 {
     return -9
   }
-  let base = vfs_fd_table + fd * 32
+  let base = vfs-fd-table + fd * 32
   let path = load64(base + 0)
   let offset = load64(base + 8)
   let n = 0
-  if volume_ready != 0 {
-    n = volume_rpc_pwrite(path, buf, count, offset)
+  if volume-ready != 0 {
+    n = volume-rpc-pwrite(path, buf, count, offset)
   } else {
-    n = sparkfs_pwrite(path, buf, count, offset)
+    n = sparkfs-pwrite(path, buf, count, offset)
   }
   if n < 0 {
     return -5
@@ -218,33 +218,33 @@ fn vfs_write(fd: Int, buf: Int, count: Int) -> Int {
   return n
 }
 
-fn vfs_lseek(fd: Int, offset: Int, whence: Int) -> Int {
-  if vfs_fd_valid(fd) == 0 {
+fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
     return -9
   }
   if fd < 3 {
     return -29
   }
-  let base = vfs_fd_table + fd * 32
+  let base = vfs-fd-table + fd * 32
   let path = load64(base + 0)
-  let file_size = vfs_sparkfs_file_size(path)
-  if file_size < 0 {
+  let file-size = vfs-sparkfs-file-size(path)
+  if file-size < 0 {
     return -5
   }
-  let cur_offset = load64(base + 8)
-  let new_offset = 0
+  let cur-offset = load64(base + 8)
+  let new-offset = 0
   if whence == 0 {
-    new_offset = offset
+    new-offset = offset
   } else if whence == 1 {
-    new_offset = cur_offset + offset
+    new-offset = cur-offset + offset
   } else if whence == 2 {
-    new_offset = file_size + offset
+    new-offset = file-size + offset
   } else {
     return -22
   }
-  if new_offset < 0 {
+  if new-offset < 0 {
     return -22
   }
-  store64(base + 8, new_offset)
-  return new_offset
+  store64(base + 8, new-offset)
+  return new-offset
 }

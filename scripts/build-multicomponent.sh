@@ -31,13 +31,13 @@ NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
 echo "[2/5] Compiling the nanokernel boot image..."
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry \
   --emit boot --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin" >/dev/null
 
 echo "[3/5] Compiling the guest SCI component at base $(printf 0x%x "$GUEST_BASE")..."
-"$IN" compile --path "$SPACE_DIR/kernel/guest-service.in" --entry guest_entry \
+"$IN" compile --path "$SPACE_DIR/kernel/guest-service.in" --entry guest-entry \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/guest.o" >/dev/null
 

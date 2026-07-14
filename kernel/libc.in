@@ -505,7 +505,7 @@ fn utoa(n: Int, buf: Int) -> Int {
 
 // --- printf helper: format an unsigned number into buf in the given base ---
 // Returns the number of digits written (excluding NUL).  Uses lowercase hex.
-fn fmt_unsigned_base(val: Int, base: Int, buf: Int) -> Int {
+fn fmt-unsigned-base(val: Int, base: Int, buf: Int) -> Int {
   let v = val
   let i = 0
   if v == 0 {
@@ -542,51 +542,51 @@ fn fmt_unsigned_base(val: Int, base: Int, buf: Int) -> Int {
 }
 
 // --- printf helper: print a number with optional width padding ---
-fn printf_padded(val: Int, base: Int, width: Int, pad: Int, is_signed: Int) -> void {
+fn printf-padded(val: Int, base: Int, width: Int, pad: Int, is-signed: Int) -> void {
   let port = com1()
   let buf = malloc(80)
   let len = 0
   let negative = 0
   let v = val
-  if is_signed != 0 && v < 0 {
+  if is-signed != 0 && v < 0 {
     negative = 1
     v = -v
   }
-  len = fmt_unsigned_base(v, base, buf)
+  len = fmt-unsigned-base(v, base, buf)
   // Calculate how much padding is needed.
   let total = len
   if negative != 0 {
     total = total + 1
   }
-  let pad_count = 0
+  let pad-count = 0
   if width > total {
-    pad_count = width - total
+    pad-count = width - total
   }
   // If pad is '0' and signed, print sign before zeros.
   if negative != 0 {
     if pad == 48 {
-      serial_put(port, 45)
-      while pad_count > 0 {
-        serial_put(port, pad)
-        pad_count = pad_count - 1
+      serial-put(port, 45)
+      while pad-count > 0 {
+        serial-put(port, pad)
+        pad-count = pad-count - 1
       }
     } else {
-      while pad_count > 0 {
-        serial_put(port, pad)
-        pad_count = pad_count - 1
+      while pad-count > 0 {
+        serial-put(port, pad)
+        pad-count = pad-count - 1
       }
-      serial_put(port, 45)
+      serial-put(port, 45)
     }
   } else {
-    while pad_count > 0 {
-      serial_put(port, pad)
-      pad_count = pad_count - 1
+    while pad-count > 0 {
+      serial-put(port, pad)
+      pad-count = pad-count - 1
     }
   }
   // Print the digits.
   let j = 0
   while j < len {
-    serial_put(port, load8(buf + j))
+    serial-put(port, load8(buf + j))
     j = j + 1
   }
   free(buf)
@@ -610,7 +610,7 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
       i = i + 1
       let spec = load8(fmt + i)
       if spec == 0 {
-        serial_put(port, 37)
+        serial-put(port, 37)
         return
       }
       // Parse width: optional '0' flag then digits.
@@ -629,7 +629,7 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
         spec = load8(fmt + i)
       }
       if spec == 0 {
-        serial_put(port, 37)
+        serial-put(port, 37)
         return
       }
       // Select the next argument.
@@ -645,38 +645,38 @@ fn printf(fmt: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> void {
       }
       if spec == 115 {
         // 's' — string
-        serial_write_cstr(port, val)
+        serial-write-cstr(port, val)
         arg = arg + 1
       } else if spec == 100 {
         // 'd' — signed decimal
-        printf_padded(val, 10, width, pad, 1)
+        printf-padded(val, 10, width, pad, 1)
         arg = arg + 1
       } else if spec == 117 {
         // 'u' — unsigned decimal
-        printf_padded(val, 10, width, pad, 0)
+        printf-padded(val, 10, width, pad, 0)
         arg = arg + 1
       } else if spec == 120 {
         // 'x' — hexadecimal
-        printf_padded(val, 16, width, pad, 0)
+        printf-padded(val, 16, width, pad, 0)
         arg = arg + 1
       } else if spec == 98 {
         // 'b' — binary
-        printf_padded(val, 2, width, pad, 0)
+        printf-padded(val, 2, width, pad, 0)
         arg = arg + 1
       } else if spec == 99 {
         // 'c' — character
-        serial_put(port, val)
+        serial-put(port, val)
         arg = arg + 1
       } else if spec == 37 {
         // '%%' — literal percent
-        serial_put(port, 37)
+        serial-put(port, 37)
       } else {
         // Unknown specifier — print verbatim.
-        serial_put(port, 37)
-        serial_put(port, spec)
+        serial-put(port, 37)
+        serial-put(port, spec)
       }
     } else {
-      serial_put(port, c)
+      serial-put(port, c)
     }
     i = i + 1
   }
@@ -730,12 +730,12 @@ fn realloc(p: Int, n: Int) -> Int {
     return 0
   }
   let np = malloc(n)
-  let old_size = load64(p - 8)
-  let copy_size = old_size
-  if n < old_size {
-    copy_size = n
+  let old-size = load64(p - 8)
+  let copy-size = old-size
+  if n < old-size {
+    copy-size = n
   }
-  memcpy(np, p, copy_size)
+  memcpy(np, p, copy-size)
   free(p)
   return np
 }
@@ -806,17 +806,17 @@ fn lcm(a: Int, b: Int) -> Int {
 // ====================================================================================
 
 // Return the PIT tick count.
-fn time_ticks() -> Int {
+fn time-ticks() -> Int {
   return ticks
 }
 
 // Return uptime in milliseconds (PIT is 100Hz, so ticks * 10).
-fn time_uptime_ms() -> Int {
+fn time-uptime-ms() -> Int {
   return ticks * 10
 }
 
 // Busy-wait sleep for ms milliseconds (polling the PIT tick counter).
-fn time_sleep_ms(ms: Int) -> void {
+fn time-sleep-ms(ms: Int) -> void {
   let start = ticks
   let target = ms / 10
   if target == 0 {
@@ -832,24 +832,24 @@ fn time_sleep_ms(ms: Int) -> void {
 // Utility functions
 // ====================================================================================
 
-var panic_test_mode: Int = 0
-var panic_test_msg: Int = 0
-var panic_test_halted: Int = 0
+var panic-test-mode: Int = 0
+var panic-test-msg: Int = 0
+var panic-test-halted: Int = 0
 
 // Print a panic message and halt the nanokernel.
 fn panic(msg: Int) -> void {
-  if panic_test_mode != 0 {
-    panic_test_msg = msg
-    panic_test_halted = 1
+  if panic-test-mode != 0 {
+    panic-test-msg = msg
+    panic-test-halted = 1
     return
   }
   let port = com1()
-  serial_nl(port)
-  serial_write_cstr(port, "space: *** PANIC: ")
-  serial_write_cstr(port, msg)
-  serial_nl(port)
-  serial_write_cstr(port, "space: halting")
-  serial_nl(port)
+  serial-nl(port)
+  serial-write-cstr(port, "space: *** PANIC: ")
+  serial-write-cstr(port, msg)
+  serial-nl(port)
+  serial-write-cstr(port, "space: halting")
+  serial-nl(port)
   cli()
   while true {
     hlt()
@@ -861,15 +861,15 @@ fn panic(msg: Int) -> void {
 
 // Print a hex dump of n bytes at addr, with an ASCII column.
 // Format: "0xADDR  XX XX XX XX XX XX XX XX  XX XX XX XX XX XX XX XX  |ASCII|"
-fn hex_dump(addr: Int, n: Int) -> void {
+fn hex-dump(addr: Int, n: Int) -> void {
   let port = com1()
   let offset = 0
   while offset < n {
     // Print address.
-    serial_write_cstr(port, "  0x")
-    serial_write_hex(port, addr + offset)
-    serial_put(port, 32)
-    serial_put(port, 32)
+    serial-write-cstr(port, "  0x")
+    serial-write-hex(port, addr + offset)
+    serial-put(port, 32)
+    serial-put(port, 32)
     // Print 16 hex bytes.
     let col = 0
     while col < 16 {
@@ -878,44 +878,44 @@ fn hex_dump(addr: Int, n: Int) -> void {
         let hi = (byte >> 4) & 0xF
         let lo = byte & 0xF
         if hi < 10 {
-          serial_put(port, 48 + hi)
+          serial-put(port, 48 + hi)
         } else {
-          serial_put(port, 87 + hi)
+          serial-put(port, 87 + hi)
         }
         if lo < 10 {
-          serial_put(port, 48 + lo)
+          serial-put(port, 48 + lo)
         } else {
-          serial_put(port, 87 + lo)
+          serial-put(port, 87 + lo)
         }
       } else {
-        serial_put(port, 32)
-        serial_put(port, 32)
+        serial-put(port, 32)
+        serial-put(port, 32)
       }
-      serial_put(port, 32)
+      serial-put(port, 32)
       // Extra space after 8 bytes.
       if col == 7 {
-        serial_put(port, 32)
+        serial-put(port, 32)
       }
       col = col + 1
     }
     // Print ASCII column.
-    serial_put(port, 124)
+    serial-put(port, 124)
     col = 0
     while col < 16 {
       if offset + col < n {
         let byte = load8(addr + offset + col)
         if byte >= 32 && byte <= 126 {
-          serial_put(port, byte)
+          serial-put(port, byte)
         } else {
-          serial_put(port, 46)
+          serial-put(port, 46)
         }
       } else {
-        serial_put(port, 32)
+        serial-put(port, 32)
       }
       col = col + 1
     }
-    serial_put(port, 124)
-    serial_nl(port)
+    serial-put(port, 124)
+    serial-nl(port)
     offset = offset + 16
   }
   return

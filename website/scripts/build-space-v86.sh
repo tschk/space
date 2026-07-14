@@ -18,7 +18,7 @@ fi
 "$NASM" -f bin "$SPACE/boot/multiboot.asm" -o "$BUILD/trampoline.bin"
 [ "$(wc -c < "$BUILD/trampoline.bin")" -eq 4096 ]
 
-"$IN" compile --path "$SPACE/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+"$IN" compile --path "$SPACE/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD/kernel.bin"

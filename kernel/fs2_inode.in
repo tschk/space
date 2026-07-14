@@ -4,92 +4,92 @@ package space.kernel
 
 // --- inode table ------------------------------------------------------------
 
-fn sf_inode_addr(ino: Int) -> Int {
-  return sf_inodes + ino * SF_INODE_SIZE
+fn sf-inode-addr(ino: Int) -> Int {
+  return sf-inodes + ino * SF-INODE-SIZE
 }
 
-fn sf_inode_is_inline(ino: Int) -> Int {
-  let addr = sf_inode_addr(ino)
-  return load32(addr + SF_IN_INLINE)
+fn sf-inode-is-inline(ino: Int) -> Int {
+  let addr = sf-inode-addr(ino)
+  return load32(addr + SF-IN-INLINE)
 }
 
-fn sf_read_inode(ino: Int) -> void {
-  let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
-  let ino_bytes = ino * SF_INODE_SIZE
-  let block = table_start + (ino_bytes >> 12)
-  let offset = ino_bytes & 4095
-  sf_read_block(block, sf_block_buf)
+fn sf-read-inode(ino: Int) -> void {
+  let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
+  let ino-bytes = ino * SF-INODE-SIZE
+  let block = table-start + (ino-bytes >> 12)
+  let offset = ino-bytes & 4095
+  sf-read-block(block, sf-block-buf)
   let i = 0
-  let addr = sf_inode_addr(ino)
-  while i < SF_INODE_SIZE {
-    store8(addr + i, load8(sf_block_buf + offset + i))
+  let addr = sf-inode-addr(ino)
+  while i < SF-INODE-SIZE {
+    store8(addr + i, load8(sf-block-buf + offset + i))
     i = i + 1
   }
   return
 }
 
-fn sf_write_inode(ino: Int) -> Int {
-  let table_start = load64(sf_super + SF_SB_INODE_TABLE_START)
-  let ino_bytes = ino * SF_INODE_SIZE
-  let block = table_start + (ino_bytes >> 12)
-  let offset = ino_bytes & 4095
-  if sf_read_block(block, sf_block_buf) != 0 {
+fn sf-write-inode(ino: Int) -> Int {
+  let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
+  let ino-bytes = ino * SF-INODE-SIZE
+  let block = table-start + (ino-bytes >> 12)
+  let offset = ino-bytes & 4095
+  if sf-read-block(block, sf-block-buf) != 0 {
     return -1
   }
   let i = 0
-  let addr = sf_inode_addr(ino)
-  while i < SF_INODE_SIZE {
-    store8(sf_block_buf + offset + i, load8(addr + i))
+  let addr = sf-inode-addr(ino)
+  while i < SF-INODE-SIZE {
+    store8(sf-block-buf + offset + i, load8(addr + i))
     i = i + 1
   }
-  return sf_write_block(block, sf_block_buf)
+  return sf-write-block(block, sf-block-buf)
 }
 
 // --- inode block addressing -------------------------------------------------
 
 // Return the data block number for file block `fbn`, or -1 if unallocated.
-fn sf_inode_block(ino: Int, fbn: Int) -> Int {
-  let addr = sf_inode_addr(ino)
-  if load32(addr + SF_IN_INLINE) != 0 {
+fn sf-inode-block(ino: Int, fbn: Int) -> Int {
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-INLINE) != 0 {
     return -1
   }
-  if fbn < SF_INODE_DIRECT {
-    let b = load64(addr + SF_IN_DIRECT + fbn * 8)
+  if fbn < SF-INODE-DIRECT {
+    let b = load64(addr + SF-IN-DIRECT + fbn * 8)
     return b
   }
-  let indirect = load64(addr + SF_IN_INDIRECT)
+  let indirect = load64(addr + SF-IN-INDIRECT)
   if indirect == 0 {
     return -1
   }
-  sf_read_block(indirect, sf_block_buf)
-  let idx = fbn - SF_INODE_DIRECT
-  if idx >= SF_INODE_INDIRECT_COUNT {
+  sf-read-block(indirect, sf-block-buf)
+  let idx = fbn - SF-INODE-DIRECT
+  if idx >= SF-INODE-INDIRECT-COUNT {
     return -1
   }
-  return load64(sf_block_buf + idx * 8)
+  return load64(sf-block-buf + idx * 8)
 }
 
 // Set the data block number for file block `fbn`. Allocates indirect block if needed.
-fn sf_set_inode_block(ino: Int, fbn: Int, bno: Int) -> Int {
-  let addr = sf_inode_addr(ino)
-  if fbn < SF_INODE_DIRECT {
-    store64(addr + SF_IN_DIRECT + fbn * 8, bno)
+fn sf-set-inode-block(ino: Int, fbn: Int, bno: Int) -> Int {
+  let addr = sf-inode-addr(ino)
+  if fbn < SF-INODE-DIRECT {
+    store64(addr + SF-IN-DIRECT + fbn * 8, bno)
     return 0
   }
-  let indirect = load64(addr + SF_IN_INDIRECT)
+  let indirect = load64(addr + SF-IN-INDIRECT)
   if indirect == 0 {
-    indirect = sf_alloc_block()
+    indirect = sf-alloc-block()
     if indirect < 0 {
       return -1
     }
-    store64(addr + SF_IN_INDIRECT, indirect)
+    store64(addr + SF-IN-INDIRECT, indirect)
   }
-  sf_read_block(indirect, sf_block_buf)
-  let idx = fbn - SF_INODE_DIRECT
-  if idx >= SF_INODE_INDIRECT_COUNT {
+  sf-read-block(indirect, sf-block-buf)
+  let idx = fbn - SF-INODE-DIRECT
+  if idx >= SF-INODE-INDIRECT-COUNT {
     return -1
   }
-  store64(sf_block_buf + idx * 8, bno)
-  sf_write_block(indirect, sf_block_buf)
+  store64(sf-block-buf + idx * 8, bno)
+  sf-write-block(indirect, sf-block-buf)
   return 0
 }

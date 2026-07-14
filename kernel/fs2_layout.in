@@ -4,84 +4,84 @@ package space.kernel
 
 // --- constants --------------------------------------------------------------
 
-const SF_MAGIC = 0x53504146          // "SPAF"
-const SF_VERSION = 1
-const SF_BLOCK_SIZE = 4096
-const SF_SECTOR_SIZE = 512
-const SF_SECTORS_PER_BLOCK = 8
+const SF-MAGIC = 0x53504146          // "SPAF"
+const SF-VERSION = 1
+const SF-BLOCK-SIZE = 4096
+const SF-SECTOR-SIZE = 512
+const SF-SECTORS-PER-BLOCK = 8
 
-const SF_INODE_SIZE = 256
-const SF_INODE_DIRECT = 12
-const SF_INODE_INDIRECT_COUNT = 512  // 4 KiB / 8 bytes per block number
-const SF_NAME_MAX = 255
-const SF_DIR_ENTRY_HEAD = 8          // inode(4) + name_len(1) + type(1) + padding(2)
+const SF-INODE-SIZE = 256
+const SF-INODE-DIRECT = 12
+const SF-INODE-INDIRECT-COUNT = 512  // 4 KiB / 8 bytes per block number
+const SF-NAME-MAX = 255
+const SF-DIR-ENTRY-HEAD = 8          // inode(4) + name_len(1) + type(1) + padding(2)
 
-const SF_TYPE_FILE = 1
-const SF_TYPE_DIR = 2
-const SF_TYPE_FREE = 0
+const SF-TYPE-FILE = 1
+const SF-TYPE-DIR = 2
+const SF-TYPE-FREE = 0
 
-const SF_OP_CREATE = 1
-const SF_OP_WRITE = 2
-const SF_OP_DELETE = 3
-const SF_OP_RENAME = 4
+const SF-OP-CREATE = 1
+const SF-OP-WRITE = 2
+const SF-OP-DELETE = 3
+const SF-OP-RENAME = 4
 
-const SF_JOURNAL_ENTRY_SIZE = 64
-const SF_JOURNAL_ENTRIES_PER_BLOCK = 64
+const SF-JOURNAL-ENTRY-SIZE = 64
+const SF-JOURNAL-ENTRIES-PER-BLOCK = 64
 
 // --- on-disk layout defaults ------------------------------------------------
 
-const SF_DEFAULT_TOTAL_BLOCKS = 8192  // 32 MiB
-const SF_DEFAULT_INODE_COUNT = 256
-const SF_DEFAULT_JOURNAL_BLOCKS = 2
+const SF-DEFAULT-TOTAL-BLOCKS = 8192  // 32 MiB
+const SF-DEFAULT-INODE-COUNT = 256
+const SF-DEFAULT-JOURNAL-BLOCKS = 2
 
-const SF_MEM_DISK_BLOCKS = 256  // 1 MiB memory-backed disk for testing
-const SF_MEM_DISK_SIZE = 1048576  // 256 * 4096
+const SF-MEM-DISK-BLOCKS = 256  // 1 MiB memory-backed disk for testing
+const SF-MEM-DISK-SIZE = 1048576  // 256 * 4096
 
 // Superblock offsets
-const SF_SB_MAGIC = 0
-const SF_SB_VERSION = 4
-const SF_SB_BLOCK_SIZE = 8
-const SF_SB_TOTAL_BLOCKS = 12
-const SF_SB_INODE_COUNT = 20
-const SF_SB_BITMAP_START = 24
-const SF_SB_JOURNAL_START = 32
-const SF_SB_INODE_TABLE_START = 40
-const SF_SB_DATA_START = 48
-const SF_SB_ROOT_INODE = 56
-const SF_SB_JOURNAL_SEQ = 60
+const SF-SB-MAGIC = 0
+const SF-SB-VERSION = 4
+const SF-SB-BLOCK-SIZE = 8
+const SF-SB-TOTAL-BLOCKS = 12
+const SF-SB-INODE-COUNT = 20
+const SF-SB-BITMAP-START = 24
+const SF-SB-JOURNAL-START = 32
+const SF-SB-INODE-TABLE-START = 40
+const SF-SB-DATA-START = 48
+const SF-SB-ROOT-INODE = 56
+const SF-SB-JOURNAL-SEQ = 60
 
 // Inode offsets
-const SF_IN_TYPE = 0
-const SF_IN_MODE = 4
-const SF_IN_UID = 8
-const SF_IN_GID = 12
-const SF_IN_SIZE = 16
-const SF_IN_BLOCKS = 24
-const SF_IN_CTIME = 32
-const SF_IN_MTIME = 40
-const SF_IN_ATIME = 48
-const SF_IN_NLINK = 56
-const SF_IN_DIRECT = 64
-const SF_IN_INDIRECT = 160
-const SF_IN_DINDIRECT = 168
-const SF_IN_INLINE = 176
-const SF_INLINE_MAX = 96
+const SF-IN-TYPE = 0
+const SF-IN-MODE = 4
+const SF-IN-UID = 8
+const SF-IN-GID = 12
+const SF-IN-SIZE = 16
+const SF-IN-BLOCKS = 24
+const SF-IN-CTIME = 32
+const SF-IN-MTIME = 40
+const SF-IN-ATIME = 48
+const SF-IN-NLINK = 56
+const SF-IN-DIRECT = 64
+const SF-IN-INDIRECT = 160
+const SF-IN-DINDIRECT = 168
+const SF-IN-INLINE = 176
+const SF-INLINE-MAX = 96
 
 // Stat buffer offsets
-const SF_ST_TYPE = 0
-const SF_ST_MODE = 4
-const SF_ST_SIZE = 8
-const SF_ST_NLINK = 16
-const SF_ST_CTIME = 24
-const SF_ST_MTIME = 32
-const SF_ST_ATIME = 40
+const SF-ST-TYPE = 0
+const SF-ST-MODE = 4
+const SF-ST-SIZE = 8
+const SF-ST-NLINK = 16
+const SF-ST-CTIME = 24
+const SF-ST-MTIME = 32
+const SF-ST-ATIME = 40
 
 // --- runtime state ----------------------------------------------------------
 
-var sf_super: Int = 0
-var sf_bitmap: Int = 0
-var sf_inodes: Int = 0
-var sf_block_buf: Int = 0
-var sf_initialized: Int = 0
-var sf_disk_ready: Int = 0
-var sf_mem_disk: Int = 0
+var sf-super: Int = 0
+var sf-bitmap: Int = 0
+var sf-inodes: Int = 0
+var sf-block-buf: Int = 0
+var sf-initialized: Int = 0
+var sf-disk-ready: Int = 0
+var sf-mem-disk: Int = 0

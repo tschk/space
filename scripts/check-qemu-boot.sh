@@ -14,7 +14,7 @@ echo "[2/3] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 [ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 4096 ] || { echo "trampoline size error" >&2; exit 1; }
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"

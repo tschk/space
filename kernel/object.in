@@ -1,45 +1,45 @@
 package space.kernel
 
-var obj_arena: Int = 0
-var obj_arena_next: Int = 0
-var obj_arena_size: Int = 0
-var obj_arena_end: Int = 0
+var obj-arena: Int = 0
+var obj-arena-next: Int = 0
+var obj-arena-size: Int = 0
+var obj-arena-end: Int = 0
 
-fn obj_arena_init(size: Int) -> void {
-  obj_arena = alloc(size)
-  obj_arena_next = obj_arena
-  obj_arena_size = size
-  obj_arena_end = obj_arena + size
+fn obj-arena-init(size: Int) -> void {
+  obj-arena = alloc(size)
+  obj-arena-next = obj-arena
+  obj-arena-size = size
+  obj-arena-end = obj-arena + size
   return
 }
 
-fn obj_bump(n: Int) -> Int {
-  let p = obj_arena_next
-  let next = obj_arena_next + ((n + 15) & -16)
-  if next > obj_arena_end {
+fn obj-bump(n: Int) -> Int {
+  let p = obj-arena-next
+  let next = obj-arena-next + ((n + 15) & -16)
+  if next > obj-arena-end {
     panic("obj arena exhausted")
   }
-  obj_arena_next = next
+  obj-arena-next = next
   return p
 }
 
 // Object record (32 bytes): [id][type_tag][ref0][ref1].
-fn obj_alloc(type_tag: Int) -> Int {
-  let p = obj_bump(32)
-  obj_counter = obj_counter + 1
-  store64(p + 0, obj_counter)
-  store64(p + 8, type_tag)
+fn obj-alloc(type-tag: Int) -> Int {
+  let p = obj-bump(32)
+  obj-counter = obj-counter + 1
+  store64(p + 0, obj-counter)
+  store64(p + 8, type-tag)
   store64(p + 16, 0)
   store64(p + 24, 0)
   return p
 }
 
-fn obj_id(obj: Int) -> Int {
+fn obj-id(obj: Int) -> Int {
   return load64(obj + 0)
 }
 
 // Object graph edge: single link in slot 1 (ref1). ref0 reserved for future use.
-fn obj_link(src: Int, dst: Int) -> void {
+fn obj-link(src: Int, dst: Int) -> void {
   store64(src + 24, dst)
   return
 }
@@ -47,61 +47,61 @@ fn obj_link(src: Int, dst: Int) -> void {
 // --- object-graph checkpoint / restore --------------------------------------
 // Snapshotting is a Space primitive: capture a consistent copy of the object
 // graph and its allocator/counter state, and restore the graph to it later.
-var snap_buf: Int = 0
-var snap_obj_next: Int = 0
-var snap_obj_counter: Int = 0
-var snap_cap_count: Int = 0
+var snap-buf: Int = 0
+var snap-obj-next: Int = 0
+var snap-obj-counter: Int = 0
+var snap-cap-count: Int = 0
 
-fn checkpoint_save() -> void {
-  if snap_buf == 0 {
-    snap_buf = alloc(obj_arena_size)
+fn checkpoint-save() -> void {
+  if snap-buf == 0 {
+    snap-buf = alloc(obj-arena-size)
   }
-  let words = (obj_arena_next - obj_arena) / 8
+  let words = (obj-arena-next - obj-arena) / 8
   for k in 0..words {
-    store64(snap_buf + k * 8, load64(obj_arena + k * 8))
+    store64(snap-buf + k * 8, load64(obj-arena + k * 8))
   }
-  snap_obj_next = obj_arena_next
-  snap_obj_counter = obj_counter
-  snap_cap_count = cap_count
+  snap-obj-next = obj-arena-next
+  snap-obj-counter = obj-counter
+  snap-cap-count = cap-count
   return
 }
 
-fn checkpoint_restore() -> void {
-  let words = (snap_obj_next - obj_arena) / 8
+fn checkpoint-restore() -> void {
+  let words = (snap-obj-next - obj-arena) / 8
   for k in 0..words {
-    store64(obj_arena + k * 8, load64(snap_buf + k * 8))
+    store64(obj-arena + k * 8, load64(snap-buf + k * 8))
   }
-  obj_arena_next = snap_obj_next
-  obj_counter = snap_obj_counter
-  cap_count = snap_cap_count
+  obj-arena-next = snap-obj-next
+  obj-counter = snap-obj-counter
+  cap-count = snap-cap-count
   return
 }
 
 // --- capability table v0 ----------------------------------------------------
 // Capability slot (16 bytes): [target_object_ptr][rights].
 
-fn cap_table_init(capacity: Int) -> void {
-  cap_table_base = alloc(capacity * 16)
-  cap_count = 0
+fn cap-table-init(capacity: Int) -> void {
+  cap-table-base = alloc(capacity * 16)
+  cap-count = 0
   return
 }
 
-fn cap_mint(target_obj: Int, rights: Int) -> Int {
-  let idx = cap_count
-  let slot = cap_table_base + idx * 16
-  store64(slot + 0, target_obj)
+fn cap-mint(target-obj: Int, rights: Int) -> Int {
+  let idx = cap-count
+  let slot = cap-table-base + idx * 16
+  store64(slot + 0, target-obj)
   store64(slot + 8, rights)
-  cap_count = cap_count + 1
+  cap-count = cap-count + 1
   return idx
 }
 
 // Capability bits a realm can grant to a component.
-fn cap_serial() -> Int { return 1 }
-fn cap_timer() -> Int { return 2 }
-fn cap_memory() -> Int { return 4 }
-fn cap_graph() -> Int { return 8 }
-fn cap_input() -> Int { return 64 }
-fn cap_storage() -> Int { return 32 }
-fn cap_display() -> Int { return 16 }
-fn cap_network() -> Int { return 128 }
-fn cap_volume() -> Int { return 256 }
+fn cap-serial() -> Int { return 1 }
+fn cap-timer() -> Int { return 2 }
+fn cap-memory() -> Int { return 4 }
+fn cap-graph() -> Int { return 8 }
+fn cap-input() -> Int { return 64 }
+fn cap-storage() -> Int { return 32 }
+fn cap-display() -> Int { return 16 }
+fn cap-network() -> Int { return 128 }
+fn cap-volume() -> Int { return 256 }

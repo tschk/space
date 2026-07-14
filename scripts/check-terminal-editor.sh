@@ -12,7 +12,7 @@ FIFO="$BUILD_DIR/serial_in"
 mkdir -p "$BUILD_DIR"
 [ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 nasm -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin" >/dev/null

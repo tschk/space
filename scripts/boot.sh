@@ -73,7 +73,7 @@ echo "[1/2] Assembling trampoline and compiling kernel..."
 NASM="${NASM:-nasm}"
 "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
 
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
@@ -89,7 +89,7 @@ if [ "$USE_SCI" = "1" ]; then
   SCI_MAGIC=$((0x5343490000000001))
   GUEST_CAPS=1
 
-  "$IN" compile --path "$SPACE_DIR/kernel/guest-service.in" --entry guest_entry \
+  "$IN" compile --path "$SPACE_DIR/kernel/guest-service.in" --entry guest-entry \
     --target native --target-triple x86_64-unknown-none --linkage static-lib \
     --out "$BUILD_DIR/guest.o" >/dev/null
 

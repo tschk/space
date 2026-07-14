@@ -11,7 +11,7 @@ component Time {
 }
 
 interface TimeEntry {
-  fn time_component_entry(cap_info: Int) -> Int
+  fn time-component-entry(cap-info: Int) -> Int
 }
 
 interface TimeSource {
@@ -21,23 +21,23 @@ interface TimeSource {
 // RTC-based wall-clock time service.
 // Reads CMOS RTC registers and converts to Unix timestamp.
 
-fn time_component_rtc_read(reg: Int) -> Int {
+fn time-component-rtc-read(reg: Int) -> Int {
   outb(0x70, reg)
   return inb(0x71)
 }
 
-fn time_component_bcd_to_bin(bcd: Int) -> Int {
+fn time-component-bcd-to-bin(bcd: Int) -> Int {
   return (bcd & 0x0F) + ((bcd / 16) * 10)
 }
 
-fn time_component_is_leap_year(y: Int) -> Int {
+fn time-component-is-leap-year(y: Int) -> Int {
   if (y % 4) != 0 { return 0 }
   if (y % 100) != 0 { return 1 }
   if (y % 400) == 0 { return 1 }
   return 0
 }
 
-fn time_component_days_before_month(mo: Int, leap: Int) -> Int {
+fn time-component-days-before-month(mo: Int, leap: Int) -> Int {
   let dbm = 0
   if mo > 1  { dbm = dbm + 31 }
   if mo > 2  { if leap != 0 { dbm = dbm + 29 } else { dbm = dbm + 28 } }
@@ -55,34 +55,34 @@ fn time_component_days_before_month(mo: Int, leap: Int) -> Int {
 
 // Formatted time fields — set by time_wallclock, read by time_print.
 // ponytail: globals instead of struct return until struct return works.
-var time_component_ts: Int = 0
-var time_component_y: Int = 0
-var time_component_mo: Int = 0
-var time_component_d: Int = 0
-var time_component_h: Int = 0
-var time_component_mi: Int = 0
-var time_component_s: Int = 0
+var time-component-ts: Int = 0
+var time-component-y: Int = 0
+var time-component-mo: Int = 0
+var time-component-d: Int = 0
+var time-component-h: Int = 0
+var time-component-mi: Int = 0
+var time-component-s: Int = 0
 
-fn time_component_wallclock() -> Int {
+fn time-component-wallclock() -> Int {
   // Read RTC registers
-  let s = time_component_rtc_read(0x00)
-  let m = time_component_rtc_read(0x02)
-  let h = time_component_rtc_read(0x04)
-  let d = time_component_rtc_read(0x07)
-  let mo = time_component_rtc_read(0x08)
-  let y = time_component_rtc_read(0x09)
-  let c = time_component_rtc_read(0x32)
-  let rb = time_component_rtc_read(0x0B)
+  let s = time-component-rtc-read(0x00)
+  let m = time-component-rtc-read(0x02)
+  let h = time-component-rtc-read(0x04)
+  let d = time-component-rtc-read(0x07)
+  let mo = time-component-rtc-read(0x08)
+  let y = time-component-rtc-read(0x09)
+  let c = time-component-rtc-read(0x32)
+  let rb = time-component-rtc-read(0x0B)
 
   // BCD to binary
   if (rb & 0x04) == 0 {
-    s = time_component_bcd_to_bin(s)
-    m = time_component_bcd_to_bin(m)
+    s = time-component-bcd-to-bin(s)
+    m = time-component-bcd-to-bin(m)
     h = ((h & 0x7F) & 0x0F) + (((h & 0x7F) / 16) * 10) | (h & 0x80)
-    d = time_component_bcd_to_bin(d)
-    mo = time_component_bcd_to_bin(mo)
-    y = time_component_bcd_to_bin(y)
-    if c != 0 { c = time_component_bcd_to_bin(c) }
+    d = time-component-bcd-to-bin(d)
+    mo = time-component-bcd-to-bin(mo)
+    y = time-component-bcd-to-bin(y)
+    if c != 0 { c = time-component-bcd-to-bin(c) }
   }
 
   // 12-hour to 24-hour
@@ -104,37 +104,37 @@ fn time_component_wallclock() -> Int {
   }
 
   // Days from 1970 to Jan 1 of y
-  let total_days = 0
+  let total-days = 0
   let i = 1970
   while i < y {
-    if time_component_is_leap_year(i) != 0 {
-      total_days = total_days + 366
+    if time-component-is-leap-year(i) != 0 {
+      total-days = total-days + 366
     } else {
-      total_days = total_days + 365
+      total-days = total-days + 365
     }
     i = i + 1
   }
 
   // Days this year
-  let dbm = time_component_days_before_month(mo, time_component_is_leap_year(y))
-  total_days = total_days + dbm + (d - 1)
+  let dbm = time-component-days-before-month(mo, time-component-is-leap-year(y))
+  total-days = total-days + dbm + (d - 1)
 
-  let ts = (total_days * 86400) + (h * 3600) + (m * 60) + s
+  let ts = (total-days * 86400) + (h * 3600) + (m * 60) + s
 
   // Store formatted fields for time_print
-  time_component_ts = ts
-  time_component_y = y
-  time_component_mo = mo
-  time_component_d = d
-  time_component_h = h
-  time_component_mi = m
-  time_component_s = s
+  time-component-ts = ts
+  time-component-y = y
+  time-component-mo = mo
+  time-component-d = d
+  time-component-h = h
+  time-component-mi = m
+  time-component-s = s
 
   return ts
 }
 
-fn time_component_entry(cap_info: Int) -> Int {
-  let ts = time_component_wallclock()
+fn time-component-entry(cap-info: Int) -> Int {
+  let ts = time-component-wallclock()
   if ts <= 0 {
     return -1
   }

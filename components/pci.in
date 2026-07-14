@@ -2,60 +2,60 @@ package space.kernel
 
 // PCI configuration-space access via the legacy 0xCF8/0xCFC port pair, plus a
 // bus-0 enumerator. The serial_* helpers it calls live in the importing module.
-const PCI_CONFIG_ADDR = 0xCF8
-const PCI_CONFIG_DATA = 0xCFC
+const PCI-CONFIG-ADDR = 0xCF8
+const PCI-CONFIG-DATA = 0xCFC
 
-fn pci_addr(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+fn pci-addr(bus: Int, dev: Int, func: Int, off: Int) -> Int {
   return 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
 }
 
-fn pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+fn pci-read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
   let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI_CONFIG_ADDR, addr)
-  return inl(PCI_CONFIG_DATA)
+  outl(PCI-CONFIG-ADDR, addr)
+  return inl(PCI-CONFIG-DATA)
 }
 
-fn pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+fn pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
   let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI_CONFIG_ADDR, addr)
-  outl(PCI_CONFIG_DATA, val)
+  outl(PCI-CONFIG-ADDR, addr)
+  outl(PCI-CONFIG-DATA, val)
   return
 }
 
 // Find and enable the Intel 82540EM (e1000) NIC in a single scan.
 // Returns BAR0 MMIO base, or 0 if absent. Enables memory space, I/O space, and bus mastering.
-fn pci_find_and_enable_e1000() -> Int {
+fn pci-find-and-enable-e1000() -> Int {
   for dev in 0..32 {
-    let v = pci_read32(0, dev, 0, 0)
+    let v = pci-read32(0, dev, 0, 0)
     let vendor = v & 0xFFFF
     let device = (v >> 16) & 0xFFFF
     if (vendor == 0x8086) && (device == 0x100E) {
-      let cmd = pci_read32(0, dev, 0, 0x04)
-      pci_write32(0, dev, 0, 0x04, cmd | 0x7)
-      return pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0
+      let cmd = pci-read32(0, dev, 0, 0x04)
+      pci-write32(0, dev, 0, 0x04, cmd | 0x7)
+      return pci-read32(0, dev, 0, 0x10) & 0xFFFFFFF0
     }
   }
   return 0
 }
 
-fn pci_scan(port: Int) -> void {
-  serial_write_cstr(port, "  PCI devices on bus 0 (vendor:device):\n")
+fn pci-scan(port: Int) -> void {
+  serial-write-cstr(port, "  PCI devices on bus 0 (vendor:device):\n")
   for dev in 0..32 {
-    let v = pci_read32(0, dev, 0, 0)
+    let v = pci-read32(0, dev, 0, 0)
     let vendor = v & 0xFFFF
     if vendor != 0xFFFF {
       let device = (v >> 16) & 0xFFFF
-      serial_write_cstr(port, "    00:")
-      serial_write_hex(port, dev)
-      serial_write_cstr(port, ".0  ")
-      serial_write_hex(port, vendor)
-      serial_write_cstr(port, ":")
-      serial_write_hex(port, device)
+      serial-write-cstr(port, "    00:")
+      serial-write-hex(port, dev)
+      serial-write-cstr(port, ".0  ")
+      serial-write-hex(port, vendor)
+      serial-write-cstr(port, ":")
+      serial-write-hex(port, device)
       if (vendor == 0x8086) && (device == 0x100E) {
-        serial_write_cstr(port, "  <- e1000 NIC, BAR0 0x")
-        serial_write_hex(port, pci_read32(0, dev, 0, 0x10) & 0xFFFFFFF0)
+        serial-write-cstr(port, "  <- e1000 NIC, BAR0 0x")
+        serial-write-hex(port, pci-read32(0, dev, 0, 0x10) & 0xFFFFFFF0)
       }
-      serial_put(port, 10)
+      serial-put(port, 10)
     }
   }
   return

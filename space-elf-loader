@@ -1,7 +1,7 @@
 ## ELF64 Parser Implementation
 
 ### Created
-- `kernel/elf-loader.in` — flat ELF64 parser, single function `fn elf_parse(base: Int) -> Int`
+- `kernel/elf-loader.in` — flat ELF64 parser, single function `fn elf-parse(base: Int) -> Int`
 
 ### Modified
 - `kernel/kernel-root.in` — added `import "elf-loader.in"` alongside existing imports
@@ -9,13 +9,13 @@
 ### Compile Result
 ```
 success: true
-parsed_function_count: 125 (124 + elf_parse)
+parsed_function_count: 125 (124 + elf-parse)
 typed_function_count: 125
 backend_level: owned-native-subset-freestanding
 semantic_level: typed-subset
 ```
 
-### What elf_parse Does
+### What elf-parse Does
 1. Validates ELF64 header: magic (0x464C457F), 64-bit, little-endian, x86_64 machine type
 2. Reads entry, phoff, phnum from ELF header
 3. Creates new domain via `domain_create()`
@@ -25,7 +25,7 @@ semantic_level: typed-subset
 ### Compile Command
 ```bash
 in compile --path kernel/kernel-root.in --out kernel/kernel-root.o \
-  --target native --entry elf_parse \
+  --target native --entry elf-parse \
   --target-triple x86_64-unknown-none --linkage static-lib --json
 ```
 Note: standalone compile of elf-loader.in fails on unresolved symbols because it is imported into kernel-root.in.

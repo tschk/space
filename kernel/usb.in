@@ -4,36 +4,36 @@ package space.kernel
 // The full driver logic has moved to components/input.in. This file preserves
 // the public symbols so kernel-root.in and compositor.in continue to compile.
 
-fn xhci_init() -> Int {
+fn xhci-init() -> Int {
   return -1
 }
 
-fn usb_kbd_init() -> Int {
+fn usb-kbd-init() -> Int {
   return -1
 }
 
-fn usb_kbd_ready() -> Int {
+fn usb-kbd-ready() -> Int {
   return 0
 }
 
-fn usb_kbd_getchar() -> Int {
+fn usb-kbd-getchar() -> Int {
   return -1
 }
 
-fn usb_kbd_wait_key() -> Int {
+fn usb-kbd-wait-key() -> Int {
   return -1
 }
 
-fn usb_kbd_cmd(port: Int) -> void {
-  serial_write_cstr(port, "  no keyboard")
-  serial_nl(port)
+fn usb-kbd-cmd(port: Int) -> void {
+  serial-write-cstr(port, "  no keyboard")
+  serial-nl(port)
   return
 }
 
-fn xhci_kbd_poll() -> Int {
+fn xhci-kbd-poll() -> Int {
   return 0
 }
 
-fn hid_to_ascii(usage: Int) -> Int {
+fn hid-to-ascii(usage: Int) -> Int {
   return 0
 }

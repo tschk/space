@@ -67,7 +67,7 @@ component KernelRoot {
   capability memory: PhysicalMemory(discover, map)
   capability tables: PageTables(create, activate)
   capability traps: TrapTable(install)
-  capability caps: CapabilityTable(create_root, mint_kernel)
+  capability caps: CapabilityTable(create-root, mint-kernel)
   capability storage: BlockStorage(read, write)
   capability input: InputDevice(publish)
   capability network: NetworkDevice(tx, rx, configure)
@@ -76,13 +76,13 @@ component KernelRoot {
 }
 
 struct KernelState {
-  Int root_table_id
-  Int realm_id
-  Bool cpu_ready
+  Int root-table-id
+  Int realm-id
+  Bool cpu-ready
 }
 
 interface BootEntry {
-  fn start(mb_info: Int) -> Int
+  fn start(mb-info: Int) -> Int
 }
 
 interface DebugConsole {
@@ -115,45 +115,45 @@ interface Volume {
 }
 
 // --- nanokernel state -------------------------------------------------------
-var heap_next: Int = 0
-var heap_end: Int = 0
-var total_ram: Int = 0
-var region_count: Int = 0
-var obj_counter: Int = 0
-var cap_table_base: Int = 0
-var cap_count: Int = 0
-var root_realm: Int = 0
+var heap-next: Int = 0
+var heap-end: Int = 0
+var total-ram: Int = 0
+var region-count: Int = 0
+var obj-counter: Int = 0
+var cap-table-base: Int = 0
+var cap-count: Int = 0
+var root-realm: Int = 0
 var ticks: Int = 0
-var idt_base: Int = 0
-var realm_grants: Int = 0
+var idt-base: Int = 0
+var realm-grants: Int = 0
 var ptasks: Int = 0
 var pcount: Int = 0
 var pcurrent: Int = 0
-var preempt_deadline: Int = 0
-var work_a: Int = 0
-var work_b: Int = 0
-var boot_quiet: Int = 1
+var preempt-deadline: Int = 0
+var work-a: Int = 0
+var work-b: Int = 0
+var boot-quiet: Int = 1
 
-const MAX_PREEMPT_COMPS = 8
-var preempt_entry: Int = 0
-var preempt_cap_info: Int = 0
-var preempt_domain: Int = 0
-var preempt_pml4: Int = 0
-var preempt_count: Int = 0
+const MAX-PREEMPT-COMPS = 8
+var preempt-entry: Int = 0
+var preempt-cap-info: Int = 0
+var preempt-domain: Int = 0
+var preempt-pml4: Int = 0
+var preempt-count: Int = 0
 
-var volume_ready: Int = 0
-var volume_domain: Int = 0
-var volume_entry_addr: Int = 0
-var volume_cap_info: Int = 0
-var volume_heap_frames: Int = 0
-var volume_shared: Int = 0
-var volume_via_marker: Int = 0
+var volume-ready: Int = 0
+var volume-domain: Int = 0
+var volume-entry-addr: Int = 0
+var volume-cap-info: Int = 0
+var volume-heap-frames: Int = 0
+var volume-shared: Int = 0
+var volume-via-marker: Int = 0
 
 // --- component supervisor ---------------------------------------------------
-fn component_register(name: Int, entry: Int, required: Int) -> Int {
-  let c = obj_bump(56)
-  obj_counter = obj_counter + 1
-  store64(c + 0, obj_counter)
+fn component-register(name: Int, entry: Int, required: Int) -> Int {
+  let c = obj-bump(56)
+  obj-counter = obj-counter + 1
+  store64(c + 0, obj-counter)
   store64(c + 8, 5)
   store64(c + 16, entry)
   store64(c + 24, required)
@@ -163,81 +163,81 @@ fn component_register(name: Int, entry: Int, required: Int) -> Int {
   return c
 }
 
-fn supervisor_activate(port: Int, c: Int) -> void {
+fn supervisor-activate(port: Int, c: Int) -> void {
   let name = load64(c + 32)
   let entry = load64(c + 16)
   let required = load64(c + 24)
-  let missing = required & (-1 ^ realm_grants)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: supervisor evaluating ")
-    serial_write_cstr(port, name)
+  let missing = required & (-1 ^ realm-grants)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: supervisor evaluating ")
+    serial-write-cstr(port, name)
   }
   if missing != 0 {
-    serial_write_cstr(port, " -> DENIED undeclared cap 0x")
-    serial_write_hex(port, missing)
-    serial_nl(port)
+    serial-write-cstr(port, " -> DENIED undeclared cap 0x")
+    serial-write-hex(port, missing)
+    serial-nl(port)
     return
   }
-  cap_mint(c, required)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, " -> ACTIVATING")
-    serial_nl(port)
+  cap-mint(c, required)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, " -> ACTIVATING")
+    serial-nl(port)
   }
   let status = invoke(entry)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space:   ")
-    serial_write_cstr(port, name)
-    serial_write_cstr(port, " returned status 0x")
-    serial_write_hex(port, status)
-    serial_nl(port)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space:   ")
+    serial-write-cstr(port, name)
+    serial-write-cstr(port, " returned status 0x")
+    serial-write-hex(port, status)
+    serial-nl(port)
   }
   return
 }
 
-fn svc_heartbeat() -> Int {
+fn svc-heartbeat() -> Int {
   let port = com1()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space:   [heartbeat] observed ticks 0x")
-    serial_write_hex(port, ticks)
-    serial_nl(port)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space:   [heartbeat] observed ticks 0x")
+    serial-write-hex(port, ticks)
+    serial-nl(port)
   }
   return 0
 }
 
-fn svc_logger() -> Int {
+fn svc-logger() -> Int {
   let port = com1()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space:   [logger] objects 0x")
-    serial_write_hex(port, obj_counter)
-    serial_write_cstr(port, " caps 0x")
-    serial_write_hex(port, cap_count)
-    serial_nl(port)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space:   [logger] objects 0x")
+    serial-write-hex(port, obj-counter)
+    serial-write-cstr(port, " caps 0x")
+    serial-write-hex(port, cap-count)
+    serial-nl(port)
   }
   return 0
 }
 
-fn svc_pager() -> Int {
+fn svc-pager() -> Int {
   return 0xDEAD
 }
 
-fn run_supervisor(port: Int) -> void {
-  realm_grants = cap_serial() | cap_timer() | cap_graph() | cap_memory() | cap_display() | cap_storage() | cap_input() | cap_network() | cap_volume()
-  let c1 = component_register("heartbeat", svc_heartbeat, cap_serial())
-  let c2 = component_register("logger", svc_logger, cap_serial() | cap_graph())
-  let c3 = component_register("pager", svc_pager, cap_memory())
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: supervisor activating component graph")
-    serial_nl(port)
+fn run-supervisor(port: Int) -> void {
+  realm-grants = cap-serial() | cap-timer() | cap-graph() | cap-memory() | cap-display() | cap-storage() | cap-input() | cap-network() | cap-volume()
+  let c1 = component-register("heartbeat", svc-heartbeat, cap-serial())
+  let c2 = component-register("logger", svc-logger, cap-serial() | cap-graph())
+  let c3 = component-register("pager", svc-pager, cap-memory())
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: supervisor activating component graph")
+    serial-nl(port)
   }
-  supervisor_activate(port, c1)
-  supervisor_activate(port, c2)
-  supervisor_activate(port, c3)
+  supervisor-activate(port, c1)
+  supervisor-activate(port, c2)
+  supervisor-activate(port, c3)
   return
 }
 
 // --- preemptive scheduler ---------------------------------------------------
-fn build_preempt_task(entry: Int, stack_top: Int, arg: Int) -> Int {
-  let sp = stack_top - 160
+fn build-preempt-task(entry: Int, stack-top: Int, arg: Int) -> Int {
+  let sp = stack-top - 160
   for i in 0..15 {
     store64(sp + i * 8, 0)
   }
@@ -248,18 +248,18 @@ fn build_preempt_task(entry: Int, stack_top: Int, arg: Int) -> Int {
   store64(sp + 120, entry)    // RIP
   store64(sp + 128, 0x08)     // CS
   store64(sp + 136, 0x202)    // RFLAGS (interrupts enabled; component stub cli's before switching)
-  store64(sp + 144, stack_top) // RSP
+  store64(sp + 144, stack-top) // RSP
   store64(sp + 152, 0x10)     // SS
   return sp
 }
 
-fn schedule_tick(ctx: Int) -> Int {
+fn schedule-tick(ctx: Int) -> Int {
   ticks = ticks + 1
   outb(0x20, 0x20)
   store64(ptasks + pcurrent * 8, ctx)
   pcurrent = (pcurrent + 1) % pcount
-  if preempt_pml4 != 0 {
-    let pml4 = load64(preempt_pml4 + pcurrent * 8)
+  if preempt-pml4 != 0 {
+    let pml4 = load64(preempt-pml4 + pcurrent * 8)
     if pml4 != 0 {
       invoke1(load64(0x4060), pml4)
     }
@@ -267,75 +267,75 @@ fn schedule_tick(ctx: Int) -> Int {
   return load64(ptasks + pcurrent * 8)
 }
 
-fn preempt_register_component(port: Int, entry: Int, cap_info: Int, domain: Int, stack_top: Int) -> Int {
+fn preempt-register-component(port: Int, entry: Int, cap-info: Int, domain: Int, stack-top: Int) -> Int {
   let i = pcount
-  store64(preempt_entry + i * 8, entry)
-  store64(preempt_cap_info + i * 8, cap_info)
-  store64(preempt_domain + i * 8, domain)
-  store64(preempt_pml4 + i * 8, load64(domain_table + domain * 24))
-  let ctx = build_preempt_task(load64(0x4080), stack_top, i)
+  store64(preempt-entry + i * 8, entry)
+  store64(preempt-cap-info + i * 8, cap-info)
+  store64(preempt-domain + i * 8, domain)
+  store64(preempt-pml4 + i * 8, load64(domain-table + domain * 24))
+  let ctx = build-preempt-task(load64(0x4080), stack-top, i)
   store64(ptasks + i * 8, ctx)
   pcount = pcount + 1
-  preempt_count = preempt_count + 1
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "  preempt: registered component i=0x")
-    serial_write_hex(port, i)
-    serial_write_cstr(port, " pcount=0x")
-    serial_write_hex(port, pcount)
-    serial_write_cstr(port, " ctx=0x")
-    serial_write_hex(port, ctx)
-    serial_nl(port)
+  preempt-count = preempt-count + 1
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "  preempt: registered component i=0x")
+    serial-write-hex(port, i)
+    serial-write-cstr(port, " pcount=0x")
+    serial-write-hex(port, pcount)
+    serial-write-cstr(port, " ctx=0x")
+    serial-write-hex(port, ctx)
+    serial-nl(port)
   }
   return i
 }
 
-fn preempt_start(port: Int) -> void {
-  ptasks = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+fn preempt-start(port: Int) -> void {
+  ptasks = alloc((MAX-PREEMPT-COMPS + 1) * 8)
   pcount = 1
   pcurrent = 0
-  preempt_count = 0
-  preempt_entry = alloc((MAX_PREEMPT_COMPS + 1) * 8)
-  preempt_cap_info = alloc((MAX_PREEMPT_COMPS + 1) * 8)
-  preempt_domain = alloc((MAX_PREEMPT_COMPS + 1) * 8)
-  preempt_pml4 = alloc((MAX_PREEMPT_COMPS + 1) * 8)
+  preempt-count = 0
+  preempt-entry = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-cap-info = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-domain = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-pml4 = alloc((MAX-PREEMPT-COMPS + 1) * 8)
   store64(ptasks, 0)
-  store64(preempt_domain, 0)
-  store64(preempt_pml4, load64(0x40B8))
-  store64(0x40A0, preempt_entry)
-  store64(0x40A8, preempt_cap_info)
-  store64(0x40B0, preempt_pml4)
+  store64(preempt-domain, 0)
+  store64(preempt-pml4, load64(0x40B8))
+  store64(0x40A0, preempt-entry)
+  store64(0x40A8, preempt-cap-info)
+  store64(0x40B0, preempt-pml4)
   store64(0x40C0, load64(0x40B8))
   cli()
-  store64(0x4028, schedule_tick)
-  idt_set(32, load64(0x4020))
+  store64(0x4028, schedule-tick)
+  idt-set(32, load64(0x4020))
   sti()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: preemptive scheduler active")
-    serial_nl(port)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: preemptive scheduler active")
+    serial-nl(port)
   }
   return
 }
 
-fn preempt_worker_a() -> Int {
+fn preempt-worker-a() -> Int {
   while true {
-    work_a = work_a + 1
+    work-a = work-a + 1
     pause()
   }
   return 0
 }
 
-fn preempt_worker_b() -> Int {
+fn preempt-worker-b() -> Int {
   while true {
-    work_b = work_b + 1
+    work-b = work-b + 1
     pause()
   }
   return 0
 }
 
-fn run_preemptive(port: Int) -> void {
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: preemptive scheduler (timer-driven)")
-    serial_nl(port)
+fn run-preemptive(port: Int) -> void {
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: preemptive scheduler (timer-driven)")
+    serial-nl(port)
   }
   ptasks = alloc(3 * 8)
   pcount = 3
@@ -343,128 +343,128 @@ fn run_preemptive(port: Int) -> void {
   store64(ptasks + 0, 0)
   let sa = alloc(16384)
   let sb = alloc(16384)
-  let ctx_a = build_preempt_task(preempt_worker_a, sa + 16384)
-  let ctx_b = build_preempt_task(preempt_worker_b, sb + 16384)
-  store64(ptasks + 8, ctx_a)
-  store64(ptasks + 16, ctx_b)
-  preempt_deadline = ticks + 2
+  let ctx-a = build-preempt-task(preempt-worker-a, sa + 16384)
+  let ctx-b = build-preempt-task(preempt-worker-b, sb + 16384)
+  store64(ptasks + 8, ctx-a)
+  store64(ptasks + 16, ctx-b)
+  preempt-deadline = ticks + 2
   cli()
-  store64(0x4028, schedule_tick)
-  idt_set(32, load64(0x4020))
+  store64(0x4028, schedule-tick)
+  idt-set(32, load64(0x4020))
   sti()
-  while ticks < preempt_deadline {
+  while ticks < preempt-deadline {
     hlt()
   }
   cli()
-  idt_set(32, load64(0x4008))
+  idt-set(32, load64(0x4008))
   sti()
-  serial_write_cstr(port, "space: preemption ended; worker A iters 0x")
-  serial_write_hex(port, work_a)
-  serial_write_cstr(port, " worker B iters 0x")
-  serial_write_hex(port, work_b)
-  serial_nl(port)
+  serial-write-cstr(port, "space: preemption ended; worker A iters 0x")
+  serial-write-hex(port, work-a)
+  serial-write-cstr(port, " worker B iters 0x")
+  serial-write-hex(port, work-b)
+  serial-nl(port)
   return
 }
 
 // --- SCI component loader ---------------------------------------------------
-const SCI_MAGIC = 0x5343490000000001
-const SCI_GUEST_GRANTS = 1
-const SCI_DISPLAY_GRANTS = 1
-const SCI_INPUT_GRANTS = 3
-const SCI_VOLUME_GRANTS = 0
-const VOLUME_NVME_LBA = 65536
+const SCI-MAGIC = 0x5343490000000001
+const SCI-GUEST-GRANTS = 1
+const SCI-DISPLAY-GRANTS = 1
+const SCI-INPUT-GRANTS = 3
+const SCI-VOLUME-GRANTS = 0
+const VOLUME-NVME-LBA = 65536
 
-const COMP_GNOME_DESKTOP = 0x001E1E2E
-const COMP_GNOME_PANEL = 0x00181825
-const COMP_GNOME_PANEL_LINE = 0x00333040
-const COMP_GNOME_TITLE = 0x002A2A3A
-const COMP_GNOME_TITLE_ACTIVE = 0x003584E4
-const COMP_GNOME_BORDER = 0x003D3846
-const COMP_GNOME_ACCENT = 0x003584E4
-const COMP_GNOME_TERM_BG = 0x00121015
-const COMP_GNOME_TERM_TEXT = 0x00C8D4E0
-const COMP_GNOME_BTN_CLOSE = 0x00C01C28
-const COMP_CURSOR_H = 16
-const COMP_CURSOR_W = 16
+const COMP-GNOME-DESKTOP = 0x001E1E2E
+const COMP-GNOME-PANEL = 0x00181825
+const COMP-GNOME-PANEL-LINE = 0x00333040
+const COMP-GNOME-TITLE = 0x002A2A3A
+const COMP-GNOME-TITLE-ACTIVE = 0x003584E4
+const COMP-GNOME-BORDER = 0x003D3846
+const COMP-GNOME-ACCENT = 0x003584E4
+const COMP-GNOME-TERM-BG = 0x00121015
+const COMP-GNOME-TERM-TEXT = 0x00C8D4E0
+const COMP-GNOME-BTN-CLOSE = 0x00C01C28
+const COMP-CURSOR-H = 16
+const COMP-CURSOR-W = 16
 
 // Runtime-loaded components get an isolated heap and a cross-domain shared
 // page mapped at the same virtual address in both domains.
-const COMP_HEAP_VIRT = 0x80000000
-const COMP_HEAP_SIZE = 0x200000
-const COMP_SHARED_VIRT = 0x70000000
+const COMP-HEAP-VIRT = 0x80000000
+const COMP-HEAP-SIZE = 0x200000
+const COMP-SHARED-VIRT = 0x70000000
 
-var comp_entry_arg: Int = 0
-var comp_cap_info_arg: Int = 0
-var comp_domain_arg: Int = 0
+var comp-entry-arg: Int = 0
+var comp-cap-info-arg: Int = 0
+var comp-domain-arg: Int = 0
 
-fn comp_thread_wrapper() -> Int {
-  domain_switch(comp_domain_arg)
-  return invoke1(comp_entry_arg, comp_cap_info_arg)
+fn comp-thread-wrapper() -> Int {
+  domain-switch(comp-domain-arg)
+  return invoke1(comp-entry-arg, comp-cap-info-arg)
 }
 
-fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int, grants: Int) -> Int {
-  serial_write_cstr(port, "  SCI: loading ")
-  serial_write_cstr(port, name)
-  serial_nl(port)
-  if load_addr == 0 {
-    serial_write_cstr(port, "  SCI: null load address")
-    serial_nl(port)
+fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int) -> Int {
+  serial-write-cstr(port, "  SCI: loading ")
+  serial-write-cstr(port, name)
+  serial-nl(port)
+  if load-addr == 0 {
+    serial-write-cstr(port, "  SCI: null load address")
+    serial-nl(port)
     return -1
   }
-  let magic = load64(load_addr + 0)
-  if magic != SCI_MAGIC {
-    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
-    serial_write_hex(port, load_addr)
-    serial_nl(port)
+  let magic = load64(load-addr + 0)
+  if magic != SCI-MAGIC {
+    serial-write-cstr(port, "  SCI: no valid component manifest at 0x")
+    serial-write-hex(port, load-addr)
+    serial-nl(port)
     return -1
   }
-  let required = load64(load_addr + 8)
-  let entry = load64(load_addr + 16)
-  let image_size = load64(load_addr + 24)
-  serial_write_cstr(port, "  SCI: manifest ok entry 0x")
-  serial_write_hex(port, entry)
-  serial_nl(port)
+  let required = load64(load-addr + 8)
+  let entry = load64(load-addr + 16)
+  let image-size = load64(load-addr + 24)
+  serial-write-cstr(port, "  SCI: manifest ok entry 0x")
+  serial-write-hex(port, entry)
+  serial-nl(port)
 
   let missing = required & (-1 ^ grants)
   if missing != 0 {
-    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
-    serial_write_hex(port, missing)
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial-write-hex(port, missing)
+    serial-nl(port)
     return -1
   }
-  let domain = domain_create()
+  let domain = domain-create()
   if domain == 0 {
-    serial_write_cstr(port, "  SCI: domain_create failed")
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: domain_create failed")
+    serial-nl(port)
     return -1
   }
-  serial_write_cstr(port, "  SCI: domain created")
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: domain created")
+  serial-nl(port)
 
-  let component = component_register(name, entry, required)
-  let virt_load = entry - 32
-  let image_pages = (image_size + 4096 - 1) / 4096
+  let component = component-register(name, entry, required)
+  let virt-load = entry - 32
+  let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
-  while i < image_pages {
-    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+  while i < image-pages {
+    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
     i = i + 1
   }
-  serial_write_cstr(port, "  SCI: image mapped")
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: image mapped")
+  serial-nl(port)
 
   // Allocate and map a 2 MiB heap for the component.
-  let heap_pages = COMP_HEAP_SIZE / 4096
+  let heap-pages = COMP-HEAP-SIZE / 4096
   let j = 0
-  while j < heap_pages {
-    let p = frame_alloc()
-    domain_map(domain, COMP_HEAP_VIRT + j * 4096, p, 0x7)
+  while j < heap-pages {
+    let p = frame-alloc()
+    domain-map(domain, COMP-HEAP-VIRT + j * 4096, p, 0x7)
     j = j + 1
   }
-  serial_write_cstr(port, "  SCI: heap mapped")
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: heap mapped")
+  serial-nl(port)
 
   // Create a cross-domain shared page and initialize it as a ring channel.
-  let shared = domain_create_shared_page(0, domain, COMP_SHARED_VIRT, COMP_SHARED_VIRT)
+  let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
   store64(shared + 0, 0)   // head
   store64(shared + 8, 0)   // tail
   store64(shared + 16, 508)  // capacity
@@ -474,50 +474,50 @@ fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int, grants: Int)
     store64(shared + 32 + k * 8, 0)
     k = k + 1
   }
-  serial_write_cstr(port, "  SCI: shared page mapped")
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: shared page mapped")
+  serial-nl(port)
 
   store64(component + 40, domain)
-  obj_link(root_realm, component)
+  obj-link(root-realm, component)
 
-  let cap_info = alloc(64)
-  store64(cap_info + 0, cap_count)
-  store64(cap_info + 8, cap_table_base)
-  store64(cap_info + 16, COMP_HEAP_VIRT)
-  store64(cap_info + 24, COMP_HEAP_SIZE)
-  store64(cap_info + 32, COMP_SHARED_VIRT)
-  store64(cap_info + 40, domain)
-  store64(cap_info + 48, 800)
-  store64(cap_info + 56, 600)
+  let cap-info = alloc(64)
+  store64(cap-info + 0, cap-count)
+  store64(cap-info + 8, cap-table-base)
+  store64(cap-info + 16, COMP-HEAP-VIRT)
+  store64(cap-info + 24, COMP-HEAP-SIZE)
+  store64(cap-info + 32, COMP-SHARED-VIRT)
+  store64(cap-info + 40, domain)
+  store64(cap-info + 48, 800)
+  store64(cap-info + 56, 600)
 
-  serial_write_cstr(port, "  SCI: starting ")
-  serial_write_cstr(port, name)
-  serial_nl(port)
-  comp_entry_arg = entry
-  comp_cap_info_arg = cap_info
-  comp_domain_arg = domain
-  let tid = thr_create(comp_thread_wrapper)
+  serial-write-cstr(port, "  SCI: starting ")
+  serial-write-cstr(port, name)
+  serial-nl(port)
+  comp-entry-arg = entry
+  comp-cap-info-arg = cap-info
+  comp-domain-arg = domain
+  let tid = thr-create(comp-thread-wrapper)
   store64(component + 48, tid)
   let stack = alloc(65536)
-  preempt_register_component(port, entry, cap_info, domain, stack + 65536)
-  serial_write_cstr(port, "  SCI: ")
-  serial_write_cstr(port, name)
-  serial_write_cstr(port, " thread 0x")
-  serial_write_hex(port, tid)
-  serial_nl(port)
+  preempt-register-component(port, entry, cap-info, domain, stack + 65536)
+  serial-write-cstr(port, "  SCI: ")
+  serial-write-cstr(port, name)
+  serial-write-cstr(port, " thread 0x")
+  serial-write-hex(port, tid)
+  serial-nl(port)
   return 0
 }
 
-fn sci_volume_nvme_load(heap_frames: Int) -> Int {
+fn sci-volume-nvme-load(heap-frames: Int) -> Int {
   let i = 0
   while i < 256 {
-    if nvme_read(VOLUME_NVME_LBA + i * 8, 8, storage_data_page) != 0 {
+    if nvme-read(VOLUME-NVME-LBA + i * 8, 8, storage-data-page) != 0 {
       return -1
     }
-    let dst = load64(heap_frames + (i + 2) * 8)
+    let dst = load64(heap-frames + (i + 2) * 8)
     let k = 0
     while k < 4096 {
-      store8(dst + k, load8(storage_data_page + k))
+      store8(dst + k, load8(storage-data-page + k))
       k = k + 1
     }
     i = i + 1
@@ -525,16 +525,16 @@ fn sci_volume_nvme_load(heap_frames: Int) -> Int {
   return 0
 }
 
-fn sci_volume_nvme_flush(heap_frames: Int) -> Int {
+fn sci-volume-nvme-flush(heap-frames: Int) -> Int {
   let i = 0
   while i < 256 {
-    let src = load64(heap_frames + (i + 2) * 8)
+    let src = load64(heap-frames + (i + 2) * 8)
     let k = 0
     while k < 4096 {
-      store8(storage_data_page + k, load8(src + k))
+      store8(storage-data-page + k, load8(src + k))
       k = k + 1
     }
-    if nvme_write(VOLUME_NVME_LBA + i * 8, 8, storage_data_page) != 0 {
+    if nvme-write(VOLUME-NVME-LBA + i * 8, 8, storage-data-page) != 0 {
       return -1
     }
     i = i + 1
@@ -542,124 +542,124 @@ fn sci_volume_nvme_flush(heap_frames: Int) -> Int {
   return 0
 }
 
-fn sci_volume_rpc(port: Int, load_addr: Int) -> Int {
-  let required = load64(load_addr + 8)
-  let entry = load64(load_addr + 16)
-  let image_size = load64(load_addr + 24)
-  if load64(load_addr) != SCI_MAGIC || (required & (-1 ^ SCI_VOLUME_GRANTS)) != 0 {
+fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
+  let required = load64(load-addr + 8)
+  let entry = load64(load-addr + 16)
+  let image-size = load64(load-addr + 24)
+  if load64(load-addr) != SCI-MAGIC || (required & (-1 ^ SCI-VOLUME-GRANTS)) != 0 {
     return -1
   }
-  let domain = domain_create()
+  let domain = domain-create()
   if domain == 0 { return -1 }
-  let pages = (image_size + 4095) / 4096
+  let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
-    domain_map(domain, entry - 32 + i * 4096, load_addr + i * 4096, 0x7)
+    domain-map(domain, entry - 32 + i * 4096, load-addr + i * 4096, 0x7)
     i = i + 1
   }
-  let heap = COMP_HEAP_VIRT
-  let heap_frames = alloc(COMP_HEAP_SIZE / 4096 * 8)
+  let heap = COMP-HEAP-VIRT
+  let heap-frames = alloc(COMP-HEAP-SIZE / 4096 * 8)
   let j = 0
-  while j < COMP_HEAP_SIZE / 4096 {
-    let frame = frame_alloc()
-    store64(heap_frames + j * 8, frame)
-    domain_map(domain, heap + j * 4096, frame, 0x7)
+  while j < COMP-HEAP-SIZE / 4096 {
+    let frame = frame-alloc()
+    store64(heap-frames + j * 8, frame)
+    domain-map(domain, heap + j * 4096, frame, 0x7)
     j = j + 1
   }
-  let shared = domain_create_shared_page(0, domain, COMP_SHARED_VIRT, COMP_SHARED_VIRT)
+  let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
   if shared == 0 { return -1 }
-  let cap_info = alloc(64)
-  store64(cap_info + 16, heap)
-  store64(cap_info + 24, COMP_HEAP_SIZE)
-  store64(cap_info + 32, COMP_SHARED_VIRT)
+  let cap-info = alloc(64)
+  store64(cap-info + 16, heap)
+  store64(cap-info + 24, COMP-HEAP-SIZE)
+  store64(cap-info + 32, COMP-SHARED-VIRT)
   let mounted = 0
-  if nvme_ready != 0 {
-    serial_write_cstr(port, "volume: loading NVMe backing")
-    serial_nl(port)
-    if sci_volume_nvme_load(heap_frames) == 0 {
-      if load32(load64(heap_frames + 16)) == 0x53504146 {
+  if nvme-ready != 0 {
+    serial-write-cstr(port, "volume: loading NVMe backing")
+    serial-nl(port)
+    if sci-volume-nvme-load(heap-frames) == 0 {
+      if load32(load64(heap-frames + 16)) == 0x53504146 {
         mounted = 1
       }
     }
-    serial_write_cstr(port, "volume: NVMe backing loaded")
-    serial_nl(port)
+    serial-write-cstr(port, "volume: NVMe backing loaded")
+    serial-nl(port)
   }
-  store64(cap_info + 40, mounted)
+  store64(cap-info + 40, mounted)
 
-  store64(COMP_SHARED_VIRT + 0, 1)
-  store64(COMP_SHARED_VIRT + 8, 0)
-  store64(COMP_SHARED_VIRT + 16, 1)
-  domain_switch(domain)
-  let init_rc = invoke1(entry, cap_info)
-  domain_switch(0)
-  if init_rc != 0 || load64(COMP_SHARED_VIRT + 24) != 0 { return -1 }
+  store64(COMP-SHARED-VIRT + 0, 1)
+  store64(COMP-SHARED-VIRT + 8, 0)
+  store64(COMP-SHARED-VIRT + 16, 1)
+  domain-switch(domain)
+  let init-rc = invoke1(entry, cap-info)
+  domain-switch(0)
+  if init-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 { return -1 }
   if mounted != 0 {
-    serial_write_cstr(port, "volume: persistent mount passed")
-    serial_nl(port)
+    serial-write-cstr(port, "volume: persistent mount passed")
+    serial-nl(port)
   }
 
-  store8(COMP_SHARED_VIRT + 256, 47)
-  store8(COMP_SHARED_VIRT + 257, 118)
-  store8(COMP_SHARED_VIRT + 258, 111)
-  store8(COMP_SHARED_VIRT + 259, 108)
-  store8(COMP_SHARED_VIRT + 260, 117)
-  store8(COMP_SHARED_VIRT + 261, 109)
-  store8(COMP_SHARED_VIRT + 262, 101)
-  store8(COMP_SHARED_VIRT + 263, 0)
-  store64(COMP_SHARED_VIRT + 32, 64)
-  store64(COMP_SHARED_VIRT + 0, 1)
-  store64(COMP_SHARED_VIRT + 8, 0)
-  store64(COMP_SHARED_VIRT + 16, 2)
-  domain_switch(domain)
-  let open_rc = invoke1(entry, cap_info)
-  domain_switch(0)
-  if open_rc != 0 || load64(COMP_SHARED_VIRT + 24) != 0 || load64(COMP_SHARED_VIRT + 56) < 0 { return -1 }
+  store8(COMP-SHARED-VIRT + 256, 47)
+  store8(COMP-SHARED-VIRT + 257, 118)
+  store8(COMP-SHARED-VIRT + 258, 111)
+  store8(COMP-SHARED-VIRT + 259, 108)
+  store8(COMP-SHARED-VIRT + 260, 117)
+  store8(COMP-SHARED-VIRT + 261, 109)
+  store8(COMP-SHARED-VIRT + 262, 101)
+  store8(COMP-SHARED-VIRT + 263, 0)
+  store64(COMP-SHARED-VIRT + 32, 64)
+  store64(COMP-SHARED-VIRT + 0, 1)
+  store64(COMP-SHARED-VIRT + 8, 0)
+  store64(COMP-SHARED-VIRT + 16, 2)
+  domain-switch(domain)
+  let open-rc = invoke1(entry, cap-info)
+  domain-switch(0)
+  if open-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 || load64(COMP-SHARED-VIRT + 56) < 0 { return -1 }
 
-  store8(COMP_SHARED_VIRT + 768, 118)
-  store8(COMP_SHARED_VIRT + 769, 111)
-  store8(COMP_SHARED_VIRT + 770, 108)
-  store8(COMP_SHARED_VIRT + 771, 117)
-  store8(COMP_SHARED_VIRT + 772, 109)
-  store8(COMP_SHARED_VIRT + 773, 101)
-  store64(COMP_SHARED_VIRT + 32, 0)
-  store64(COMP_SHARED_VIRT + 40, 6)
-  store64(COMP_SHARED_VIRT + 0, 1)
-  store64(COMP_SHARED_VIRT + 8, 0)
-  store64(COMP_SHARED_VIRT + 16, 5)
-  domain_switch(domain)
-  let write_rc = invoke1(entry, cap_info)
-  domain_switch(0)
-  if write_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 { return -1 }
-  if nvme_ready != 0 {
-    if sci_volume_nvme_flush(heap_frames) != 0 { return -1 }
-    serial_write_cstr(port, "volume: NVMe backing flushed")
-    serial_nl(port)
+  store8(COMP-SHARED-VIRT + 768, 118)
+  store8(COMP-SHARED-VIRT + 769, 111)
+  store8(COMP-SHARED-VIRT + 770, 108)
+  store8(COMP-SHARED-VIRT + 771, 117)
+  store8(COMP-SHARED-VIRT + 772, 109)
+  store8(COMP-SHARED-VIRT + 773, 101)
+  store64(COMP-SHARED-VIRT + 32, 0)
+  store64(COMP-SHARED-VIRT + 40, 6)
+  store64(COMP-SHARED-VIRT + 0, 1)
+  store64(COMP-SHARED-VIRT + 8, 0)
+  store64(COMP-SHARED-VIRT + 16, 5)
+  domain-switch(domain)
+  let write-rc = invoke1(entry, cap-info)
+  domain-switch(0)
+  if write-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 { return -1 }
+  if nvme-ready != 0 {
+    if sci-volume-nvme-flush(heap-frames) != 0 { return -1 }
+    serial-write-cstr(port, "volume: NVMe backing flushed")
+    serial-nl(port)
   }
 
-  store8(COMP_SHARED_VIRT + 768, 0)
-  store64(COMP_SHARED_VIRT + 40, 6)
-  store64(COMP_SHARED_VIRT + 0, 1)
-  store64(COMP_SHARED_VIRT + 8, 0)
-  store64(COMP_SHARED_VIRT + 16, 4)
-  domain_switch(domain)
-  let read_rc = invoke1(entry, cap_info)
-  domain_switch(0)
-  if read_rc != 0 || load64(COMP_SHARED_VIRT + 56) != 6 || load8(COMP_SHARED_VIRT + 768) != 118 || load8(COMP_SHARED_VIRT + 773) != 101 { return -1 }
-  serial_write_cstr(port, "volume: component init/write/read passed")
-  serial_nl(port)
+  store8(COMP-SHARED-VIRT + 768, 0)
+  store64(COMP-SHARED-VIRT + 40, 6)
+  store64(COMP-SHARED-VIRT + 0, 1)
+  store64(COMP-SHARED-VIRT + 8, 0)
+  store64(COMP-SHARED-VIRT + 16, 4)
+  domain-switch(domain)
+  let read-rc = invoke1(entry, cap-info)
+  domain-switch(0)
+  if read-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 || load8(COMP-SHARED-VIRT + 768) != 118 || load8(COMP-SHARED-VIRT + 773) != 101 { return -1 }
+  serial-write-cstr(port, "volume: component init/write/read passed")
+  serial-nl(port)
 
-  volume_ready = 1
-  volume_domain = domain
-  volume_entry_addr = entry
-  volume_cap_info = cap_info
-  volume_heap_frames = heap_frames
-  volume_shared = COMP_SHARED_VIRT
-  serial_write_cstr(port, "volume: client bound")
-  serial_nl(port)
+  volume-ready = 1
+  volume-domain = domain
+  volume-entry-addr = entry
+  volume-cap-info = cap-info
+  volume-heap-frames = heap-frames
+  volume-shared = COMP-SHARED-VIRT
+  serial-write-cstr(port, "volume: client bound")
+  serial-nl(port)
   return 0
 }
 
-fn volume_copy_path(dst: Int, src: Int) -> void {
+fn volume-copy-path(dst: Int, src: Int) -> void {
   let i = 0
   while i < 255 && load8(src + i) != 0 {
     store8(dst + i, load8(src + i))
@@ -669,34 +669,34 @@ fn volume_copy_path(dst: Int, src: Int) -> void {
   return
 }
 
-fn volume_rpc_call(op: Int, flush: Int) -> Int {
-  if volume_ready == 0 {
+fn volume-rpc-call(op: Int, flush: Int) -> Int {
+  if volume-ready == 0 {
     return -1
   }
-  store64(volume_shared + 0, 1)
-  store64(volume_shared + 8, 0)
-  store64(volume_shared + 16, op)
-  store64(volume_shared + 24, 0)
-  store64(volume_shared + 56, 0)
-  let prev = domain_get_current()
-  domain_switch(volume_domain)
-  let rc = invoke1(volume_entry_addr, volume_cap_info)
-  domain_switch(prev)
+  store64(volume-shared + 0, 1)
+  store64(volume-shared + 8, 0)
+  store64(volume-shared + 16, op)
+  store64(volume-shared + 24, 0)
+  store64(volume-shared + 56, 0)
+  let prev = domain-get-current()
+  domain-switch(volume-domain)
+  let rc = invoke1(volume-entry-addr, volume-cap-info)
+  domain-switch(prev)
   if rc != 0 {
     return -1
   }
-  if flush != 0 && nvme_ready != 0 && volume_heap_frames != 0 {
-    if sci_volume_nvme_flush(volume_heap_frames) != 0 {
+  if flush != 0 && nvme-ready != 0 && volume-heap-frames != 0 {
+    if sci-volume-nvme-flush(volume-heap-frames) != 0 {
       return -1
     }
   }
-  if volume_via_marker == 0 {
-    volume_via_marker = 1
-    serial_write_cstr(com1(), "volume: filesystem op via Volume RPC")
-    serial_nl(com1())
+  if volume-via-marker == 0 {
+    volume-via-marker = 1
+    serial-write-cstr(com1(), "volume: filesystem op via Volume RPC")
+    serial-nl(com1())
   }
-  let status = load64(volume_shared + 24)
-  let result = load64(volume_shared + 56)
+  let status = load64(volume-shared + 24)
+  let result = load64(volume-shared + 56)
   if status != 0 {
     if result < 0 {
       return result
@@ -706,30 +706,30 @@ fn volume_rpc_call(op: Int, flush: Int) -> Int {
   return result
 }
 
-fn volume_rpc_open(path: Int, flags: Int) -> Int {
-  volume_copy_path(volume_shared + 256, path)
-  store64(volume_shared + 32, flags)
-  let r = volume_rpc_call(2, 0)
+fn volume-rpc-open(path: Int, flags: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  store64(volume-shared + 32, flags)
+  let r = volume-rpc-call(2, 0)
   if r < 0 {
     return -1
   }
   return r
 }
 
-fn volume_rpc_pread(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+fn volume-rpc-pread(path: Int, buf: Int, count: Int, offset: Int) -> Int {
   let total = 0
   let remaining = count
   let off = offset
   while remaining > 0 {
-    volume_copy_path(volume_shared + 256, path)
-    store64(volume_shared + 32, off)
+    volume-copy-path(volume-shared + 256, path)
+    store64(volume-shared + 32, off)
     let n = remaining
     if n > 3328 {
       n = 3328
     }
-    store64(volume_shared + 40, n)
-    store64(volume_shared + 48, 0)
-    let got = volume_rpc_call(4, 0)
+    store64(volume-shared + 40, n)
+    store64(volume-shared + 48, 0)
+    let got = volume-rpc-call(4, 0)
     if got < 0 {
       if total > 0 {
         return total
@@ -744,7 +744,7 @@ fn volume_rpc_pread(path: Int, buf: Int, count: Int, offset: Int) -> Int {
     }
     let i = 0
     while i < got {
-      store8(buf + total + i, load8(volume_shared + 768 + i))
+      store8(buf + total + i, load8(volume-shared + 768 + i))
       i = i + 1
     }
     total = total + got
@@ -757,25 +757,25 @@ fn volume_rpc_pread(path: Int, buf: Int, count: Int, offset: Int) -> Int {
   return total
 }
 
-fn volume_rpc_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
+fn volume-rpc-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
   let total = 0
   let remaining = count
   let off = offset
   while remaining > 0 {
-    volume_copy_path(volume_shared + 256, path)
-    store64(volume_shared + 32, off)
+    volume-copy-path(volume-shared + 256, path)
+    store64(volume-shared + 32, off)
     let n = remaining
     if n > 3328 {
       n = 3328
     }
-    store64(volume_shared + 40, n)
-    store64(volume_shared + 48, 0)
+    store64(volume-shared + 40, n)
+    store64(volume-shared + 48, 0)
     let i = 0
     while i < n {
-      store8(volume_shared + 768 + i, load8(buf + total + i))
+      store8(volume-shared + 768 + i, load8(buf + total + i))
       i = i + 1
     }
-    let wrote = volume_rpc_call(5, 1)
+    let wrote = volume-rpc-call(5, 1)
     if wrote < 0 {
       if total > 0 {
         return total
@@ -795,131 +795,131 @@ fn volume_rpc_pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
   return total
 }
 
-fn volume_rpc_stat(path: Int, stat_buf: Int) -> Int {
-  volume_copy_path(volume_shared + 256, path)
-  let rc = volume_rpc_call(7, 0)
+fn volume-rpc-stat(path: Int, stat-buf: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  let rc = volume-rpc-call(7, 0)
   if rc < 0 {
     return -1
   }
   let i = 0
   while i < 64 {
-    store8(stat_buf + i, load8(volume_shared + 768 + i))
+    store8(stat-buf + i, load8(volume-shared + 768 + i))
     i = i + 1
   }
   return rc
 }
 
-fn volume_rpc_delete(path: Int) -> Int {
-  volume_copy_path(volume_shared + 256, path)
-  return volume_rpc_call(9, 1)
+fn volume-rpc-delete(path: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  return volume-rpc-call(9, 1)
 }
 
-fn volume_rpc_mkdir(path: Int) -> Int {
-  volume_copy_path(volume_shared + 256, path)
-  return volume_rpc_call(10, 1)
+fn volume-rpc-mkdir(path: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  return volume-rpc-call(10, 1)
 }
 
-fn volume_rpc_rmdir(path: Int) -> Int {
-  volume_copy_path(volume_shared + 256, path)
-  return volume_rpc_call(11, 1)
+fn volume-rpc-rmdir(path: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  return volume-rpc-call(11, 1)
 }
 
-fn volume_rpc_rename(old_path: Int, new_path: Int) -> Int {
-  volume_copy_path(volume_shared + 256, old_path)
-  volume_copy_path(volume_shared + 512, new_path)
-  return volume_rpc_call(12, 1)
+fn volume-rpc-rename(old-path: Int, new-path: Int) -> Int {
+  volume-copy-path(volume-shared + 256, old-path)
+  volume-copy-path(volume-shared + 512, new-path)
+  return volume-rpc-call(12, 1)
 }
 
-fn volume_rpc_read_file(path: Int, buf: Int, max: Int) -> Int {
-  return volume_rpc_pread(path, buf, max, 0)
+fn volume-rpc-read-file(path: Int, buf: Int, max: Int) -> Int {
+  return volume-rpc-pread(path, buf, max, 0)
 }
 
-fn volume_rpc_write_file(path: Int, buf: Int, size: Int) -> Int {
-  let open_rc = volume_rpc_open(path, 64)
-  if open_rc < 0 {
+fn volume-rpc-write-file(path: Int, buf: Int, size: Int) -> Int {
+  let open-rc = volume-rpc-open(path, 64)
+  if open-rc < 0 {
     return -1
   }
-  let wrote = volume_rpc_pwrite(path, buf, size, 0)
+  let wrote = volume-rpc-pwrite(path, buf, size, 0)
   if wrote < size {
     return -1
   }
   return wrote
 }
 
-fn sci_load(port: Int, load_addr: Int) -> Int {
-  if load_addr == 0 || load_addr > 0x200000 {
-    serial_write_cstr(port, "  SCI: load address out of range 0x")
-    serial_write_hex(port, load_addr)
-    serial_nl(port)
+fn sci-load(port: Int, load-addr: Int) -> Int {
+  if load-addr == 0 || load-addr > 0x200000 {
+    serial-write-cstr(port, "  SCI: load address out of range 0x")
+    serial-write-hex(port, load-addr)
+    serial-nl(port)
     return -1
   }
-  let magic = load64(load_addr + 0)
-  if magic != SCI_MAGIC {
-    serial_write_cstr(port, "  SCI: no valid component manifest at 0x")
-    serial_write_hex(port, load_addr)
-    serial_nl(port)
+  let magic = load64(load-addr + 0)
+  if magic != SCI-MAGIC {
+    serial-write-cstr(port, "  SCI: no valid component manifest at 0x")
+    serial-write-hex(port, load-addr)
+    serial-nl(port)
     return -1
   }
-  let required = load64(load_addr + 8)
-  let entry = load64(load_addr + 16)
-  let image_size = load64(load_addr + 24)
-  serial_write_cstr(port, "  SCI: manifest ok, caps 0x")
-  serial_write_hex(port, required)
-  serial_write_cstr(port, " entry 0x")
-  serial_write_hex(port, entry)
-  serial_nl(port)
-  let missing = required & (-1 ^ SCI_GUEST_GRANTS)
+  let required = load64(load-addr + 8)
+  let entry = load64(load-addr + 16)
+  let image-size = load64(load-addr + 24)
+  serial-write-cstr(port, "  SCI: manifest ok, caps 0x")
+  serial-write-hex(port, required)
+  serial-write-cstr(port, " entry 0x")
+  serial-write-hex(port, entry)
+  serial-nl(port)
+  let missing = required & (-1 ^ SCI-GUEST-GRANTS)
   if missing != 0 {
-    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
-    serial_write_hex(port, missing)
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial-write-hex(port, missing)
+    serial-nl(port)
     return -1
   }
-  let domain = domain_create()
+  let domain = domain-create()
   if domain == 0 {
-    serial_write_cstr(port, "  SCI: domain_create failed")
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: domain_create failed")
+    serial-nl(port)
     return -1
   }
-  let component = component_register("sci-guest", entry, required)
-  let virt_load = entry - 32
-  let image_pages = (image_size + 4095) / 4096
+  let component = component-register("sci-guest", entry, required)
+  let virt-load = entry - 32
+  let image-pages = (image-size + 4095) / 4096
   let i = 0
-  while i < image_pages {
-    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+  while i < image-pages {
+    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
     i = i + 1
   }
-  serial_write_cstr(port, "  SCI: domain 0x")
-  serial_write_hex(port, domain)
-  serial_write_cstr(port, ", mapped 0x")
-  serial_write_hex(port, image_pages)
-  serial_write_cstr(port, " pages, cap check passed")
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: domain 0x")
+  serial-write-hex(port, domain)
+  serial-write-cstr(port, ", mapped 0x")
+  serial-write-hex(port, image-pages)
+  serial-write-cstr(port, " pages, cap check passed")
+  serial-nl(port)
   store64(component + 40, domain)
-  obj_link(root_realm, component)
-  serial_write_cstr(port, "  SCI: registered component object id 0x")
-  serial_write_hex(port, obj_id(component))
-  serial_nl(port)
-  let cap_info = alloc(16)
-  let guest_cap_table = alloc(16)
-  store64(guest_cap_table + 0, component)
-  store64(guest_cap_table + 8, required)
-  store64(cap_info + 0, 1)
-  store64(cap_info + 8, guest_cap_table)
-  domain_switch(domain)
-  let status = invoke1(entry, cap_info)
-  domain_switch(0)
+  obj-link(root-realm, component)
+  serial-write-cstr(port, "  SCI: registered component object id 0x")
+  serial-write-hex(port, obj-id(component))
+  serial-nl(port)
+  let cap-info = alloc(16)
+  let guest-cap-table = alloc(16)
+  store64(guest-cap-table + 0, component)
+  store64(guest-cap-table + 8, required)
+  store64(cap-info + 0, 1)
+  store64(cap-info + 8, guest-cap-table)
+  domain-switch(domain)
+  let status = invoke1(entry, cap-info)
+  domain-switch(0)
   store64(component + 48, status)
-  serial_write_cstr(port, "  SCI: component returned status 0x")
-  serial_write_hex(port, status)
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: component returned status 0x")
+  serial-write-hex(port, status)
+  serial-nl(port)
   return status
 }
 
 // --- syscall demo -----------------------------------------------------------
-fn run_syscall_demo(port: Int) -> void {
-  serial_write_cstr(port, "space: syscall demo -- calling sys_write via int 0x80")
-  serial_nl(port)
+fn run-syscall-demo(port: Int) -> void {
+  serial-write-cstr(port, "space: syscall demo -- calling sys_write via int 0x80")
+  serial-nl(port)
   let demo = load64(0x4078)
   let msg = "  hello from syscall (int 0x80)!\n"
   let len = 0
@@ -927,18 +927,18 @@ fn run_syscall_demo(port: Int) -> void {
     len = len + 1
   }
   let result = invoke2(demo, msg, len)
-  serial_write_cstr(port, "space: sys_write returned 0x")
-  serial_write_hex(port, result)
-  serial_nl(port)
+  serial-write-cstr(port, "space: sys_write returned 0x")
+  serial-write-hex(port, result)
+  serial-nl(port)
   return
 }
 
 // --- kernel entry -----------------------------------------------------------
-fn kernel_entry(mb_info: Int) -> Int {
+fn kernel-entry(mb-info: Int) -> Int {
   let port = com1()
-  serial_init(port)
-  serial_write_cstr(port, "space: kernel root entered")
-  serial_nl(port)
+  serial-init(port)
+  serial-write-cstr(port, "space: kernel root entered")
+  serial-nl(port)
 
   // Zero the compiler's global data area before any globals are read.
   // The bootloader loads the kernel image but does not guarantee this
@@ -948,234 +948,234 @@ fn kernel_entry(mb_info: Int) -> Int {
     store64(0x200000 + g, 0)
     g = g + 8
   }
-  boot_quiet = 1
+  boot-quiet = 1
 
-  discover_memory(mb_info)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: available RAM bytes 0x")
-    serial_write_hex(port, total_ram)
-    serial_write_cstr(port, " across regions 0x")
-    serial_write_hex(port, region_count)
-    serial_nl(port)
-    serial_write_cstr(port, "space: heap window 0x")
-    serial_write_hex(port, heap_next)
-    serial_write_cstr(port, " .. 0x")
-    serial_write_hex(port, heap_end)
-    serial_nl(port)
+  discover-memory(mb-info)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: available RAM bytes 0x")
+    serial-write-hex(port, total-ram)
+    serial-write-cstr(port, " across regions 0x")
+    serial-write-hex(port, region-count)
+    serial-nl(port)
+    serial-write-cstr(port, "space: heap window 0x")
+    serial-write-hex(port, heap-next)
+    serial-write-cstr(port, " .. 0x")
+    serial-write-hex(port, heap-end)
+    serial-nl(port)
   }
 
-  obj_arena_init(65536)
-  cap_table_init(64)
-  let cap_table_obj = obj_alloc(2)
-  root_realm = obj_alloc(1)
-  store64(root_realm + 16, cap_table_obj)
-  let kernel_cap = cap_mint(root_realm, 0xF)
+  obj-arena-init(65536)
+  cap-table-init(64)
+  let cap-table-obj = obj-alloc(2)
+  root-realm = obj-alloc(1)
+  store64(root-realm + 16, cap-table-obj)
+  let kernel-cap = cap-mint(root-realm, 0xF)
 
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: bootstrap realm object id 0x")
-    serial_write_hex(port, obj_id(root_realm))
-    serial_nl(port)
-    serial_write_cstr(port, "space: root cap table at 0x")
-    serial_write_hex(port, cap_table_base)
-    serial_write_cstr(port, " caps 0x")
-    serial_write_hex(port, cap_count)
-    serial_nl(port)
-    serial_write_cstr(port, "space: objects allocated 0x")
-    serial_write_hex(port, obj_counter)
-    serial_nl(port)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: bootstrap realm object id 0x")
+    serial-write-hex(port, obj-id(root-realm))
+    serial-nl(port)
+    serial-write-cstr(port, "space: root cap table at 0x")
+    serial-write-hex(port, cap-table-base)
+    serial-write-cstr(port, " caps 0x")
+    serial-write-hex(port, cap-count)
+    serial-nl(port)
+    serial-write-cstr(port, "space: objects allocated 0x")
+    serial-write-hex(port, obj-counter)
+    serial-nl(port)
   }
 
-  domain_init()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: domain subsystem init, ")
-    serial_write_dec_wide(port, domain_count)
-    serial_write_cstr(port, " domains (kernel + ")
-    let available_domains = 63
-    serial_write_dec_wide(port, available_domains)
-    serial_write_cstr(port, " available)")
-    serial_nl(port)
+  domain-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: domain subsystem init, ")
+    serial-write-dec-wide(port, domain-count)
+    serial-write-cstr(port, " domains (kernel + ")
+    let available-domains = 63
+    serial-write-dec-wide(port, available-domains)
+    serial-write-cstr(port, " available)")
+    serial-nl(port)
   }
 
-  interrupts_init()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
-    serial_nl(port)
+  interrupts-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
+    serial-nl(port)
   }
 
   let shown = 0
   while shown < 1 {
     hlt()
     if ticks >= (shown + 1) * 2 {
-      if boot_quiet == 0 {
-        serial_write_cstr(port, "space: timer ticks 0x")
-        serial_write_hex(port, ticks)
-        serial_nl(port)
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: timer ticks 0x")
+        serial-write-hex(port, ticks)
+        serial-nl(port)
       }
       shown = shown + 1
     }
   }
 
-  run_supervisor(port)
-  run_scheduler(port)
-  run_channels(port)
-  run_preemptive(port)
+  run-supervisor(port)
+  run-scheduler(port)
+  run-channels(port)
+  run-preemptive(port)
 
-  if load64(0x180000) == SCI_MAGIC {
-    sci_load(port, 0x180000)
+  if load64(0x180000) == SCI-MAGIC {
+    sci-load(port, 0x180000)
   }
 
 
-  proc_init(16)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: process table initialized (max 16)")
-    serial_nl(port)
+  proc-init(16)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: process table initialized (max 16)")
+    serial-nl(port)
   }
 
-  if boot_quiet == 0 {
-    proc_selftest()
+  if boot-quiet == 0 {
+    proc-selftest()
   }
 
-  net_component_start(port)
+  net-component-start(port)
 
-  let nvme_rc = nvme_init()
-  if boot_quiet == 0 {
-    if nvme_rc == 0 {
-      serial_write_cstr(port, "space: NVMe controller initialized")
-      serial_nl(port)
+  let nvme-rc = nvme-init()
+  if boot-quiet == 0 {
+    if nvme-rc == 0 {
+      serial-write-cstr(port, "space: NVMe controller initialized")
+      serial-nl(port)
     } else {
-      serial_write_cstr(port, "space: NVMe not found")
-      serial_nl(port)
+      serial-write-cstr(port, "space: NVMe not found")
+      serial-nl(port)
     }
   }
 
-  let usb_rc = xhci_init()
-  if boot_quiet == 0 {
-    if usb_rc == 0 {
-      serial_write_cstr(port, "space: USB xHCI controller initialized")
-      serial_nl(port)
+  let usb-rc = xhci-init()
+  if boot-quiet == 0 {
+    if usb-rc == 0 {
+      serial-write-cstr(port, "space: USB xHCI controller initialized")
+      serial-nl(port)
     } else {
-      serial_write_cstr(port, "space: USB xHCI not found")
-      serial_nl(port)
+      serial-write-cstr(port, "space: USB xHCI not found")
+      serial-nl(port)
     }
   }
 
-  load_arena_init(4 * 1024 * 1024)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: load arena reserved (4 MiB) at 0x")
-    serial_write_hex(port, load_arena_base)
-    serial_nl(port)
+  load-arena-init(4 * 1024 * 1024)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: load arena reserved (4 MiB) at 0x")
+    serial-write-hex(port, load-arena-base)
+    serial-nl(port)
   }
 
-  let volume_load_early = load64(0x220000)
-  if volume_load_early == SCI_MAGIC {
-    sci_volume_rpc(port, 0x220000)
+  let volume-load-early = load64(0x220000)
+  if volume-load-early == SCI-MAGIC {
+    sci-volume-rpc(port, 0x220000)
   }
 
-  fs_init()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: filesystem initialized")
-    serial_nl(port)
+  fs-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: filesystem initialized")
+    serial-nl(port)
   }
-  time_init()
-  if boot_quiet == 0 {
-    if volume_ready != 0 {
-      serial_write_cstr(port, "space: volume SCI is filesystem backend")
-      serial_nl(port)
-    } else if sf_mem_disk != 0 {
-      serial_write_cstr(port, "space: sparkfs mem volume at 0x")
-      serial_write_hex(port, sf_mem_disk)
-      serial_nl(port)
+  time-init()
+  if boot-quiet == 0 {
+    if volume-ready != 0 {
+      serial-write-cstr(port, "space: volume SCI is filesystem backend")
+      serial-nl(port)
+    } else if sf-mem-disk != 0 {
+      serial-write-cstr(port, "space: sparkfs mem volume at 0x")
+      serial-write-hex(port, sf-mem-disk)
+      serial-nl(port)
     } else {
-      serial_write_cstr(port, "space: sparkfs nvme volume")
-      serial_nl(port)
+      serial-write-cstr(port, "space: sparkfs nvme volume")
+      serial-nl(port)
     }
   }
 
-  vfs_init()
-  test_sci_loader(port)
+  vfs-init()
+  test-sci-loader(port)
 
 
 
-  linux_init()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
-    serial_nl(port)
+  linux-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
+    serial-nl(port)
   }
-  if volume_ready != 0 {
-    linux_demo(port)
+  if volume-ready != 0 {
+    linux-demo(port)
   }
 
-  let fb_rc = fb_init(mb_info)
-  if fb_rc == 0 {
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space: framebuffer initialized")
-      fb_info(port)
+  let fb-rc = fb-init(mb-info)
+  if fb-rc == 0 {
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space: framebuffer initialized")
+      fb-info(port)
     }
   } else {
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space: framebuffer not available (no VBE info)")
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space: framebuffer not available (no VBE info)")
+      serial-nl(port)
     }
   }
 
-  if fb_ready != 0 {
-    let mouse_rc = mouse_init()
-    if mouse_rc == 0 {
-      if boot_quiet == 0 {
-        serial_write_cstr(port, "space: PS/2 mouse initialized")
-        serial_nl(port)
+  if fb-ready != 0 {
+    let mouse-rc = mouse-init()
+    if mouse-rc == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 mouse initialized")
+        serial-nl(port)
       }
     } else {
-      if boot_quiet == 0 {
-        serial_write_cstr(port, "space: PS/2 mouse not found")
-        serial_nl(port)
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 mouse not found")
+        serial-nl(port)
       }
     }
-    if ps2_kbd_init() == 0 {
-      if boot_quiet == 0 {
-        serial_write_cstr(port, "space: PS/2 keyboard initialized")
-        serial_nl(port)
-      }
-    }
-  }
-
-  if usb_rc == 0 {
-    let kbd_rc = usb_kbd_init()
-    if kbd_rc == 0 {
-      if boot_quiet == 0 {
-        serial_write_cstr(port, "space: USB HID keyboard ready")
-        serial_nl(port)
+    if ps2-kbd-init() == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 keyboard initialized")
+        serial-nl(port)
       }
     }
   }
 
-  comp_init()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: compositor initialized")
-    serial_nl(port)
+  if usb-rc == 0 {
+    let kbd-rc = usb-kbd-init()
+    if kbd-rc == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: USB HID keyboard ready")
+        serial-nl(port)
+      }
+    }
+  }
+
+  comp-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: compositor initialized")
+    serial-nl(port)
   }
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
-  preempt_start(port)
+  preempt-start(port)
 
-  let display_load = load64(0x1a0000)
-  if display_load == SCI_MAGIC {
-    sci_load_runtime_component(port, 0x1a0000, "display", SCI_DISPLAY_GRANTS)
+  let display-load = load64(0x1a0000)
+  if display-load == SCI-MAGIC {
+    sci-load-runtime-component(port, 0x1a0000, "display", SCI-DISPLAY-GRANTS)
   }
 
-  let input_load = load64(0x1e0000)
-  if input_load == SCI_MAGIC {
-    sci_load_runtime_component(port, 0x1e0000, "input", SCI_INPUT_GRANTS)
+  let input-load = load64(0x1e0000)
+  if input-load == SCI-MAGIC {
+    sci-load-runtime-component(port, 0x1e0000, "input", SCI-INPUT-GRANTS)
   }
 
   shell(port)
 
-  serial_write_cstr(port, "space: nanokernel ready, total ticks 0x")
-  serial_write_hex(port, ticks)
-  serial_nl(port)
-  serial_write_cstr(port, "space: halting")
-  serial_nl(port)
+  serial-write-cstr(port, "space: nanokernel ready, total ticks 0x")
+  serial-write-hex(port, ticks)
+  serial-nl(port)
+  serial-write-cstr(port, "space: halting")
+  serial-nl(port)
   cli()
   while true {
     hlt()

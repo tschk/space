@@ -8,36 +8,36 @@ package space.kernel
 var line: Int = 0
 
 // --- serial I/O helpers -----------------------------------------------------
-fn serial_has_byte(port: Int) -> Int {
+fn serial-has-byte(port: Int) -> Int {
   return inb(port + 5) & 1
 }
 
-fn serial_read(port: Int) -> Int {
-  while serial_has_byte(port) == 0 {
+fn serial-read(port: Int) -> Int {
+  while serial-has-byte(port) == 0 {
   }
   return inb(port + 0)
 }
 
 // Read one line into the `line` buffer, echoing input. Returns its length.
-fn read_line(port: Int) -> Int {
+fn read-line(port: Int) -> Int {
   let len = 0
   while true {
-    let c = serial_read(port)
+    let c = serial-read(port)
     if (c == 13) || (c == 10) {
-      serial_nl(port)
+      serial-nl(port)
       store8(line + len, 0)
       return len
     }
     if (c == 8) || (c == 127) {
       if len > 0 {
         len = len - 1
-        serial_put(port, 8)
-        serial_put(port, 32)
-        serial_put(port, 8)
+        serial-put(port, 8)
+        serial-put(port, 32)
+        serial-put(port, 8)
       }
     } else {
       if len < 254 {
-        serial_put(port, c)
+        serial-put(port, c)
         store8(line + len, c)
         len = len + 1
       }
@@ -47,7 +47,7 @@ fn read_line(port: Int) -> Int {
 }
 
 // Parse a hex string at addr into an integer.
-fn str_to_hex(addr: Int) -> Int {
+fn str-to-hex(addr: Int) -> Int {
   let result = 0
   let i = 0
   while i < 16 {
@@ -67,7 +67,7 @@ fn str_to_hex(addr: Int) -> Int {
 }
 
 // Compare the line buffer against a NUL-terminated command string.
-fn line_eq(cmd: Int) -> Int {
+fn line-eq(cmd: Int) -> Int {
   let i = 0
   while true {
     let a = load8(line + i)
@@ -84,7 +84,7 @@ fn line_eq(cmd: Int) -> Int {
 }
 
 // If the line begins with `prefix`, return the index just past it, else -1.
-fn line_prefix(prefix: Int) -> Int {
+fn line-prefix(prefix: Int) -> Int {
   let i = 0
   while load8(prefix + i) != 0 {
     if load8(line + i) != load8(prefix + i) {
@@ -96,7 +96,7 @@ fn line_prefix(prefix: Int) -> Int {
 }
 
 // Return the index of the next argument after `start`, or 0 if none.
-fn next_arg(start: Int) -> Int {
+fn next-arg(start: Int) -> Int {
   let i = start
   while load8(line + i) != 0 && load8(line + i) != 32 {
     i = i + 1
@@ -108,30 +108,30 @@ fn next_arg(start: Int) -> Int {
 }
 
 // Print the value of a stat buffer returned by fs_stat.
-fn print_stat(port: Int, stat_buf: Int) -> void {
-  serial_write_cstr(port, "  type=")
-  let ty = load32(stat_buf + SF_ST_TYPE)
-  if ty == SF_TYPE_DIR {
-    serial_write_cstr(port, "dir")
-  } else if ty == SF_TYPE_FILE {
-    serial_write_cstr(port, "file")
+fn print-stat(port: Int, stat-buf: Int) -> void {
+  serial-write-cstr(port, "  type=")
+  let ty = load32(stat-buf + SF-ST-TYPE)
+  if ty == SF-TYPE-DIR {
+    serial-write-cstr(port, "dir")
+  } else if ty == SF-TYPE-FILE {
+    serial-write-cstr(port, "file")
   } else {
-    serial_write_cstr(port, "?")
+    serial-write-cstr(port, "?")
   }
-  serial_write_cstr(port, "  mode=0x")
-  serial_write_hex(port, load32(stat_buf + SF_ST_MODE))
-  serial_write_cstr(port, "  size=")
-  serial_write_dec_wide(port, load64(stat_buf + SF_ST_SIZE))
-  serial_write_cstr(port, "  nlink=")
-  serial_write_dec_wide(port, load32(stat_buf + SF_ST_NLINK))
-  serial_write_cstr(port, "  mtime=0x")
-  serial_write_hex(port, load64(stat_buf + SF_ST_MTIME))
-  serial_nl(port)
+  serial-write-cstr(port, "  mode=0x")
+  serial-write-hex(port, load32(stat-buf + SF-ST-MODE))
+  serial-write-cstr(port, "  size=")
+  serial-write-dec-wide(port, load64(stat-buf + SF-ST-SIZE))
+  serial-write-cstr(port, "  nlink=")
+  serial-write-dec-wide(port, load32(stat-buf + SF-ST-NLINK))
+  serial-write-cstr(port, "  mtime=0x")
+  serial-write-hex(port, load64(stat-buf + SF-ST-MTIME))
+  serial-nl(port)
   return
 }
 
 // A self-test of array indexing: sum of squares 0..7 == 140 (0x8C).
-fn array_selftest() -> Int {
+fn array-selftest() -> Int {
   let a = alloc(64)
   for i in 0..8 {
     a[i] = i * i
@@ -146,375 +146,375 @@ fn array_selftest() -> Int {
 // --- interactive serial shell ------------------------------------------------
 fn shell(port: Int) -> void {
   line = alloc(256)
-  serial_nl(port)
-  serial_write_cstr(port, "space interactive shell -- type 'help'")
-  serial_nl(port)
+  serial-nl(port)
+  serial-write-cstr(port, "space interactive shell -- type 'help'")
+  serial-nl(port)
   while true {
-    serial_write_cstr(port, "space> ")
-    let n = read_line(port)
-    if line_eq("help") != 0 {
-      serial_write_cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
-      serial_nl(port)
-    } else if line_eq("verbose") != 0 {
-      boot_quiet = 0
-      serial_write_cstr(port, "  verbose mode enabled")
-      serial_nl(port)
-    } else if line_eq("quiet") != 0 {
-      boot_quiet = 1
-      serial_write_cstr(port, "  quiet mode enabled")
-      serial_nl(port)
-    } else if line_eq("selftest") != 0 {
-      serial_write_cstr(port, "  running boot diagnostics...")
-      serial_nl(port)
-      run_supervisor(port)
-      run_scheduler(port)
-      run_channels(port)
-      run_preemptive(port)
-      proc_selftest()
-      test_sci_loader(port)
-      serial_write_cstr(port, "  diagnostics complete")
-      serial_nl(port)
+    serial-write-cstr(port, "space> ")
+    let n = read-line(port)
+    if line-eq("help") != 0 {
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-nl(port)
+    } else if line-eq("verbose") != 0 {
+      boot-quiet = 0
+      serial-write-cstr(port, "  verbose mode enabled")
+      serial-nl(port)
+    } else if line-eq("quiet") != 0 {
+      boot-quiet = 1
+      serial-write-cstr(port, "  quiet mode enabled")
+      serial-nl(port)
+    } else if line-eq("selftest") != 0 {
+      serial-write-cstr(port, "  running boot diagnostics...")
+      serial-nl(port)
+      run-supervisor(port)
+      run-scheduler(port)
+      run-channels(port)
+      run-preemptive(port)
+      proc-selftest()
+      test-sci-loader(port)
+      serial-write-cstr(port, "  diagnostics complete")
+      serial-nl(port)
 
-    } else if line_eq("snapshot") != 0 {
-      checkpoint_save()
-      serial_write_cstr(port, "  object-graph checkpoint captured at objects 0x")
-      serial_write_hex(port, obj_counter)
-      serial_nl(port)
-    } else if line_eq("spawn") != 0 {
-      let o = obj_alloc(3)
-      serial_write_cstr(port, "  spawned object id 0x")
-      serial_write_hex(port, obj_id(o))
-      serial_write_cstr(port, " (objects now 0x")
-      serial_write_hex(port, obj_counter)
-      serial_write_cstr(port, ")")
-      serial_nl(port)
-    } else if line_eq("restore") != 0 {
-      checkpoint_restore()
-      serial_write_cstr(port, "  restored to checkpoint; objects now 0x")
-      serial_write_hex(port, obj_counter)
-      serial_nl(port)
-    } else if line_eq("pci") != 0 {
-      pci_scan(port)
-    } else if line_eq("net") != 0 {
-      run_net(port)
-    } else if line_eq("det") != 0 {
-      run_determinism(port)
-    } else if line_eq("domain") != 0 {
-      let d = domain_create()
-      serial_write_cstr(port, "  created domain 0x")
-      serial_write_hex(port, d)
-      serial_write_cstr(port, " (total 0x")
-      serial_write_hex(port, domain_count)
-      serial_write_cstr(port, ")")
-      serial_nl(port)
-    } else if line_eq("chan") != 0 {
-      let d1 = domain_create()
-      let d2 = domain_create()
+    } else if line-eq("snapshot") != 0 {
+      checkpoint-save()
+      serial-write-cstr(port, "  object-graph checkpoint captured at objects 0x")
+      serial-write-hex(port, obj-counter)
+      serial-nl(port)
+    } else if line-eq("spawn") != 0 {
+      let o = obj-alloc(3)
+      serial-write-cstr(port, "  spawned object id 0x")
+      serial-write-hex(port, obj-id(o))
+      serial-write-cstr(port, " (objects now 0x")
+      serial-write-hex(port, obj-counter)
+      serial-write-cstr(port, ")")
+      serial-nl(port)
+    } else if line-eq("restore") != 0 {
+      checkpoint-restore()
+      serial-write-cstr(port, "  restored to checkpoint; objects now 0x")
+      serial-write-hex(port, obj-counter)
+      serial-nl(port)
+    } else if line-eq("pci") != 0 {
+      pci-scan(port)
+    } else if line-eq("net") != 0 {
+      run-net(port)
+    } else if line-eq("det") != 0 {
+      run-determinism(port)
+    } else if line-eq("domain") != 0 {
+      let d = domain-create()
+      serial-write-cstr(port, "  created domain 0x")
+      serial-write-hex(port, d)
+      serial-write-cstr(port, " (total 0x")
+      serial-write-hex(port, domain-count)
+      serial-write-cstr(port, ")")
+      serial-nl(port)
+    } else if line-eq("chan") != 0 {
+      let d1 = domain-create()
+      let d2 = domain-create()
       if d1 > 0 && d2 > 0 {
-        let phys = domain_create_shared_page(d1, d2, 0xFFFF8000, 0xFFFF9000)
+        let phys = domain-create-shared-page(d1, d2, 0xFFFF8000, 0xFFFF9000)
         if phys != 0 {
-          let ch = chan_cross_bind(phys, d1, 16)
+          let ch = chan-cross-bind(phys, d1, 16)
           store64(phys + 32, 0xCAFE)
           store64(phys + 0, 1)
           let msg = load64(phys + 32)
           store64(phys + 8, 1)
-          serial_write_cstr(port, "  chan: domain 0x")
-          serial_write_hex(port, d1)
-          serial_write_cstr(port, " <-> domain 0x")
-          serial_write_hex(port, d2)
-          serial_write_cstr(port, " shared phys 0x")
-          serial_write_hex(port, phys)
-          serial_write_cstr(port, " msg 0x")
-          serial_write_hex(port, msg)
-          serial_write_cstr(port, " OK")
-          serial_nl(port)
+          serial-write-cstr(port, "  chan: domain 0x")
+          serial-write-hex(port, d1)
+          serial-write-cstr(port, " <-> domain 0x")
+          serial-write-hex(port, d2)
+          serial-write-cstr(port, " shared phys 0x")
+          serial-write-hex(port, phys)
+          serial-write-cstr(port, " msg 0x")
+          serial-write-hex(port, msg)
+          serial-write-cstr(port, " OK")
+          serial-nl(port)
         } else {
-          serial_write_cstr(port, "  chan: shared page allocation failed")
-          serial_nl(port)
+          serial-write-cstr(port, "  chan: shared page allocation failed")
+          serial-nl(port)
         }
       } else {
-        serial_write_cstr(port, "  chan: domain creation failed")
-        serial_nl(port)
+        serial-write-cstr(port, "  chan: domain creation failed")
+        serial-nl(port)
       }
-    } else if line_eq("sci") != 0 {
-      sci_load(port, 0x180000)
+    } else if line-eq("sci") != 0 {
+      sci-load(port, 0x180000)
 
-    } else if line_eq("map") != 0 {
-      let frame = frame_alloc()
-      map_page(0x40000000, frame, 3)
+    } else if line-eq("map") != 0 {
+      let frame = frame-alloc()
+      map-page(0x40000000, frame, 3)
       store64(0x40000000, 0xCAFEBABE)
-      serial_write_cstr(port, "  mapped virt 0x40000000 -> phys 0x")
-      serial_write_hex(port, frame)
-      serial_write_cstr(port, " readback 0x")
-      serial_write_hex(port, load64(0x40000000))
-      serial_nl(port)
-    } else if line_eq("fault") != 0 {
-      serial_write_cstr(port, "  triggering a page fault at 0x50000000...")
-      serial_nl(port)
+      serial-write-cstr(port, "  mapped virt 0x40000000 -> phys 0x")
+      serial-write-hex(port, frame)
+      serial-write-cstr(port, " readback 0x")
+      serial-write-hex(port, load64(0x40000000))
+      serial-nl(port)
+    } else if line-eq("fault") != 0 {
+      serial-write-cstr(port, "  triggering a page fault at 0x50000000...")
+      serial-nl(port)
       store64(0x50000000, 1)
-    } else if line_eq("divzero") != 0 {
-      serial_write_cstr(port, "  triggering divide-by-zero...")
-      serial_nl(port)
+    } else if line-eq("divzero") != 0 {
+      serial-write-cstr(port, "  triggering divide-by-zero...")
+      serial-nl(port)
       let z = ticks - ticks
       let q = 100 / z
-      serial_write_hex(port, q)
-      serial_nl(port)
-    } else if line_eq("status") != 0 {
-      serial_write_cstr(port, "  realm object id 0x")
-      serial_write_hex(port, obj_id(root_realm))
-      serial_write_cstr(port, " objects 0x")
-      serial_write_hex(port, obj_counter)
-      serial_write_cstr(port, " caps 0x")
-      serial_write_hex(port, cap_count)
-      serial_nl(port)
-    } else if line_eq("mem") != 0 {
-      serial_write_cstr(port, "  RAM 0x")
-      serial_write_hex(port, total_ram)
-      serial_write_cstr(port, " heap_next 0x")
-      serial_write_hex(port, heap_next)
-      serial_write_cstr(port, " heap_end 0x")
-      serial_write_hex(port, heap_end)
-      serial_nl(port)
-    } else if line_eq("ticks") != 0 {
-      serial_write_cstr(port, "  timer ticks 0x")
-      serial_write_hex(port, ticks)
-      serial_nl(port)
-    } else if line_eq("ps") != 0 {
-      proc_list(port)
-    } else if line_eq("test") != 0 {
-      serial_write_cstr(port, "  array selftest sum 0x")
-      serial_write_hex(port, array_selftest())
-      serial_write_cstr(port, " (expect 0x8C)")
-      serial_nl(port)
-    } else if line_eq("halt") != 0 {
-      serial_write_cstr(port, "  halting on request")
-      serial_nl(port)
+      serial-write-hex(port, q)
+      serial-nl(port)
+    } else if line-eq("status") != 0 {
+      serial-write-cstr(port, "  realm object id 0x")
+      serial-write-hex(port, obj-id(root-realm))
+      serial-write-cstr(port, " objects 0x")
+      serial-write-hex(port, obj-counter)
+      serial-write-cstr(port, " caps 0x")
+      serial-write-hex(port, cap-count)
+      serial-nl(port)
+    } else if line-eq("mem") != 0 {
+      serial-write-cstr(port, "  RAM 0x")
+      serial-write-hex(port, total-ram)
+      serial-write-cstr(port, " heap_next 0x")
+      serial-write-hex(port, heap-next)
+      serial-write-cstr(port, " heap_end 0x")
+      serial-write-hex(port, heap-end)
+      serial-nl(port)
+    } else if line-eq("ticks") != 0 {
+      serial-write-cstr(port, "  timer ticks 0x")
+      serial-write-hex(port, ticks)
+      serial-nl(port)
+    } else if line-eq("ps") != 0 {
+      proc-list(port)
+    } else if line-eq("test") != 0 {
+      serial-write-cstr(port, "  array selftest sum 0x")
+      serial-write-hex(port, array-selftest())
+      serial-write-cstr(port, " (expect 0x8C)")
+      serial-nl(port)
+    } else if line-eq("halt") != 0 {
+      serial-write-cstr(port, "  halting on request")
+      serial-nl(port)
       outb(0xf4, 0)      // QEMU isa-debug-exit (harmless if absent)
       outw(0x604, 0x2000) // QEMU ACPI power-off
       cli()
       while true { hlt() }
-    } else if line_eq("uptime") != 0 {
-      serial_write_cstr(port, "  ")
-      serial_write_dec_wide(port, ticks)
-      serial_write_cstr(port, " ticks since boot")
-      serial_nl(port)
-    } else if line_eq("time") != 0 {
-      time_print(port)
-    } else if line_eq("syscall") != 0 {
-      run_syscall_demo(port)
-    } else if line_eq("nvme") != 0 {
-      nvme_shell(port)
-    } else if line_eq("format") != 0 {
-      if fs_format() == 0 {
-        serial_write_cstr(port, "  disk formatted")
+    } else if line-eq("uptime") != 0 {
+      serial-write-cstr(port, "  ")
+      serial-write-dec-wide(port, ticks)
+      serial-write-cstr(port, " ticks since boot")
+      serial-nl(port)
+    } else if line-eq("time") != 0 {
+      time-print(port)
+    } else if line-eq("syscall") != 0 {
+      run-syscall-demo(port)
+    } else if line-eq("nvme") != 0 {
+      nvme-shell(port)
+    } else if line-eq("format") != 0 {
+      if fs-format() == 0 {
+        serial-write-cstr(port, "  disk formatted")
       } else {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       }
-      serial_nl(port)
-    } else if line_prefix("ls ") >= 0 {
-      let ls_arg = line_prefix("ls ")
-      fs_list_path(line + ls_arg, port)
-    } else if line_eq("ls") != 0 {
-      fs_list(port)
-    } else if line_prefix("mkdir ") >= 0 {
-      let arg = line_prefix("mkdir ")
-      if fs_mkdir(line + arg) >= 0 {
-        serial_write_cstr(port, "  created")
+      serial-nl(port)
+    } else if line-prefix("ls ") >= 0 {
+      let ls-arg = line-prefix("ls ")
+      fs-list-path(line + ls-arg, port)
+    } else if line-eq("ls") != 0 {
+      fs-list(port)
+    } else if line-prefix("mkdir ") >= 0 {
+      let arg = line-prefix("mkdir ")
+      if fs-mkdir(line + arg) >= 0 {
+        serial-write-cstr(port, "  created")
       } else {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       }
-      serial_nl(port)
-    } else if line_prefix("rmdir ") >= 0 {
-      let arg = line_prefix("rmdir ")
-      if fs_rmdir(line + arg) == 0 {
-        serial_write_cstr(port, "  removed")
+      serial-nl(port)
+    } else if line-prefix("rmdir ") >= 0 {
+      let arg = line-prefix("rmdir ")
+      if fs-rmdir(line + arg) == 0 {
+        serial-write-cstr(port, "  removed")
       } else {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       }
-      serial_nl(port)
-    } else if line_prefix("rm ") >= 0 {
-      let arg = line_prefix("rm ")
-      if fs_delete(line + arg) == 0 {
-        serial_write_cstr(port, "  deleted")
+      serial-nl(port)
+    } else if line-prefix("rm ") >= 0 {
+      let arg = line-prefix("rm ")
+      if fs-delete(line + arg) == 0 {
+        serial-write-cstr(port, "  deleted")
       } else {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       }
-      serial_nl(port)
-    } else if line_prefix("read ") >= 0 {
-      let arg = line_prefix("read ")
+      serial-nl(port)
+    } else if line-prefix("read ") >= 0 {
+      let arg = line-prefix("read ")
       let buf = alloc(4096)
-      let n = fs_read_file(line + arg, buf)
+      let n = fs-read-file(line + arg, buf)
       if n < 0 {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       } else {
         let i = 0
         while i < n {
-          serial_put(port, load8(buf + i))
+          serial-put(port, load8(buf + i))
           i = i + 1
         }
       }
-      serial_nl(port)
-    } else if line_prefix("cat ") >= 0 {
-      let arg = line_prefix("cat ")
+      serial-nl(port)
+    } else if line-prefix("cat ") >= 0 {
+      let arg = line-prefix("cat ")
       let buf = alloc(4096)
-      let n = fs_read_file(line + arg, buf)
+      let n = fs-read-file(line + arg, buf)
       if n < 0 {
-        serial_write_cstr(port, "  failed")
+        serial-write-cstr(port, "  failed")
       } else {
         let i = 0
         while i < n {
-          serial_put(port, load8(buf + i))
+          serial-put(port, load8(buf + i))
           i = i + 1
         }
       }
-      serial_nl(port)
-    } else if line_prefix("write ") >= 0 {
-      let arg1 = line_prefix("write ")
-      let arg2 = next_arg(arg1)
+      serial-nl(port)
+    } else if line-prefix("write ") >= 0 {
+      let arg1 = line-prefix("write ")
+      let arg2 = next-arg(arg1)
       if arg2 != 0 {
         store8(line + arg2 - 1, 0)
         let len = strlen(line + arg2)
-        if fs_write_file(line + arg1, line + arg2, len) == 0 {
-          serial_write_cstr(port, "  written")
+        if fs-write-file(line + arg1, line + arg2, len) == 0 {
+          serial-write-cstr(port, "  written")
         } else {
-          serial_write_cstr(port, "  failed")
+          serial-write-cstr(port, "  failed")
         }
       } else {
-        serial_write_cstr(port, "  usage: write <path> <data>")
+        serial-write-cstr(port, "  usage: write <path> <data>")
       }
-      serial_nl(port)
-    } else if line_prefix("mv ") >= 0 {
-      let arg1 = line_prefix("mv ")
-      let arg2 = next_arg(arg1)
+      serial-nl(port)
+    } else if line-prefix("mv ") >= 0 {
+      let arg1 = line-prefix("mv ")
+      let arg2 = next-arg(arg1)
       if arg2 != 0 {
-        if fs_rename(line + arg1, line + arg2) == 0 {
-          serial_write_cstr(port, "  renamed")
+        if fs-rename(line + arg1, line + arg2) == 0 {
+          serial-write-cstr(port, "  renamed")
         } else {
-          serial_write_cstr(port, "  failed")
+          serial-write-cstr(port, "  failed")
         }
       } else {
-        serial_write_cstr(port, "  usage: mv <old> <new>")
+        serial-write-cstr(port, "  usage: mv <old> <new>")
       }
-      serial_nl(port)
-    } else if line_prefix("stat ") >= 0 {
-      let arg = line_prefix("stat ")
-      let stat_buf = alloc(64)
-      if fs_stat(line + arg, stat_buf) == 0 {
-        print_stat(port, stat_buf)
+      serial-nl(port)
+    } else if line-prefix("stat ") >= 0 {
+      let arg = line-prefix("stat ")
+      let stat-buf = alloc(64)
+      if fs-stat(line + arg, stat-buf) == 0 {
+        print-stat(port, stat-buf)
       } else {
-        serial_write_cstr(port, "  failed")
-        serial_nl(port)
+        serial-write-cstr(port, "  failed")
+        serial-nl(port)
       }
-    } else if line_prefix("edit ") >= 0 {
-      editor_run(port, line + line_prefix("edit "))
-    } else if line_eq("libc") != 0 {
-      let rc = libc_selftest()
+    } else if line-prefix("edit ") >= 0 {
+      editor-run(port, line + line-prefix("edit "))
+    } else if line-eq("libc") != 0 {
+      let rc = libc-selftest()
       if rc == 0 {
-        serial_write_cstr(port, "  libc self-test passed")
+        serial-write-cstr(port, "  libc self-test passed")
       } else {
-        serial_write_cstr(port, "  libc self-test FAILED")
+        serial-write-cstr(port, "  libc self-test FAILED")
       }
-      serial_nl(port)
-    } else if line_eq("vfs") != 0 {
-      let rc = vfs_selftest()
+      serial-nl(port)
+    } else if line-eq("vfs") != 0 {
+      let rc = vfs-selftest()
       if rc != 0 {
-        serial_write_cstr(port, "  vfs self-test passed")
+        serial-write-cstr(port, "  vfs self-test passed")
       } else {
-        serial_write_cstr(port, "  vfs self-test FAILED")
+        serial-write-cstr(port, "  vfs self-test FAILED")
       }
-      serial_nl(port)
-    } else if line_eq("usb") != 0 {
-      usb_kbd_cmd(port)
-    } else if line_eq("linux") != 0 {
-      linux_demo(port)
-    } else if line_eq("linuxelf") != 0 {
-      linux_elf_probe(port)
-    } else if line_eq("fetch") != 0 {
-      diagnostics_fetch(port)
-    } else if line_eq("desktop") != 0 {
-      comp_run(port)
-    } else if line_eq("display") != 0 {
-      let ch = chan_new(32)
-      dsp_init()
-      dsp_run(ch, port)
-    } else if line_eq("fb test") != 0 {
-      fb_test_pattern(port)
-    } else if line_eq("dsp test") != 0 {
-      let rc = dsp_selftest(port)
-      serial_nl(port)
-    } else if line_eq("fb") != 0 {
-      fb_info(port)
-    } else if line_eq("comp") != 0 {
-      comp_init()
-      let w1 = comp_win_create("Terminal", 40, 40, 320, 200)
-      comp_win_set_content(w1, "Space OS Terminal\n\n> help\n> status\n> ls\n> linux\n\nWelcome to Space OS!")
-      let w2 = comp_win_create("File Browser", 400, 60, 280, 160)
-      comp_win_set_content(w2, "Files on disk:\n\n(no files yet)")
-      let w3 = comp_win_create("System Info", 120, 280, 360, 120)
-      comp_win_set_content(w3, "Space OS v0.0.1\nNanokernel + Linux personality\nFramebuffer: active")
-      comp_render()
-      serial_write_cstr(port, "  comp: rendered OK")
-      serial_nl(port)
+      serial-nl(port)
+    } else if line-eq("usb") != 0 {
+      usb-kbd-cmd(port)
+    } else if line-eq("linux") != 0 {
+      linux-demo(port)
+    } else if line-eq("linuxelf") != 0 {
+      linux-elf-probe(port)
+    } else if line-eq("fetch") != 0 {
+      diagnostics-fetch(port)
+    } else if line-eq("desktop") != 0 {
+      comp-run(port)
+    } else if line-eq("display") != 0 {
+      let ch = chan-new(32)
+      dsp-init()
+      dsp-run(ch, port)
+    } else if line-eq("fb test") != 0 {
+      fb-test-pattern(port)
+    } else if line-eq("dsp test") != 0 {
+      let rc = dsp-selftest(port)
+      serial-nl(port)
+    } else if line-eq("fb") != 0 {
+      fb-info(port)
+    } else if line-eq("comp") != 0 {
+      comp-init()
+      let w1 = comp-win-create("Terminal", 40, 40, 320, 200)
+      comp-win-set-content(w1, "Space OS Terminal\n\n> help\n> status\n> ls\n> linux\n\nWelcome to Space OS!")
+      let w2 = comp-win-create("File Browser", 400, 60, 280, 160)
+      comp-win-set-content(w2, "Files on disk:\n\n(no files yet)")
+      let w3 = comp-win-create("System Info", 120, 280, 360, 120)
+      comp-win-set-content(w3, "Space OS v0.0.1\nNanokernel + Linux personality\nFramebuffer: active")
+      comp-render()
+      serial-write-cstr(port, "  comp: rendered OK")
+      serial-nl(port)
     } else {
-      let rest = line_prefix("desktop ")
+      let rest = line-prefix("desktop ")
       if rest >= 0 {
-        comp_run(port)
+        comp-run(port)
       } else {
-        let rest = line_prefix("echo ")
+        let rest = line-prefix("echo ")
         if rest >= 0 {
-          serial_write_cstr(port, line + rest)
-          serial_nl(port)
+          serial-write-cstr(port, line + rest)
+          serial-nl(port)
         } else {
-          let rest = line_prefix("peek ")
+          let rest = line-prefix("peek ")
           if rest >= 0 {
-            let addr = str_to_hex(line + rest)
-            serial_write_cstr(port, "  [0x")
-            serial_write_hex(port, addr)
-            serial_write_cstr(port, "] = 0x")
-            serial_write_hex(port, load64(addr))
-            serial_nl(port)
+            let addr = str-to-hex(line + rest)
+            serial-write-cstr(port, "  [0x")
+            serial-write-hex(port, addr)
+            serial-write-cstr(port, "] = 0x")
+            serial-write-hex(port, load64(addr))
+            serial-nl(port)
           } else {
-            let rest = line_prefix("poke ")
+            let rest = line-prefix("poke ")
             if rest >= 0 {
-              let space_pos = 0
-              while load8(line + rest + space_pos) > 32 {
-                space_pos = space_pos + 1
+              let space-pos = 0
+              while load8(line + rest + space-pos) > 32 {
+                space-pos = space-pos + 1
               }
-              let addr = str_to_hex(line + rest)
-              let val = str_to_hex(line + rest + space_pos + 1)
+              let addr = str-to-hex(line + rest)
+              let val = str-to-hex(line + rest + space-pos + 1)
               store64(addr, val)
-              serial_write_cstr(port, "  [0x")
-              serial_write_hex(port, addr)
-              serial_write_cstr(port, "] := 0x")
-              serial_write_hex(port, load64(addr))
-              serial_nl(port)
+              serial-write-cstr(port, "  [0x")
+              serial-write-hex(port, addr)
+              serial-write-cstr(port, "] := 0x")
+              serial-write-hex(port, load64(addr))
+              serial-nl(port)
             } else {
-              let rest = line_prefix("load_sci ")
+              let rest = line-prefix("load_sci ")
               if rest >= 0 {
-                sci_load_file(port, line + rest)
+                sci-load-file(port, line + rest)
               } else {
-                let rest = line_prefix("proc ")
+                let rest = line-prefix("proc ")
                 if rest >= 0 {
-                  let pid = proc_create(line + rest, proc_dummy_entry, cap_serial())
+                  let pid = proc-create(line + rest, proc-dummy-entry, cap-serial())
                   if pid < 0 {
-                    serial_write_cstr(port, "  proc: process table full")
-                    serial_nl(port)
+                    serial-write-cstr(port, "  proc: process table full")
+                    serial-nl(port)
                   } else {
-                    serial_write_cstr(port, "  proc: created process ")
-                    serial_write_dec_wide(port, pid)
-                    serial_write_cstr(port, " (")
-                    serial_write_cstr(port, line + rest)
-                    serial_write_cstr(port, "), running...")
-                    serial_nl(port)
-                    thr_run()
-                    serial_write_cstr(port, "  proc: process ")
-                    serial_write_dec_wide(port, pid)
-                    serial_write_cstr(port, " exited with code ")
-                    serial_write_dec_wide(port, proc_wait(pid))
-                    serial_nl(port)
+                    serial-write-cstr(port, "  proc: created process ")
+                    serial-write-dec-wide(port, pid)
+                    serial-write-cstr(port, " (")
+                    serial-write-cstr(port, line + rest)
+                    serial-write-cstr(port, "), running...")
+                    serial-nl(port)
+                    thr-run()
+                    serial-write-cstr(port, "  proc: process ")
+                    serial-write-dec-wide(port, pid)
+                    serial-write-cstr(port, " exited with code ")
+                    serial-write-dec-wide(port, proc-wait(pid))
+                    serial-nl(port)
                   }
                 } else {
-                  let rest = line_prefix("write ")
+                  let rest = line-prefix("write ")
 
                 if rest >= 0 {
                   let sp = 0
@@ -522,53 +522,53 @@ fn shell(port: Int) -> void {
                     sp = sp + 1
                   }
                   store8(line + rest + sp, 0)
-                  let name_addr = line + rest
-                  let text_addr = line + rest + sp + 1
+                  let name-addr = line + rest
+                  let text-addr = line + rest + sp + 1
                   let tlen = 0
-                  while load8(text_addr + tlen) != 0 {
+                  while load8(text-addr + tlen) != 0 {
                     tlen = tlen + 1
                   }
-                  let rc = fs_write_file(name_addr, text_addr, tlen)
+                  let rc = fs-write-file(name-addr, text-addr, tlen)
                   if rc != 0 {
-                    serial_write_cstr(port, "  write: failed")
+                    serial-write-cstr(port, "  write: failed")
                   } else {
-                    serial_write_cstr(port, "  write: ok")
+                    serial-write-cstr(port, "  write: ok")
                   }
-                  serial_nl(port)
+                  serial-nl(port)
                 } else {
-                  let rest = line_prefix("read ")
+                  let rest = line-prefix("read ")
                   if rest >= 0 {
                     let rbuf = alloc(4096)
-                    let rsize = fs_read_file(line + rest, rbuf)
+                    let rsize = fs-read-file(line + rest, rbuf)
                     if rsize < 0 {
-                      serial_write_cstr(port, "  read: file not found")
+                      serial-write-cstr(port, "  read: file not found")
                     } else {
-                      serial_write_cstr(port, "  ")
+                      serial-write-cstr(port, "  ")
                       let ri = 0
                       while ri < rsize {
-                        serial_put(port, load8(rbuf + ri))
+                        serial-put(port, load8(rbuf + ri))
                         ri = ri + 1
                       }
                     }
-                    serial_nl(port)
+                    serial-nl(port)
                   } else {
-                    let rest = line_prefix("rm ")
+                    let rest = line-prefix("rm ")
                     if rest >= 0 {
-                      let rc = fs_delete(line + rest)
+                      let rc = fs-delete(line + rest)
                       if rc != 0 {
-                        serial_write_cstr(port, "  rm: file not found")
+                        serial-write-cstr(port, "  rm: file not found")
                       } else {
-                        serial_write_cstr(port, "  rm: deleted")
+                        serial-write-cstr(port, "  rm: deleted")
                       }
-                      serial_nl(port)
+                      serial-nl(port)
                     } else {
-                      let rest = line_prefix("nvme read ")
+                      let rest = line-prefix("nvme read ")
                       if rest >= 0 {
-                        let lba = str_to_hex(line + rest)
-                        nvme_shell_read(port, lba)
+                        let lba = str-to-hex(line + rest)
+                        nvme-shell-read(port, lba)
                       } else if n != 0 {
-                        serial_write_cstr(port, "  unknown command (try 'help')")
-                        serial_nl(port)
+                        serial-write-cstr(port, "  unknown command (try 'help')")
+                        serial-nl(port)
                       }
                     }
                   }

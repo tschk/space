@@ -5,7 +5,7 @@ package space.kernel
 // --- path resolution --------------------------------------------------------
 
 // Find the last '/' in path. Returns index or -1.
-fn sf_last_slash(path: Int) -> Int {
+fn sf-last-slash(path: Int) -> Int {
   let last = -1
   let i = 0
   while true {
@@ -22,54 +22,54 @@ fn sf_last_slash(path: Int) -> Int {
 }
 
 // Copy a NUL-terminated string from path into dst.
-fn sf_copy_name(dst: Int, path: Int) -> void {
+fn sf-copy-name(dst: Int, path: Int) -> void {
   let i = 0
-  while i < SF_NAME_MAX {
+  while i < SF-NAME-MAX {
     let c = load8(path + i)
     store8(dst + i, c)
     if c == 0 {
-      i = SF_NAME_MAX
+      i = SF-NAME-MAX
     } else {
       i = i + 1
     }
   }
-  store8(dst + SF_NAME_MAX, 0)
+  store8(dst + SF-NAME-MAX, 0)
   return
 }
 
 // Resolve a path to an inode. Returns inode or -1.
-fn sf_lookup_path(path: Int) -> Int {
+fn sf-lookup-path(path: Int) -> Int {
   if load8(path) == 0 {
     return 0
   }
-  let ino = load32(sf_super + SF_SB_ROOT_INODE)
+  let ino = load32(sf-super + SF-SB-ROOT-INODE)
   if load8(path) == 47 && load8(path + 1) == 0 {
     return ino
   }
-  let name_buf = alloc(SF_NAME_MAX + 1)
+  let name-buf = alloc(SF-NAME-MAX + 1)
   let i = 0
   if load8(path) == 47 {
     i = 1
   }
   while true {
     let j = 0
-    let seg_len = 0
-    while j < SF_NAME_MAX {
+    let seg-len = 0
+    while j < SF-NAME-MAX {
       let c = load8(path + i + j)
       if c == 0 || c == 47 {
-        store8(name_buf + j, 0)
-        j = SF_NAME_MAX
+        store8(name-buf + j, 0)
+        j = SF-NAME-MAX
       } else {
-        store8(name_buf + j, c)
-        seg_len = seg_len + 1
+        store8(name-buf + j, c)
+        seg-len = seg-len + 1
         j = j + 1
       }
     }
-    if seg_len == 0 {
+    if seg-len == 0 {
       return ino
     }
     let tmp = alloc(4)
-    let off = sf_dir_find(ino, name_buf, tmp)
+    let off = sf-dir-find(ino, name-buf, tmp)
     if off < 0 {
       return -1
     }
@@ -86,19 +86,19 @@ fn sf_lookup_path(path: Int) -> Int {
 }
 
 // Resolve parent directory and final name. Returns parent inode, or -1.
-fn sf_lookup_parent(path: Int, name_out: Int) -> Int {
-  let slash = sf_last_slash(path)
+fn sf-lookup-parent(path: Int, name-out: Int) -> Int {
+  let slash = sf-last-slash(path)
   if slash < 0 {
-    sf_copy_name(name_out, path)
+    sf-copy-name(name-out, path)
     return 0
   }
-  let parent_path = alloc(SF_NAME_MAX + 1)
+  let parent-path = alloc(SF-NAME-MAX + 1)
   let i = 0
   while i < slash {
-    store8(parent_path + i, load8(path + i))
+    store8(parent-path + i, load8(path + i))
     i = i + 1
   }
-  store8(parent_path + i, 0)
-  sf_copy_name(name_out, path + slash + 1)
-  return sf_lookup_path(parent_path)
+  store8(parent-path + i, 0)
+  sf-copy-name(name-out, path + slash + 1)
+  return sf-lookup-path(parent-path)
 }

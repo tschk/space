@@ -3,34 +3,34 @@ package space.kernel
 // M:N cooperative threading and scheduler demos. Isolated from shell.in so
 // thread globals and entry-point patching stay correct.
 
-const THR_RUNNABLE = 0
-const THR_BLOCKED = 1
-const THR_DONE = 2
+const THR-RUNNABLE = 0
+const THR-BLOCKED = 1
+const THR-DONE = 2
 
 var ctxsw: Int = 0
-var kernel_slot: Int = 0
-var thread_sp: Int = 0
-var thread_state: Int = 0
-var thread_count: Int = 0
-var current_task: Int = 0
-var thr_last: Int = 0
-var chan_free_list: Int = 0
+var kernel-slot: Int = 0
+var thread-sp: Int = 0
+var thread-state: Int = 0
+var thread-count: Int = 0
+var current-task: Int = 0
+var thr-last: Int = 0
+var chan-free-list: Int = 0
 
 // Channel heap blocks carry a 16-byte header: [size][next_free].
-fn chan_alloc(n: Int) -> Int {
+fn chan-alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
   let size = aligned + 16
 
   let prev = 0
-  let curr = chan_free_list
+  let curr = chan-free-list
   while curr != 0 {
-    let block_size = load64(curr)
-    if block_size >= size {
-      let next_block = load64(curr + 8)
+    let block-size = load64(curr)
+    if block-size >= size {
+      let next-block = load64(curr + 8)
       if prev == 0 {
-        chan_free_list = next_block
+        chan-free-list = next-block
       } else {
-        store64(prev + 8, next_block)
+        store64(prev + 8, next-block)
       }
       return curr + 16
     }
@@ -44,30 +44,30 @@ fn chan_alloc(n: Int) -> Int {
   return p + 16
 }
 
-fn chan_heap_free(ptr: Int) -> void {
+fn chan-heap-free(ptr: Int) -> void {
   if ptr == 0 {
     return
   }
   let block = ptr - 16
-  store64(block + 8, chan_free_list)
-  chan_free_list = block
+  store64(block + 8, chan-free-list)
+  chan-free-list = block
   return
 }
 
-fn thr_init(max: Int) -> void {
-  thread_sp = alloc(max * 8)
-  thread_state = alloc(max * 8)
-  thread_count = 1
+fn thr-init(max: Int) -> void {
+  thread-sp = alloc(max * 8)
+  thread-state = alloc(max * 8)
+  thread-count = 1
   for i in 0..max {
-    store64(thread_state + i * 8, THR_DONE)
-    store64(thread_sp + i * 8, 0)
+    store64(thread-state + i * 8, THR-DONE)
+    store64(thread-sp + i * 8, 0)
   }
-  store64(thread_state + 0, THR_RUNNABLE)
+  store64(thread-state + 0, THR-RUNNABLE)
   return
 }
 
-fn thr_create(entry: Int) -> Int {
-  let t = thread_count
+fn thr-create(entry: Int) -> Int {
+  let t = thread-count
   let stack = alloc(16384)
   let sp = stack + 16384 - 64
   store64(sp + 0, 0)
@@ -77,57 +77,57 @@ fn thr_create(entry: Int) -> Int {
   store64(sp + 32, 0)
   store64(sp + 40, 0)
   store64(sp + 48, entry)
-  store64(sp + 56, thr_exit)
-  store64(thread_sp + t * 8, sp)
-  store64(thread_state + t * 8, THR_RUNNABLE)
-  thread_count = thread_count + 1
+  store64(sp + 56, thr-exit)
+  store64(thread-sp + t * 8, sp)
+  store64(thread-state + t * 8, THR-RUNNABLE)
+  thread-count = thread-count + 1
   return t
 }
 
-fn thr_exit() -> void {
-  store64(thread_state + current_task * 8, THR_DONE)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+fn thr-exit() -> void {
+  store64(thread-state + current-task * 8, THR-DONE)
+  invoke2(ctxsw, thread-sp + current-task * 8, load64(kernel-slot))
 }
 
-fn thr_switch(t: Int) -> void {
-  current_task = t
-  invoke2(ctxsw, kernel_slot, load64(thread_sp + t * 8))
+fn thr-switch(t: Int) -> void {
+  current-task = t
+  invoke2(ctxsw, kernel-slot, load64(thread-sp + t * 8))
   return
 }
 
-fn thr_yield() -> void {
-  store64(thread_state + current_task * 8, THR_RUNNABLE)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+fn thr-yield() -> void {
+  store64(thread-state + current-task * 8, THR-RUNNABLE)
+  invoke2(ctxsw, thread-sp + current-task * 8, load64(kernel-slot))
   return
 }
 
-fn thr_block() -> void {
-  store64(thread_state + current_task * 8, THR_BLOCKED)
-  invoke2(ctxsw, thread_sp + current_task * 8, load64(kernel_slot))
+fn thr-block() -> void {
+  store64(thread-state + current-task * 8, THR-BLOCKED)
+  invoke2(ctxsw, thread-sp + current-task * 8, load64(kernel-slot))
   return
 }
 
-fn thr_wake(tid: Int) -> void {
-  if tid >= 0 && tid < thread_count {
-    store64(thread_state + tid * 8, THR_RUNNABLE)
+fn thr-wake(tid: Int) -> void {
+  if tid >= 0 && tid < thread-count {
+    store64(thread-state + tid * 8, THR-RUNNABLE)
   }
   return
 }
 
-fn thr_next(start: Int) -> Int {
+fn thr-next(start: Int) -> Int {
   let n = start
   let tries = 0
-  while tries < thread_count {
+  while tries < thread-count {
     if n == 0 {
       n = 1
     }
-    if n < thread_count {
-      if load64(thread_state + n * 8) == THR_RUNNABLE {
+    if n < thread-count {
+      if load64(thread-state + n * 8) == THR-RUNNABLE {
         return n
       }
     }
     n = n + 1
-    if n >= thread_count {
+    if n >= thread-count {
       n = 0
     }
     tries = tries + 1
@@ -135,10 +135,10 @@ fn thr_next(start: Int) -> Int {
   return -1
 }
 
-fn thr_all_done() -> Int {
+fn thr-all-done() -> Int {
   let t = 1
-  while t < thread_count {
-    if load64(thread_state + t * 8) != THR_DONE {
+  while t < thread-count {
+    if load64(thread-state + t * 8) != THR-DONE {
       return 0
     }
     t = t + 1
@@ -146,18 +146,18 @@ fn thr_all_done() -> Int {
   return 1
 }
 
-fn thr_run() -> void {
-  thr_last = 1
+fn thr-run() -> void {
+  thr-last = 1
   while true {
-    let t = thr_next(thr_last)
+    let t = thr-next(thr-last)
     if t >= 0 {
-      thr_last = (t + 1) % thread_count
-      thr_switch(t)
-    } else if thr_all_done() != 0 {
+      thr-last = (t + 1) % thread-count
+      thr-switch(t)
+    } else if thr-all-done() != 0 {
       return
     } else {
       sti()
-      while thr_next(thr_last) < 0 && thr_all_done() == 0 {
+      while thr-next(thr-last) < 0 && thr-all-done() == 0 {
         hlt()
       }
       cli()
@@ -166,142 +166,142 @@ fn thr_run() -> void {
   return
 }
 
-fn scheduler_init(max_tasks: Int) -> void {
+fn scheduler-init(max-tasks: Int) -> void {
   ctxsw = load64(0x4018)
-  kernel_slot = alloc(8)
-  let n = max_tasks
+  kernel-slot = alloc(8)
+  let n = max-tasks
   if n < 32 {
     n = 32
   }
-  thr_init(n)
+  thr-init(n)
   return
 }
 
 // Reuse thread tables after a prior scheduler_init; avoids reallocating arrays.
-fn thr_reset() -> void {
+fn thr-reset() -> void {
   let i = 1
-  while i < thread_count {
-    store64(thread_state + i * 8, THR_DONE)
-    store64(thread_sp + i * 8, 0)
+  while i < thread-count {
+    store64(thread-state + i * 8, THR-DONE)
+    store64(thread-sp + i * 8, 0)
     i = i + 1
   }
-  thread_count = 1
-  store64(thread_state + 0, THR_RUNNABLE)
+  thread-count = 1
+  store64(thread-state + 0, THR-RUNNABLE)
   return
 }
 
-fn worker_a() -> Int {
+fn worker-a() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space:   <worker A> round 0x")
-      serial_write_hex(port, round)
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space:   <worker A> round 0x")
+      serial-write-hex(port, round)
+      serial-nl(port)
     }
     round = round + 1
-    thr_yield()
+    thr-yield()
   }
   return 0
 }
 
-fn worker_b() -> Int {
+fn worker-b() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space:   <worker B> round 0x")
-      serial_write_hex(port, round)
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space:   <worker B> round 0x")
+      serial-write-hex(port, round)
+      serial-nl(port)
     }
     round = round + 1
-    thr_yield()
+    thr-yield()
   }
   return 0
 }
 
-fn worker_c() -> Int {
+fn worker-c() -> Int {
   let round = 0
   while round < 3 {
     let port = com1()
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space:   <worker C> round 0x")
-      serial_write_hex(port, round)
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space:   <worker C> round 0x")
+      serial-write-hex(port, round)
+      serial-nl(port)
     }
     round = round + 1
-    thr_yield()
+    thr-yield()
   }
   return 0
 }
 
-fn run_scheduler(port: Int) -> void {
-  scheduler_init(8)
-  thr_create(worker_a)
-  thr_create(worker_b)
-  thr_create(worker_c)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: scheduler running 3 threads, round-robin")
-    serial_nl(port)
+fn run-scheduler(port: Int) -> void {
+  scheduler-init(8)
+  thr-create(worker-a)
+  thr-create(worker-b)
+  thr-create(worker-c)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: scheduler running 3 threads, round-robin")
+    serial-nl(port)
   }
-  thr_run()
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: scheduler quiesced after 3 round-robin passes")
-    serial_nl(port)
+  thr-run()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: scheduler quiesced after 3 round-robin passes")
+    serial-nl(port)
   }
   return
 }
 
-fn task_producer() -> Int {
+fn task-producer() -> Int {
   let i = 0
   while i < 8 {
-    chan_send(chan0, 0x100 + i)
+    chan-send(chan0, 0x100 + i)
     let port = com1()
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space:   <producer> sent 0x")
-      serial_write_hex(port, 0x100 + i)
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space:   <producer> sent 0x")
+      serial-write-hex(port, 0x100 + i)
+      serial-nl(port)
     }
     i = i + 1
-    thr_yield()
+    thr-yield()
   }
   return 0
 }
 
-fn task_consumer() -> Int {
+fn task-consumer() -> Int {
   let m = 0
   while m < 8 {
-    let v = chan_recv(chan0)
+    let v = chan-recv(chan0)
     let port = com1()
-    if boot_quiet == 0 {
-      serial_write_cstr(port, "space:   <consumer> recv 0x")
-      serial_write_hex(port, v)
-      serial_nl(port)
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space:   <consumer> recv 0x")
+      serial-write-hex(port, v)
+      serial-nl(port)
     }
     m = m + 1
   }
   return 0
 }
 
-fn run_channels(port: Int) -> void {
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
-    serial_nl(port)
+fn run-channels(port: Int) -> void {
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: channel IPC demo (blocking producer -> consumer)")
+    serial-nl(port)
   }
-  thr_reset()
-  chan0 = chan_new(4)
-  thr_create(task_consumer)
-  thr_create(task_producer)
-  if boot_quiet == 0 {
-    serial_write_cstr(port, "space:   running threads...")
-    serial_nl(port)
+  thr-reset()
+  chan0 = chan-new(4)
+  thr-create(task-consumer)
+  thr-create(task-producer)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space:   running threads...")
+    serial-nl(port)
   }
-  thr_run()
-  if boot_quiet == 0 {
-    let cnt = chan_count(chan0)
-    serial_write_cstr(port, "space: channel demo complete, remaining 0x")
-    serial_write_hex(port, cnt)
-    serial_nl(port)
+  thr-run()
+  if boot-quiet == 0 {
+    let cnt = chan-count(chan0)
+    serial-write-cstr(port, "space: channel demo complete, remaining 0x")
+    serial-write-hex(port, cnt)
+    serial-nl(port)
   }
   return
 }

@@ -1,59 +1,59 @@
 package space.kernel
 
-const COMP_MAX_WINDOWS = 16
-const COMP_WIN_SIZE = 64
-const COMP_TITLE_BAR_H = 28
-const COMP_BORDER_W = 1
-const COMP_TASKBAR_H = 28
-const COMP_COLOR_DESKTOP = 0x000B0909
-const COMP_COLOR_PANEL = 0x001B1818
-const COMP_COLOR_PANEL_LINE = 0x0027272A
-const COMP_COLOR_TITLE = 0x00333336
-const COMP_COLOR_TITLE_ACTIVE = 0x00444444
-const COMP_COLOR_WINDOW = 0x00FFFFFF
-const COMP_COLOR_BORDER = 0x003F3F46
-const COMP_COLOR_ACCENT = 0x00F8BD38
-const COMP_COLOR_TEXT = 0x0018181B
-const COMP_COLOR_MUTED = 0x00AAA1A1
-const COMP_COLOR_SURFACE = 0x00FFFFFF
-const COMP_COLOR_SURFACE_ALT = 0x00E4E4E7
-const COMP_COLOR_TERM_BG = 0x000B0909
-const COMP_COLOR_TERM_TEXT = 0x00F5F4F4
+const COMP-MAX-WINDOWS = 16
+const COMP-WIN-SIZE = 64
+const COMP-TITLE-BAR-H = 28
+const COMP-BORDER-W = 1
+const COMP-TASKBAR-H = 28
+const COMP-COLOR-DESKTOP = 0x000B0909
+const COMP-COLOR-PANEL = 0x001B1818
+const COMP-COLOR-PANEL-LINE = 0x0027272A
+const COMP-COLOR-TITLE = 0x00333336
+const COMP-COLOR-TITLE-ACTIVE = 0x00444444
+const COMP-COLOR-WINDOW = 0x00FFFFFF
+const COMP-COLOR-BORDER = 0x003F3F46
+const COMP-COLOR-ACCENT = 0x00F8BD38
+const COMP-COLOR-TEXT = 0x0018181B
+const COMP-COLOR-MUTED = 0x00AAA1A1
+const COMP-COLOR-SURFACE = 0x00FFFFFF
+const COMP-COLOR-SURFACE-ALT = 0x00E4E4E7
+const COMP-COLOR-TERM-BG = 0x000B0909
+const COMP-COLOR-TERM-TEXT = 0x00F5F4F4
 
-const COMP_WIN_VISIBLE = 1
-const COMP_WIN_FOCUSED = 2
-const COMP_WIN_DIRTY = 4
-const COMP_ROLE_TEXT = 0
-const COMP_ROLE_UTILITIES = 2
-const COMP_ROLE_TERMINAL = 3
-const COMP_ROLE_VRO = 4
+const COMP-WIN-VISIBLE = 1
+const COMP-WIN-FOCUSED = 2
+const COMP-WIN-DIRTY = 4
+const COMP-ROLE-TEXT = 0
+const COMP-ROLE-UTILITIES = 2
+const COMP-ROLE-TERMINAL = 3
+const COMP-ROLE-VRO = 4
 
-var comp_windows: Int = 0
-var comp_count: Int = 0
-var comp_focused: Int = 0
-var comp_running: Int = 0
-var comp_bg_drawn: Int = 0
-var comp_full_redraw: Int = 0
-var comp_cur_drawn: Int = 0
+var comp-windows: Int = 0
+var comp-count: Int = 0
+var comp-focused: Int = 0
+var comp-running: Int = 0
+var comp-bg-drawn: Int = 0
+var comp-full-redraw: Int = 0
+var comp-cur-drawn: Int = 0
 
-fn comp_init() -> void {
+fn comp-init() -> void {
   return
 }
 
-fn comp_win_create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
+fn comp-win-create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
   return -1
 }
 
-fn comp_win_set_content(idx: Int, buf: Int) -> void {
+fn comp-win-set-content(idx: Int, buf: Int) -> void {
   return
 }
 
-fn comp_render() -> void {
+fn comp-render() -> void {
   return
 }
 
-fn comp_run(port: Int) -> void {
-  serial_write_cstr(port, "  compositor: running in display component")
-  serial_nl(port)
+fn comp-run(port: Int) -> void {
+  serial-write-cstr(port, "  compositor: running in display component")
+  serial-nl(port)
   return
 }

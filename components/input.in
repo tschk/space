@@ -16,7 +16,7 @@ component Input {
 }
 
 interface InputEntry {
-  fn input_entry(cap_info: Int) -> Int
+  fn input-entry(cap-info: Int) -> Int
 }
 
 interface InputDevice {
@@ -34,15 +34,15 @@ interface InputDevice {
 // [56]  screen_height (optional, defaults to INPUT_SCREEN_H)
 
 // --- local configuration -----------------------------------------------------
-const INPUT_COM1 = 0x3F8
-const INPUT_SCREEN_W = 800
-const INPUT_SCREEN_H = 600
+const INPUT-COM1 = 0x3F8
+const INPUT-SCREEN-W = 800
+const INPUT-SCREEN-H = 600
 
 // --- event protocol --------------------------------------------------------
-const INPUT_EVT_KEY_DOWN = 1
-const INPUT_EVT_KEY_UP = 2
-const INPUT_EVT_MOUSE_MOVE = 3
-const INPUT_EVT_MOUSE_BUTTON = 4
+const INPUT-EVT-KEY-DOWN = 1
+const INPUT-EVT-KEY-UP = 2
+const INPUT-EVT-MOUSE-MOVE = 3
+const INPUT-EVT-MOUSE-BUTTON = 4
 
 // One 64-bit event word:
 //   bits 0..7    type   (INPUT_EVT_*)
@@ -51,23 +51,23 @@ const INPUT_EVT_MOUSE_BUTTON = 4
 //   bits 32..47  a      (dx or absolute x)
 //   bits 48..63  b      (dy or absolute y)
 
-fn input_event_key(type: Int, ascii: Int, flags: Int) -> Int {
+fn input-event-key(type: Int, ascii: Int, flags: Int) -> Int {
   let t = type & 0xFF
   let f = (flags & 0xFF) << 8
   let c = (ascii & 0xFFFF) << 16
   return t | f | c
 }
 
-fn input_event_move(x: Int, y: Int, buttons: Int) -> Int {
-  let t = INPUT_EVT_MOUSE_MOVE
+fn input-event-move(x: Int, y: Int, buttons: Int) -> Int {
+  let t = INPUT-EVT-MOUSE-MOVE
   let f = (buttons & 0xFF) << 8
   let a = (x & 0xFFFF) << 32
   let b = (y & 0xFFFF) << 48
   return t | f | a | b
 }
 
-fn input_event_button(buttons: Int, x: Int, y: Int) -> Int {
-  let t = INPUT_EVT_MOUSE_BUTTON
+fn input-event-button(buttons: Int, x: Int, y: Int) -> Int {
+  let t = INPUT-EVT-MOUSE-BUTTON
   let f = (buttons & 0xFF) << 8
   let a = (x & 0xFFFF) << 32
   let b = (y & 0xFFFF) << 48
@@ -75,32 +75,32 @@ fn input_event_button(buttons: Int, x: Int, y: Int) -> Int {
 }
 
 // --- component-local heap ---------------------------------------------------
-var input_heap_base: Int = 0
-var input_heap_next: Int = 0
-var input_heap_end: Int = 0
+var input-heap-base: Int = 0
+var input-heap-next: Int = 0
+var input-heap-end: Int = 0
 
-fn input_heap_init(base: Int, size: Int) -> void {
-  input_heap_base = base
-  input_heap_next = base
-  input_heap_end = base + size
+fn input-heap-init(base: Int, size: Int) -> void {
+  input-heap-base = base
+  input-heap-next = base
+  input-heap-end = base + size
   return
 }
 
-fn input_alloc(n: Int) -> Int {
+fn input-alloc(n: Int) -> Int {
   let aligned = (n + 15) & -16
-  let p = input_heap_next
-  let next = input_heap_next + aligned
-  if next > input_heap_end {
+  let p = input-heap-next
+  let next = input-heap-next + aligned
+  if next > input-heap-end {
     return 0
   }
-  input_heap_next = next
+  input-heap-next = next
   return p
 }
 
-fn input_frame_alloc() -> Int {
-  let p = (input_heap_next + 4095) & -4096
-  input_heap_next = p + 4096
-  if input_heap_next > input_heap_end {
+fn input-frame-alloc() -> Int {
+  let p = (input-heap-next + 4095) & -4096
+  input-heap-next = p + 4096
+  if input-heap-next > input-heap-end {
     return 0
   }
   let i = 0
@@ -112,42 +112,42 @@ fn input_frame_alloc() -> Int {
 }
 
 // --- serial console ---------------------------------------------------------
-fn input_serial_wait(port: Int) -> void {
+fn input-serial-wait(port: Int) -> void {
   while (inb(port + 5) & 0x20) == 0 {
   }
   return
 }
 
-fn input_serial_put(port: Int, ch: Int) -> void {
-  input_serial_wait(port)
+fn input-serial-put(port: Int, ch: Int) -> void {
+  input-serial-wait(port)
   outb(port, ch)
   return
 }
 
-fn input_serial_nl(port: Int) -> void {
-  input_serial_put(port, 10)
+fn input-serial-nl(port: Int) -> void {
+  input-serial-put(port, 10)
   return
 }
 
-fn input_serial_cstr(port: Int, addr: Int) -> void {
+fn input-serial-cstr(port: Int, addr: Int) -> void {
   let i = 0
   let c = load8(addr + i)
   while c != 0 {
-    input_serial_put(port, c)
+    input-serial-put(port, c)
     i = i + 1
     c = load8(addr + i)
   }
   return
 }
 
-fn input_serial_hex(port: Int, value: Int) -> void {
+fn input-serial-hex(port: Int, value: Int) -> void {
   let shift = 60
   while shift >= 0 {
     let nibble = (value >> shift) & 0xF
     if nibble < 10 {
-      input_serial_put(port, 48 + nibble)
+      input-serial-put(port, 48 + nibble)
     } else {
-      input_serial_put(port, 87 + nibble)
+      input-serial-put(port, 87 + nibble)
     }
     shift = shift - 4
   }
@@ -155,19 +155,19 @@ fn input_serial_hex(port: Int, value: Int) -> void {
 }
 
 // --- PCI -------------------------------------------------------------------
-const PCI_CONFIG_ADDR = 0xCF8
-const PCI_CONFIG_DATA = 0xCFC
+const PCI-CONFIG-ADDR = 0xCF8
+const PCI-CONFIG-DATA = 0xCFC
 
-fn input_pci_read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+fn input-pci-read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
   let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI_CONFIG_ADDR, addr)
-  return inl(PCI_CONFIG_DATA)
+  outl(PCI-CONFIG-ADDR, addr)
+  return inl(PCI-CONFIG-DATA)
 }
 
-fn input_pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+fn input-pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
   let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI_CONFIG_ADDR, addr)
-  outl(PCI_CONFIG_DATA, val)
+  outl(PCI-CONFIG-ADDR, addr)
+  outl(PCI-CONFIG-DATA, val)
   return
 }
 
@@ -178,17 +178,17 @@ fn input_pci_write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void 
 //   [16]  capacity
 //   [24]  msg_size
 //   [32]  ring of 8-byte messages
-const INPUT_CHAN_CAPACITY = 508
+const INPUT-CHAN-CAPACITY = 508
 
-fn input_chan_bind(page: Int) -> void {
+fn input-chan-bind(page: Int) -> void {
   store64(page + 0, 0)
   store64(page + 8, 0)
-  store64(page + 16, INPUT_CHAN_CAPACITY)
+  store64(page + 16, INPUT-CHAN-CAPACITY)
   store64(page + 24, 8)
   return
 }
 
-fn input_chan_send(page: Int, msg: Int) -> void {
+fn input-chan-send(page: Int, msg: Int) -> void {
   if page == 0 {
     return
   }
@@ -207,71 +207,71 @@ fn input_chan_send(page: Int, msg: Int) -> void {
 }
 
 // --- xHCI driver ------------------------------------------------------------
-var xhci_mmio: Int = 0
-var xhci_op: Int = 0
-var xhci_rts: Int = 0
-var xhci_dboff: Int = 0
-var xhci_max_slots: Int = 0
-var xhci_max_ports: Int = 0
-var xhci_cr: Int = 0
-var xhci_cr_ctrl: Int = 1
-var xhci_cr_index: Int = 0
-var xhci_er: Int = 0
-var xhci_erst: Int = 0
-var xhci_er_index: Int = 0
-var xhci_er_ccs: Int = 1
-var xhci_dcbaa: Int = 0
-var xhci_slot: Int = 0
-var xhci_kbd_ep: Int = 0
-var xhci_kbd_buf: Int = 0
-var xhci_kbd_ready: Int = 0
-var xhci_kbd_prev: Int = 0
+var xhci-mmio: Int = 0
+var xhci-op: Int = 0
+var xhci-rts: Int = 0
+var xhci-dboff: Int = 0
+var xhci-max-slots: Int = 0
+var xhci-max-ports: Int = 0
+var xhci-cr: Int = 0
+var xhci-cr-ctrl: Int = 1
+var xhci-cr-index: Int = 0
+var xhci-er: Int = 0
+var xhci-erst: Int = 0
+var xhci-er-index: Int = 0
+var xhci-er-ccs: Int = 1
+var xhci-dcbaa: Int = 0
+var xhci-slot: Int = 0
+var xhci-kbd-ep: Int = 0
+var xhci-kbd-buf: Int = 0
+var xhci-kbd-ready: Int = 0
+var xhci-kbd-prev: Int = 0
 
-const XHCI_NCR = 256
-const XHCI_NER = 256
+const XHCI-NCR = 256
+const XHCI-NER = 256
 
-fn xhci_cap_r32(off: Int) -> Int {
-  return load32(xhci_mmio + off)
+fn xhci-cap-r32(off: Int) -> Int {
+  return load32(xhci-mmio + off)
 }
 
-fn xhci_op_w32(off: Int, val: Int) -> void {
-  store32(xhci_op + off, val)
+fn xhci-op-w32(off: Int, val: Int) -> void {
+  store32(xhci-op + off, val)
   return
 }
 
-fn xhci_op_r32(off: Int) -> Int {
-  return load32(xhci_op + off)
+fn xhci-op-r32(off: Int) -> Int {
+  return load32(xhci-op + off)
 }
 
-fn xhci_op_w64(off: Int, val: Int) -> void {
-  store32(xhci_op + off, val & 0xFFFFFFFF)
-  store32(xhci_op + off + 4, (val >> 32) & 0xFFFFFFFF)
+fn xhci-op-w64(off: Int, val: Int) -> void {
+  store32(xhci-op + off, val & 0xFFFFFFFF)
+  store32(xhci-op + off + 4, (val >> 32) & 0xFFFFFFFF)
   return
 }
 
-fn xhci_rt_w32(intx: Int, off: Int, val: Int) -> void {
-  store32(xhci_rts + 0x20 + intx * 0x20 + off, val)
+fn xhci-rt-w32(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci-rts + 0x20 + intx * 0x20 + off, val)
   return
 }
 
-fn xhci_rt_r32(intx: Int, off: Int) -> Int {
-  return load32(xhci_rts + 0x20 + intx * 0x20 + off)
+fn xhci-rt-r32(intx: Int, off: Int) -> Int {
+  return load32(xhci-rts + 0x20 + intx * 0x20 + off)
 }
 
-fn xhci_rt_w64(intx: Int, off: Int, val: Int) -> void {
-  store32(xhci_rts + 0x20 + intx * 0x20 + off, val & 0xFFFFFFFF)
-  store32(xhci_rts + 0x20 + intx * 0x20 + off + 4, (val >> 32) & 0xFFFFFFFF)
+fn xhci-rt-w64(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci-rts + 0x20 + intx * 0x20 + off, val & 0xFFFFFFFF)
+  store32(xhci-rts + 0x20 + intx * 0x20 + off + 4, (val >> 32) & 0xFFFFFFFF)
   return
 }
 
-fn xhci_doorbell(slot: Int, target: Int) -> void {
-  store32(xhci_mmio + xhci_dboff + slot * 8, target)
+fn xhci-doorbell(slot: Int, target: Int) -> void {
+  store32(xhci-mmio + xhci-dboff + slot * 8, target)
   return
 }
 
-fn xhci_find_pci() -> Int {
+fn xhci-find-pci() -> Int {
   for dev in 0..32 {
-    let f = input_pci_read32(0, dev, 0, 0x08)
+    let f = input-pci-read32(0, dev, 0, 0x08)
     let classcode = (f >> 8) & 0xFFFFFF
     if classcode == 0x0C0330 {
       return (0 << 16) | (dev << 8) | 0
@@ -280,32 +280,32 @@ fn xhci_find_pci() -> Int {
   return 0
 }
 
-fn xhci_read_bar64(bus: Int, dev: Int, func: Int) -> Int {
-  let lo = input_pci_read32(bus, dev, func, 0x10)
-  let hi = input_pci_read32(bus, dev, func, 0x14)
+fn xhci-read-bar64(bus: Int, dev: Int, func: Int) -> Int {
+  let lo = input-pci-read32(bus, dev, func, 0x10)
+  let hi = input-pci-read32(bus, dev, func, 0x14)
   return (lo & 0xFFFFFFF0) | ((hi & 0xFFFFFFFF) << 32)
 }
 
-fn trb_set(addr: Int, param: Int, status: Int, control: Int) -> void {
+fn trb-set(addr: Int, param: Int, status: Int, control: Int) -> void {
   store64(addr + 0, param)
   store32(addr + 8, status)
   store32(addr + 12, control)
   return
 }
 
-fn xhci_reset() -> void {
-  let cmd = xhci_op_r32(0)
-  xhci_op_w32(0, cmd & -2)
+fn xhci-reset() -> void {
+  let cmd = xhci-op-r32(0)
+  xhci-op-w32(0, cmd & -2)
   let tries = 0
-  while (xhci_op_r32(4) & 1) == 0 {
+  while (xhci-op-r32(4) & 1) == 0 {
     tries = tries + 1
     if tries > 100000 {
       return
     }
   }
-  xhci_op_w32(0, 0x2)
+  xhci-op-w32(0, 0x2)
   let tries2 = 0
-  while (xhci_op_r32(4) & 1) != 0 {
+  while (xhci-op-r32(4) & 1) != 0 {
     tries2 = tries2 + 1
     if tries2 > 1000000 {
       return
@@ -314,67 +314,67 @@ fn xhci_reset() -> void {
   return
 }
 
-fn xhci_init_rings() -> void {
-  xhci_cr = input_frame_alloc()
-  for i in 0..XHCI_NCR {
-    trb_set(xhci_cr + i * 16, 0, 0, 0)
+fn xhci-init-rings() -> void {
+  xhci-cr = input-frame-alloc()
+  for i in 0..XHCI-NCR {
+    trb-set(xhci-cr + i * 16, 0, 0, 0)
   }
-  trb_set(xhci_cr + XHCI_NCR * 16, xhci_cr, 0, 0x2 | (1 << 1) | (6 << 10))
-  xhci_cr_index = 0
-  xhci_cr_ctrl = 1
-  xhci_op_w64(16, xhci_cr | (xhci_cr_ctrl & 1))
+  trb-set(xhci-cr + XHCI-NCR * 16, xhci-cr, 0, 0x2 | (1 << 1) | (6 << 10))
+  xhci-cr-index = 0
+  xhci-cr-ctrl = 1
+  xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
 
-  xhci_er = input_frame_alloc()
-  for i in 0..XHCI_NER {
-    trb_set(xhci_er + i * 16, 0, 0, 0)
+  xhci-er = input-frame-alloc()
+  for i in 0..XHCI-NER {
+    trb-set(xhci-er + i * 16, 0, 0, 0)
   }
-  xhci_er_index = 0
-  xhci_er_ccs = 1
-  xhci_erst = input_frame_alloc()
-  store64(xhci_erst + 0, xhci_er)
-  store32(xhci_erst + 8, XHCI_NER)
-  store32(xhci_erst + 12, 0)
-  xhci_rt_w32(0, 8, 1)
-  xhci_rt_w64(0, 16, xhci_erst)
-  xhci_rt_w64(0, 24, xhci_er)
-  xhci_rt_w32(0, 0, xhci_rt_r32(0, 0) | 0x2)
-  xhci_rt_w32(0, 0, xhci_rt_r32(0, 0) | 0x8)
+  xhci-er-index = 0
+  xhci-er-ccs = 1
+  xhci-erst = input-frame-alloc()
+  store64(xhci-erst + 0, xhci-er)
+  store32(xhci-erst + 8, XHCI-NER)
+  store32(xhci-erst + 12, 0)
+  xhci-rt-w32(0, 8, 1)
+  xhci-rt-w64(0, 16, xhci-erst)
+  xhci-rt-w64(0, 24, xhci-er)
+  xhci-rt-w32(0, 0, xhci-rt-r32(0, 0) | 0x2)
+  xhci-rt-w32(0, 0, xhci-rt-r32(0, 0) | 0x8)
   return
 }
 
-fn xhci_cmd(param: Int, status: Int, typecode: Int) -> Int {
-  let idx = xhci_cr_index
-  let addr = xhci_cr + idx * 16
-  let control = (typecode << 10) | (xhci_cr_ctrl & 1)
-  trb_set(addr, param, status, control)
-  xhci_cr_index = xhci_cr_index + 1
-  if xhci_cr_index >= XHCI_NCR {
-    xhci_cr_index = 0
-    xhci_cr_ctrl = xhci_cr_ctrl ^ 1
-    xhci_op_w64(16, xhci_cr | (xhci_cr_ctrl & 1))
+fn xhci-cmd(param: Int, status: Int, typecode: Int) -> Int {
+  let idx = xhci-cr-index
+  let addr = xhci-cr + idx * 16
+  let control = (typecode << 10) | (xhci-cr-ctrl & 1)
+  trb-set(addr, param, status, control)
+  xhci-cr-index = xhci-cr-index + 1
+  if xhci-cr-index >= XHCI-NCR {
+    xhci-cr-index = 0
+    xhci-cr-ctrl = xhci-cr-ctrl ^ 1
+    xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
   }
-  xhci_doorbell(0, 0)
-  return xhci_wait_event()
+  xhci-doorbell(0, 0)
+  return xhci-wait-event()
 }
 
-fn xhci_wait_event() -> Int {
+fn xhci-wait-event() -> Int {
   let tries = 0
   while tries < 2000000 {
-    let erdp = xhci_rt_r32(0, 24) | ((xhci_rt_r32(0, 28) & 0xFFFFFFFF) << 32)
+    let erdp = xhci-rt-r32(0, 24) | ((xhci-rt-r32(0, 28) & 0xFFFFFFFF) << 32)
     let head = erdp & -16
-    let tail_off = xhci_er_index * 16
-    if head != (xhci_er + tail_off) {
-      let trb = xhci_er + tail_off
+    let tail-off = xhci-er-index * 16
+    if head != (xhci-er + tail-off) {
+      let trb = xhci-er + tail-off
       let ctrl = load32(trb + 12)
       let cycle = ctrl & 1
-      if cycle == (xhci_er_ccs & 1) {
+      if cycle == (xhci-er-ccs & 1) {
         let code = (load32(trb + 8) >> 24) & 0xFF
-        xhci_er_index = xhci_er_index + 1
-        if xhci_er_index >= XHCI_NER {
-          xhci_er_index = 0
-          xhci_er_ccs = xhci_er_ccs ^ 1
+        xhci-er-index = xhci-er-index + 1
+        if xhci-er-index >= XHCI-NER {
+          xhci-er-index = 0
+          xhci-er-ccs = xhci-er-ccs ^ 1
         }
-        xhci_rt_w64(0, 24, xhci_er + xhci_er_index * 16)
+        xhci-rt-w64(0, 24, xhci-er + xhci-er-index * 16)
         return code
       }
     }
@@ -383,28 +383,28 @@ fn xhci_wait_event() -> Int {
   return -1
 }
 
-fn xhci_init_dcbaa() -> void {
-  let n = xhci_max_slots + 1
-  xhci_dcbaa = input_frame_alloc()
+fn xhci-init-dcbaa() -> void {
+  let n = xhci-max-slots + 1
+  xhci-dcbaa = input-frame-alloc()
   for i in 0..n {
-    store64(xhci_dcbaa + i * 8, 0)
+    store64(xhci-dcbaa + i * 8, 0)
   }
-  xhci_op_w64(24, xhci_dcbaa)
+  xhci-op-w64(24, xhci-dcbaa)
   return
 }
 
-fn xhci_alloc_ctx() -> Int {
-  return input_frame_alloc()
+fn xhci-alloc-ctx() -> Int {
+  return input-frame-alloc()
 }
 
-fn xhci_portsc(port: Int) -> Int {
-  return xhci_op + 0x400 + port * 0x10
+fn xhci-portsc(port: Int) -> Int {
+  return xhci-op + 0x400 + port * 0x10
 }
 
-fn xhci_port_wait_connected(port: Int) -> Int {
+fn xhci-port-wait-connected(port: Int) -> Int {
   let tries = 0
   while tries < 2000000 {
-    if (load32(xhci_portsc(port)) & 1) != 0 {
+    if (load32(xhci-portsc(port)) & 1) != 0 {
       return 1
     }
     tries = tries + 1
@@ -412,8 +412,8 @@ fn xhci_port_wait_connected(port: Int) -> Int {
   return 0
 }
 
-fn xhci_port_reset(port: Int) -> void {
-  let p = xhci_portsc(port)
+fn xhci-port-reset(port: Int) -> void {
+  let p = xhci-portsc(port)
   store32(p, load32(p) | 0x10)
   let tries = 0
   while (load32(p) & 0x10) != 0 {
@@ -425,43 +425,43 @@ fn xhci_port_reset(port: Int) -> void {
   return
 }
 
-fn xhci_port_speed(port: Int) -> Int {
-  return (load32(xhci_portsc(port)) >> 10) & 0xF
+fn xhci-port-speed(port: Int) -> Int {
+  return (load32(xhci-portsc(port)) >> 10) & 0xF
 }
 
-fn xhci_address_device(port: Int) -> Int {
-  let code = xhci_cmd(0, 0, 9)
+fn xhci-address-device(port: Int) -> Int {
+  let code = xhci-cmd(0, 0, 9)
   if code != 1 {
     return -1
   }
-  let ev = xhci_er + ((xhci_er_index + XHCI_NER - 1) % XHCI_NER) * 16
+  let ev = xhci-er + ((xhci-er-index + XHCI-NER - 1) % XHCI-NER) * 16
   let slot = load64(ev) & 0xFF
   if slot == 0 {
     return -1
   }
-  xhci_slot = slot
+  xhci-slot = slot
 
-  let icc = xhci_alloc_ctx()
-  let slot_ctx = xhci_alloc_ctx()
-  let ep_ctx = xhci_alloc_ctx()
-  let dctx = xhci_alloc_ctx()
-  store64(xhci_dcbaa + slot * 8, dctx)
+  let icc = xhci-alloc-ctx()
+  let slot-ctx = xhci-alloc-ctx()
+  let ep-ctx = xhci-alloc-ctx()
+  let dctx = xhci-alloc-ctx()
+  store64(xhci-dcbaa + slot * 8, dctx)
 
   store32(icc + 0, 0x3)
   store32(icc + 4, 0x0)
-  let speed = xhci_port_speed(port)
+  let speed = xhci-port-speed(port)
   store32(icc + 32 + 0, speed & 0xF)
   store32(icc + 32 + 4, 0)
   store32(icc + 32 + 8, (port + 1) << 16)
   store32(dctx + 0, speed & 0xF)
   store32(dctx + 8, (port + 1) << 16)
 
-  let addr_code = xhci_cmd(icc, 0, 11)
-  if addr_code != 1 {
+  let addr-code = xhci-cmd(icc, 0, 11)
+  if addr-code != 1 {
     return -1
   }
 
-  let icc2 = xhci_alloc_ctx()
+  let icc2 = xhci-alloc-ctx()
   store32(icc2 + 0, 0x2)
   store32(icc2 + 4, 0x0)
   store32(icc2 + 32 + 0, speed & 0xF)
@@ -469,128 +469,128 @@ fn xhci_address_device(port: Int) -> Int {
   let ep0 = 7 | (4 << 3) | (8 << 16)
   store32(icc2 + 96 + 0, ep0)
   store32(icc2 + 96 + 4, 8 << 16)
-  let ep_ring = input_frame_alloc()
-  store64(icc2 + 96 + 8, ep_ring | 1)
+  let ep-ring = input-frame-alloc()
+  store64(icc2 + 96 + 8, ep-ring | 1)
   store32(icc2 + 96 + 16, 8)
-  xhci_kbd_ep = ep_ring
-  xhci_kbd_buf = input_frame_alloc()
+  xhci-kbd-ep = ep-ring
+  xhci-kbd-buf = input-frame-alloc()
 
-  let cfg_code = xhci_cmd(icc2, 0, 12)
-  if cfg_code != 1 {
+  let cfg-code = xhci-cmd(icc2, 0, 12)
+  if cfg-code != 1 {
     return -1
   }
-  store64(dctx + 64 + 8, ep_ring | 1)
+  store64(dctx + 64 + 8, ep-ring | 1)
   return 0
 }
 
-fn xhci_init() -> Int {
-  let port = INPUT_COM1
-  let pci = xhci_find_pci()
+fn xhci-init() -> Int {
+  let port = INPUT-COM1
+  let pci = xhci-find-pci()
   if pci == 0 {
-    input_serial_cstr(port, "input: no xHCI controller on PCI")
-    input_serial_nl(port)
+    input-serial-cstr(port, "input: no xHCI controller on PCI")
+    input-serial-nl(port)
     return -1
   }
   let bus = (pci >> 16) & 0xFF
   let dev = (pci >> 8) & 0xFF
   let func = pci & 0xFF
-  let cmd = input_pci_read32(bus, dev, func, 0x04)
-  input_pci_write32(bus, dev, func, 0x04, cmd | 0x6)
-  let bar = xhci_read_bar64(bus, dev, func)
+  let cmd = input-pci-read32(bus, dev, func, 0x04)
+  input-pci-write32(bus, dev, func, 0x04, cmd | 0x6)
+  let bar = xhci-read-bar64(bus, dev, func)
   if bar == 0 {
-    input_serial_cstr(port, "input: xHCI BAR0 is zero")
+    input-serial-cstr(port, "input: xHCI BAR0 is zero")
     return -1
   }
-  input_serial_cstr(port, "input: xHCI at PCI 00:")
-  input_serial_hex(port, dev)
-  input_serial_cstr(port, ".0 BAR0 0x")
-  input_serial_hex(port, bar)
-  input_serial_put(port, 10)
-  xhci_mmio = bar
+  input-serial-cstr(port, "input: xHCI at PCI 00:")
+  input-serial-hex(port, dev)
+  input-serial-cstr(port, ".0 BAR0 0x")
+  input-serial-hex(port, bar)
+  input-serial-put(port, 10)
+  xhci-mmio = bar
   let hccparams = load32(bar)
   if hccparams == 0 {
-    input_serial_cstr(port, "input: xHCI MMIO not accessible")
-    input_serial_nl(port)
-    xhci_mmio = 0
+    input-serial-cstr(port, "input: xHCI MMIO not accessible")
+    input-serial-nl(port)
+    xhci-mmio = 0
     return -1
   }
   let caplen = hccparams & 0xFF
   let version = (hccparams >> 16) & 0xFFFF
-  let hcs1 = xhci_cap_r32(4)
-  xhci_max_slots = hcs1 & 0xFF
-  xhci_max_ports = (hcs1 >> 24) & 0xFF
-  xhci_dboff = xhci_cap_r32(20) & 0xFFFFFFFF
-  xhci_rts = bar + (xhci_cap_r32(24) & 0xFFFFFFFF)
-  xhci_op = bar + caplen
-  input_serial_cstr(port, "input: xHCI version 0x")
-  input_serial_hex(port, version)
-  input_serial_cstr(port, " slots 0x")
-  input_serial_hex(port, xhci_max_slots)
-  input_serial_cstr(port, " ports 0x")
-  input_serial_hex(port, xhci_max_ports)
-  input_serial_put(port, 10)
-  xhci_reset()
-  xhci_init_dcbaa()
-  xhci_init_rings()
-  xhci_op_w32(0x2C, xhci_max_slots)
-  xhci_op_w32(0, 0x1 | 0x4 | 0x8)
-  input_serial_cstr(port, "input: xHCI started, USBSTS 0x")
-  input_serial_hex(port, xhci_op_r32(4))
-  input_serial_put(port, 10)
+  let hcs1 = xhci-cap-r32(4)
+  xhci-max-slots = hcs1 & 0xFF
+  xhci-max-ports = (hcs1 >> 24) & 0xFF
+  xhci-dboff = xhci-cap-r32(20) & 0xFFFFFFFF
+  xhci-rts = bar + (xhci-cap-r32(24) & 0xFFFFFFFF)
+  xhci-op = bar + caplen
+  input-serial-cstr(port, "input: xHCI version 0x")
+  input-serial-hex(port, version)
+  input-serial-cstr(port, " slots 0x")
+  input-serial-hex(port, xhci-max-slots)
+  input-serial-cstr(port, " ports 0x")
+  input-serial-hex(port, xhci-max-ports)
+  input-serial-put(port, 10)
+  xhci-reset()
+  xhci-init-dcbaa()
+  xhci-init-rings()
+  xhci-op-w32(0x2C, xhci-max-slots)
+  xhci-op-w32(0, 0x1 | 0x4 | 0x8)
+  input-serial-cstr(port, "input: xHCI started, USBSTS 0x")
+  input-serial-hex(port, xhci-op-r32(4))
+  input-serial-put(port, 10)
   return 0
 }
 
-fn usb_kbd_init() -> Int {
-  if xhci_mmio == 0 {
+fn usb-kbd-init() -> Int {
+  if xhci-mmio == 0 {
     return -1
   }
-  let port = INPUT_COM1
+  let port = INPUT-COM1
   let p = 0
   let found = 0
-  while p < xhci_max_ports && found == 0 {
-    if (load32(xhci_portsc(p)) & 1) != 0 {
-      input_serial_cstr(port, "input: USB device connected on port 0x")
-      input_serial_hex(port, p)
-      input_serial_put(port, 10)
-      xhci_port_reset(p)
-      if xhci_address_device(p) == 0 {
+  while p < xhci-max-ports && found == 0 {
+    if (load32(xhci-portsc(p)) & 1) != 0 {
+      input-serial-cstr(port, "input: USB device connected on port 0x")
+      input-serial-hex(port, p)
+      input-serial-put(port, 10)
+      xhci-port-reset(p)
+      if xhci-address-device(p) == 0 {
         found = 1
       }
     }
     p = p + 1
   }
   if found == 0 {
-    input_serial_cstr(port, "input: no HID keyboard found")
-    input_serial_nl(port)
+    input-serial-cstr(port, "input: no HID keyboard found")
+    input-serial-nl(port)
     return -1
   }
-  xhci_kbd_ready = 1
-  xhci_kbd_prev = 0
-  input_serial_cstr(port, "input: HID keyboard configured on slot 0x")
-  input_serial_hex(port, xhci_slot)
-  input_serial_put(port, 10)
+  xhci-kbd-ready = 1
+  xhci-kbd-prev = 0
+  input-serial-cstr(port, "input: HID keyboard configured on slot 0x")
+  input-serial-hex(port, xhci-slot)
+  input-serial-put(port, 10)
   return 0
 }
 
-fn usb_kbd_ready() -> Int {
-  return xhci_kbd_ready
+fn usb-kbd-ready() -> Int {
+  return xhci-kbd-ready
 }
 
-fn xhci_kbd_poll() -> Int {
-  if xhci_kbd_ready == 0 {
+fn xhci-kbd-poll() -> Int {
+  if xhci-kbd-ready == 0 {
     return 0
   }
-  let trb = xhci_kbd_ep
-  trb_set(trb, xhci_kbd_buf, 8, (1 << 10) | (1 << 5) | 1)
-  xhci_doorbell(xhci_slot, 1)
-  let code = xhci_wait_event()
+  let trb = xhci-kbd-ep
+  trb-set(trb, xhci-kbd-buf, 8, (1 << 10) | (1 << 5) | 1)
+  xhci-doorbell(xhci-slot, 1)
+  let code = xhci-wait-event()
   if code == 1 {
     return 1
   }
   return 0
 }
 
-fn hid_to_ascii(usage: Int) -> Int {
+fn hid-to-ascii(usage: Int) -> Int {
   if usage == 0x04 { return 97 }
   if usage == 0x05 { return 98 }
   if usage == 0x06 { return 99 }
@@ -645,35 +645,35 @@ fn hid_to_ascii(usage: Int) -> Int {
   return 0
 }
 
-fn xhci_kbd_report_ascii() -> Int {
-  let mod = load8(xhci_kbd_buf + 0)
-  let k0 = load8(xhci_kbd_buf + 2)
-  let k1 = load8(xhci_kbd_buf + 3)
-  let k2 = load8(xhci_kbd_buf + 4)
-  let k3 = load8(xhci_kbd_buf + 5)
-  let k4 = load8(xhci_kbd_buf + 6)
-  let k5 = load8(xhci_kbd_buf + 7)
-  let prev = xhci_kbd_prev
+fn xhci-kbd-report-ascii() -> Int {
+  let mod = load8(xhci-kbd-buf + 0)
+  let k0 = load8(xhci-kbd-buf + 2)
+  let k1 = load8(xhci-kbd-buf + 3)
+  let k2 = load8(xhci-kbd-buf + 4)
+  let k3 = load8(xhci-kbd-buf + 5)
+  let k4 = load8(xhci-kbd-buf + 6)
+  let k5 = load8(xhci-kbd-buf + 7)
+  let prev = xhci-kbd-prev
   let ch = -1
   if k0 != 0 && k0 != ((prev >> 0) & 0xFF) {
-    ch = hid_to_ascii(k0)
+    ch = hid-to-ascii(k0)
   }
   if ch < 0 && k1 != 0 && k1 != ((prev >> 8) & 0xFF) {
-    ch = hid_to_ascii(k1)
+    ch = hid-to-ascii(k1)
   }
   if ch < 0 && k2 != 0 && k2 != ((prev >> 16) & 0xFF) {
-    ch = hid_to_ascii(k2)
+    ch = hid-to-ascii(k2)
   }
   if ch < 0 && k3 != 0 && k3 != ((prev >> 24) & 0xFF) {
-    ch = hid_to_ascii(k3)
+    ch = hid-to-ascii(k3)
   }
   if ch < 0 && k4 != 0 && k4 != ((prev >> 32) & 0xFF) {
-    ch = hid_to_ascii(k4)
+    ch = hid-to-ascii(k4)
   }
   if ch < 0 && k5 != 0 && k5 != ((prev >> 40) & 0xFF) {
-    ch = hid_to_ascii(k5)
+    ch = hid-to-ascii(k5)
   }
-  xhci_kbd_prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
+  xhci-kbd-prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
   if ch >= 97 && ch <= 122 {
     if (mod & 0x22) != 0 {
       ch = ch - 32
@@ -682,183 +682,183 @@ fn xhci_kbd_report_ascii() -> Int {
   return ch
 }
 
-fn usb_kbd_getchar() -> Int {
-  if xhci_kbd_ready == 0 {
+fn usb-kbd-getchar() -> Int {
+  if xhci-kbd-ready == 0 {
     return -1
   }
-  if xhci_kbd_poll() == 0 {
+  if xhci-kbd-poll() == 0 {
     return -1
   }
-  return xhci_kbd_report_ascii()
+  return xhci-kbd-report-ascii()
 }
 
 // --- PS/2 mouse and keyboard ------------------------------------------------
-const PS2_DATA = 0x60
-const PS2_STATUS = 0x64
-const PS2_CMD = 0x64
+const PS2-DATA = 0x60
+const PS2-STATUS = 0x64
+const PS2-CMD = 0x64
 
-var mouse_x: Int = 0
-var mouse_y: Int = 0
-var mouse_buttons: Int = 0
-var mouse_ready: Int = 0
-var mouse_cycle: Int = 0
-var mouse_buf0: Int = 0
-var mouse_buf1: Int = 0
-var mouse_buf2: Int = 0
-var mouse_screen_w: Int = INPUT_SCREEN_W
-var mouse_screen_h: Int = INPUT_SCREEN_H
+var mouse-x: Int = 0
+var mouse-y: Int = 0
+var mouse-buttons: Int = 0
+var mouse-ready: Int = 0
+var mouse-cycle: Int = 0
+var mouse-buf0: Int = 0
+var mouse-buf1: Int = 0
+var mouse-buf2: Int = 0
+var mouse-screen-w: Int = INPUT-SCREEN-W
+var mouse-screen-h: Int = INPUT-SCREEN-H
 
-fn mouse_wait_output() -> void {
-  while (inb(PS2_STATUS) & 0x01) == 0 {
+fn mouse-wait-output() -> void {
+  while (inb(PS2-STATUS) & 0x01) == 0 {
   }
   return
 }
 
-fn mouse_wait_input() -> void {
-  while (inb(PS2_STATUS) & 0x02) != 0 {
+fn mouse-wait-input() -> void {
+  while (inb(PS2-STATUS) & 0x02) != 0 {
   }
   return
 }
 
-fn ps2_cmd(cmd: Int) -> void {
-  mouse_wait_input()
-  outb(PS2_CMD, cmd)
+fn ps2-cmd(cmd: Int) -> void {
+  mouse-wait-input()
+  outb(PS2-CMD, cmd)
   return
 }
 
-fn mouse_cmd(cmd: Int) -> void {
-  mouse_wait_input()
-  outb(PS2_CMD, 0xD4)
-  mouse_wait_input()
-  outb(PS2_DATA, cmd)
+fn mouse-cmd(cmd: Int) -> void {
+  mouse-wait-input()
+  outb(PS2-CMD, 0xD4)
+  mouse-wait-input()
+  outb(PS2-DATA, cmd)
   return
 }
 
-fn ps2_read() -> Int {
-  mouse_wait_output()
-  return inb(PS2_DATA)
+fn ps2-read() -> Int {
+  mouse-wait-output()
+  return inb(PS2-DATA)
 }
 
-fn mouse_init() -> Int {
-  ps2_cmd(0xAD)
-  ps2_cmd(0xA7)
-  while (inb(PS2_STATUS) & 0x01) != 0 {
-    inb(PS2_DATA)
+fn mouse-init() -> Int {
+  ps2-cmd(0xAD)
+  ps2-cmd(0xA7)
+  while (inb(PS2-STATUS) & 0x01) != 0 {
+    inb(PS2-DATA)
   }
-  ps2_cmd(0x20)
-  let config = ps2_read()
-  let new_config = (config | 0x02 | 0x20) & -0x21
-  ps2_cmd(0x60)
-  mouse_wait_input()
-  outb(PS2_DATA, new_config)
-  ps2_cmd(0xA8)
-  mouse_cmd(0xFF)
-  let ack = ps2_read()
+  ps2-cmd(0x20)
+  let config = ps2-read()
+  let new-config = (config | 0x02 | 0x20) & -0x21
+  ps2-cmd(0x60)
+  mouse-wait-input()
+  outb(PS2-DATA, new-config)
+  ps2-cmd(0xA8)
+  mouse-cmd(0xFF)
+  let ack = ps2-read()
   if ack != 0xFA {
     return -1
   }
-  mouse_cmd(0xF6)
-  ps2_read()
-  mouse_cmd(0xF4)
-  ps2_read()
-  ps2_cmd(0xAE)
-  mouse_x = mouse_screen_w / 2
-  mouse_y = mouse_screen_h / 2
-  mouse_buttons = 0
-  mouse_cycle = 0
-  mouse_ready = 1
+  mouse-cmd(0xF6)
+  ps2-read()
+  mouse-cmd(0xF4)
+  ps2-read()
+  ps2-cmd(0xAE)
+  mouse-x = mouse-screen-w / 2
+  mouse-y = mouse-screen-h / 2
+  mouse-buttons = 0
+  mouse-cycle = 0
+  mouse-ready = 1
   return 0
 }
 
-fn mouse_has_data() -> Int {
-  let st = inb(PS2_STATUS)
+fn mouse-has-data() -> Int {
+  let st = inb(PS2-STATUS)
   if (st & 0x01) != 0 && (st & 0x20) != 0 {
     return 1
   }
   return 0
 }
 
-fn mouse_process_byte(b: Int) -> Int {
-  if mouse_cycle == 0 {
+fn mouse-process-byte(b: Int) -> Int {
+  if mouse-cycle == 0 {
     if (b & 0x08) == 0 {
       return 0
     }
-    mouse_buf0 = b
-    mouse_cycle = 1
+    mouse-buf0 = b
+    mouse-cycle = 1
     return 0
   }
-  if mouse_cycle == 1 {
-    mouse_buf1 = b
-    mouse_cycle = 2
+  if mouse-cycle == 1 {
+    mouse-buf1 = b
+    mouse-cycle = 2
     return 0
   }
-  mouse_buf2 = b
-  mouse_cycle = 0
-  mouse_buttons = mouse_buf0 & 0x07
-  let dx = mouse_buf1
-  if (mouse_buf0 & 0x10) != 0 {
-    dx = mouse_buf1 - 256
+  mouse-buf2 = b
+  mouse-cycle = 0
+  mouse-buttons = mouse-buf0 & 0x07
+  let dx = mouse-buf1
+  if (mouse-buf0 & 0x10) != 0 {
+    dx = mouse-buf1 - 256
   }
-  let dy = mouse_buf2
-  if (mouse_buf0 & 0x20) != 0 {
-    dy = mouse_buf2 - 256
+  let dy = mouse-buf2
+  if (mouse-buf0 & 0x20) != 0 {
+    dy = mouse-buf2 - 256
   }
   dy = -dy
-  mouse_x = mouse_x + dx
-  if mouse_x < 0 {
-    mouse_x = 0
+  mouse-x = mouse-x + dx
+  if mouse-x < 0 {
+    mouse-x = 0
   }
-  if mouse_x >= mouse_screen_w {
-    mouse_x = mouse_screen_w - 1
+  if mouse-x >= mouse-screen-w {
+    mouse-x = mouse-screen-w - 1
   }
-  mouse_y = mouse_y + dy
-  if mouse_y < 0 {
-    mouse_y = 0
+  mouse-y = mouse-y + dy
+  if mouse-y < 0 {
+    mouse-y = 0
   }
-  if mouse_y >= mouse_screen_h {
-    mouse_y = mouse_screen_h - 1
+  if mouse-y >= mouse-screen-h {
+    mouse-y = mouse-screen-h - 1
   }
   return 1
 }
 
-fn mouse_poll() -> Int {
-  if mouse_ready == 0 {
+fn mouse-poll() -> Int {
+  if mouse-ready == 0 {
     return 0
   }
   let count = 0
-  while mouse_has_data() != 0 {
-    let b = inb(PS2_DATA)
-    if mouse_process_byte(b) != 0 {
+  while mouse-has-data() != 0 {
+    let b = inb(PS2-DATA)
+    if mouse-process-byte(b) != 0 {
       count = count + 1
     }
   }
   return count
 }
 
-fn mouse_left_pressed() -> Int {
-  return mouse_buttons & 0x01
+fn mouse-left-pressed() -> Int {
+  return mouse-buttons & 0x01
 }
 
-fn mouse_right_pressed() -> Int {
-  return mouse_buttons & 0x02
+fn mouse-right-pressed() -> Int {
+  return mouse-buttons & 0x02
 }
 
-fn ps2_kbd_init() -> Int {
-  ps2_cmd(0xAE)
-  mouse_wait_input()
-  outb(PS2_DATA, 0xF4)
+fn ps2-kbd-init() -> Int {
+  ps2-cmd(0xAE)
+  mouse-wait-input()
+  outb(PS2-DATA, 0xF4)
   return 0
 }
 
-fn ps2_kbd_has_data() -> Int {
-  let st = inb(PS2_STATUS)
+fn ps2-kbd-has-data() -> Int {
+  let st = inb(PS2-STATUS)
   if (st & 0x01) != 0 && (st & 0x20) == 0 {
     return 1
   }
   return 0
 }
 
-fn ps2_scancode_ascii(sc: Int) -> Int {
+fn ps2-scancode-ascii(sc: Int) -> Int {
   if sc == 0x01 { return 27 }
   if sc == 0x0E { return 8 }
   if sc == 0x1C { return 10 }
@@ -913,80 +913,80 @@ fn ps2_scancode_ascii(sc: Int) -> Int {
   return -1
 }
 
-fn ps2_kbd_getchar() -> Int {
-  if ps2_kbd_has_data() == 0 {
+fn ps2-kbd-getchar() -> Int {
+  if ps2-kbd-has-data() == 0 {
     return -1
   }
-  let sc = inb(PS2_DATA)
+  let sc = inb(PS2-DATA)
   if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
     return -1
   }
   if (sc & 0x80) != 0 {
     return -1
   }
-  return ps2_scancode_ascii(sc)
+  return ps2-scancode-ascii(sc)
 }
 
 // --- component entry --------------------------------------------------------
-fn input_entry(cap_info: Int) -> Int {
-  let port = INPUT_COM1
-  input_serial_cstr(port, "input: component entered")
-  input_serial_nl(port)
+fn input-entry(cap-info: Int) -> Int {
+  let port = INPUT-COM1
+  input-serial-cstr(port, "input: component entered")
+  input-serial-nl(port)
 
-  let heap_base = load64(cap_info + 16)
-  let heap_size = load64(cap_info + 24)
-  if heap_base != 0 && heap_size != 0 {
-    input_heap_init(heap_base, heap_size)
+  let heap-base = load64(cap-info + 16)
+  let heap-size = load64(cap-info + 24)
+  if heap-base != 0 && heap-size != 0 {
+    input-heap-init(heap-base, heap-size)
   } else {
     // Fallback to a small fixed region at 0x600000 (identity-mapped low memory).
-    input_heap_init(0x600000, 0x100000)
+    input-heap-init(0x600000, 0x100000)
   }
 
-  let sw = load64(cap_info + 48)
-  let sh = load64(cap_info + 56)
-  if sw != 0 { mouse_screen_w = sw }
-  if sh != 0 { mouse_screen_h = sh }
+  let sw = load64(cap-info + 48)
+  let sh = load64(cap-info + 56)
+  if sw != 0 { mouse-screen-w = sw }
+  if sh != 0 { mouse-screen-h = sh }
 
-  let shared = load64(cap_info + 32)
+  let shared = load64(cap-info + 32)
   if shared != 0 {
-    input_chan_bind(shared)
-    input_serial_cstr(port, "input: channel bound at 0x")
-    input_serial_hex(port, shared)
-    input_serial_nl(port)
+    input-chan-bind(shared)
+    input-serial-cstr(port, "input: channel bound at 0x")
+    input-serial-hex(port, shared)
+    input-serial-nl(port)
   }
 
-  let usb_rc = xhci_init()
-  if usb_rc == 0 {
-    usb_kbd_init()
+  let usb-rc = xhci-init()
+  if usb-rc == 0 {
+    usb-kbd-init()
   }
 
-  ps2_kbd_init()
-  let mouse_rc = mouse_init()
-  if mouse_rc == 0 {
-    input_serial_cstr(port, "input: PS/2 mouse ready")
-    input_serial_nl(port)
+  ps2-kbd-init()
+  let mouse-rc = mouse-init()
+  if mouse-rc == 0 {
+    input-serial-cstr(port, "input: PS/2 mouse ready")
+    input-serial-nl(port)
   }
 
-  let prev_buttons = 0
+  let prev-buttons = 0
   while true {
-    if usb_kbd_ready() != 0 {
-      let key = usb_kbd_getchar()
+    if usb-kbd-ready() != 0 {
+      let key = usb-kbd-getchar()
       if key >= 0 {
-        input_chan_send(shared, input_event_key(INPUT_EVT_KEY_DOWN, key, 0))
+        input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, key, 0))
       }
     }
 
-    let pkey = ps2_kbd_getchar()
+    let pkey = ps2-kbd-getchar()
     if pkey >= 0 {
-      input_chan_send(shared, input_event_key(INPUT_EVT_KEY_DOWN, pkey, 0))
+      input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, pkey, 0))
     }
 
-    let mouse_pkts = mouse_poll()
-    if mouse_pkts != 0 {
-      input_chan_send(shared, input_event_move(mouse_x, mouse_y, mouse_buttons))
-      if mouse_buttons != prev_buttons {
-        input_chan_send(shared, input_event_button(mouse_buttons, mouse_x, mouse_y))
-        prev_buttons = mouse_buttons
+    let mouse-pkts = mouse-poll()
+    if mouse-pkts != 0 {
+      input-chan-send(shared, input-event-move(mouse-x, mouse-y, mouse-buttons))
+      if mouse-buttons != prev-buttons {
+        input-chan-send(shared, input-event-button(mouse-buttons, mouse-x, mouse-y))
+        prev-buttons = mouse-buttons
       }
     }
 

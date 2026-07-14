@@ -1,64 +1,64 @@
 package space.kernel
 
-var fb_addr: Int = 0
-var fb_pitch: Int = 0
-var fb_width: Int = 0
-var fb_height: Int = 0
-var fb_bpp: Int = 0
-var fb_size: Int = 0
-var fb_ready: Int = 0
-var fb_font_scale: Int = 2
+var fb-addr: Int = 0
+var fb-pitch: Int = 0
+var fb-width: Int = 0
+var fb-height: Int = 0
+var fb-bpp: Int = 0
+var fb-size: Int = 0
+var fb-ready: Int = 0
+var fb-font-scale: Int = 2
 
-const FB_COLOR_BLACK = 0x00000000
-const FB_COLOR_WHITE = 0x00FFFFFF
-const FB_COLOR_RED = 0x00FF0000
-const FB_COLOR_GREEN = 0x0000FF00
-const FB_COLOR_BLUE = 0x000000FF
-const FB_COLOR_CYAN = 0x0000FFFF
-const FB_COLOR_MAGENTA = 0x00FF00FF
-const FB_COLOR_YELLOW = 0x00FFFF00
-const FB_COLOR_GRAY = 0x00808080
-const FB_COLOR_DARK_GRAY = 0x00404040
-const FB_COLOR_LIGHT_GRAY = 0x00C0C0C0
-const FB_COLOR_DARK_BLUE = 0x00000080
-const FB_COLOR_DARK_GREEN = 0x00008000
-const FB_COLOR_DARK_RED = 0x00800000
-const FB_COLOR_ORANGE = 0x00FF8000
-const FB_COLOR_PURPLE = 0x00800080
-const FB_COLOR_TEAL = 0x00808000
+const FB-COLOR-BLACK = 0x00000000
+const FB-COLOR-WHITE = 0x00FFFFFF
+const FB-COLOR-RED = 0x00FF0000
+const FB-COLOR-GREEN = 0x0000FF00
+const FB-COLOR-BLUE = 0x000000FF
+const FB-COLOR-CYAN = 0x0000FFFF
+const FB-COLOR-MAGENTA = 0x00FF00FF
+const FB-COLOR-YELLOW = 0x00FFFF00
+const FB-COLOR-GRAY = 0x00808080
+const FB-COLOR-DARK-GRAY = 0x00404040
+const FB-COLOR-LIGHT-GRAY = 0x00C0C0C0
+const FB-COLOR-DARK-BLUE = 0x00000080
+const FB-COLOR-DARK-GREEN = 0x00008000
+const FB-COLOR-DARK-RED = 0x00800000
+const FB-COLOR-ORANGE = 0x00FF8000
+const FB-COLOR-PURPLE = 0x00800080
+const FB-COLOR-TEAL = 0x00808000
 
-const FB_FONT_WIDTH = 8
-const FB_FONT_HEIGHT = 8
-var fb_font: Int = 0
+const FB-FONT-WIDTH = 8
+const FB-FONT-HEIGHT = 8
+var fb-font: Int = 0
 
-fn fb_init(mb_info: Int) -> Int {
+fn fb-init(mb-info: Int) -> Int {
   return -1
 }
 
-fn fb_put_pixel(x: Int, y: Int, color: Int) -> void {
+fn fb-put-pixel(x: Int, y: Int, color: Int) -> void {
   return
 }
 
-fn fb_fill_rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
+fn fb-fill-rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   return
 }
 
-fn fb_draw_char(x: Int, y: Int, ch: Int, color: Int) -> void {
+fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
   return
 }
 
-fn fb_clear(color: Int) -> void {
+fn fb-clear(color: Int) -> void {
   return
 }
 
-fn fb_info(port: Int) -> void {
-  serial_write_cstr(port, "  fb: not initialized (display component)")
-  serial_nl(port)
+fn fb-info(port: Int) -> void {
+  serial-write-cstr(port, "  fb: not initialized (display component)")
+  serial-nl(port)
   return
 }
 
-fn fb_test_pattern(port: Int) -> void {
-  serial_write_cstr(port, "  fb: test pattern unavailable (display component)")
-  serial_nl(port)
+fn fb-test-pattern(port: Int) -> void {
+  serial-write-cstr(port, "  fb: test pattern unavailable (display component)")
+  serial-nl(port)
   return
 }

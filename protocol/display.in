@@ -3,40 +3,40 @@
 //   [obj_id(8)][opcode(8)][argc(8)][args...]
 // Each message is exactly 32 bytes (header + up to 3 x 8-byte args).
 
-const SPDP_MSG_SIZE = 32
-const SPDP_HEADER_SIZE = 24  // obj_id + opcode + argc
+const SPDP-MSG-SIZE = 32
+const SPDP-HEADER-SIZE = 24  // obj_id + opcode + argc
 
 // Object IDs (well-known)
-const SPDP_OBJ_DISPLAY = 1    // global display object
-const SPDP_OBJ_COMPOSITOR = 2 // compositor interface
-const SPDP_OBJ_SHM = 3        // shared memory interface
-const SPDP_OBJ_SEAT = 4       // input seat
+const SPDP-OBJ-DISPLAY = 1    // global display object
+const SPDP-OBJ-COMPOSITOR = 2 // compositor interface
+const SPDP-OBJ-SHM = 3        // shared memory interface
+const SPDP-OBJ-SEAT = 4       // input seat
 
 // Display object opcodes (client → server)
-const SPDP_GET_REGISTRY = 0   // no args
-const SPDP_REGISTRY_BIND = 1  // arg0: object_id, arg1: interface_version
+const SPDP-GET-REGISTRY = 0   // no args
+const SPDP-REGISTRY-BIND = 1  // arg0: object_id, arg1: interface_version
 
 // Display events (server → client)
-const SPDP_DISPLAY_ERROR = 0    // arg0: error_code, arg1: error_message_addr
-const SPDP_REGISTRY_GLOBAL = 1  // arg0: obj_id, arg1: interface_addr
+const SPDP-DISPLAY-ERROR = 0    // arg0: error_code, arg1: error_message_addr
+const SPDP-REGISTRY-GLOBAL = 1  // arg0: obj_id, arg1: interface_addr
 
 // Compositor opcodes
-const SPDP_COMPOSITOR_CREATE_SURFACE = 0  // returns surface_id
-const SPDP_SURFACE_ATTACH = 1             // arg0: surface_id, arg1: buffer_id
-const SPDP_SURFACE_DAMAGE = 2             // arg0: surface_id, arg1: x/w packed
-const SPDP_SURFACE_COMMIT = 3             // arg0: surface_id
-const SPDP_SURFACE_DESTROY = 4            // arg0: surface_id
+const SPDP-COMPOSITOR-CREATE-SURFACE = 0  // returns surface_id
+const SPDP-SURFACE-ATTACH = 1             // arg0: surface_id, arg1: buffer_id
+const SPDP-SURFACE-DAMAGE = 2             // arg0: surface_id, arg1: x/w packed
+const SPDP-SURFACE-COMMIT = 3             // arg0: surface_id
+const SPDP-SURFACE-DESTROY = 4            // arg0: surface_id
 
 // SHM opcodes
-const SPDP_SHM_CREATE_POOL = 0  // arg0: pool_id, arg1: size
-const SPDP_SHM_POOL_DESTROY = 1 // arg0: pool_id
+const SPDP-SHM-CREATE-POOL = 0  // arg0: pool_id, arg1: size
+const SPDP-SHM-POOL-DESTROY = 1 // arg0: pool_id
 
 // Seat opcodes
-const SPDP_SEAT_POINTER_ENTER = 0  // arg0: surface_id, arg1: x/y packed
-const SPDP_SEAT_POINTER_LEAVE = 1  // arg0: surface_id
-const SPDP_SEAT_POINTER_MOTION = 2 // arg0: time, arg1: x/y packed
-const SPDP_SEAT_POINTER_BUTTON = 3 // arg0: time, arg1: button/state packed
-const SPDP_SEAT_KEYBOARD_KEY = 4   // arg0: time, arg1: key/state packed
+const SPDP-SEAT-POINTER-ENTER = 0  // arg0: surface_id, arg1: x/y packed
+const SPDP-SEAT-POINTER-LEAVE = 1  // arg0: surface_id
+const SPDP-SEAT-POINTER-MOTION = 2 // arg0: time, arg1: x/y packed
+const SPDP-SEAT-POINTER-BUTTON = 3 // arg0: time, arg1: button/state packed
+const SPDP-SEAT-KEYBOARD-KEY = 4   // arg0: time, arg1: key/state packed
 
 // Shared memory pool: a contiguous buffer allocated by the client and shared
 // with the compositor. The pool is identified by a pool_id (chosen by client).

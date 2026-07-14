@@ -4,128 +4,128 @@
 // kernel over cross-domain channels.  The kernel-side stubs live in
 // kernel/net.in.
 
-var nic_mmio: Int = 0
-var nic_tx_ring: Int = 0
-var nic_tx_buf: Int = 0
-var nic_tx_tail: Int = 0
-var nic_mac_lo: Int = 0
-var nic_mac_hi: Int = 0
-var nic_rx_ring: Int = 0
-var nic_rx_head: Int = 0
-var nic_rx_len: Int = 0
-var gw_mac: Int = 0
+var nic-mmio: Int = 0
+var nic-tx-ring: Int = 0
+var nic-tx-buf: Int = 0
+var nic-tx-tail: Int = 0
+var nic-mac-lo: Int = 0
+var nic-mac-hi: Int = 0
+var nic-rx-ring: Int = 0
+var nic-rx-head: Int = 0
+var nic-rx-len: Int = 0
+var gw-mac: Int = 0
 
-const TX_NDESC = 8
-const RX_NDESC = 8
+const TX-NDESC = 8
+const RX-NDESC = 8
 
-const NET_CROSS_PAGE_HEADER_SIZE = 32
-const NET_CROSS_PAGE_RING_OFFSET = 32
+const NET-CROSS-PAGE-HEADER-SIZE = 32
+const NET-CROSS-PAGE-RING-OFFSET = 32
 
-const NET_OP_INIT = 0
-const NET_OP_TX = 1
-const NET_OP_RX_POLL = 2
-const NET_OP_RX_WAIT = 3
-const NET_OP_BUILD_ARP = 4
-const NET_OP_BUILD_UDP = 5
-const NET_OP_STORE_MAC = 6
-const NET_OP_GET_MAC = 7
-const NET_OP_RUN = 8
-const NET_OP_SHUTDOWN = 9
+const NET-OP-INIT = 0
+const NET-OP-TX = 1
+const NET-OP-RX-POLL = 2
+const NET-OP-RX-WAIT = 3
+const NET-OP-BUILD-ARP = 4
+const NET-OP-BUILD-UDP = 5
+const NET-OP-STORE-MAC = 6
+const NET-OP-GET-MAC = 7
+const NET-OP-RUN = 8
+const NET-OP-SHUTDOWN = 9
 
-fn mmio_r32_impl(off: Int) -> Int {
-  return load32(nic_mmio + off)
+fn mmio-r32-impl(off: Int) -> Int {
+  return load32(nic-mmio + off)
 }
 
-fn mmio_w32_impl(off: Int, v: Int) -> void {
-  store32(nic_mmio + off, v)
+fn mmio-w32-impl(off: Int, v: Int) -> void {
+  store32(nic-mmio + off, v)
   return
 }
 
-fn net_print_mac_impl(port: Int) -> void {
-  serial_write_hex(port, nic_mac_lo & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (nic_mac_lo >> 8) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (nic_mac_lo >> 16) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (nic_mac_lo >> 24) & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, nic_mac_hi & 0xFF)
-  serial_put(port, 58)
-  serial_write_hex(port, (nic_mac_hi >> 8) & 0xFF)
+fn net-print-mac-impl(port: Int) -> void {
+  serial-write-hex(port, nic-mac-lo & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (nic-mac-lo >> 8) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (nic-mac-lo >> 16) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (nic-mac-lo >> 24) & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, nic-mac-hi & 0xFF)
+  serial-put(port, 58)
+  serial-write-hex(port, (nic-mac-hi >> 8) & 0xFF)
   return
 }
 
-fn e1000_init_impl(port: Int) -> Int {
-  let bar0 = pci_find_and_enable_e1000()
+fn e1000-init-impl(port: Int) -> Int {
+  let bar0 = pci-find-and-enable-e1000()
   if bar0 == 0 {
-    serial_write_cstr(port, "  net: no e1000 NIC found")
-    serial_nl(port)
+    serial-write-cstr(port, "  net: no e1000 NIC found")
+    serial-nl(port)
     return 0
   }
-  serial_write_cstr(port, "  net: e1000 found at BAR0 0x")
-  serial_write_hex(port, bar0)
-  serial_put(port, 10)
+  serial-write-cstr(port, "  net: e1000 found at BAR0 0x")
+  serial-write-hex(port, bar0)
+  serial-put(port, 10)
   let pg = bar0
   while pg < bar0 + 0x10000 {
-    map_page(pg, pg, 0x1B)
+    map-page(pg, pg, 0x1B)
     pg = pg + 0x1000
   }
-  nic_mmio = bar0
-  nic_mac_lo = mmio_r32_impl(0x5400)
-  nic_mac_hi = mmio_r32_impl(0x5404) & 0xFFFF
-  serial_write_cstr(port, "  net: e1000 MMIO 0x")
-  serial_write_hex(port, bar0)
-  serial_write_cstr(port, " MAC ")
-  net_print_mac_impl(port)
-  serial_put(port, 10)
-  nic_tx_ring = frame_alloc()
-  nic_tx_buf = frame_alloc()
-  mmio_w32_impl(0x3800, nic_tx_ring)
-  mmio_w32_impl(0x3804, 0)
-  mmio_w32_impl(0x3808, TX_NDESC * 16)
-  mmio_w32_impl(0x3810, 0)
-  mmio_w32_impl(0x3818, 0)
-  mmio_w32_impl(0x410, 0x60200A)
-  mmio_w32_impl(0x400, 0x400FA)
-  nic_tx_tail = 0
-  nic_rx_ring = frame_alloc()
-  for i in 0..RX_NDESC {
-    let buf = frame_alloc()
-    store64(nic_rx_ring + i * 16 + 0, buf)
-    store64(nic_rx_ring + i * 16 + 8, 0)
+  nic-mmio = bar0
+  nic-mac-lo = mmio-r32-impl(0x5400)
+  nic-mac-hi = mmio-r32-impl(0x5404) & 0xFFFF
+  serial-write-cstr(port, "  net: e1000 MMIO 0x")
+  serial-write-hex(port, bar0)
+  serial-write-cstr(port, " MAC ")
+  net-print-mac-impl(port)
+  serial-put(port, 10)
+  nic-tx-ring = frame-alloc()
+  nic-tx-buf = frame-alloc()
+  mmio-w32-impl(0x3800, nic-tx-ring)
+  mmio-w32-impl(0x3804, 0)
+  mmio-w32-impl(0x3808, TX-NDESC * 16)
+  mmio-w32-impl(0x3810, 0)
+  mmio-w32-impl(0x3818, 0)
+  mmio-w32-impl(0x410, 0x60200A)
+  mmio-w32-impl(0x400, 0x400FA)
+  nic-tx-tail = 0
+  nic-rx-ring = frame-alloc()
+  for i in 0..RX-NDESC {
+    let buf = frame-alloc()
+    store64(nic-rx-ring + i * 16 + 0, buf)
+    store64(nic-rx-ring + i * 16 + 8, 0)
   }
-  mmio_w32_impl(0x0, mmio_r32_impl(0x0) | 0x40)
-  mmio_w32_impl(0x2800, nic_rx_ring)
-  mmio_w32_impl(0x2804, 0)
-  mmio_w32_impl(0x2808, RX_NDESC * 16)
-  mmio_w32_impl(0x2810, 0)
-  mmio_w32_impl(0x2818, 0)
-  mmio_w32_impl(0x100, 0x400801A)
-  mmio_w32_impl(0x2818, RX_NDESC - 1)
-  nic_rx_head = 0
-  gw_mac = frame_alloc()
+  mmio-w32-impl(0x0, mmio-r32-impl(0x0) | 0x40)
+  mmio-w32-impl(0x2800, nic-rx-ring)
+  mmio-w32-impl(0x2804, 0)
+  mmio-w32-impl(0x2808, RX-NDESC * 16)
+  mmio-w32-impl(0x2810, 0)
+  mmio-w32-impl(0x2818, 0)
+  mmio-w32-impl(0x100, 0x400801A)
+  mmio-w32-impl(0x2818, RX-NDESC - 1)
+  nic-rx-head = 0
+  gw-mac = frame-alloc()
   return bar0
 }
 
-fn e1000_rx_poll_impl() -> Int {
-  let rdh = mmio_r32_impl(0x2810)
-  if rdh != nic_rx_head {
-    let d = nic_rx_ring + nic_rx_head * 16
-    nic_rx_len = load16(d + 8)
+fn e1000-rx-poll-impl() -> Int {
+  let rdh = mmio-r32-impl(0x2810)
+  if rdh != nic-rx-head {
+    let d = nic-rx-ring + nic-rx-head * 16
+    nic-rx-len = load16(d + 8)
     let buf = load64(d + 0)
     store8(d + 12, 0)
-    mmio_w32_impl(0x2818, nic_rx_head)
-    nic_rx_head = (nic_rx_head + 1) % RX_NDESC
+    mmio-w32-impl(0x2818, nic-rx-head)
+    nic-rx-head = (nic-rx-head + 1) % RX-NDESC
     return buf
   }
   return 0
 }
 
-fn e1000_rx_wait_impl() -> Int {
+fn e1000-rx-wait-impl() -> Int {
   let tries = 0
   while tries < 3000000 {
-    let buf = e1000_rx_poll_impl()
+    let buf = e1000-rx-poll-impl()
     if buf != 0 {
       return buf
     }
@@ -134,17 +134,17 @@ fn e1000_rx_wait_impl() -> Int {
   return 0
 }
 
-fn e1000_tx_impl(len: Int) -> void {
-  let d = nic_tx_ring + nic_tx_tail * 16
-  store64(d + 0, nic_tx_buf)
+fn e1000-tx-impl(len: Int) -> void {
+  let d = nic-tx-ring + nic-tx-tail * 16
+  store64(d + 0, nic-tx-buf)
   store16(d + 8, len)
   store8(d + 10, 0)
   store8(d + 11, 0xB)
   store8(d + 12, 0)
   store8(d + 13, 0)
   store16(d + 14, 0)
-  nic_tx_tail = (nic_tx_tail + 1) % TX_NDESC
-  mmio_w32_impl(0x3818, nic_tx_tail)
+  nic-tx-tail = (nic-tx-tail + 1) % TX-NDESC
+  mmio-w32-impl(0x3818, nic-tx-tail)
   let tries = 0
   while (load8(d + 12) & 1) == 0 {
     tries = tries + 1
@@ -155,33 +155,33 @@ fn e1000_tx_impl(len: Int) -> void {
   return
 }
 
-fn net_store_mac_impl(p: Int) -> void {
-  store8(p + 0, nic_mac_lo & 0xFF)
-  store8(p + 1, (nic_mac_lo >> 8) & 0xFF)
-  store8(p + 2, (nic_mac_lo >> 16) & 0xFF)
-  store8(p + 3, (nic_mac_lo >> 24) & 0xFF)
-  store8(p + 4, nic_mac_hi & 0xFF)
-  store8(p + 5, (nic_mac_hi >> 8) & 0xFF)
+fn net-store-mac-impl(p: Int) -> void {
+  store8(p + 0, nic-mac-lo & 0xFF)
+  store8(p + 1, (nic-mac-lo >> 8) & 0xFF)
+  store8(p + 2, (nic-mac-lo >> 16) & 0xFF)
+  store8(p + 3, (nic-mac-lo >> 24) & 0xFF)
+  store8(p + 4, nic-mac-hi & 0xFF)
+  store8(p + 5, (nic-mac-hi >> 8) & 0xFF)
   return
 }
 
-fn build_arp_impl() -> Int {
-  let p = nic_tx_buf
+fn build-arp-impl() -> Int {
+  let p = nic-tx-buf
   for i in 0..6 { store8(p + i, 0xFF) }
-  net_store_mac_impl(p + 6)
+  net-store-mac-impl(p + 6)
   store8(p + 12, 0x08); store8(p + 13, 0x06)
   store8(p + 14, 0x00); store8(p + 15, 0x01)
   store8(p + 16, 0x08); store8(p + 17, 0x00)
   store8(p + 18, 0x06); store8(p + 19, 0x04)
   store8(p + 20, 0x00); store8(p + 21, 0x01)
-  net_store_mac_impl(p + 22)
+  net-store-mac-impl(p + 22)
   store8(p + 28, 10); store8(p + 29, 0); store8(p + 30, 2); store8(p + 31, 15)
   for i in 0..6 { store8(p + 32 + i, 0x00) }
   store8(p + 38, 10); store8(p + 39, 0); store8(p + 40, 2); store8(p + 41, 2)
   return 42
 }
 
-fn cstr_len_impl(addr: Int) -> Int {
+fn cstr-len-impl(addr: Int) -> Int {
   let n = 0
   while load8(addr + n) != 0 {
     n = n + 1
@@ -189,7 +189,7 @@ fn cstr_len_impl(addr: Int) -> Int {
   return n
 }
 
-fn ip_checksum_impl(addr: Int, len: Int) -> Int {
+fn ip-checksum-impl(addr: Int, len: Int) -> Int {
   let sum = 0
   let i = 0
   while i < len {
@@ -202,11 +202,11 @@ fn ip_checksum_impl(addr: Int, len: Int) -> Int {
   return (-1 ^ sum) & 0xFFFF
 }
 
-fn build_udp_impl(payload: Int) -> Int {
-  let p = nic_tx_buf
-  let plen = cstr_len_impl(payload)
-  for i in 0..6 { store8(p + i, load8(gw_mac + i)) }
-  net_store_mac_impl(p + 6)
+fn build-udp-impl(payload: Int) -> Int {
+  let p = nic-tx-buf
+  let plen = cstr-len-impl(payload)
+  for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
+  net-store-mac-impl(p + 6)
   store8(p + 12, 0x08); store8(p + 13, 0x00)
   let ip = p + 14
   let iplen = 28 + plen
@@ -219,7 +219,7 @@ fn build_udp_impl(payload: Int) -> Int {
   store8(ip + 14, 2); store8(ip + 15, 15)
   store8(ip + 16, 10); store8(ip + 17, 0)
   store8(ip + 18, 2); store8(ip + 19, 2)
-  let csum = ip_checksum_impl(ip, 20)
+  let csum = ip-checksum-impl(ip, 20)
   store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
   let udp = ip + 20
   let ulen = 8 + plen
@@ -231,45 +231,45 @@ fn build_udp_impl(payload: Int) -> Int {
   return 14 + iplen
 }
 
-fn net_get_rx_len_impl() -> Int {
-  return nic_rx_len
+fn net-get-rx-len-impl() -> Int {
+  return nic-rx-len
 }
 
-fn run_net_impl(port: Int) -> void {
-  let bar0 = e1000_init_impl(port)
+fn run-net-impl(port: Int) -> void {
+  let bar0 = e1000-init-impl(port)
   if bar0 == 0 {
     return
   }
-  serial_write_cstr(port, "  net: sending broadcast ARP for 10.0.2.2...\n")
-  e1000_tx_impl(build_arp_impl())
-  let f = e1000_rx_wait_impl()
+  serial-write-cstr(port, "  net: sending broadcast ARP for 10.0.2.2...\n")
+  e1000-tx-impl(build-arp-impl())
+  let f = e1000-rx-wait-impl()
   if (f != 0) && (((load8(f + 12) << 8) | load8(f + 13)) == 0x0806) {
     for i in 0..6 {
-      store8(gw_mac + i, load8(f + 22 + i))
+      store8(gw-mac + i, load8(f + 22 + i))
     }
-    serial_write_cstr(port, "  net: ARP reply received, 10.0.2.2 is-at ")
+    serial-write-cstr(port, "  net: ARP reply received, 10.0.2.2 is-at ")
   } else {
-    store8(gw_mac + 0, 0x52)
-    store8(gw_mac + 1, 0x55)
-    store8(gw_mac + 2, 0x0A)
-    store8(gw_mac + 3, 0x00)
-    store8(gw_mac + 4, 0x02)
-    store8(gw_mac + 5, 0x02)
-    serial_write_cstr(port, "  net: no ARP reply; using SLIRP gateway ")
+    store8(gw-mac + 0, 0x52)
+    store8(gw-mac + 1, 0x55)
+    store8(gw-mac + 2, 0x0A)
+    store8(gw-mac + 3, 0x00)
+    store8(gw-mac + 4, 0x02)
+    store8(gw-mac + 5, 0x02)
+    serial-write-cstr(port, "  net: no ARP reply; using SLIRP gateway ")
   }
   for i in 0..6 {
-    serial_write_hex(port, load8(gw_mac + i))
+    serial-write-hex(port, load8(gw-mac + i))
     if i < 5 {
-      serial_put(port, 58)
+      serial-put(port, 58)
     }
   }
-  serial_put(port, 10)
-  let ulen = build_udp_impl("hello from spaceOS")
-  serial_write_cstr(port, "  net: sending UDP to 10.0.2.2:9999, frame len 0x")
-  serial_write_hex(port, ulen)
-  serial_put(port, 10)
-  e1000_tx_impl(ulen)
-  serial_write_cstr(port, "  net: UDP datagram transmitted\n")
+  serial-put(port, 10)
+  let ulen = build-udp-impl("hello from spaceOS")
+  serial-write-cstr(port, "  net: sending UDP to 10.0.2.2:9999, frame len 0x")
+  serial-write-hex(port, ulen)
+  serial-put(port, 10)
+  e1000-tx-impl(ulen)
+  serial-write-cstr(port, "  net: UDP datagram transmitted\n")
   return
 }
 
@@ -277,29 +277,29 @@ fn run_net_impl(port: Int) -> void {
 // The kernel has already initialized the shared-page ring headers via
 // chan_cross_bind; the component only needs to read/write the mapped pages.
 
-fn chan_cross_recv_impl(page: Int) -> Int {
+fn chan-cross-recv-impl(page: Int) -> Int {
   let cap = load64(page + 16)
   while true {
     let head = load64(page + 0)
     let tail = load64(page + 8)
     if head != tail {
-      let msg = load64(page + NET_CROSS_PAGE_RING_OFFSET + head * 8)
+      let msg = load64(page + NET-CROSS-PAGE-RING-OFFSET + head * 8)
       store64(page + 0, (head + 1) % cap)
       return msg
     }
     // poll until the kernel produces a request
-    thr_yield()
+    thr-yield()
   }
 }
 
-fn chan_cross_send_impl(page: Int, msg: Int) -> void {
+fn chan-cross-send-impl(page: Int, msg: Int) -> void {
   let cap = load64(page + 16)
   while true {
     let tail = load64(page + 8)
     let head = load64(page + 0)
     let next = (tail + 1) % cap
     if next != head {
-      store64(page + NET_CROSS_PAGE_RING_OFFSET + tail * 8, msg)
+      store64(page + NET-CROSS-PAGE-RING-OFFSET + tail * 8, msg)
       store64(page + 8, next)
       return
     }
@@ -312,60 +312,60 @@ fn chan_cross_send_impl(page: Int, msg: Int) -> void {
 //   [8]  response shared page physical address
 //   [16] serial port to use for diagnostics
 // Returns 0 on normal shutdown.
-fn network_component_entry(cap_info: Int) -> Int {
-  let port = load64(cap_info + 16)
-  let req_page = load64(cap_info + 0)
-  let resp_page = load64(cap_info + 8)
+fn network-component-entry(cap-info: Int) -> Int {
+  let port = load64(cap-info + 16)
+  let req-page = load64(cap-info + 0)
+  let resp-page = load64(cap-info + 8)
 
-  serial_write_cstr(port, "  net: component starting in domain")
-  serial_nl(port)
+  serial-write-cstr(port, "  net: component starting in domain")
+  serial-nl(port)
 
   let running = 1
   while running != 0 {
-    let op = chan_cross_recv_impl(req_page)
-    if op == NET_OP_INIT {
-      let r = e1000_init_impl(port)
-      chan_cross_send_impl(resp_page, r)
-    } else if op == NET_OP_TX {
-      let len = chan_cross_recv_impl(req_page)
-      e1000_tx_impl(len)
-    } else if op == NET_OP_RX_POLL {
-      let buf = e1000_rx_poll_impl()
-      chan_cross_send_impl(resp_page, buf)
-      chan_cross_send_impl(resp_page, nic_rx_len)
-    } else if op == NET_OP_RX_WAIT {
-      let buf = e1000_rx_wait_impl()
-      chan_cross_send_impl(resp_page, buf)
-      chan_cross_send_impl(resp_page, nic_rx_len)
-    } else if op == NET_OP_BUILD_ARP {
-      let len = build_arp_impl()
-      chan_cross_send_impl(resp_page, len)
-    } else if op == NET_OP_BUILD_UDP {
-      let payload = chan_cross_recv_impl(req_page)
-      let len = build_udp_impl(payload)
-      chan_cross_send_impl(resp_page, len)
-    } else if op == NET_OP_STORE_MAC {
-      let p = chan_cross_recv_impl(req_page)
-      net_store_mac_impl(p)
-    } else if op == NET_OP_GET_MAC {
-      chan_cross_send_impl(resp_page, nic_mac_lo)
-      chan_cross_send_impl(resp_page, nic_mac_hi)
-    } else if op == NET_OP_RUN {
-      run_net_impl(port)
-    } else if op == NET_OP_SHUTDOWN {
+    let op = chan-cross-recv-impl(req-page)
+    if op == NET-OP-INIT {
+      let r = e1000-init-impl(port)
+      chan-cross-send-impl(resp-page, r)
+    } else if op == NET-OP-TX {
+      let len = chan-cross-recv-impl(req-page)
+      e1000-tx-impl(len)
+    } else if op == NET-OP-RX-POLL {
+      let buf = e1000-rx-poll-impl()
+      chan-cross-send-impl(resp-page, buf)
+      chan-cross-send-impl(resp-page, nic-rx-len)
+    } else if op == NET-OP-RX-WAIT {
+      let buf = e1000-rx-wait-impl()
+      chan-cross-send-impl(resp-page, buf)
+      chan-cross-send-impl(resp-page, nic-rx-len)
+    } else if op == NET-OP-BUILD-ARP {
+      let len = build-arp-impl()
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-UDP {
+      let payload = chan-cross-recv-impl(req-page)
+      let len = build-udp-impl(payload)
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-STORE-MAC {
+      let p = chan-cross-recv-impl(req-page)
+      net-store-mac-impl(p)
+    } else if op == NET-OP-GET-MAC {
+      chan-cross-send-impl(resp-page, nic-mac-lo)
+      chan-cross-send-impl(resp-page, nic-mac-hi)
+    } else if op == NET-OP-RUN {
+      run-net-impl(port)
+    } else if op == NET-OP-SHUTDOWN {
       running = 0
     }
   }
-  serial_write_cstr(port, "  net: component shutting down")
-  serial_nl(port)
+  serial-write-cstr(port, "  net: component shutting down")
+  serial-nl(port)
   return 0
 }
 
 // Thread wrapper for starting the component when thr_create cannot pass an
 // argument directly.  The kernel sets net_component_cap_info before creating
 // the thread.
-var net_component_cap_info: Int = 0
+var net-component-cap-info: Int = 0
 
-fn network_component_thread() -> Int {
-  return network_component_entry(net_component_cap_info)
+fn network-component-thread() -> Int {
+  return network-component-entry(net-component-cap-info)
 }

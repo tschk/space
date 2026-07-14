@@ -1,39 +1,39 @@
 package space.kernel
 
-fn vfs_selftest() -> Int {
+fn vfs-selftest() -> Int {
   let port = com1()
-  serial_write_cstr(port, "vfs: running self-test")
-  serial_nl(port)
+  serial-write-cstr(port, "vfs: running self-test")
+  serial-nl(port)
   let pass = 1
 
-  let old_table = vfs_fd_table
+  let old-table = vfs-fd-table
 
-  vfs_fd_table_alloc()
+  vfs-fd-table-alloc()
 
-  let fd1 = vfs_fd_alloc()
-  pass = pass & libc_check(fd1 == 3, "vfs_fd_alloc first available is 3")
+  let fd1 = vfs-fd-alloc()
+  pass = pass & libc-check(fd1 == 3, "vfs_fd_alloc first available is 3")
 
-  let base3 = vfs_fd_table + 3 * 32
+  let base3 = vfs-fd-table + 3 * 32
   store64(base3 + 0, 0x1234)
 
-  let fd2 = vfs_fd_alloc()
-  pass = pass & libc_check(fd2 == 4, "vfs_fd_alloc next available is 4")
+  let fd2 = vfs-fd-alloc()
+  pass = pass & libc-check(fd2 == 4, "vfs_fd_alloc next available is 4")
 
-  pass = pass & libc_check(vfs_fd_valid(-1) == 0, "vfs_fd_valid rejects negative")
-  pass = pass & libc_check(vfs_fd_valid(VFS_MAX_FDS) == 0, "vfs_fd_valid rejects out of bounds")
-  pass = pass & libc_check(vfs_fd_valid(0) == 1, "vfs_fd_valid accepts stdin")
-  pass = pass & libc_check(vfs_fd_valid(1) == 1, "vfs_fd_valid accepts stdout")
-  pass = pass & libc_check(vfs_fd_valid(2) == 1, "vfs_fd_valid accepts stderr")
+  pass = pass & libc-check(vfs-fd-valid(-1) == 0, "vfs_fd_valid rejects negative")
+  pass = pass & libc-check(vfs-fd-valid(VFS-MAX-FDS) == 0, "vfs_fd_valid rejects out of bounds")
+  pass = pass & libc-check(vfs-fd-valid(0) == 1, "vfs_fd_valid accepts stdin")
+  pass = pass & libc-check(vfs-fd-valid(1) == 1, "vfs_fd_valid accepts stdout")
+  pass = pass & libc-check(vfs-fd-valid(2) == 1, "vfs_fd_valid accepts stderr")
 
-  pass = pass & libc_check(vfs_fd_valid(3) == 1, "vfs_fd_valid accepts in-use fd")
-  pass = pass & libc_check(vfs_fd_valid(4) == 0, "vfs_fd_valid rejects unused fd")
+  pass = pass & libc-check(vfs-fd-valid(3) == 1, "vfs_fd_valid accepts in-use fd")
+  pass = pass & libc-check(vfs-fd-valid(4) == 0, "vfs_fd_valid rejects unused fd")
 
-  vfs_fd_clear(3)
-  pass = pass & libc_check(vfs_fd_valid(3) == 0, "vfs_fd_valid rejects cleared fd")
-  pass = pass & libc_check(load64(base3 + 0) == -1, "vfs_fd_clear sets path to -1")
-  pass = pass & libc_check(load64(base3 + 8) == 0, "vfs_fd_clear resets offset")
+  vfs-fd-clear(3)
+  pass = pass & libc-check(vfs-fd-valid(3) == 0, "vfs_fd_valid rejects cleared fd")
+  pass = pass & libc-check(load64(base3 + 0) == -1, "vfs_fd_clear sets path to -1")
+  pass = pass & libc-check(load64(base3 + 8) == 0, "vfs_fd_clear resets offset")
 
-  vfs_fd_table = old_table
+  vfs-fd-table = old-table
 
   if pass != 0 {
     return 1

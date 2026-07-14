@@ -6,38 +6,38 @@ package space.kernel
 // Small fully-associative write-through cache used only on the NVMe path
 // (sf_mem_disk == 0). The memdisk path is already in-RAM, so caching would
 // just waste heap. Allocated lazily in sparkfs_init when the NVMe branch runs.
-const SF_CACHE_ENTRIES = 8
+const SF-CACHE-ENTRIES = 8
 
-var sf_cache_buf: Int = 0   // SF_CACHE_ENTRIES * SF_BLOCK_SIZE data buffer
-var sf_cache_meta: Int = 0  // SF_CACHE_ENTRIES * 16: [block_no, valid]
-var sf_cache_hits: Int = 0
-var sf_cache_misses: Int = 0
+var sf-cache-buf: Int = 0   // SF_CACHE_ENTRIES * SF_BLOCK_SIZE data buffer
+var sf-cache-meta: Int = 0  // SF_CACHE_ENTRIES * 16: [block_no, valid]
+var sf-cache-hits: Int = 0
+var sf-cache-misses: Int = 0
 
 // Page-aligned staging buffer for NVMe block I/O (PRP1 must be page-aligned).
 // Allocated in sparkfs_init when the NVMe path is taken.
-var sf_nvme_buf: Int = 0
+var sf-nvme-buf: Int = 0
 
-fn sf_cache_init() -> void {
-  sf_cache_buf = alloc(SF_CACHE_ENTRIES * SF_BLOCK_SIZE)
-  sf_cache_meta = alloc(SF_CACHE_ENTRIES * 16)
+fn sf-cache-init() -> void {
+  sf-cache-buf = alloc(SF-CACHE-ENTRIES * SF-BLOCK-SIZE)
+  sf-cache-meta = alloc(SF-CACHE-ENTRIES * 16)
   let i = 0
-  while i < SF_CACHE_ENTRIES {
-    store64(sf_cache_meta + i * 16 + 0, -1)
-    store64(sf_cache_meta + i * 16 + 8, 0)
+  while i < SF-CACHE-ENTRIES {
+    store64(sf-cache-meta + i * 16 + 0, -1)
+    store64(sf-cache-meta + i * 16 + 8, 0)
     i = i + 1
   }
-  sf_cache_hits = 0
-  sf_cache_misses = 0
+  sf-cache-hits = 0
+  sf-cache-misses = 0
   return
 }
 
-fn sf_cache_lookup(bno: Int) -> Int {
-  if sf_cache_buf == 0 {
+fn sf-cache-lookup(bno: Int) -> Int {
+  if sf-cache-buf == 0 {
     return -1
   }
   let i = 0
-  while i < SF_CACHE_ENTRIES {
-    if load64(sf_cache_meta + i * 16 + 8) != 0 && load64(sf_cache_meta + i * 16 + 0) == bno {
+  while i < SF-CACHE-ENTRIES {
+    if load64(sf-cache-meta + i * 16 + 8) != 0 && load64(sf-cache-meta + i * 16 + 0) == bno {
       return i
     }
     i = i + 1
@@ -45,10 +45,10 @@ fn sf_cache_lookup(bno: Int) -> Int {
   return -1
 }
 
-fn sf_cache_find_empty() -> Int {
+fn sf-cache-find-empty() -> Int {
   let i = 0
-  while i < SF_CACHE_ENTRIES {
-    if load64(sf_cache_meta + i * 16 + 8) == 0 {
+  while i < SF-CACHE-ENTRIES {
+    if load64(sf-cache-meta + i * 16 + 8) == 0 {
       return i
     }
     i = i + 1
@@ -56,19 +56,19 @@ fn sf_cache_find_empty() -> Int {
   return -1
 }
 
-fn sf_cache_install(bno: Int, buf: Int) -> void {
-  if sf_cache_buf == 0 {
+fn sf-cache-install(bno: Int, buf: Int) -> void {
+  if sf-cache-buf == 0 {
     return
   }
-  let slot = sf_cache_find_empty()
+  let slot = sf-cache-find-empty()
   if slot < 0 {
     slot = 0
   }
-  store64(sf_cache_meta + slot * 16 + 0, bno)
-  store64(sf_cache_meta + slot * 16 + 8, 1)
-  let dst = sf_cache_buf + slot * SF_BLOCK_SIZE
+  store64(sf-cache-meta + slot * 16 + 0, bno)
+  store64(sf-cache-meta + slot * 16 + 8, 1)
+  let dst = sf-cache-buf + slot * SF-BLOCK-SIZE
   let k = 0
-  while k < SF_BLOCK_SIZE {
+  while k < SF-BLOCK-SIZE {
     store8(dst + k, load8(buf + k))
     k = k + 1
   }
@@ -78,83 +78,83 @@ fn sf_cache_install(bno: Int, buf: Int) -> void {
 // --- low-level block I/O ----------------------------------------------------
 
 // Read block `bno` into `buf`. Returns 0 on success.
-fn sf_read_block(bno: Int, buf: Int) -> Int {
-  if sf_mem_disk != 0 {
-    let src = sf_mem_disk + bno * SF_BLOCK_SIZE
+fn sf-read-block(bno: Int, buf: Int) -> Int {
+  if sf-mem-disk != 0 {
+    let src = sf-mem-disk + bno * SF-BLOCK-SIZE
     let i = 0
-    while i < SF_BLOCK_SIZE {
+    while i < SF-BLOCK-SIZE {
       store8(buf + i, load8(src + i))
       i = i + 1
     }
     return 0
   }
-  let cached = sf_cache_lookup(bno)
+  let cached = sf-cache-lookup(bno)
   if cached >= 0 {
-    let src = sf_cache_buf + cached * SF_BLOCK_SIZE
+    let src = sf-cache-buf + cached * SF-BLOCK-SIZE
     let i = 0
-    while i < SF_BLOCK_SIZE {
+    while i < SF-BLOCK-SIZE {
       store8(buf + i, load8(src + i))
       i = i + 1
     }
-    sf_cache_hits = sf_cache_hits + 1
+    sf-cache-hits = sf-cache-hits + 1
     return 0
   }
-  sf_cache_misses = sf_cache_misses + 1
-  let sector = bno * SF_SECTORS_PER_BLOCK
-  let rc = nvme_read(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
+  sf-cache-misses = sf-cache-misses + 1
+  let sector = bno * SF-SECTORS-PER-BLOCK
+  let rc = nvme-read(sector, SF-SECTORS-PER-BLOCK, sf-nvme-buf)
   if rc != 0 {
-    sf_disk_ready = 0
+    sf-disk-ready = 0
     return -1
   }
   let i = 0
-  while i < SF_BLOCK_SIZE {
-    store8(buf + i, load8(sf_nvme_buf + i))
+  while i < SF-BLOCK-SIZE {
+    store8(buf + i, load8(sf-nvme-buf + i))
     i = i + 1
   }
-  sf_cache_install(bno, buf)
+  sf-cache-install(bno, buf)
   return 0
 }
 
 // Write block `bno` from `buf`. Returns 0 on success. Write-through.
-fn sf_write_block(bno: Int, buf: Int) -> Int {
-  if sf_mem_disk != 0 {
-    let dst = sf_mem_disk + bno * SF_BLOCK_SIZE
+fn sf-write-block(bno: Int, buf: Int) -> Int {
+  if sf-mem-disk != 0 {
+    let dst = sf-mem-disk + bno * SF-BLOCK-SIZE
     let i = 0
-    while i < SF_BLOCK_SIZE {
+    while i < SF-BLOCK-SIZE {
       store8(dst + i, load8(buf + i))
       i = i + 1
     }
     return 0
   }
-  let sector = bno * SF_SECTORS_PER_BLOCK
+  let sector = bno * SF-SECTORS-PER-BLOCK
   let i = 0
-  while i < SF_BLOCK_SIZE {
-    store8(sf_nvme_buf + i, load8(buf + i))
+  while i < SF-BLOCK-SIZE {
+    store8(sf-nvme-buf + i, load8(buf + i))
     i = i + 1
   }
-  let rc = nvme_write(sector, SF_SECTORS_PER_BLOCK, sf_nvme_buf)
+  let rc = nvme-write(sector, SF-SECTORS-PER-BLOCK, sf-nvme-buf)
   if rc != 0 {
-    sf_disk_ready = 0
+    sf-disk-ready = 0
     return -1
   }
-  let cached = sf_cache_lookup(bno)
+  let cached = sf-cache-lookup(bno)
   if cached >= 0 {
-    let dst = sf_cache_buf + cached * SF_BLOCK_SIZE
+    let dst = sf-cache-buf + cached * SF-BLOCK-SIZE
     let k = 0
-    while k < SF_BLOCK_SIZE {
+    while k < SF-BLOCK-SIZE {
       store8(dst + k, load8(buf + k))
       k = k + 1
     }
   } else {
-    sf_cache_install(bno, buf)
+    sf-cache-install(bno, buf)
   }
   return 0
 }
 
 // Zero a block buffer.
-fn sf_zero_block(buf: Int) -> void {
+fn sf-zero-block(buf: Int) -> void {
   let i = 0
-  while i < SF_BLOCK_SIZE {
+  while i < SF-BLOCK-SIZE {
     store8(buf + i, 0)
     i = i + 1
   }
@@ -163,26 +163,26 @@ fn sf_zero_block(buf: Int) -> void {
 
 // --- bitmap -----------------------------------------------------------------
 
-fn sf_bitmap_byte(bno: Int) -> Int {
+fn sf-bitmap-byte(bno: Int) -> Int {
   return bno >> 3
 }
 
-fn sf_mark_used(bno: Int) -> void {
-  let addr = sf_bitmap + (bno >> 3)
+fn sf-mark-used(bno: Int) -> void {
+  let addr = sf-bitmap + (bno >> 3)
   let b = load8(addr)
   store8(addr, b | (1 << (bno & 7)))
   return
 }
 
-fn sf_mark_free(bno: Int) -> void {
-  let addr = sf_bitmap + (bno >> 3)
+fn sf-mark-free(bno: Int) -> void {
+  let addr = sf-bitmap + (bno >> 3)
   let b = load8(addr)
   store8(addr, b & (255 - (1 << (bno & 7))))
   return
 }
 
-fn sf_block_used(bno: Int) -> Int {
-  let b = load8(sf_bitmap + (bno >> 3))
+fn sf-block-used(bno: Int) -> Int {
+  let b = load8(sf-bitmap + (bno >> 3))
   if (b & (1 << (bno & 7))) != 0 {
     return 1
   }
@@ -190,15 +190,15 @@ fn sf_block_used(bno: Int) -> Int {
 }
 
 // Allocate a data block. Returns block number or -1.
-fn sf_alloc_block() -> Int {
-  let total = load64(sf_super + SF_SB_TOTAL_BLOCKS)
-  let data_start = load64(sf_super + SF_SB_DATA_START)
-  let bno = data_start
+fn sf-alloc-block() -> Int {
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  let data-start = load64(sf-super + SF-SB-DATA-START)
+  let bno = data-start
   while bno < total {
-    if sf_block_used(bno) == 0 {
-      sf_mark_used(bno)
-      sf_zero_block(sf_block_buf)
-      sf_write_block(bno, sf_block_buf)
+    if sf-block-used(bno) == 0 {
+      sf-mark-used(bno)
+      sf-zero-block(sf-block-buf)
+      sf-write-block(bno, sf-block-buf)
       return bno
     }
     bno = bno + 1
@@ -207,7 +207,7 @@ fn sf_alloc_block() -> Int {
 }
 
 // Free a data block.
-fn sf_free_block(bno: Int) -> void {
-  sf_mark_free(bno)
+fn sf-free-block(bno: Int) -> void {
+  sf-mark-free(bno)
   return
 }

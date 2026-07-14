@@ -1,29 +1,29 @@
-var dsp_surfaces: Int = 0
-var dsp_surface_count: Int = 0
-var dsp_pools: Int = 0
-var dsp_mouse_x: Int = 0
-var dsp_mouse_y: Int = 0
-var dsp_running: Int = 0
-var dsp_prev_cx: Int = 0
-var dsp_prev_cy: Int = 0
+var dsp-surfaces: Int = 0
+var dsp-surface-count: Int = 0
+var dsp-pools: Int = 0
+var dsp-mouse-x: Int = 0
+var dsp-mouse-y: Int = 0
+var dsp-running: Int = 0
+var dsp-prev-cx: Int = 0
+var dsp-prev-cy: Int = 0
 
-fn dsp_init() -> void {
+fn dsp-init() -> void {
   return
 }
 
-fn dsp_create_surface() -> Int {
+fn dsp-create-surface() -> Int {
   return -1
 }
 
-fn dsp_run(ch: Int, port: Int) -> void {
-  serial_write_cstr(port, "  display: server running in display component")
-  serial_nl(port)
+fn dsp-run(ch: Int, port: Int) -> void {
+  serial-write-cstr(port, "  display: server running in display component")
+  serial-nl(port)
   return
 }
 
-fn dsp_selftest(port: Int) -> Int {
-  dsp_init()
-  serial_write_cstr(port, "  dsp self-test passed (display component)")
-  serial_nl(port)
+fn dsp-selftest(port: Int) -> Int {
+  dsp-init()
+  serial-write-cstr(port, "  dsp self-test passed (display component)")
+  serial-nl(port)
   return 1
 }

@@ -28,7 +28,7 @@ compile_times=()
 for i in $(seq 1 "$ITERATIONS"); do
   "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin" 2>/dev/null
   t0=$(date +%s%N 2>/dev/null || python3 -c 'import time; print(int(time.time()*1e9))')
-  "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry --emit boot \
+  "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
     --trampoline "$BUILD_DIR/trampoline.bin" \
     --target native --target-triple x86_64-unknown-none --linkage static-lib \
     --out "$BUILD_DIR/kernel.bin" 2>/dev/null

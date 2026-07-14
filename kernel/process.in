@@ -10,47 +10,47 @@ package space.kernel
 //   [id][domain_id][thread_id][entry_addr][caps][name_addr][status][exit_code]
 // Status: 0=ready, 1=running, 2=blocked, 3=exited, 4=killed
 
-const PROC_SIZE = 64
-const PROC_OFF_ID = 0
-const PROC_OFF_DOMAIN = 8
-const PROC_OFF_THREAD = 16
-const PROC_OFF_ENTRY = 24
-const PROC_OFF_CAPS = 32
-const PROC_OFF_NAME = 40
-const PROC_OFF_STATUS = 48
-const PROC_OFF_EXIT_CODE = 56
+const PROC-SIZE = 64
+const PROC-OFF-ID = 0
+const PROC-OFF-DOMAIN = 8
+const PROC-OFF-THREAD = 16
+const PROC-OFF-ENTRY = 24
+const PROC-OFF-CAPS = 32
+const PROC-OFF-NAME = 40
+const PROC-OFF-STATUS = 48
+const PROC-OFF-EXIT-CODE = 56
 
-const PROC_READY = 0
-const PROC_RUNNING = 1
-const PROC_BLOCKED = 2
-const PROC_EXITED = 3
-const PROC_KILLED = 4
+const PROC-READY = 0
+const PROC-RUNNING = 1
+const PROC-BLOCKED = 2
+const PROC-EXITED = 3
+const PROC-KILLED = 4
 
-var proc_table: Int = 0
-var proc_count: Int = 0
-var proc_max: Int = 0
-var proc_current: Int = 0
-var proc_entry_arg: Int = 0
+var proc-table: Int = 0
+var proc-count: Int = 0
+var proc-max: Int = 0
+var proc-current: Int = 0
+var proc-entry-arg: Int = 0
 
 // Allocate the process table with room for `max` processes.
-fn proc_init(max: Int) -> void {
+fn proc-init(max: Int) -> void {
   let n = max
   if n < 1 { n = 16 }
   if n > 256 { n = 256 }
-  proc_table = alloc(n * PROC_SIZE)
-  proc_max = n
-  proc_count = 0
-  proc_current = 0
+  proc-table = alloc(n * PROC-SIZE)
+  proc-max = n
+  proc-count = 0
+  proc-current = 0
   let i = 0
   while i < n {
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_ID, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_DOMAIN, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_THREAD, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_ENTRY, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_CAPS, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_NAME, 0)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_STATUS, PROC_READY)
-    store64(proc_table + i * PROC_SIZE + PROC_OFF_EXIT_CODE, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-ID, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-DOMAIN, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-THREAD, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-ENTRY, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-CAPS, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-NAME, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-STATUS, PROC-READY)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-EXIT-CODE, 0)
     i = i + 1
   }
   return
@@ -58,274 +58,274 @@ fn proc_init(max: Int) -> void {
 
 // Create a process: allocate an isolated domain, register the component in the
 // kernel object graph, create a cooperative thread, and return the PID.
-fn proc_create(name: Int, entry: Int, caps: Int) -> Int {
-  if proc_count >= proc_max { return -1 }
-  let pid = proc_count
-  let base = proc_table + pid * PROC_SIZE
-  let domain = domain_create()
+fn proc-create(name: Int, entry: Int, caps: Int) -> Int {
+  if proc-count >= proc-max { return -1 }
+  let pid = proc-count
+  let base = proc-table + pid * PROC-SIZE
+  let domain = domain-create()
   if domain == 0 { return -1 }
-  component_register(name, entry, caps)
-  proc_entry_arg = pid
-  let tid = thr_create(entry)
-  store64(base + PROC_OFF_ID, pid)
-  store64(base + PROC_OFF_DOMAIN, domain)
-  store64(base + PROC_OFF_THREAD, tid)
-  store64(base + PROC_OFF_ENTRY, entry)
-  store64(base + PROC_OFF_CAPS, caps)
-  store64(base + PROC_OFF_NAME, name)
-  store64(base + PROC_OFF_STATUS, PROC_READY)
-  store64(base + PROC_OFF_EXIT_CODE, 0)
-  proc_count = proc_count + 1
+  component-register(name, entry, caps)
+  proc-entry-arg = pid
+  let tid = thr-create(entry)
+  store64(base + PROC-OFF-ID, pid)
+  store64(base + PROC-OFF-DOMAIN, domain)
+  store64(base + PROC-OFF-THREAD, tid)
+  store64(base + PROC-OFF-ENTRY, entry)
+  store64(base + PROC-OFF-CAPS, caps)
+  store64(base + PROC-OFF-NAME, name)
+  store64(base + PROC-OFF-STATUS, PROC-READY)
+  store64(base + PROC-OFF-EXIT-CODE, 0)
+  proc-count = proc-count + 1
   return pid
 }
 
 // Mark the current process as exited with `code` and yield back to the
 // scheduler. The underlying thread is marked DONE so it will not be rescheduled.
-fn proc_exit(code: Int) -> void {
-  let base = proc_table + proc_current * PROC_SIZE
-  store64(base + PROC_OFF_STATUS, PROC_EXITED)
-  store64(base + PROC_OFF_EXIT_CODE, code)
-  thr_exit()
+fn proc-exit(code: Int) -> void {
+  let base = proc-table + proc-current * PROC-SIZE
+  store64(base + PROC-OFF-STATUS, PROC-EXITED)
+  store64(base + PROC-OFF-EXIT-CODE, code)
+  thr-exit()
   return
 }
 
 // Mark a process as killed. The thread is left to be reaped by the scheduler.
-fn proc_kill(pid: Int) -> void {
-  if pid >= proc_count { return }
-  let base = proc_table + pid * PROC_SIZE
-  store64(base + PROC_OFF_STATUS, PROC_KILLED)
+fn proc-kill(pid: Int) -> void {
+  if pid >= proc-count { return }
+  let base = proc-table + pid * PROC-SIZE
+  store64(base + PROC-OFF-STATUS, PROC-KILLED)
   return
 }
 
 // Block the caller until `pid` has exited or been killed, then return its exit
 // code. Uses cooperative yield-polling since .in has no atomics yet.
-fn proc_wait(pid: Int) -> Int {
-  if pid >= proc_count { return -1 }
-  let base = proc_table + pid * PROC_SIZE
-  while load64(base + PROC_OFF_STATUS) != PROC_EXITED && load64(base + PROC_OFF_STATUS) != PROC_KILLED {
-    thr_yield()
+fn proc-wait(pid: Int) -> Int {
+  if pid >= proc-count { return -1 }
+  let base = proc-table + pid * PROC-SIZE
+  while load64(base + PROC-OFF-STATUS) != PROC-EXITED && load64(base + PROC-OFF-STATUS) != PROC-KILLED {
+    thr-yield()
   }
-  return load64(base + PROC_OFF_EXIT_CODE)
+  return load64(base + PROC-OFF-EXIT-CODE)
 }
 
 // Print all processes and their status (for the `ps` shell command).
-fn proc_list(port: Int) -> void {
-  serial_write_cstr(port, "  PID  DOMAIN  THREAD  STATUS   NAME")
-  serial_nl(port)
+fn proc-list(port: Int) -> void {
+  serial-write-cstr(port, "  PID  DOMAIN  THREAD  STATUS   NAME")
+  serial-nl(port)
   let i = 0
-  while i < proc_count {
-    let base = proc_table + i * PROC_SIZE
-    let id = load64(base + PROC_OFF_ID)
-    let dom = load64(base + PROC_OFF_DOMAIN)
-    let tid = load64(base + PROC_OFF_THREAD)
-    let status = load64(base + PROC_OFF_STATUS)
-    let name = load64(base + PROC_OFF_NAME)
-    serial_write_cstr(port, "  ")
-    serial_write_dec_wide(port, id)
-    serial_write_cstr(port, "  ")
-    serial_write_dec_wide(port, dom)
-    serial_write_cstr(port, "  ")
-    serial_write_dec_wide(port, tid)
-    serial_write_cstr(port, "  ")
-    if status == PROC_READY {
-      serial_write_cstr(port, "ready  ")
-    } else if status == PROC_RUNNING {
-      serial_write_cstr(port, "running")
-    } else if status == PROC_BLOCKED {
-      serial_write_cstr(port, "blocked")
-    } else if status == PROC_EXITED {
-      serial_write_cstr(port, "exited ")
-    } else if status == PROC_KILLED {
-      serial_write_cstr(port, "killed ")
+  while i < proc-count {
+    let base = proc-table + i * PROC-SIZE
+    let id = load64(base + PROC-OFF-ID)
+    let dom = load64(base + PROC-OFF-DOMAIN)
+    let tid = load64(base + PROC-OFF-THREAD)
+    let status = load64(base + PROC-OFF-STATUS)
+    let name = load64(base + PROC-OFF-NAME)
+    serial-write-cstr(port, "  ")
+    serial-write-dec-wide(port, id)
+    serial-write-cstr(port, "  ")
+    serial-write-dec-wide(port, dom)
+    serial-write-cstr(port, "  ")
+    serial-write-dec-wide(port, tid)
+    serial-write-cstr(port, "  ")
+    if status == PROC-READY {
+      serial-write-cstr(port, "ready  ")
+    } else if status == PROC-RUNNING {
+      serial-write-cstr(port, "running")
+    } else if status == PROC-BLOCKED {
+      serial-write-cstr(port, "blocked")
+    } else if status == PROC-EXITED {
+      serial-write-cstr(port, "exited ")
+    } else if status == PROC-KILLED {
+      serial-write-cstr(port, "killed ")
     } else {
-      serial_write_cstr(port, "unknown")
+      serial-write-cstr(port, "unknown")
     }
-    serial_write_cstr(port, "  ")
-    serial_write_cstr(port, name)
-    serial_nl(port)
+    serial-write-cstr(port, "  ")
+    serial-write-cstr(port, name)
+    serial-nl(port)
     i = i + 1
   }
-  serial_write_cstr(port, "  total processes: ")
-  serial_write_dec_wide(port, proc_count)
-  serial_nl(port)
+  serial-write-cstr(port, "  total processes: ")
+  serial-write-dec-wide(port, proc-count)
+  serial-nl(port)
   return
 }
 
 // Dummy process entry for testing: prints "hello from process N" and exits.
 // The PID is passed via the global proc_entry_arg since thr_create does not
 // support argument passing.
-fn proc_dummy_entry() -> Int {
+fn proc-dummy-entry() -> Int {
   let port = com1()
-  let pid = proc_entry_arg
-  proc_current = pid
-  serial_write_cstr(port, "space:   hello from process ")
-  serial_write_dec_wide(port, pid)
-  serial_nl(port)
-  proc_exit(0)
+  let pid = proc-entry-arg
+  proc-current = pid
+  serial-write-cstr(port, "space:   hello from process ")
+  serial-write-dec-wide(port, pid)
+  serial-nl(port)
+  proc-exit(0)
   return 0
 }
 
 // Load and run an SCI component from the filesystem.
 // Resolves the file, maps it to a new domain, registers it in the object graph,
 // and invokes its entry point.
-fn sci_load_file(port: Int, pathname: Int) -> Int {
-  let header_buf = alloc(4096)
-  let rc = fs_read_file(pathname, header_buf)
+fn sci-load-file(port: Int, pathname: Int) -> Int {
+  let header-buf = alloc(4096)
+  let rc = fs-read-file(pathname, header-buf)
   if rc < 32 {
-    serial_write_cstr(port, "  SCI: failed to read manifest header from ")
-    serial_write_cstr(port, pathname)
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: failed to read manifest header from ")
+    serial-write-cstr(port, pathname)
+    serial-nl(port)
     return -1
   }
-  let magic = load64(header_buf + 0)
-  if magic != SCI_MAGIC {
-    serial_write_cstr(port, "  SCI: invalid magic in ")
-    serial_write_cstr(port, pathname)
-    serial_nl(port)
+  let magic = load64(header-buf + 0)
+  if magic != SCI-MAGIC {
+    serial-write-cstr(port, "  SCI: invalid magic in ")
+    serial-write-cstr(port, pathname)
+    serial-nl(port)
     return -1
   }
-  let required = load64(header_buf + 8)
-  let entry = load64(header_buf + 16)
-  let image_size = load64(header_buf + 24)
+  let required = load64(header-buf + 8)
+  let entry = load64(header-buf + 16)
+  let image-size = load64(header-buf + 24)
 
-  serial_write_cstr(port, "  SCI debug: magic=0x")
-  serial_write_hex(port, magic)
-  serial_write_cstr(port, " req=0x")
-  serial_write_hex(port, required)
-  serial_write_cstr(port, " entry=0x")
-  serial_write_hex(port, entry)
-  serial_write_cstr(port, " size=0x")
-  serial_write_hex(port, image_size)
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI debug: magic=0x")
+  serial-write-hex(port, magic)
+  serial-write-cstr(port, " req=0x")
+  serial-write-hex(port, required)
+  serial-write-cstr(port, " entry=0x")
+  serial-write-hex(port, entry)
+  serial-write-cstr(port, " size=0x")
+  serial-write-hex(port, image-size)
+  serial-nl(port)
 
-  serial_write_cstr(port, "  SCI: loading ")
+  serial-write-cstr(port, "  SCI: loading ")
 
-  serial_write_cstr(port, pathname)
-  serial_write_cstr(port, ", size 0x")
-  serial_write_hex(port, image_size)
-  serial_nl(port)
+  serial-write-cstr(port, pathname)
+  serial-write-cstr(port, ", size 0x")
+  serial-write-hex(port, image-size)
+  serial-nl(port)
 
-  let missing = required & (-1 ^ realm_grants)
+  let missing = required & (-1 ^ realm-grants)
   if missing != 0 {
-    serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
-    serial_write_hex(port, missing)
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: DENIED undeclared cap 0x")
+    serial-write-hex(port, missing)
+    serial-nl(port)
     return -1
   }
 
-  let pages = (image_size + 4095) / 4096
-  let load_addr = load_arena_alloc(pages * 4096)
+  let pages = (image-size + 4095) / 4096
+  let load-addr = load-arena-alloc(pages * 4096)
 
   // Zero the allocated pages
   let z = 0
   while z < pages * 4096 {
-    store8(load_addr + z, 0)
+    store8(load-addr + z, 0)
     z = z + 1
   }
 
-  let bytes_read = fs_read_file(pathname, load_addr)
-  if bytes_read < image_size {
-    serial_write_cstr(port, "  SCI: read failed (got 0x")
-    serial_write_hex(port, bytes_read)
-    serial_write_cstr(port, " bytes)")
-    serial_nl(port)
+  let bytes-read = fs-read-file(pathname, load-addr)
+  if bytes-read < image-size {
+    serial-write-cstr(port, "  SCI: read failed (got 0x")
+    serial-write-hex(port, bytes-read)
+    serial-write-cstr(port, " bytes)")
+    serial-nl(port)
     return -1
   }
 
-  let domain = domain_create()
+  let domain = domain-create()
   if domain == 0 {
-    serial_write_cstr(port, "  SCI: domain_create failed")
-    serial_nl(port)
+    serial-write-cstr(port, "  SCI: domain_create failed")
+    serial-nl(port)
     return -1
   }
 
-  let component = component_register(pathname, entry, required)
-  let virt_load = entry - 32
-  let image_pages = (image_size + 4095) / 4096
+  let component = component-register(pathname, entry, required)
+  let virt-load = entry - 32
+  let image-pages = (image-size + 4095) / 4096
   let i = 0
-  while i < image_pages {
-    domain_map(domain, virt_load + i * 4096, load_addr + i * 4096, 0x7)
+  while i < image-pages {
+    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
     i = i + 1
   }
 
   store64(component + 40, domain)
-  obj_link(root_realm, component)
+  obj-link(root-realm, component)
 
-  let cap_info = alloc(16)
-  store64(cap_info + 0, cap_count)
-  store64(cap_info + 8, cap_table_base)
+  let cap-info = alloc(16)
+  store64(cap-info + 0, cap-count)
+  store64(cap-info + 8, cap-table-base)
 
-  domain_switch(domain)
-  let status = invoke1(entry, cap_info)
-  domain_switch(0)
+  domain-switch(domain)
+  let status = invoke1(entry, cap-info)
+  domain-switch(0)
 
   store64(component + 48, status)
-  serial_write_cstr(port, "  SCI: guest ")
-  serial_write_cstr(port, pathname)
-  serial_write_cstr(port, " returned status 0x")
-  serial_write_hex(port, status)
-  serial_nl(port)
+  serial-write-cstr(port, "  SCI: guest ")
+  serial-write-cstr(port, pathname)
+  serial-write-cstr(port, " returned status 0x")
+  serial-write-hex(port, status)
+  serial-nl(port)
   return status
 }
 
-fn proc_check(cond: Int, msg: Int) -> Int {
+fn proc-check(cond: Int, msg: Int) -> Int {
   let port = com1()
   if cond != 0 {
-    serial_write_cstr(port, "  ok: ")
-    serial_write_cstr(port, msg)
-    serial_nl(port)
+    serial-write-cstr(port, "  ok: ")
+    serial-write-cstr(port, msg)
+    serial-nl(port)
     return 1
   }
-  serial_write_cstr(port, "  FAIL: ")
-  serial_write_cstr(port, msg)
-  serial_nl(port)
+  serial-write-cstr(port, "  FAIL: ")
+  serial-write-cstr(port, msg)
+  serial-nl(port)
   return 0
 }
 
-fn proc_selftest() -> Int {
+fn proc-selftest() -> Int {
   let port = com1()
-  serial_write_cstr(port, "space: running process table self-tests")
-  serial_nl(port)
+  serial-write-cstr(port, "space: running process table self-tests")
+  serial-nl(port)
   let pass = 1
 
   // ponytail: proc_init argument is currently miscompiled on this target, so
   // clamp it and verify the observable behavior (sequential PIDs, counts).
-  proc_init(16)
-  pass = pass & proc_check(proc_count == 0, "proc_count initial 0")
-  pass = pass & proc_check(proc_max >= 1, "proc_max is sane")
+  proc-init(16)
+  pass = pass & proc-check(proc-count == 0, "proc_count initial 0")
+  pass = pass & proc-check(proc-max >= 1, "proc_max is sane")
 
-  let pid1 = proc_create("test1", 0x1000, 0)
-  pass = pass & proc_check(pid1 >= 0, "proc_create returns a pid")
-  pass = pass & proc_check(proc_count == 1, "proc_count increased to 1")
+  let pid1 = proc-create("test1", 0x1000, 0)
+  pass = pass & proc-check(pid1 >= 0, "proc_create returns a pid")
+  pass = pass & proc-check(proc-count == 1, "proc_count increased to 1")
 
-  let pid2 = proc_create("test2", 0x2000, 0)
-  pass = pass & proc_check(pid2 >= 0, "proc_create returns a pid")
-  pass = pass & proc_check(proc_count == 2, "proc_count increased to 2")
+  let pid2 = proc-create("test2", 0x2000, 0)
+  pass = pass & proc-check(pid2 >= 0, "proc_create returns a pid")
+  pass = pass & proc-check(proc-count == 2, "proc_count increased to 2")
 
-  let wait_invalid = proc_wait(999)
-  pass = pass & proc_check(wait_invalid == -1, "proc_wait returns -1 for invalid pid")
+  let wait-invalid = proc-wait(999)
+  pass = pass & proc-check(wait-invalid == -1, "proc_wait returns -1 for invalid pid")
 
-  let pid3 = proc_create("test3", 0x3000, 0)
-  let base3 = proc_table + pid3 * PROC_SIZE
-  store64(base3 + PROC_OFF_STATUS, PROC_EXITED)
-  store64(base3 + PROC_OFF_EXIT_CODE, 42)
-  let wait_exited = proc_wait(pid3)
-  pass = pass & proc_check(wait_exited == 42, "proc_wait returns exit code for exited process")
+  let pid3 = proc-create("test3", 0x3000, 0)
+  let base3 = proc-table + pid3 * PROC-SIZE
+  store64(base3 + PROC-OFF-STATUS, PROC-EXITED)
+  store64(base3 + PROC-OFF-EXIT-CODE, 42)
+  let wait-exited = proc-wait(pid3)
+  pass = pass & proc-check(wait-exited == 42, "proc_wait returns exit code for exited process")
 
-  let pid4 = proc_create("test4", 0x4000, 0)
-  proc_kill(pid4)
-  let wait_killed = proc_wait(pid4)
-  pass = pass & proc_check(wait_killed == 0, "proc_wait returns 0 for killed process")
+  let pid4 = proc-create("test4", 0x4000, 0)
+  proc-kill(pid4)
+  let wait-killed = proc-wait(pid4)
+  pass = pass & proc-check(wait-killed == 0, "proc_wait returns 0 for killed process")
 
   if pass != 0 {
-    serial_write_cstr(port, "proc_selftest: PASS")
-    serial_nl(port)
+    serial-write-cstr(port, "proc_selftest: PASS")
+    serial-nl(port)
   } else {
-    serial_write_cstr(port, "proc_selftest: FAIL")
-    serial_nl(port)
+    serial-write-cstr(port, "proc_selftest: FAIL")
+    serial-nl(port)
   }
 
   // Restore the normal system state
-  proc_init(16)
+  proc-init(16)
   return pass
 }

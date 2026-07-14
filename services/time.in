@@ -2,115 +2,115 @@ package space.kernel
 
 import "../components/time.in"
 
-fn time_init() -> void {
+fn time-init() -> void {
   return
 }
 
-fn time_wallclock() -> Int {
-  return time_component_wallclock()
+fn time-wallclock() -> Int {
+  return time-component-wallclock()
 }
 
-fn time_print(port: Int) -> void {
-  let ts = time_wallclock()
+fn time-print(port: Int) -> void {
+  let ts = time-wallclock()
 
   // Reload from globals (inter-function data transfer)
-  let y = time_component_y
-  let mo = time_component_mo
-  let d = time_component_d
-  let h = time_component_h
-  let mi = time_component_mi
-  let s = time_component_s
+  let y = time-component-y
+  let mo = time-component-mo
+  let d = time-component-d
+  let h = time-component-h
+  let mi = time-component-mi
+  let s = time-component-s
 
   // Formatted date: Wed Jul 08 07:51:38 2026
-  serial_write_cstr(port, "  ")
+  serial-write-cstr(port, "  ")
 
   // Day of week
   let dow = (ts / 86400 + 4) % 7
   if dow == 0 {
-    serial_write_cstr(port, "Sun")
+    serial-write-cstr(port, "Sun")
   } else if dow == 1 {
-    serial_write_cstr(port, "Mon")
+    serial-write-cstr(port, "Mon")
   } else if dow == 2 {
-    serial_write_cstr(port, "Tue")
+    serial-write-cstr(port, "Tue")
   } else if dow == 3 {
-    serial_write_cstr(port, "Wed")
+    serial-write-cstr(port, "Wed")
   } else if dow == 4 {
-    serial_write_cstr(port, "Thu")
+    serial-write-cstr(port, "Thu")
   } else if dow == 5 {
-    serial_write_cstr(port, "Fri")
+    serial-write-cstr(port, "Fri")
   } else {
-    serial_write_cstr(port, "Sat")
+    serial-write-cstr(port, "Sat")
   }
 
-  serial_put(port, 32)
+  serial-put(port, 32)
 
   // Month name
   if mo == 1 {
-    serial_write_cstr(port, "Jan")
+    serial-write-cstr(port, "Jan")
   } else if mo == 2 {
-    serial_write_cstr(port, "Feb")
+    serial-write-cstr(port, "Feb")
   } else if mo == 3 {
-    serial_write_cstr(port, "Mar")
+    serial-write-cstr(port, "Mar")
   } else if mo == 4 {
-    serial_write_cstr(port, "Apr")
+    serial-write-cstr(port, "Apr")
   } else if mo == 5 {
-    serial_write_cstr(port, "May")
+    serial-write-cstr(port, "May")
   } else if mo == 6 {
-    serial_write_cstr(port, "Jun")
+    serial-write-cstr(port, "Jun")
   } else if mo == 7 {
-    serial_write_cstr(port, "Jul")
+    serial-write-cstr(port, "Jul")
   } else if mo == 8 {
-    serial_write_cstr(port, "Aug")
+    serial-write-cstr(port, "Aug")
   } else if mo == 9 {
-    serial_write_cstr(port, "Sep")
+    serial-write-cstr(port, "Sep")
   } else if mo == 10 {
-    serial_write_cstr(port, "Oct")
+    serial-write-cstr(port, "Oct")
   } else if mo == 11 {
-    serial_write_cstr(port, "Nov")
+    serial-write-cstr(port, "Nov")
   } else {
-    serial_write_cstr(port, "Dec")
+    serial-write-cstr(port, "Dec")
   }
 
-  serial_put(port, 32)
-  if d < 10 { serial_put(port, 48) }
-  serial_write_dec_wide(port, d)
-  serial_put(port, 32)
-  if h < 10 { serial_put(port, 48) }
-  serial_write_dec_wide(port, h)
-  serial_put(port, 58)
-  if mi < 10 { serial_put(port, 48) }
-  serial_write_dec_wide(port, mi)
-  serial_put(port, 58)
-  if s < 10 { serial_put(port, 48) }
-  serial_write_dec_wide(port, s)
-  serial_put(port, 32)
+  serial-put(port, 32)
+  if d < 10 { serial-put(port, 48) }
+  serial-write-dec-wide(port, d)
+  serial-put(port, 32)
+  if h < 10 { serial-put(port, 48) }
+  serial-write-dec-wide(port, h)
+  serial-put(port, 58)
+  if mi < 10 { serial-put(port, 48) }
+  serial-write-dec-wide(port, mi)
+  serial-put(port, 58)
+  if s < 10 { serial-put(port, 48) }
+  serial-write-dec-wide(port, s)
+  serial-put(port, 32)
   if y < 10 {
-    serial_write_cstr(port, "000")
+    serial-write-cstr(port, "000")
   } else if y < 100 {
-    serial_write_cstr(port, "00")
+    serial-write-cstr(port, "00")
   } else if y < 1000 {
-    serial_put(port, 48)
+    serial-put(port, 48)
   }
-  serial_write_dec_wide(port, y)
-  serial_nl(port)
+  serial-write-dec-wide(port, y)
+  serial-nl(port)
 
   // Unix timestamp
-  serial_write_cstr(port, "  unix: ")
-  serial_write_dec_wide(port, ts)
-  serial_nl(port)
+  serial-write-cstr(port, "  unix: ")
+  serial-write-dec-wide(port, ts)
+  serial-nl(port)
 
   // Uptime
-  serial_write_cstr(port, "  uptime: ")
-  serial_write_dec_wide(port, ticks)
-  serial_write_cstr(port, " ticks (")
+  serial-write-cstr(port, "  uptime: ")
+  serial-write-dec-wide(port, ticks)
+  serial-write-cstr(port, " ticks (")
   let secs = ticks / 100
   let umins = secs / 60
   let usecs = secs % 60
-  serial_write_dec_wide(port, umins)
-  serial_write_cstr(port, "m ")
-  serial_write_dec_wide(port, usecs)
-  serial_write_cstr(port, "s)")
-  serial_nl(port)
+  serial-write-dec-wide(port, umins)
+  serial-write-cstr(port, "m ")
+  serial-write-dec-wide(port, usecs)
+  serial-write-cstr(port, "s)")
+  serial-nl(port)
 
   return
 }

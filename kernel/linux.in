@@ -7,71 +7,71 @@ import "../components/posix.in"
 // The component runs in its own domain and services POSIX syscall requests over
 // a cross-domain shared page at LINUX_POSIX_VIRT.
 
-const LINUX_POSIX_VIRT = 0xFFFFA000
+const LINUX-POSIX-VIRT = 0xFFFFA000
 
-var posix_domain: Int = 0
-var posix_shared_page: Int = 0
-var posix_cap_info: Int = 0
-var posix_active: Int = 0
+var posix-domain: Int = 0
+var posix-shared-page: Int = 0
+var posix-cap-info: Int = 0
+var posix-active: Int = 0
 
-fn linux_init() -> void {
-  if posix_active != 0 {
+fn linux-init() -> void {
+  if posix-active != 0 {
     return
   }
-  posix_domain = domain_create()
-  if posix_domain == 0 {
-    posix_domain = 1
+  posix-domain = domain-create()
+  if posix-domain == 0 {
+    posix-domain = 1
   }
-  let shared_phys = domain_create_shared_page(0, posix_domain, LINUX_POSIX_VIRT, LINUX_POSIX_VIRT)
-  if shared_phys == 0 {
-    posix_shared_page = alloc(4096)
+  let shared-phys = domain-create-shared-page(0, posix-domain, LINUX-POSIX-VIRT, LINUX-POSIX-VIRT)
+  if shared-phys == 0 {
+    posix-shared-page = alloc(4096)
   } else {
-    posix_shared_page = LINUX_POSIX_VIRT
+    posix-shared-page = LINUX-POSIX-VIRT
   }
   let i = 0
   while i < 512 {
-    store64(posix_shared_page + i * 8, 0)
+    store64(posix-shared-page + i * 8, 0)
     i = i + 1
   }
-  posix_cap_info = alloc(24)
-  store64(posix_cap_info + 0, cap_count)
-  store64(posix_cap_info + 8, cap_table_base)
-  store64(posix_cap_info + 16, posix_shared_page)
-  component_register("posix", posix_entry, cap_serial() | cap_memory())
-  domain_switch(posix_domain)
-  posix_init()
-  domain_switch(0)
-  posix_active = 1
+  posix-cap-info = alloc(24)
+  store64(posix-cap-info + 0, cap-count)
+  store64(posix-cap-info + 8, cap-table-base)
+  store64(posix-cap-info + 16, posix-shared-page)
+  component-register("posix", posix-entry, cap-serial() | cap-memory())
+  domain-switch(posix-domain)
+  posix-init()
+  domain-switch(0)
+  posix-active = 1
   return
 }
 
-fn linux_dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int) -> Int {
-  if posix_active == 0 {
-    linux_init()
+fn linux-dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int) -> Int {
+  if posix-active == 0 {
+    linux-init()
   }
-  while load64(posix_shared_page + POSIX_RPC_OFF_REQ) != 0 {
+  while load64(posix-shared-page + POSIX-RPC-OFF-REQ) != 0 {
   }
-  store64(posix_shared_page + POSIX_RPC_OFF_NUM, num)
-  store64(posix_shared_page + POSIX_RPC_OFF_A0, a0)
-  store64(posix_shared_page + POSIX_RPC_OFF_A1, a1)
-  store64(posix_shared_page + POSIX_RPC_OFF_A2, a2)
-  store64(posix_shared_page + POSIX_RPC_OFF_A3, a3)
-  store64(posix_shared_page + POSIX_RPC_OFF_A4, a4)
-  store64(posix_shared_page + POSIX_RPC_OFF_A5, a5)
-  store64(posix_shared_page + POSIX_RPC_OFF_REQ, 1)
-  store64(posix_shared_page + POSIX_RPC_OFF_RESP, 0)
-  domain_switch(posix_domain)
-  posix_service(posix_shared_page)
-  domain_switch(0)
-  return load64(posix_shared_page + POSIX_RPC_OFF_RES)
+  store64(posix-shared-page + POSIX-RPC-OFF-NUM, num)
+  store64(posix-shared-page + POSIX-RPC-OFF-A0, a0)
+  store64(posix-shared-page + POSIX-RPC-OFF-A1, a1)
+  store64(posix-shared-page + POSIX-RPC-OFF-A2, a2)
+  store64(posix-shared-page + POSIX-RPC-OFF-A3, a3)
+  store64(posix-shared-page + POSIX-RPC-OFF-A4, a4)
+  store64(posix-shared-page + POSIX-RPC-OFF-A5, a5)
+  store64(posix-shared-page + POSIX-RPC-OFF-REQ, 1)
+  store64(posix-shared-page + POSIX-RPC-OFF-RESP, 0)
+  domain-switch(posix-domain)
+  posix-service(posix-shared-page)
+  domain-switch(0)
+  return load64(posix-shared-page + POSIX-RPC-OFF-RES)
 }
 
-fn linux_elf_probe(port: Int) -> void {
-  if load64(LINUX_ELF_LOAD_ADDR) == LINUX_ELF_MAGIC {
-    let rc2 = posix_exec_image(port, LINUX_ELF_LOAD_ADDR, 4096, "space-minimal-elf")
-    serial_write_cstr(port, "linux: ELF exec returned ")
-    serial_write_dec_wide(port, rc2)
-    serial_nl(port)
+fn linux-elf-probe(port: Int) -> void {
+  if load64(LINUX-ELF-LOAD-ADDR) == LINUX-ELF-MAGIC {
+    let rc2 = posix-exec-image(port, LINUX-ELF-LOAD-ADDR, 4096, "space-minimal-elf")
+    serial-write-cstr(port, "linux: ELF exec returned ")
+    serial-write-dec-wide(port, rc2)
+    serial-nl(port)
     return
   }
   let elf = alloc(64)
@@ -87,42 +87,42 @@ fn linux_elf_probe(port: Int) -> void {
   store8(elf + 4, 2)
   store8(elf + 5, 1)
   store8(elf + 6, 1)
-  let rc = posix_exec_image(port, elf, 64, "helium-probe")
-  serial_write_cstr(port, "linux: ELF execve probe = ")
-  serial_write_dec_wide(port, rc)
-  if rc == LINUX_ENOEXEC {
-    serial_write_cstr(port, " (expected before Linux ELF loader)")
+  let rc = posix-exec-image(port, elf, 64, "helium-probe")
+  serial-write-cstr(port, "linux: ELF execve probe = ")
+  serial-write-dec-wide(port, rc)
+  if rc == LINUX-ENOEXEC {
+    serial-write-cstr(port, " (expected before Linux ELF loader)")
   }
-  serial_nl(port)
+  serial-nl(port)
   return
 }
 
-fn linux_demo(port: Int) -> void {
-  serial_write_cstr(port, "linux: personality demo starting")
-  serial_nl(port)
+fn linux-demo(port: Int) -> void {
+  serial-write-cstr(port, "linux: personality demo starting")
+  serial-nl(port)
 
   let msg = "  hello from linux personality (POSIX write syscall)\n"
   let mlen = 0
   while load8(msg + mlen) != 0 {
     mlen = mlen + 1
   }
-  let wrc = linux_dispatch(LINUX_SYS_WRITE, 1, msg, mlen, 0, 0, 0)
-  serial_write_cstr(port, "linux: write(1, msg, ")
-  serial_write_dec_wide(port, mlen)
-  serial_write_cstr(port, ") = ")
-  serial_write_dec_wide(port, wrc)
-  serial_nl(port)
+  let wrc = linux-dispatch(LINUX-SYS-WRITE, 1, msg, mlen, 0, 0, 0)
+  serial-write-cstr(port, "linux: write(1, msg, ")
+  serial-write-dec-wide(port, mlen)
+  serial-write-cstr(port, ") = ")
+  serial-write-dec-wide(port, wrc)
+  serial-nl(port)
 
-  let pid = linux_dispatch(LINUX_SYS_GETPID, 0, 0, 0, 0, 0, 0)
-  serial_write_cstr(port, "linux: getpid() = ")
-  serial_write_dec_wide(port, pid)
-  serial_nl(port)
+  let pid = linux-dispatch(LINUX-SYS-GETPID, 0, 0, 0, 0, 0, 0)
+  serial-write-cstr(port, "linux: getpid() = ")
+  serial-write-dec-wide(port, pid)
+  serial-nl(port)
 
   let fname = "hello.txt"
-  let fd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_CREAT | LINUX_O_RDWR, 0, 0, 0, 0)
-  serial_write_cstr(port, "linux: open(hello.txt, O_CREAT|O_RDWR) = ")
-  serial_write_dec_wide(port, fd)
-  serial_nl(port)
+  let fd = linux-dispatch(LINUX-SYS-OPEN, fname, LINUX-O-CREAT | LINUX-O-RDWR, 0, 0, 0, 0)
+  serial-write-cstr(port, "linux: open(hello.txt, O_CREAT|O_RDWR) = ")
+  serial-write-dec-wide(port, fd)
+  serial-nl(port)
 
   if fd >= 0 {
     let content = "linux file content"
@@ -130,86 +130,86 @@ fn linux_demo(port: Int) -> void {
     while load8(content + clen) != 0 {
       clen = clen + 1
     }
-    let fwrc = linux_dispatch(LINUX_SYS_WRITE, fd, content, clen, 0, 0, 0)
-    serial_write_cstr(port, "linux: write(fd, content, ")
-    serial_write_dec_wide(port, clen)
-    serial_write_cstr(port, ") = ")
-    serial_write_dec_wide(port, fwrc)
-    serial_nl(port)
+    let fwrc = linux-dispatch(LINUX-SYS-WRITE, fd, content, clen, 0, 0, 0)
+    serial-write-cstr(port, "linux: write(fd, content, ")
+    serial-write-dec-wide(port, clen)
+    serial-write-cstr(port, ") = ")
+    serial-write-dec-wide(port, fwrc)
+    serial-nl(port)
 
-    linux_dispatch(LINUX_SYS_CLOSE, fd, 0, 0, 0, 0, 0)
-    serial_write_cstr(port, "linux: close(fd) = 0")
-    serial_nl(port)
+    linux-dispatch(LINUX-SYS-CLOSE, fd, 0, 0, 0, 0, 0)
+    serial-write-cstr(port, "linux: close(fd) = 0")
+    serial-nl(port)
   }
 
-  let rfd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_RDONLY, 0, 0, 0, 0)
-  serial_write_cstr(port, "linux: open(hello.txt, O_RDONLY) = ")
-  serial_write_dec_wide(port, rfd)
-  serial_nl(port)
+  let rfd = linux-dispatch(LINUX-SYS-OPEN, fname, LINUX-O-RDONLY, 0, 0, 0, 0)
+  serial-write-cstr(port, "linux: open(hello.txt, O_RDONLY) = ")
+  serial-write-dec-wide(port, rfd)
+  serial-nl(port)
 
   if rfd >= 0 {
     let rbuf = alloc(256)
-    let rlen = linux_dispatch(LINUX_SYS_READ, rfd, rbuf, 255, 0, 0, 0)
-    serial_write_cstr(port, "linux: read(fd, buf, 255) = ")
-    serial_write_dec_wide(port, rlen)
-    serial_write_cstr(port, " -> '")
+    let rlen = linux-dispatch(LINUX-SYS-READ, rfd, rbuf, 255, 0, 0, 0)
+    serial-write-cstr(port, "linux: read(fd, buf, 255) = ")
+    serial-write-dec-wide(port, rlen)
+    serial-write-cstr(port, " -> '")
     let ri = 0
     while ri < rlen {
-      serial_put(port, load8(rbuf + ri))
+      serial-put(port, load8(rbuf + ri))
       ri = ri + 1
     }
-    serial_write_cstr(port, "'")
-    serial_nl(port)
+    serial-write-cstr(port, "'")
+    serial-nl(port)
 
-    linux_dispatch(LINUX_SYS_WRITE, 1, rbuf, rlen, 0, 0, 0)
-    serial_nl(port)
+    linux-dispatch(LINUX-SYS-WRITE, 1, rbuf, rlen, 0, 0, 0)
+    serial-nl(port)
 
-    linux_dispatch(LINUX_SYS_CLOSE, rfd, 0, 0, 0, 0, 0)
-    serial_write_cstr(port, "linux: close(fd) = 0")
-    serial_nl(port)
+    linux-dispatch(LINUX-SYS-CLOSE, rfd, 0, 0, 0, 0, 0)
+    serial-write-cstr(port, "linux: close(fd) = 0")
+    serial-nl(port)
   }
 
-  let statbuf = alloc(LINUX_STAT_SIZE)
-  let src = linux_dispatch(LINUX_SYS_STAT, fname, statbuf, 0, 0, 0, 0)
-  serial_write_cstr(port, "linux: stat(hello.txt) = ")
-  serial_write_dec_wide(port, src)
+  let statbuf = alloc(LINUX-STAT-SIZE)
+  let src = linux-dispatch(LINUX-SYS-STAT, fname, statbuf, 0, 0, 0, 0)
+  serial-write-cstr(port, "linux: stat(hello.txt) = ")
+  serial-write-dec-wide(port, src)
   if src == 0 {
-    let fsize = load64(statbuf + LINUX_STAT_OFF_SIZE)
-    serial_write_cstr(port, ", st_size = ")
-    serial_write_dec_wide(port, fsize)
-    let fblocks = load64(statbuf + LINUX_STAT_OFF_BLOCKS)
-    serial_write_cstr(port, ", st_blocks = ")
-    serial_write_dec_wide(port, fblocks)
+    let fsize = load64(statbuf + LINUX-STAT-OFF-SIZE)
+    serial-write-cstr(port, ", st_size = ")
+    serial-write-dec-wide(port, fsize)
+    let fblocks = load64(statbuf + LINUX-STAT-OFF-BLOCKS)
+    serial-write-cstr(port, ", st_blocks = ")
+    serial-write-dec-wide(port, fblocks)
   }
-  serial_nl(port)
+  serial-nl(port)
 
   let cwdbuf = alloc(64)
-  let cwdrc = linux_dispatch(LINUX_SYS_GETCWD, cwdbuf, 64, 0, 0, 0, 0)
-  serial_write_cstr(port, "linux: getcwd() = '")
-  serial_write_cstr(port, cwdbuf)
-  serial_write_cstr(port, "'")
-  serial_nl(port)
+  let cwdrc = linux-dispatch(LINUX-SYS-GETCWD, cwdbuf, 64, 0, 0, 0, 0)
+  serial-write-cstr(port, "linux: getcwd() = '")
+  serial-write-cstr(port, cwdbuf)
+  serial-write-cstr(port, "'")
+  serial-nl(port)
 
-  let sfd = linux_dispatch(LINUX_SYS_OPEN, fname, LINUX_O_RDONLY, 0, 0, 0, 0)
+  let sfd = linux-dispatch(LINUX-SYS-OPEN, fname, LINUX-O-RDONLY, 0, 0, 0, 0)
   if sfd >= 0 {
-    let pos = linux_dispatch(LINUX_SYS_LSEEK, sfd, 6, 0, 0, 0, 0)
-    serial_write_cstr(port, "linux: lseek(fd, 6, SEEK_SET) = ")
-    serial_write_dec_wide(port, pos)
-    serial_nl(port)
+    let pos = linux-dispatch(LINUX-SYS-LSEEK, sfd, 6, 0, 0, 0, 0)
+    serial-write-cstr(port, "linux: lseek(fd, 6, SEEK_SET) = ")
+    serial-write-dec-wide(port, pos)
+    serial-nl(port)
     let sbuf2 = alloc(64)
-    let slen = linux_dispatch(LINUX_SYS_READ, sfd, sbuf2, 63, 0, 0, 0)
-    serial_write_cstr(port, "linux: read at offset 6 -> '")
+    let slen = linux-dispatch(LINUX-SYS-READ, sfd, sbuf2, 63, 0, 0, 0)
+    serial-write-cstr(port, "linux: read at offset 6 -> '")
     let si = 0
     while si < slen {
-      serial_put(port, load8(sbuf2 + si))
+      serial-put(port, load8(sbuf2 + si))
       si = si + 1
     }
-    serial_write_cstr(port, "'")
-    serial_nl(port)
-    linux_dispatch(LINUX_SYS_CLOSE, sfd, 0, 0, 0, 0, 0)
+    serial-write-cstr(port, "'")
+    serial-nl(port)
+    linux-dispatch(LINUX-SYS-CLOSE, sfd, 0, 0, 0, 0, 0)
   }
 
-  serial_write_cstr(port, "linux: personality demo complete")
-  serial_nl(port)
+  serial-write-cstr(port, "linux: personality demo complete")
+  serial-nl(port)
   return
 }

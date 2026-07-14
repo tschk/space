@@ -3,113 +3,113 @@
 // Domain 0 = kernel domain (shared PML4).
 // Usage: domain_create() -> domain_id for use with chan_cross_send/recv.
 
-const MAX_DOMAINS = 64
-const DOMAIN_FREE = 0
-const DOMAIN_ACTIVE = 1
+const MAX-DOMAINS = 64
+const DOMAIN-FREE = 0
+const DOMAIN-ACTIVE = 1
 
-var domain_table: Int = 0
-var domain_count: Int = 0
-var domain_current: Int = 0
+var domain-table: Int = 0
+var domain-count: Int = 0
+var domain-current: Int = 0
 
-fn domain_init() -> void {
-  domain_table = alloc(MAX_DOMAINS * 24)
+fn domain-init() -> void {
+  domain-table = alloc(MAX-DOMAINS * 24)
   let i = 0
-  while i < MAX_DOMAINS {
-    store64(domain_table + i * 24 + 0, 0)
-    store64(domain_table + i * 24 + 8, DOMAIN_FREE)
-    store64(domain_table + i * 24 + 16, 0)
+  while i < MAX-DOMAINS {
+    store64(domain-table + i * 24 + 0, 0)
+    store64(domain-table + i * 24 + 8, DOMAIN-FREE)
+    store64(domain-table + i * 24 + 16, 0)
     i = i + 1
   }
   // The bootloader left the kernel PML4 at 0x1000, but the compiler may place
   // globals in low memory and overwrite it. Relocate the kernel PML4 to a
   // heap frame before any kernel code can corrupt the page tables.
-  let kernel_pml4 = frame_alloc()
+  let kernel-pml4 = frame-alloc()
   let k = 0
   while k < 512 {
-    store64(kernel_pml4 + k * 8, load64(0x1000 + k * 8))
+    store64(kernel-pml4 + k * 8, load64(0x1000 + k * 8))
     k = k + 1
   }
-  invoke1(load64(0x4060), kernel_pml4)
-  store64(0x40B8, kernel_pml4)
-  store64(domain_table + 0, kernel_pml4)
-  store64(domain_table + 8, DOMAIN_ACTIVE)
-  store64(domain_table + 16, 0)
-  domain_count = 1
-  domain_current = 0
+  invoke1(load64(0x4060), kernel-pml4)
+  store64(0x40B8, kernel-pml4)
+  store64(domain-table + 0, kernel-pml4)
+  store64(domain-table + 8, DOMAIN-ACTIVE)
+  store64(domain-table + 16, 0)
+  domain-count = 1
+  domain-current = 0
   return
 }
 
-fn create_domain_pml4() -> Int {
-  let dst_pml4 = frame_alloc()
-  let dst_pdpt = frame_alloc()
+fn create-domain-pml4() -> Int {
+  let dst-pml4 = frame-alloc()
+  let dst-pdpt = frame-alloc()
   let i = 0
   while i < 512 {
-    store64(dst_pml4 + i * 8, 0)
-    store64(dst_pdpt + i * 8, 0)
+    store64(dst-pml4 + i * 8, 0)
+    store64(dst-pdpt + i * 8, 0)
     i = i + 1
   }
-  let src_pml4 = load64(domain_table)
-  let src_pdpt = load64(src_pml4) & -4096
+  let src-pml4 = load64(domain-table)
+  let src-pdpt = load64(src-pml4) & -4096
   let j = 0
   while j < 4 {
-    let src_pd = load64(src_pdpt + j * 8) & -4096
-    let dst_pd = frame_alloc()
+    let src-pd = load64(src-pdpt + j * 8) & -4096
+    let dst-pd = frame-alloc()
     let k = 0
     while k < 512 {
-      store64(dst_pd + k * 8, load64(src_pd + k * 8))
+      store64(dst-pd + k * 8, load64(src-pd + k * 8))
       k = k + 1
     }
-    store64(dst_pdpt + j * 8, dst_pd | 3)
+    store64(dst-pdpt + j * 8, dst-pd | 3)
     j = j + 1
   }
-  store64(dst_pml4, dst_pdpt | 3)
-  return dst_pml4
+  store64(dst-pml4, dst-pdpt | 3)
+  return dst-pml4
 }
 
-fn domain_create() -> Int {
-  if domain_count >= MAX_DOMAINS { return 0 }
-  let id = domain_count
-  let pml4 = create_domain_pml4()
-  store64(domain_table + id * 24 + 0, pml4)
-  store64(domain_table + id * 24 + 8, DOMAIN_ACTIVE)
-  store64(domain_table + id * 24 + 16, 0)
-  domain_count = domain_count + 1
+fn domain-create() -> Int {
+  if domain-count >= MAX-DOMAINS { return 0 }
+  let id = domain-count
+  let pml4 = create-domain-pml4()
+  store64(domain-table + id * 24 + 0, pml4)
+  store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
+  store64(domain-table + id * 24 + 16, 0)
+  domain-count = domain-count + 1
   return id
 }
 
-fn domain_switch(id: Int) -> void {
-  if id >= domain_count { return }
-  if load64(domain_table + id * 24 + 8) != DOMAIN_ACTIVE { return }
-  let pml4 = load64(domain_table + id * 24 + 0)
+fn domain-switch(id: Int) -> void {
+  if id >= domain-count { return }
+  if load64(domain-table + id * 24 + 8) != DOMAIN-ACTIVE { return }
+  let pml4 = load64(domain-table + id * 24 + 0)
   if pml4 == 0 { return }
   invoke1(load64(0x4060), pml4)
-  domain_current = id
+  domain-current = id
   return
 }
 
 // Return the domain id last activated by domain_switch.
-fn domain_get_current() -> Int {
-  return domain_current
+fn domain-get-current() -> Int {
+  return domain-current
 }
 
-fn domain_map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
-  if domain >= domain_count { return }
-  let pml4 = load64(domain_table + domain * 24 + 0)
+fn domain-map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
+  if domain >= domain-count { return }
+  let pml4 = load64(domain-table + domain * 24 + 0)
   if pml4 == 0 { return }
-  let pte = pt_ensure_pte(pml4, virt)
+  let pte = pt-ensure-pte(pml4, virt)
   store64(pte, phys | flags | 1)
   return
 }
 
-fn domain_create_shared_page(dom_a: Int, dom_b: Int, virt_a: Int, virt_b: Int) -> Int {
-  let page = frame_alloc()
+fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -> Int {
+  let page = frame-alloc()
   if page == 0 { return 0 }
   let i = 0
   while i < 512 {
     store64(page + i * 8, 0)
     i = i + 1
   }
-  domain_map(dom_a, virt_a, page, 0x3)
-  domain_map(dom_b, virt_b, page, 0x3)
+  domain-map(dom-a, virt-a, page, 0x3)
+  domain-map(dom-b, virt-b, page, 0x3)
   return page
 }

@@ -44,7 +44,7 @@ def main():
 
     result = subprocess.run([
         in_bin, "compile",
-        "--path", kernel_in, "--entry", "kernel_entry", "--emit", "boot",
+        "--path", kernel_in, "--entry", "kernel-entry", "--emit", "boot",
         "--trampoline", trampoline,
         "--target", "native", "--target-triple", "x86_64-unknown-none",
         "--linkage", "static-lib",

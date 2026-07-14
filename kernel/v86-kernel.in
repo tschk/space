@@ -8,313 +8,313 @@ package space.kernel
 // sends the resulting bytes via serial0_send. Arrow keys arrive as ANSI
 // escape sequences which the kernel parses.
 
-const COM1_PORT = 0x3F8
+const COM1-PORT = 0x3F8
 
-const SPACE_VERSION = "0.0.264"
+const SPACE-VERSION = "0.0.264"
 
-const FILE_README = "README.md"
-const DATA_README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
+const FILE-README = "README.md"
+const DATA-README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
 
-const FILE_ABOUT = "ABOUT.md"
-const DATA_ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, vro (screen editor), and more\n  - Screen-based text editor with cursor movement and save\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, vro test/hello.txt\n"
+const FILE-ABOUT = "ABOUT.md"
+const DATA-ABOUT = "Space -- System Design\n=======================\n\nSpace is a component-based operating system built from the ground up, not a Unix variant with layers bolted on. The native model is component + capability + object + execution graph, not process + file + syscall + user.\n\nThe Stack\n---------\n\n  .in            The native language. Simple, typed, compiles to native code.\n  Inauguration   The compiler. Core IR to MIR to native emit. No LLVM, no VM.\n  SCI            Space Component Image. The binary format for loadable components.\n  Space          The OS runtime. Component graph, scheduler, IPC, filesystem.\n  Nanokernel     Hardware enforcement layer. Capabilities, domains, memory isolation.\n\nWhy Not POSIX\n-------------\n\nThere is no POSIX in the kernel. No fork, no exec, no signals, no file descriptors as the kernel sees them. POSIX is a legacy interface. Space treats Linux, Darwin, and Windows compatibility as .in microservices that translate legacy concepts into Space primitives at the boundary.\n\nThe kernel speaks components, capabilities, and objects. A web server is a component that declares a network capability. A shell is a component that declares a serial capability. The supervisor activates components based on their declared dependencies and granted capabilities.\n\nComponent Model\n---------------\n\nA component is a unit of code with:\n  - Declared capabilities (network, storage, display, etc.)\n  - An entry point and a manifest\n  - Typed interfaces for IPC\n\nComponents communicate via channels -- typed, capability-checked message passing. No shared memory between domains. The nanokernel enforces isolation at the hardware level.\n\nThis v86 Demo\n-------------\n\nThis is a minimal 32-bit kernel running in protected mode inside v86. It has:\n  - In-memory filesystem with directories\n  - Serial shell with ls, cat, write, mkdir, vro (screen editor), and more\n  - Screen-based text editor with cursor movement and save\n\nThe full Space system runs on 64-bit hardware with the nanokernel, supervisor, component graph, and SCI loader. This demo is the kernel shell stripped down to fit in a browser tab.\n\nTry: ls, cat README.md, mkdir test, write test/hello.txt Hello, vro test/hello.txt\n"
 
-const FILE_NOTES = "notes.txt"
-const DATA_NOTES = "This is a scratch file. Use 'vro notes.txt' to edit it.\n"
+const FILE-NOTES = "notes.txt"
+const DATA-NOTES = "This is a scratch file. Use 'vro notes.txt' to edit it.\n"
 
 // --- memory layout ----------------------------------------------------------
-const LINE_BUF = 0x5000
-const EDIT_BUF = 0x6000
-const EDIT_BUF_SIZE = 2048
-const NUM_BUF = 0x6900
-const HIST_BUF = 0x6A00
-const HIST_MAX = 16
-const HIST_ENTRY_SIZE = 80
-const PATH_BUF = 0x6F00
-const NAME_BUF = 0x6F80
-const ESC_BUF = 0x7000
+const LINE-BUF = 0x5000
+const EDIT-BUF = 0x6000
+const EDIT-BUF-SIZE = 2048
+const NUM-BUF = 0x6900
+const HIST-BUF = 0x6A00
+const HIST-MAX = 16
+const HIST-ENTRY-SIZE = 80
+const PATH-BUF = 0x6F00
+const NAME-BUF = 0x6F80
+const ESC-BUF = 0x7000
 
 // --- filesystem -------------------------------------------------------------
-const FS_FILES = 16
-const FS_NAME_SIZE = 16
-const FS_ENTRY_SIZE = 32
-const FS_FILE_SIZE = 512
-const FS_TABLE = 0x7400
-const FS_DATA = 0x7800
+const FS-FILES = 16
+const FS-NAME-SIZE = 16
+const FS-ENTRY-SIZE = 32
+const FS-FILE-SIZE = 512
+const FS-TABLE = 0x7400
+const FS-DATA = 0x7800
 
-const FS_TYPE_FILE = 0
-const FS_TYPE_DIR = 1
+const FS-TYPE-FILE = 0
+const FS-TYPE-DIR = 1
 
 // --- vro editor memory ------------------------------------------------------
-const VRO_BUF = 0x9800
-const VRO_BUF_SIZE = 4096
-const VRO_NAME = 0xA800
-const VRO_META = 0xA820
+const VRO-BUF = 0x9800
+const VRO-BUF-SIZE = 4096
+const VRO-NAME = 0xA800
+const VRO-META = 0xA820
 
 // Special key codes
-const KEY_LEFT = 1000
-const KEY_RIGHT = 1001
-const KEY_UP = 1002
-const KEY_DOWN = 1003
-const KEY_HOME = 1004
-const KEY_END = 1005
-const KEY_PGUP = 1006
-const KEY_PGDN = 1007
-const KEY_DELETE = 1008
+const KEY-LEFT = 1000
+const KEY-RIGHT = 1001
+const KEY-UP = 1002
+const KEY-DOWN = 1003
+const KEY-HOME = 1004
+const KEY-END = 1005
+const KEY-PGUP = 1006
+const KEY-PGDN = 1007
+const KEY-DELETE = 1008
 
-var edit_len: Int = 0
-var hist_count: Int = 0
-var boot_tick: Int = 0
-var esc_state: Int = 0
-var esc_len: Int = 0
-var serial_pushback: Int = 0
+var edit-len: Int = 0
+var hist-count: Int = 0
+var boot-tick: Int = 0
+var esc-state: Int = 0
+var esc-len: Int = 0
+var serial-pushback: Int = 0
 
-fn kernel_entry(mb_info: Int) -> Int {
-  serial_init()
-  fs_init()
+fn kernel-entry(mb-info: Int) -> Int {
+  serial-init()
+  fs-init()
 
-  edit_len = cstr_copy(EDIT_BUF, DATA_NOTES, EDIT_BUF_SIZE - 1)
+  edit-len = cstr-copy(EDIT-BUF, DATA-NOTES, EDIT-BUF-SIZE - 1)
 
-  print_welcome()
+  print-welcome()
 
   // Flush any stray bytes that arrived during boot output
-  while (inb(COM1_PORT + 5) & 0x01) != 0 {
-    inb(COM1_PORT)
+  while (inb(COM1-PORT + 5) & 0x01) != 0 {
+    inb(COM1-PORT)
   }
 
   let running = true
   while running {
-    serial_write_cstr("space$ ")
-    let len = read_line()
+    serial-write-cstr("space$ ")
+    let len = read-line()
     if len == 0 {
       continue
     }
-    history_add(LINE_BUF)
-    let cmd = parse_cmd()
+    history-add(LINE-BUF)
+    let cmd = parse-cmd()
     if cmd == 0 {
       continue
     }
-    if cstr_eq(cmd, "help") {
-      cmd_help()
-    } else if cstr_eq(cmd, "info") {
-      cmd_info(mb_info)
-    } else if cstr_eq(cmd, "ls") {
-      let a = arg_at(1)
+    if cstr-eq(cmd, "help") {
+      cmd-help()
+    } else if cstr-eq(cmd, "info") {
+      cmd-info(mb-info)
+    } else if cstr-eq(cmd, "ls") {
+      let a = arg-at(1)
       if a != 0 {
-        cmd_ls(a)
+        cmd-ls(a)
       } else {
-        cmd_ls(0)
+        cmd-ls(0)
       }
-    } else if cstr_eq(cmd, "cat") {
-      cmd_cat(arg_at(1))
-    } else if cstr_eq(cmd, "echo") {
-      cmd_echo(arg_at(1))
-    } else if cstr_eq(cmd, "write") {
-      cmd_write(arg_at(1), arg_at(2))
-    } else if cstr_eq(cmd, "rm") {
-      cmd_rm(arg_at(1))
-    } else if cstr_eq(cmd, "touch") {
-      cmd_touch(arg_at(1))
-    } else if cstr_eq(cmd, "cp") {
-      cmd_cp(arg_at(1), arg_at(2))
-    } else if cstr_eq(cmd, "mv") {
-      cmd_mv(arg_at(1), arg_at(2))
-    } else if cstr_eq(cmd, "mkdir") {
-      cmd_mkdir(arg_at(1))
-    } else if cstr_eq(cmd, "stat") {
-      cmd_stat(arg_at(1))
-    } else if cstr_eq(cmd, "pwd") {
-      serial_write_cstr("/")
-      serial_nl()
-    } else if cstr_eq(cmd, "whoami") {
-      serial_write_cstr("space")
-      serial_nl()
-    } else if cstr_eq(cmd, "clear") {
-      serial_clear_screen()
-    } else if cstr_eq(cmd, "edit") {
-      vro_run(arg_at(1))
-    } else if cstr_eq(cmd, "vro") {
-      vro_run(arg_at(1))
-    } else if cstr_eq(cmd, "history") {
-      cmd_history()
-    } else if cstr_eq(cmd, "uname") {
-      serial_write_cstr("Space v")
-      serial_write_cstr(SPACE_VERSION)
-      serial_write_cstr(" (v86 32-bit .in kernel)")
-      serial_nl()
-    } else if cstr_eq(cmd, "reset") {
-      serial_write_cstr("resetting")
-      serial_nl()
+    } else if cstr-eq(cmd, "cat") {
+      cmd-cat(arg-at(1))
+    } else if cstr-eq(cmd, "echo") {
+      cmd-echo(arg-at(1))
+    } else if cstr-eq(cmd, "write") {
+      cmd-write(arg-at(1), arg-at(2))
+    } else if cstr-eq(cmd, "rm") {
+      cmd-rm(arg-at(1))
+    } else if cstr-eq(cmd, "touch") {
+      cmd-touch(arg-at(1))
+    } else if cstr-eq(cmd, "cp") {
+      cmd-cp(arg-at(1), arg-at(2))
+    } else if cstr-eq(cmd, "mv") {
+      cmd-mv(arg-at(1), arg-at(2))
+    } else if cstr-eq(cmd, "mkdir") {
+      cmd-mkdir(arg-at(1))
+    } else if cstr-eq(cmd, "stat") {
+      cmd-stat(arg-at(1))
+    } else if cstr-eq(cmd, "pwd") {
+      serial-write-cstr("/")
+      serial-nl()
+    } else if cstr-eq(cmd, "whoami") {
+      serial-write-cstr("space")
+      serial-nl()
+    } else if cstr-eq(cmd, "clear") {
+      serial-clear-screen()
+    } else if cstr-eq(cmd, "edit") {
+      vro-run(arg-at(1))
+    } else if cstr-eq(cmd, "vro") {
+      vro-run(arg-at(1))
+    } else if cstr-eq(cmd, "history") {
+      cmd-history()
+    } else if cstr-eq(cmd, "uname") {
+      serial-write-cstr("Space v")
+      serial-write-cstr(SPACE-VERSION)
+      serial-write-cstr(" (v86 32-bit .in kernel)")
+      serial-nl()
+    } else if cstr-eq(cmd, "reset") {
+      serial-write-cstr("resetting")
+      serial-nl()
       outb(0x64, 0xFE)
-    } else if cstr_eq(cmd, "halt") {
-      serial_write_cstr("halting")
-      serial_nl()
+    } else if cstr-eq(cmd, "halt") {
+      serial-write-cstr("halting")
+      serial-nl()
       cli()
       while true {
         hlt()
       }
     } else {
-      serial_write_cstr("unknown command: ")
-      serial_write_cstr(cmd)
-      serial_nl()
+      serial-write-cstr("unknown command: ")
+      serial-write-cstr(cmd)
+      serial-nl()
     }
   }
   return 0
 }
 
-fn print_welcome() -> void {
-  serial_write_cstr("Space v")
-  serial_write_cstr(SPACE_VERSION)
-  serial_write_cstr(" (32-bit v86)")
-  serial_nl()
-  serial_write_cstr("A microkernel shell running in the browser, written in .in and compiled to i386.")
-  serial_nl()
-  serial_write_cstr("Type 'help' for commands, or 'cat ABOUT.md' for the system design.")
-  serial_nl()
-  serial_nl()
+fn print-welcome() -> void {
+  serial-write-cstr("Space v")
+  serial-write-cstr(SPACE-VERSION)
+  serial-write-cstr(" (32-bit v86)")
+  serial-nl()
+  serial-write-cstr("A microkernel shell running in the browser, written in .in and compiled to i386.")
+  serial-nl()
+  serial-write-cstr("Type 'help' for commands, or 'cat ABOUT.md' for the system design.")
+  serial-nl()
+  serial-nl()
   return
 }
 
-fn cmd_help() -> void {
-  serial_write_cstr("help    - this message")
-  serial_nl()
-  serial_write_cstr("info    - show boot info")
-  serial_nl()
-  serial_write_cstr("ls      - list files in root or given directory")
-  serial_nl()
-  serial_write_cstr("cat     - print a file")
-  serial_nl()
-  serial_write_cstr("write   - write text to a file")
-  serial_nl()
-  serial_write_cstr("echo    - print text")
-  serial_nl()
-  serial_write_cstr("touch   - create a file")
-  serial_nl()
-  serial_write_cstr("rm      - remove a file or directory")
-  serial_nl()
-  serial_write_cstr("cp      - copy a file")
-  serial_nl()
-  serial_write_cstr("mv      - rename a file")
-  serial_nl()
-  serial_write_cstr("mkdir   - create a directory")
-  serial_nl()
-  serial_write_cstr("stat    - show file info")
-  serial_nl()
-  serial_write_cstr("vro     - screen text editor (Ctrl-S=save Ctrl-Q=quit)")
-  serial_nl()
-  serial_write_cstr("edit    - same as vro")
-  serial_nl()
-  serial_write_cstr("clear   - clear the screen")
-  serial_nl()
-  serial_write_cstr("pwd     - print working directory")
-  serial_nl()
-  serial_write_cstr("whoami  - print current user")
-  serial_nl()
-  serial_write_cstr("history - show previous commands")
-  serial_nl()
-  serial_write_cstr("uname   - print kernel name")
-  serial_nl()
-  serial_write_cstr("reset   - reboot the machine")
-  serial_nl()
-  serial_write_cstr("halt    - stop the cpu")
-  serial_nl()
+fn cmd-help() -> void {
+  serial-write-cstr("help    - this message")
+  serial-nl()
+  serial-write-cstr("info    - show boot info")
+  serial-nl()
+  serial-write-cstr("ls      - list files in root or given directory")
+  serial-nl()
+  serial-write-cstr("cat     - print a file")
+  serial-nl()
+  serial-write-cstr("write   - write text to a file")
+  serial-nl()
+  serial-write-cstr("echo    - print text")
+  serial-nl()
+  serial-write-cstr("touch   - create a file")
+  serial-nl()
+  serial-write-cstr("rm      - remove a file or directory")
+  serial-nl()
+  serial-write-cstr("cp      - copy a file")
+  serial-nl()
+  serial-write-cstr("mv      - rename a file")
+  serial-nl()
+  serial-write-cstr("mkdir   - create a directory")
+  serial-nl()
+  serial-write-cstr("stat    - show file info")
+  serial-nl()
+  serial-write-cstr("vro     - screen text editor (Ctrl-S=save Ctrl-Q=quit)")
+  serial-nl()
+  serial-write-cstr("edit    - same as vro")
+  serial-nl()
+  serial-write-cstr("clear   - clear the screen")
+  serial-nl()
+  serial-write-cstr("pwd     - print working directory")
+  serial-nl()
+  serial-write-cstr("whoami  - print current user")
+  serial-nl()
+  serial-write-cstr("history - show previous commands")
+  serial-nl()
+  serial-write-cstr("uname   - print kernel name")
+  serial-nl()
+  serial-write-cstr("reset   - reboot the machine")
+  serial-nl()
+  serial-write-cstr("halt    - stop the cpu")
+  serial-nl()
   return
 }
 
-fn cmd_info(mb_info: Int) -> void {
-  serial_write_cstr("v86 32-bit protected mode")
-  serial_nl()
-  serial_write_cstr("mb_info: 0x")
-  serial_write_hex32(mb_info)
-  serial_nl()
-  serial_write_cstr("files: ")
-  serial_write_num(FS_FILES)
-  serial_write_cstr("  max file size: ")
-  serial_write_num(FS_FILE_SIZE)
-  serial_nl()
+fn cmd-info(mb-info: Int) -> void {
+  serial-write-cstr("v86 32-bit protected mode")
+  serial-nl()
+  serial-write-cstr("mb_info: 0x")
+  serial-write-hex32(mb-info)
+  serial-nl()
+  serial-write-cstr("files: ")
+  serial-write-num(FS-FILES)
+  serial-write-cstr("  max file size: ")
+  serial-write-num(FS-FILE-SIZE)
+  serial-nl()
   return
 }
 
 // --- command parsing --------------------------------------------------------
-fn parse_cmd() -> Int {
+fn parse-cmd() -> Int {
   let i = 0
-  while load8(LINE_BUF + i) == 32 {
+  while load8(LINE-BUF + i) == 32 {
     i = i + 1
   }
-  if load8(LINE_BUF + i) == 0 {
+  if load8(LINE-BUF + i) == 0 {
     return 0
   }
   let j = 0
-  while j < FS_NAME_SIZE - 1 {
-    let c = load8(LINE_BUF + i)
+  while j < FS-NAME-SIZE - 1 {
+    let c = load8(LINE-BUF + i)
     if c == 0 || c == 32 {
-      store8(NAME_BUF + j, 0)
-      return NAME_BUF
+      store8(NAME-BUF + j, 0)
+      return NAME-BUF
     }
-    store8(NAME_BUF + j, c)
+    store8(NAME-BUF + j, c)
     i = i + 1
     j = j + 1
   }
-  store8(NAME_BUF + FS_NAME_SIZE - 1, 0)
-  return NAME_BUF
+  store8(NAME-BUF + FS-NAME-SIZE - 1, 0)
+  return NAME-BUF
 }
 
 // --- filesystem entry accessors ---------------------------------------------
 
-fn fs_entry_name(idx: Int) -> Int {
-  return FS_TABLE + idx * FS_ENTRY_SIZE
+fn fs-entry-name(idx: Int) -> Int {
+  return FS-TABLE + idx * FS-ENTRY-SIZE
 }
 
-fn fs_entry_used(idx: Int) -> Int {
-  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE)
+fn fs-entry-used(idx: Int) -> Int {
+  return load8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE)
 }
 
-fn fs_entry_set_used(idx: Int, used: Int) -> void {
-  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE, used)
+fn fs-entry-set-used(idx: Int, used: Int) -> void {
+  store8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE, used)
   return
 }
 
-fn fs_entry_type(idx: Int) -> Int {
-  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 1)
+fn fs-entry-type(idx: Int) -> Int {
+  return load8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 1)
 }
 
-fn fs_entry_set_type(idx: Int, ty: Int) -> void {
-  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 1, ty)
+fn fs-entry-set-type(idx: Int, ty: Int) -> void {
+  store8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 1, ty)
   return
 }
 
-fn fs_entry_parent(idx: Int) -> Int {
-  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 2)
+fn fs-entry-parent(idx: Int) -> Int {
+  return load8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 2)
 }
 
-fn fs_entry_set_parent(idx: Int, parent: Int) -> void {
-  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 2, parent)
+fn fs-entry-set-parent(idx: Int, parent: Int) -> void {
+  store8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 2, parent)
   return
 }
 
-fn fs_entry_size(idx: Int) -> Int {
-  return load8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 3)
+fn fs-entry-size(idx: Int) -> Int {
+  return load8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 3)
 }
 
-fn fs_entry_set_size(idx: Int, sz: Int) -> void {
-  store8(FS_TABLE + idx * FS_ENTRY_SIZE + FS_NAME_SIZE + 3, sz)
+fn fs-entry-set-size(idx: Int, sz: Int) -> void {
+  store8(FS-TABLE + idx * FS-ENTRY-SIZE + FS-NAME-SIZE + 3, sz)
   return
 }
 
-fn fs_entry_data(idx: Int) -> Int {
-  return FS_DATA + idx * FS_FILE_SIZE
+fn fs-entry-data(idx: Int) -> Int {
+  return FS-DATA + idx * FS-FILE-SIZE
 }
 
-fn fs_init() -> void {
+fn fs-init() -> void {
   let i = 0
-  while i < FS_FILES {
-    fs_entry_set_used(i, 0)
-    fs_entry_set_type(i, FS_TYPE_FILE)
-    fs_entry_set_parent(i, 0)
-    fs_entry_set_size(i, 0)
-    store8(fs_entry_data(i), 0)
+  while i < FS-FILES {
+    fs-entry-set-used(i, 0)
+    fs-entry-set-type(i, FS-TYPE-FILE)
+    fs-entry-set-parent(i, 0)
+    fs-entry-set-size(i, 0)
+    store8(fs-entry-data(i), 0)
     let j = 0
-    while j < FS_NAME_SIZE {
-      store8(FS_TABLE + i * FS_ENTRY_SIZE + j, 0)
+    while j < FS-NAME-SIZE {
+      store8(FS-TABLE + i * FS-ENTRY-SIZE + j, 0)
       j = j + 1
     }
     i = i + 1
@@ -322,11 +322,11 @@ fn fs_init() -> void {
   return
 }
 
-fn fs_find_in(parent: Int, name: Int) -> Int {
+fn fs-find-in(parent: Int, name: Int) -> Int {
   let i = 0
-  while i < FS_FILES {
-    if fs_entry_used(i) != 0 && fs_entry_parent(i) == parent {
-      if cstr_eq(name, fs_entry_name(i)) {
+  while i < FS-FILES {
+    if fs-entry-used(i) != 0 && fs-entry-parent(i) == parent {
+      if cstr-eq(name, fs-entry-name(i)) {
         return i
       }
     }
@@ -335,7 +335,7 @@ fn fs_find_in(parent: Int, name: Int) -> Int {
   return -1
 }
 
-fn fs_resolve(path: Int) -> Int {
+fn fs-resolve(path: Int) -> Int {
   if load8(path) == 0 {
     return -1
   }
@@ -346,20 +346,20 @@ fn fs_resolve(path: Int) -> Int {
   }
   while true {
     let j = 0
-    while j < FS_NAME_SIZE {
+    while j < FS-NAME-SIZE {
       let c = load8(path + i + j)
       if c == 0 || c == 47 {
-        store8(PATH_BUF + j, 0)
-        j = FS_NAME_SIZE
+        store8(PATH-BUF + j, 0)
+        j = FS-NAME-SIZE
       } else {
-        store8(PATH_BUF + j, c)
+        store8(PATH-BUF + j, c)
         j = j + 1
       }
     }
-    if load8(PATH_BUF) == 0 {
+    if load8(PATH-BUF) == 0 {
       return parent
     }
-    let idx = fs_find_in(parent, PATH_BUF)
+    let idx = fs-find-in(parent, PATH-BUF)
     if idx < 0 {
       return -1
     }
@@ -375,54 +375,54 @@ fn fs_resolve(path: Int) -> Int {
   return -1
 }
 
-fn fs_resolve_parent(path: Int) -> Int {
-  let last_slash = -1
+fn fs-resolve-parent(path: Int) -> Int {
+  let last-slash = -1
   let i = 0
   while load8(path + i) != 0 {
     if load8(path + i) == 47 {
-      last_slash = i
+      last-slash = i
     }
     i = i + 1
   }
-  if last_slash < 0 {
-    cstr_copy(NAME_BUF, path, FS_NAME_SIZE - 1)
+  if last-slash < 0 {
+    cstr-copy(NAME-BUF, path, FS-NAME-SIZE - 1)
     return -1
   }
   let k = 0
-  while k < last_slash {
-    store8(PATH_BUF + k, load8(path + k))
+  while k < last-slash {
+    store8(PATH-BUF + k, load8(path + k))
     k = k + 1
   }
-  store8(PATH_BUF + k, 0)
-  let p = fs_resolve(PATH_BUF)
+  store8(PATH-BUF + k, 0)
+  let p = fs-resolve(PATH-BUF)
   if p < 0 {
     return -2
   }
   let m = 0
-  let s = last_slash + 1
-  while m < FS_NAME_SIZE {
+  let s = last-slash + 1
+  while m < FS-NAME-SIZE {
     let c = load8(path + s + m)
     if c == 0 {
-      store8(NAME_BUF + m, 0)
-      m = FS_NAME_SIZE
+      store8(NAME-BUF + m, 0)
+      m = FS-NAME-SIZE
     } else {
-      store8(NAME_BUF + m, c)
+      store8(NAME-BUF + m, c)
       m = m + 1
     }
   }
   return p
 }
 
-fn fs_create(parent: Int, name: Int, ty: Int) -> Int {
+fn fs-create(parent: Int, name: Int, ty: Int) -> Int {
   let i = 0
-  while i < FS_FILES {
-    if fs_entry_used(i) == 0 {
-      fs_entry_set_used(i, 1)
-      fs_entry_set_type(i, ty)
-      fs_entry_set_parent(i, parent)
-      fs_entry_set_size(i, 0)
-      cstr_copy(fs_entry_name(i), name, FS_NAME_SIZE - 1)
-      store8(fs_entry_data(i), 0)
+  while i < FS-FILES {
+    if fs-entry-used(i) == 0 {
+      fs-entry-set-used(i, 1)
+      fs-entry-set-type(i, ty)
+      fs-entry-set-parent(i, parent)
+      fs-entry-set-size(i, 0)
+      cstr-copy(fs-entry-name(i), name, FS-NAME-SIZE - 1)
+      store8(fs-entry-data(i), 0)
       return i
     }
     i = i + 1
@@ -430,74 +430,74 @@ fn fs_create(parent: Int, name: Int, ty: Int) -> Int {
   return -1
 }
 
-fn fs_delete(idx: Int) -> Int {
-  if fs_entry_type(idx) == FS_TYPE_DIR {
+fn fs-delete(idx: Int) -> Int {
+  if fs-entry-type(idx) == FS-TYPE-DIR {
     let i = 0
-    while i < FS_FILES {
-      if fs_entry_used(i) != 0 && fs_entry_parent(i) == idx {
-        fs_delete(i)
+    while i < FS-FILES {
+      if fs-entry-used(i) != 0 && fs-entry-parent(i) == idx {
+        fs-delete(i)
       }
       i = i + 1
     }
   }
-  fs_entry_set_used(idx, 0)
-  fs_entry_set_size(idx, 0)
+  fs-entry-set-used(idx, 0)
+  fs-entry-set-size(idx, 0)
   return idx
 }
 
-fn fs_write_data(idx: Int, data: Int, sz: Int) -> void {
-  let max = FS_FILE_SIZE - 1
+fn fs-write-data(idx: Int, data: Int, sz: Int) -> void {
+  let max = FS-FILE-SIZE - 1
   let n = sz
   if n > max {
     n = max
   }
-  let dst = fs_entry_data(idx)
+  let dst = fs-entry-data(idx)
   let i = 0
   while i < n {
     store8(dst + i, load8(data + i))
     i = i + 1
   }
   store8(dst + n, 0)
-  fs_entry_set_size(idx, n)
+  fs-entry-set-size(idx, n)
   return
 }
 
 // --- shell commands ---------------------------------------------------------
 
-fn cmd_ls(path: Int) -> void {
+fn cmd-ls(path: Int) -> void {
   let parent = -1
   if path != 0 {
-    let idx = fs_resolve(path)
+    let idx = fs-resolve(path)
     if idx < 0 {
-      serial_write_cstr("ls: ")
-      serial_write_cstr(path)
-      serial_write_cstr(": no such file or directory")
-      serial_nl()
+      serial-write-cstr("ls: ")
+      serial-write-cstr(path)
+      serial-write-cstr(": no such file or directory")
+      serial-nl()
       return
     }
-    if fs_entry_type(idx) != FS_TYPE_DIR {
-      serial_write_cstr(fs_entry_name(idx))
-      serial_nl()
+    if fs-entry-type(idx) != FS-TYPE-DIR {
+      serial-write-cstr(fs-entry-name(idx))
+      serial-nl()
       return
     }
     parent = idx
   }
   if parent == -1 {
-    serial_write_cstr(FILE_README)
-    serial_nl()
-    serial_write_cstr(FILE_ABOUT)
-    serial_nl()
-    serial_write_cstr(FILE_NOTES)
-    serial_nl()
+    serial-write-cstr(FILE-README)
+    serial-nl()
+    serial-write-cstr(FILE-ABOUT)
+    serial-nl()
+    serial-write-cstr(FILE-NOTES)
+    serial-nl()
   }
   let i = 0
-  while i < FS_FILES {
-    if fs_entry_used(i) != 0 && fs_entry_parent(i) == parent {
-      serial_write_cstr(fs_entry_name(i))
-      if fs_entry_type(i) == FS_TYPE_DIR {
-        serial_put(47)
+  while i < FS-FILES {
+    if fs-entry-used(i) != 0 && fs-entry-parent(i) == parent {
+      serial-write-cstr(fs-entry-name(i))
+      if fs-entry-type(i) == FS-TYPE-DIR {
+        serial-put(47)
       }
-      serial_nl()
+      serial-nl()
     }
     i = i + 1
   }
@@ -505,7 +505,7 @@ fn cmd_ls(path: Int) -> void {
 }
 
 // Case-insensitive comparison for built-in file matching
-fn cstr_eq_ci(a: Int, b: Int) -> Bool {
+fn cstr-eq-ci(a: Int, b: Int) -> Bool {
   let i = 0
   while true {
     let ca = load8(a + i)
@@ -528,346 +528,346 @@ fn cstr_eq_ci(a: Int, b: Int) -> Bool {
   return false
 }
 
-fn cmd_cat(name: Int) -> void {
+fn cmd-cat(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: cat <file>")
-    serial_nl()
+    serial-write-cstr("usage: cat <file>")
+    serial-nl()
     return
   }
-  if cstr_eq_ci(name, FILE_README) {
-    serial_write_cstr(DATA_README)
+  if cstr-eq-ci(name, FILE-README) {
+    serial-write-cstr(DATA-README)
     return
   }
-  if cstr_eq_ci(name, FILE_ABOUT) {
-    serial_write_cstr(DATA_ABOUT)
+  if cstr-eq-ci(name, FILE-ABOUT) {
+    serial-write-cstr(DATA-ABOUT)
     return
   }
-  if cstr_eq_ci(name, FILE_NOTES) {
-    serial_write_cstr(EDIT_BUF)
+  if cstr-eq-ci(name, FILE-NOTES) {
+    serial-write-cstr(EDIT-BUF)
     return
   }
-  let idx = fs_resolve(name)
+  let idx = fs-resolve(name)
   if idx >= 0 {
-    if fs_entry_type(idx) == FS_TYPE_DIR {
-      serial_write_cstr("cat: ")
-      serial_write_cstr(name)
-      serial_write_cstr(": is a directory")
-      serial_nl()
+    if fs-entry-type(idx) == FS-TYPE-DIR {
+      serial-write-cstr("cat: ")
+      serial-write-cstr(name)
+      serial-write-cstr(": is a directory")
+      serial-nl()
       return
     }
-    serial_write_cstr(fs_entry_data(idx))
+    serial-write-cstr(fs-entry-data(idx))
     return
   }
-  serial_write_cstr("cat: ")
-  serial_write_cstr(name)
-  serial_write_cstr(": no such file")
-  serial_nl()
+  serial-write-cstr("cat: ")
+  serial-write-cstr(name)
+  serial-write-cstr(": no such file")
+  serial-nl()
   return
 }
 
-fn cmd_echo(text: Int) -> void {
+fn cmd-echo(text: Int) -> void {
   if text != 0 {
-    serial_write_cstr(text)
+    serial-write-cstr(text)
   }
-  serial_nl()
+  serial-nl()
   return
 }
 
-fn cmd_write(name: Int, text: Int) -> void {
+fn cmd-write(name: Int, text: Int) -> void {
   if name == 0 || text == 0 {
-    serial_write_cstr("usage: write <file> <text>")
-    serial_nl()
+    serial-write-cstr("usage: write <file> <text>")
+    serial-nl()
     return
   }
-  let idx = fs_resolve(name)
+  let idx = fs-resolve(name)
   if idx < 0 {
-    let p = fs_resolve_parent(name)
+    let p = fs-resolve-parent(name)
     if p == -2 {
-      serial_write_cstr("write: parent directory not found")
-      serial_nl()
+      serial-write-cstr("write: parent directory not found")
+      serial-nl()
       return
     }
-    idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+    idx = fs-create(p, NAME-BUF, FS-TYPE-FILE)
   }
   if idx < 0 {
-    serial_write_cstr("write: no free file slots")
-    serial_nl()
+    serial-write-cstr("write: no free file slots")
+    serial-nl()
     return
   }
-  let len = cstr_len(text)
-  fs_write_data(idx, text, len)
-  serial_write_cstr("wrote ")
-  serial_write_num(len)
-  serial_write_cstr(" bytes to ")
-  serial_write_cstr(name)
-  serial_nl()
+  let len = cstr-len(text)
+  fs-write-data(idx, text, len)
+  serial-write-cstr("wrote ")
+  serial-write-num(len)
+  serial-write-cstr(" bytes to ")
+  serial-write-cstr(name)
+  serial-nl()
   return
 }
 
-fn cmd_rm(name: Int) -> void {
+fn cmd-rm(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: rm <file>")
-    serial_nl()
+    serial-write-cstr("usage: rm <file>")
+    serial-nl()
     return
   }
-  let idx = fs_resolve(name)
+  let idx = fs-resolve(name)
   if idx < 0 {
-    serial_write_cstr("rm: ")
-    serial_write_cstr(name)
-    serial_write_cstr(": no such file")
-    serial_nl()
+    serial-write-cstr("rm: ")
+    serial-write-cstr(name)
+    serial-write-cstr(": no such file")
+    serial-nl()
     return
   }
-  fs_delete(idx)
-  serial_write_cstr("removed ")
-  serial_write_cstr(name)
-  serial_nl()
+  fs-delete(idx)
+  serial-write-cstr("removed ")
+  serial-write-cstr(name)
+  serial-nl()
   return
 }
 
-fn cmd_touch(name: Int) -> void {
+fn cmd-touch(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: touch <file>")
-    serial_nl()
+    serial-write-cstr("usage: touch <file>")
+    serial-nl()
     return
   }
-  let idx = fs_resolve(name)
+  let idx = fs-resolve(name)
   if idx < 0 {
-    let p = fs_resolve_parent(name)
+    let p = fs-resolve-parent(name)
     if p == -2 {
-      serial_write_cstr("touch: parent directory not found")
-      serial_nl()
+      serial-write-cstr("touch: parent directory not found")
+      serial-nl()
       return
     }
-    if fs_create(p, NAME_BUF, FS_TYPE_FILE) < 0 {
-      serial_write_cstr("touch: no free file slots")
-      serial_nl()
+    if fs-create(p, NAME-BUF, FS-TYPE-FILE) < 0 {
+      serial-write-cstr("touch: no free file slots")
+      serial-nl()
       return
     }
   }
-  serial_write_cstr("touched ")
-  serial_write_cstr(name)
-  serial_nl()
+  serial-write-cstr("touched ")
+  serial-write-cstr(name)
+  serial-nl()
   return
 }
 
-fn cmd_cp(src: Int, dst: Int) -> void {
+fn cmd-cp(src: Int, dst: Int) -> void {
   if src == 0 || dst == 0 {
-    serial_write_cstr("usage: cp <src> <dst>")
-    serial_nl()
+    serial-write-cstr("usage: cp <src> <dst>")
+    serial-nl()
     return
   }
-  let sidx = fs_resolve(src)
+  let sidx = fs-resolve(src)
   if sidx < 0 {
-    serial_write_cstr("cp: ")
-    serial_write_cstr(src)
-    serial_write_cstr(": no such file")
-    serial_nl()
+    serial-write-cstr("cp: ")
+    serial-write-cstr(src)
+    serial-write-cstr(": no such file")
+    serial-nl()
     return
   }
-  let didx = fs_resolve(dst)
+  let didx = fs-resolve(dst)
   if didx < 0 {
-    let p = fs_resolve_parent(dst)
+    let p = fs-resolve-parent(dst)
     if p == -2 {
-      serial_write_cstr("cp: parent directory not found")
-      serial_nl()
+      serial-write-cstr("cp: parent directory not found")
+      serial-nl()
       return
     }
-    didx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+    didx = fs-create(p, NAME-BUF, FS-TYPE-FILE)
   }
   if didx < 0 {
-    serial_write_cstr("cp: no free file slots")
-    serial_nl()
+    serial-write-cstr("cp: no free file slots")
+    serial-nl()
     return
   }
-  fs_write_data(didx, fs_entry_data(sidx), fs_entry_size(sidx))
-  serial_write_cstr("copied ")
-  serial_write_cstr(src)
-  serial_write_cstr(" to ")
-  serial_write_cstr(dst)
-  serial_nl()
+  fs-write-data(didx, fs-entry-data(sidx), fs-entry-size(sidx))
+  serial-write-cstr("copied ")
+  serial-write-cstr(src)
+  serial-write-cstr(" to ")
+  serial-write-cstr(dst)
+  serial-nl()
   return
 }
 
-fn cmd_mv(src: Int, dst: Int) -> void {
+fn cmd-mv(src: Int, dst: Int) -> void {
   if src == 0 || dst == 0 {
-    serial_write_cstr("usage: mv <src> <dst>")
-    serial_nl()
+    serial-write-cstr("usage: mv <src> <dst>")
+    serial-nl()
     return
   }
-  let sidx = fs_resolve(src)
+  let sidx = fs-resolve(src)
   if sidx < 0 {
-    serial_write_cstr("mv: ")
-    serial_write_cstr(src)
-    serial_write_cstr(": no such file")
-    serial_nl()
+    serial-write-cstr("mv: ")
+    serial-write-cstr(src)
+    serial-write-cstr(": no such file")
+    serial-nl()
     return
   }
-  let didx = fs_resolve(dst)
+  let didx = fs-resolve(dst)
   if didx >= 0 {
-    fs_delete(didx)
+    fs-delete(didx)
   }
-  let p = fs_resolve_parent(dst)
+  let p = fs-resolve-parent(dst)
   if p == -2 {
-    serial_write_cstr("mv: parent directory not found")
-    serial_nl()
+    serial-write-cstr("mv: parent directory not found")
+    serial-nl()
     return
   }
-  fs_entry_set_parent(sidx, p)
-  cstr_copy(fs_entry_name(sidx), NAME_BUF, FS_NAME_SIZE - 1)
-  serial_write_cstr("moved ")
-  serial_write_cstr(src)
-  serial_write_cstr(" to ")
-  serial_write_cstr(dst)
-  serial_nl()
+  fs-entry-set-parent(sidx, p)
+  cstr-copy(fs-entry-name(sidx), NAME-BUF, FS-NAME-SIZE - 1)
+  serial-write-cstr("moved ")
+  serial-write-cstr(src)
+  serial-write-cstr(" to ")
+  serial-write-cstr(dst)
+  serial-nl()
   return
 }
 
-fn cmd_mkdir(name: Int) -> void {
+fn cmd-mkdir(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: mkdir <name>")
-    serial_nl()
+    serial-write-cstr("usage: mkdir <name>")
+    serial-nl()
     return
   }
-  if fs_resolve(name) >= 0 {
-    serial_write_cstr("mkdir: ")
-    serial_write_cstr(name)
-    serial_write_cstr(": already exists")
-    serial_nl()
+  if fs-resolve(name) >= 0 {
+    serial-write-cstr("mkdir: ")
+    serial-write-cstr(name)
+    serial-write-cstr(": already exists")
+    serial-nl()
     return
   }
-  let p = fs_resolve_parent(name)
+  let p = fs-resolve-parent(name)
   if p == -2 {
-    serial_write_cstr("mkdir: parent directory not found")
-    serial_nl()
+    serial-write-cstr("mkdir: parent directory not found")
+    serial-nl()
     return
   }
-  if fs_create(p, NAME_BUF, FS_TYPE_DIR) < 0 {
-    serial_write_cstr("mkdir: no free file slots")
-    serial_nl()
+  if fs-create(p, NAME-BUF, FS-TYPE-DIR) < 0 {
+    serial-write-cstr("mkdir: no free file slots")
+    serial-nl()
     return
   }
-  serial_write_cstr("created ")
-  serial_write_cstr(name)
-  serial_nl()
+  serial-write-cstr("created ")
+  serial-write-cstr(name)
+  serial-nl()
   return
 }
 
-fn cmd_stat(name: Int) -> void {
+fn cmd-stat(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: stat <file>")
-    serial_nl()
+    serial-write-cstr("usage: stat <file>")
+    serial-nl()
     return
   }
-  if cstr_eq_ci(name, FILE_README) {
-    serial_write_cstr("  file=README.md  type=file  size=")
-    serial_write_num(cstr_len(DATA_README))
-    serial_nl()
+  if cstr-eq-ci(name, FILE-README) {
+    serial-write-cstr("  file=README.md  type=file  size=")
+    serial-write-num(cstr-len(DATA-README))
+    serial-nl()
     return
   }
-  if cstr_eq_ci(name, FILE_ABOUT) {
-    serial_write_cstr("  file=ABOUT.md  type=file  size=")
-    serial_write_num(cstr_len(DATA_ABOUT))
-    serial_nl()
+  if cstr-eq-ci(name, FILE-ABOUT) {
+    serial-write-cstr("  file=ABOUT.md  type=file  size=")
+    serial-write-num(cstr-len(DATA-ABOUT))
+    serial-nl()
     return
   }
-  if cstr_eq_ci(name, FILE_NOTES) {
-    serial_write_cstr("  file=notes.txt  type=file  size=")
-    serial_write_num(edit_len)
-    serial_nl()
+  if cstr-eq-ci(name, FILE-NOTES) {
+    serial-write-cstr("  file=notes.txt  type=file  size=")
+    serial-write-num(edit-len)
+    serial-nl()
     return
   }
-  let idx = fs_resolve(name)
+  let idx = fs-resolve(name)
   if idx < 0 {
-    serial_write_cstr("stat: ")
-    serial_write_cstr(name)
-    serial_write_cstr(": no such file")
-    serial_nl()
+    serial-write-cstr("stat: ")
+    serial-write-cstr(name)
+    serial-write-cstr(": no such file")
+    serial-nl()
     return
   }
-  serial_write_cstr("  file=")
-  serial_write_cstr(fs_entry_name(idx))
-  serial_write_cstr("  type=")
-  if fs_entry_type(idx) == FS_TYPE_DIR {
-    serial_write_cstr("dir")
+  serial-write-cstr("  file=")
+  serial-write-cstr(fs-entry-name(idx))
+  serial-write-cstr("  type=")
+  if fs-entry-type(idx) == FS-TYPE-DIR {
+    serial-write-cstr("dir")
   } else {
-    serial_write_cstr("file")
+    serial-write-cstr("file")
   }
-  serial_write_cstr("  size=")
-  serial_write_num(fs_entry_size(idx))
-  serial_nl()
+  serial-write-cstr("  size=")
+  serial-write-num(fs-entry-size(idx))
+  serial-nl()
   return
 }
 
 // --- vro editor -------------------------------------------------------------
 
-fn vro_meta_load(row: Int, col: Int, len: Int, dirty: Int, scroll: Int, file_idx: Int) -> void {
-  store32(VRO_META, row)
-  store32(VRO_META + 4, col)
-  store32(VRO_META + 8, len)
-  store32(VRO_META + 12, dirty)
-  store32(VRO_META + 16, scroll)
-  store32(VRO_META + 20, file_idx)
+fn vro-meta-load(row: Int, col: Int, len: Int, dirty: Int, scroll: Int, file-idx: Int) -> void {
+  store32(VRO-META, row)
+  store32(VRO-META + 4, col)
+  store32(VRO-META + 8, len)
+  store32(VRO-META + 12, dirty)
+  store32(VRO-META + 16, scroll)
+  store32(VRO-META + 20, file-idx)
   return
 }
 
-fn vro_row() -> Int {
-  return load32(VRO_META)
+fn vro-row() -> Int {
+  return load32(VRO-META)
 }
 
-fn vro_col() -> Int {
-  return load32(VRO_META + 4)
+fn vro-col() -> Int {
+  return load32(VRO-META + 4)
 }
 
-fn vro_len() -> Int {
-  return load32(VRO_META + 8)
+fn vro-len() -> Int {
+  return load32(VRO-META + 8)
 }
 
-fn vro_dirty() -> Int {
-  return load32(VRO_META + 12)
+fn vro-dirty() -> Int {
+  return load32(VRO-META + 12)
 }
 
-fn vro_scroll() -> Int {
-  return load32(VRO_META + 16)
+fn vro-scroll() -> Int {
+  return load32(VRO-META + 16)
 }
 
-fn vro_file_idx() -> Int {
-  return load32(VRO_META + 20)
+fn vro-file-idx() -> Int {
+  return load32(VRO-META + 20)
 }
 
-fn vro_set_row(v: Int) -> void {
-  store32(VRO_META, v)
+fn vro-set-row(v: Int) -> void {
+  store32(VRO-META, v)
   return
 }
 
-fn vro_set_col(v: Int) -> void {
-  store32(VRO_META + 4, v)
+fn vro-set-col(v: Int) -> void {
+  store32(VRO-META + 4, v)
   return
 }
 
-fn vro_set_len(v: Int) -> void {
-  store32(VRO_META + 8, v)
+fn vro-set-len(v: Int) -> void {
+  store32(VRO-META + 8, v)
   return
 }
 
-fn vro_set_dirty(v: Int) -> void {
-  store32(VRO_META + 12, v)
+fn vro-set-dirty(v: Int) -> void {
+  store32(VRO-META + 12, v)
   return
 }
 
-fn vro_set_scroll(v: Int) -> void {
-  store32(VRO_META + 16, v)
+fn vro-set-scroll(v: Int) -> void {
+  store32(VRO-META + 16, v)
   return
 }
 
-fn vro_row_offset(row: Int) -> Int {
+fn vro-row-offset(row: Int) -> Int {
   if row <= 0 {
     return 0
   }
   let off = 0
   let r = 0
-  while r < row && off < vro_len() {
-    if load8(VRO_BUF + off) == 10 {
+  while r < row && off < vro-len() {
+    if load8(VRO-BUF + off) == 10 {
       r = r + 1
     }
     off = off + 1
@@ -875,23 +875,23 @@ fn vro_row_offset(row: Int) -> Int {
   return off
 }
 
-fn vro_row_length(row: Int) -> Int {
-  let off = vro_row_offset(row)
+fn vro-row-length(row: Int) -> Int {
+  let off = vro-row-offset(row)
   let n = 0
-  while off + n < vro_len() && load8(VRO_BUF + off + n) != 10 {
+  while off + n < vro-len() && load8(VRO-BUF + off + n) != 10 {
     n = n + 1
   }
   return n
 }
 
-fn vro_count_rows() -> Int {
-  if vro_len() == 0 {
+fn vro-count-rows() -> Int {
+  if vro-len() == 0 {
     return 1
   }
   let count = 1
   let i = 0
-  while i < vro_len() {
-    if load8(VRO_BUF + i) == 10 {
+  while i < vro-len() {
+    if load8(VRO-BUF + i) == 10 {
       count = count + 1
     }
     i = i + 1
@@ -899,482 +899,482 @@ fn vro_count_rows() -> Int {
   return count
 }
 
-fn vro_cursor_offset() -> Int {
-  return vro_row_offset(vro_row()) + vro_col()
+fn vro-cursor-offset() -> Int {
+  return vro-row-offset(vro-row()) + vro-col()
 }
 
-fn vro_insert_byte(ch: Int) -> void {
-  let len = vro_len()
-  if len >= VRO_BUF_SIZE - 1 {
+fn vro-insert-byte(ch: Int) -> void {
+  let len = vro-len()
+  if len >= VRO-BUF-SIZE - 1 {
     return
   }
-  let off = vro_cursor_offset()
+  let off = vro-cursor-offset()
   let i = len
   while i > off {
-    store8(VRO_BUF + i, load8(VRO_BUF + i - 1))
+    store8(VRO-BUF + i, load8(VRO-BUF + i - 1))
     i = i - 1
   }
-  store8(VRO_BUF + off, ch)
-  vro_set_len(len + 1)
-  store8(VRO_BUF + len + 1, 0)
-  vro_set_dirty(1)
+  store8(VRO-BUF + off, ch)
+  vro-set-len(len + 1)
+  store8(VRO-BUF + len + 1, 0)
+  vro-set-dirty(1)
   return
 }
 
-fn vro_delete_byte() -> void {
-  let len = vro_len()
-  let off = vro_cursor_offset()
+fn vro-delete-byte() -> void {
+  let len = vro-len()
+  let off = vro-cursor-offset()
   if off >= len {
     return
   }
   let i = off
   while i < len - 1 {
-    store8(VRO_BUF + i, load8(VRO_BUF + i + 1))
+    store8(VRO-BUF + i, load8(VRO-BUF + i + 1))
     i = i + 1
   }
-  vro_set_len(len - 1)
-  store8(VRO_BUF + len - 1, 0)
-  vro_set_dirty(1)
+  vro-set-len(len - 1)
+  store8(VRO-BUF + len - 1, 0)
+  vro-set-dirty(1)
   return
 }
 
-fn vro_backspace() -> void {
-  let off = vro_cursor_offset()
+fn vro-backspace() -> void {
+  let off = vro-cursor-offset()
   if off == 0 {
     return
   }
-  if load8(VRO_BUF + off - 1) == 10 {
-    vro_set_row(vro_row() - 1)
-    vro_set_col(vro_row_length(vro_row()))
+  if load8(VRO-BUF + off - 1) == 10 {
+    vro-set-row(vro-row() - 1)
+    vro-set-col(vro-row-length(vro-row()))
   } else {
-    vro_set_col(vro_col() - 1)
+    vro-set-col(vro-col() - 1)
   }
-  let len = vro_len()
+  let len = vro-len()
   let i = off - 1
   while i < len - 1 {
-    store8(VRO_BUF + i, load8(VRO_BUF + i + 1))
+    store8(VRO-BUF + i, load8(VRO-BUF + i + 1))
     i = i + 1
   }
-  vro_set_len(len - 1)
-  store8(VRO_BUF + len - 1, 0)
-  vro_set_dirty(1)
+  vro-set-len(len - 1)
+  store8(VRO-BUF + len - 1, 0)
+  vro-set-dirty(1)
   return
 }
 
-fn vro_insert_newline() -> void {
-  vro_insert_byte(10)
-  vro_set_row(vro_row() + 1)
-  vro_set_col(0)
+fn vro-insert-newline() -> void {
+  vro-insert-byte(10)
+  vro-set-row(vro-row() + 1)
+  vro-set-col(0)
   return
 }
 
-fn vro_insert_char(ch: Int) -> void {
-  vro_insert_byte(ch)
-  vro_set_col(vro_col() + 1)
+fn vro-insert-char(ch: Int) -> void {
+  vro-insert-byte(ch)
+  vro-set-col(vro-col() + 1)
   return
 }
 
-fn vro_move_left() -> void {
-  if vro_col() > 0 {
-    vro_set_col(vro_col() - 1)
-  } else if vro_row() > 0 {
-    vro_set_row(vro_row() - 1)
-    vro_set_col(vro_row_length(vro_row()))
+fn vro-move-left() -> void {
+  if vro-col() > 0 {
+    vro-set-col(vro-col() - 1)
+  } else if vro-row() > 0 {
+    vro-set-row(vro-row() - 1)
+    vro-set-col(vro-row-length(vro-row()))
   }
   return
 }
 
-fn vro_move_right() -> void {
-  if vro_col() < vro_row_length(vro_row()) {
-    vro_set_col(vro_col() + 1)
-  } else if vro_row() < vro_count_rows() - 1 {
-    vro_set_row(vro_row() + 1)
-    vro_set_col(0)
+fn vro-move-right() -> void {
+  if vro-col() < vro-row-length(vro-row()) {
+    vro-set-col(vro-col() + 1)
+  } else if vro-row() < vro-count-rows() - 1 {
+    vro-set-row(vro-row() + 1)
+    vro-set-col(0)
   }
   return
 }
 
-fn vro_move_up() -> void {
-  if vro_row() > 0 {
-    vro_set_row(vro_row() - 1)
-    let rl = vro_row_length(vro_row())
-    if vro_col() > rl {
-      vro_set_col(rl)
+fn vro-move-up() -> void {
+  if vro-row() > 0 {
+    vro-set-row(vro-row() - 1)
+    let rl = vro-row-length(vro-row())
+    if vro-col() > rl {
+      vro-set-col(rl)
     }
   }
   return
 }
 
-fn vro_move_down() -> void {
-  if vro_row() < vro_count_rows() - 1 {
-    vro_set_row(vro_row() + 1)
-    let rl = vro_row_length(vro_row())
-    if vro_col() > rl {
-      vro_set_col(rl)
+fn vro-move-down() -> void {
+  if vro-row() < vro-count-rows() - 1 {
+    vro-set-row(vro-row() + 1)
+    let rl = vro-row-length(vro-row())
+    if vro-col() > rl {
+      vro-set-col(rl)
     }
   }
   return
 }
 
-fn vro_move_home() -> void {
-  vro_set_col(0)
+fn vro-move-home() -> void {
+  vro-set-col(0)
   return
 }
 
-fn vro_move_end() -> void {
-  vro_set_col(vro_row_length(vro_row()))
+fn vro-move-end() -> void {
+  vro-set-col(vro-row-length(vro-row()))
   return
 }
 
-fn vro_page_up() -> void {
+fn vro-page-up() -> void {
   let screen = 22
-  let r = vro_row() - screen
+  let r = vro-row() - screen
   if r < 0 {
-    vro_set_row(0)
+    vro-set-row(0)
   } else {
-    vro_set_row(r)
+    vro-set-row(r)
   }
-  let rl = vro_row_length(vro_row())
-  if vro_col() > rl {
-    vro_set_col(rl)
+  let rl = vro-row-length(vro-row())
+  if vro-col() > rl {
+    vro-set-col(rl)
   }
   return
 }
 
-fn vro_page_down() -> void {
+fn vro-page-down() -> void {
   let screen = 22
-  let total = vro_count_rows()
-  let r = vro_row() + screen
+  let total = vro-count-rows()
+  let r = vro-row() + screen
   if r >= total {
-    vro_set_row(total - 1)
+    vro-set-row(total - 1)
   } else {
-    vro_set_row(r)
+    vro-set-row(r)
   }
-  let rl = vro_row_length(vro_row())
-  if vro_col() > rl {
-    vro_set_col(rl)
+  let rl = vro-row-length(vro-row())
+  if vro-col() > rl {
+    vro-set-col(rl)
   }
   return
 }
 
-fn vro_adjust_scroll() -> void {
-  let row = vro_row()
-  let scroll = vro_scroll()
+fn vro-adjust-scroll() -> void {
+  let row = vro-row()
+  let scroll = vro-scroll()
   let screen = 22
   if row < scroll {
-    vro_set_scroll(row)
+    vro-set-scroll(row)
   }
   if row >= scroll + screen {
-    vro_set_scroll(row - screen + 1)
+    vro-set-scroll(row - screen + 1)
   }
   return
 }
 
-fn vro_render() -> void {
-  vro_adjust_scroll()
-  let scroll = vro_scroll()
-  let total = vro_count_rows()
+fn vro-render() -> void {
+  vro-adjust-scroll()
+  let scroll = vro-scroll()
+  let total = vro-count-rows()
   let screen = 22
   let gutter = 4
 
-  serial_cursor_hide()
-  serial_clear_screen()
+  serial-cursor-hide()
+  serial-clear-screen()
 
   let y = 0
   while y < screen {
     let filerow = scroll + y
-    serial_csi_xy(y + 1, 1, 72)
+    serial-csi-xy(y + 1, 1, 72)
 
     if filerow < total {
       // Line number gutter
       let linenum = filerow + 1
-      serial_put(32)
+      serial-put(32)
       if linenum < 10 {
-        serial_put(32)
-        serial_put(32)
+        serial-put(32)
+        serial-put(32)
       } else if linenum < 100 {
-        serial_put(32)
+        serial-put(32)
       }
-      serial_write_num(linenum)
-      serial_put(32)
+      serial-write-num(linenum)
+      serial-put(32)
 
       // Line content
-      let off = vro_row_offset(filerow)
-      let rl = vro_row_length(filerow)
+      let off = vro-row-offset(filerow)
+      let rl = vro-row-length(filerow)
       let c = 0
       while c < rl && c < 76 - gutter {
-        serial_put(load8(VRO_BUF + off + c))
+        serial-put(load8(VRO-BUF + off + c))
         c = c + 1
       }
     } else {
       // Empty line marker
-      serial_put(32)
-      serial_put(32)
-      serial_put(32)
-      serial_put(32)
-      serial_put(126)
+      serial-put(32)
+      serial-put(32)
+      serial-put(32)
+      serial-put(32)
+      serial-put(126)
     }
     // Clear to end of line
-    serial_csi(0, 75)
+    serial-csi(0, 75)
     y = y + 1
   }
 
   // Status bar at row 24
-  serial_csi_xy(24, 1, 72)
+  serial-csi-xy(24, 1, 72)
   // Reverse video
-  serial_csi(55, 109)
-  serial_write_cstr(" ")
-  serial_write_cstr(VRO_NAME)
-  if vro_dirty() != 0 {
-    serial_put(43)
+  serial-csi(55, 109)
+  serial-write-cstr(" ")
+  serial-write-cstr(VRO-NAME)
+  if vro-dirty() != 0 {
+    serial-put(43)
   } else {
-    serial_put(32)
+    serial-put(32)
   }
-  serial_write_cstr("  ")
-  serial_write_num(vro_row() + 1)
-  serial_put(58)
-  serial_write_num(vro_col() + 1)
-  serial_write_cstr("  ")
-  serial_write_num(total)
-  serial_write_cstr(" lines")
-  serial_csi(0, 75)
+  serial-write-cstr("  ")
+  serial-write-num(vro-row() + 1)
+  serial-put(58)
+  serial-write-num(vro-col() + 1)
+  serial-write-cstr("  ")
+  serial-write-num(total)
+  serial-write-cstr(" lines")
+  serial-csi(0, 75)
   // Reset attributes
-  serial_csi(48, 109)
+  serial-csi(48, 109)
 
   // Position cursor
-  let cur_row = vro_row() - scroll + 1
-  let cur_col = vro_col() + gutter + 1
-  serial_csi_xy(cur_row, cur_col, 72)
-  serial_cursor_show()
+  let cur-row = vro-row() - scroll + 1
+  let cur-col = vro-col() + gutter + 1
+  serial-csi-xy(cur-row, cur-col, 72)
+  serial-cursor-show()
   return
 }
 
-fn vro_save() -> Int {
-  let fi = vro_file_idx()
+fn vro-save() -> Int {
+  let fi = vro-file-idx()
   if fi >= 0 {
-    fs_write_data(fi, VRO_BUF, vro_len())
-    vro_set_dirty(0)
+    fs-write-data(fi, VRO-BUF, vro-len())
+    vro-set-dirty(0)
     return 0
   }
-  let p = fs_resolve_parent(VRO_NAME)
+  let p = fs-resolve-parent(VRO-NAME)
   if p == -2 {
     return -1
   }
-  let idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+  let idx = fs-create(p, NAME-BUF, FS-TYPE-FILE)
   if idx < 0 {
     return -1
   }
-  fs_write_data(idx, VRO_BUF, vro_len())
-  store32(VRO_META + 20, idx)
-  vro_set_dirty(0)
+  fs-write-data(idx, VRO-BUF, vro-len())
+  store32(VRO-META + 20, idx)
+  vro-set-dirty(0)
   return 0
 }
 
-fn vro_run(name: Int) -> void {
+fn vro-run(name: Int) -> void {
   if name == 0 {
-    serial_write_cstr("usage: vro <file>")
-    serial_nl()
+    serial-write-cstr("usage: vro <file>")
+    serial-nl()
     return
   }
 
-  let file_idx = -1
-  if cstr_eq_ci(name, FILE_NOTES) {
-    cstr_copy(VRO_BUF, EDIT_BUF, VRO_BUF_SIZE - 1)
+  let file-idx = -1
+  if cstr-eq-ci(name, FILE-NOTES) {
+    cstr-copy(VRO-BUF, EDIT-BUF, VRO-BUF-SIZE - 1)
     let n = 0
-    while load8(EDIT_BUF + n) != 0 {
+    while load8(EDIT-BUF + n) != 0 {
       n = n + 1
     }
-    vro_set_len(n)
-  } else if cstr_eq_ci(name, FILE_README) {
-    let n = cstr_copy(VRO_BUF, DATA_README, VRO_BUF_SIZE - 1)
-    vro_set_len(n)
-  } else if cstr_eq_ci(name, FILE_ABOUT) {
-    let n = cstr_copy(VRO_BUF, DATA_ABOUT, VRO_BUF_SIZE - 1)
-    vro_set_len(n)
+    vro-set-len(n)
+  } else if cstr-eq-ci(name, FILE-README) {
+    let n = cstr-copy(VRO-BUF, DATA-README, VRO-BUF-SIZE - 1)
+    vro-set-len(n)
+  } else if cstr-eq-ci(name, FILE-ABOUT) {
+    let n = cstr-copy(VRO-BUF, DATA-ABOUT, VRO-BUF-SIZE - 1)
+    vro-set-len(n)
   } else {
-    let idx = fs_resolve(name)
+    let idx = fs-resolve(name)
     if idx < 0 {
-      let p = fs_resolve_parent(name)
+      let p = fs-resolve-parent(name)
       if p == -2 {
-        serial_write_cstr("vro: parent directory not found")
-        serial_nl()
+        serial-write-cstr("vro: parent directory not found")
+        serial-nl()
         return
       }
-      idx = fs_create(p, NAME_BUF, FS_TYPE_FILE)
+      idx = fs-create(p, NAME-BUF, FS-TYPE-FILE)
       if idx < 0 {
-        serial_write_cstr("vro: no free file slots")
-        serial_nl()
+        serial-write-cstr("vro: no free file slots")
+        serial-nl()
         return
       }
     }
-    if fs_entry_type(idx) == FS_TYPE_DIR {
-      serial_write_cstr("vro: ")
-      serial_write_cstr(name)
-      serial_write_cstr(": is a directory")
-      serial_nl()
+    if fs-entry-type(idx) == FS-TYPE-DIR {
+      serial-write-cstr("vro: ")
+      serial-write-cstr(name)
+      serial-write-cstr(": is a directory")
+      serial-nl()
       return
     }
-    file_idx = idx
-    let n = cstr_copy(VRO_BUF, fs_entry_data(idx), VRO_BUF_SIZE - 1)
-    vro_set_len(n)
+    file-idx = idx
+    let n = cstr-copy(VRO-BUF, fs-entry-data(idx), VRO-BUF-SIZE - 1)
+    vro-set-len(n)
   }
 
-  cstr_copy(VRO_NAME, name, 31)
-  vro_meta_load(0, 0, vro_len(), 0, 0, file_idx)
+  cstr-copy(VRO-NAME, name, 31)
+  vro-meta-load(0, 0, vro-len(), 0, 0, file-idx)
 
-  serial_alt_enter()
-  vro_render()
+  serial-alt-enter()
+  vro-render()
 
   let quit = false
   while !quit {
-    let ch = serial_get_key()
+    let ch = serial-get-key()
     if ch == 0 {
       continue
     }
 
     // Ctrl-Q = quit
     if ch == 17 {
-      if vro_dirty() != 0 {
-        serial_alt_exit()
-        serial_write_cstr("vro: unsaved changes. Ctrl-Q again to discard, any key to resume.")
-        serial_nl()
-        let ch2 = serial_get_key()
+      if vro-dirty() != 0 {
+        serial-alt-exit()
+        serial-write-cstr("vro: unsaved changes. Ctrl-Q again to discard, any key to resume.")
+        serial-nl()
+        let ch2 = serial-get-key()
         while ch2 == 0 {
-          ch2 = serial_get_key()
+          ch2 = serial-get-key()
         }
         if ch2 == 17 {
           return
         }
-        serial_alt_enter()
-        vro_render()
+        serial-alt-enter()
+        vro-render()
         continue
       }
-      serial_alt_exit()
+      serial-alt-exit()
       return
     }
 
     // Ctrl-S = save
     if ch == 19 {
-      if vro_save() == 0 {
+      if vro-save() == 0 {
         // Flash SAVED in status bar
-        serial_csi_xy(24, 1, 72)
-        serial_csi(55, 109)
-        serial_write_cstr(" ")
-        serial_write_cstr(VRO_NAME)
-        serial_write_cstr("  SAVED  ")
-        serial_csi(0, 75)
-        serial_csi(48, 109)
-        let cur_row = vro_row() - vro_scroll() + 1
-        let cur_col = vro_col() + 4 + 1
-        serial_csi_xy(cur_row, cur_col, 72)
+        serial-csi-xy(24, 1, 72)
+        serial-csi(55, 109)
+        serial-write-cstr(" ")
+        serial-write-cstr(VRO-NAME)
+        serial-write-cstr("  SAVED  ")
+        serial-csi(0, 75)
+        serial-csi(48, 109)
+        let cur-row = vro-row() - vro-scroll() + 1
+        let cur-col = vro-col() + 4 + 1
+        serial-csi-xy(cur-row, cur-col, 72)
       }
       continue
     }
 
     // Tab = insert spaces
     if ch == 9 {
-      vro_insert_char(32)
-      vro_insert_char(32)
-      vro_render()
+      vro-insert-char(32)
+      vro-insert-char(32)
+      vro-render()
       continue
     }
 
-    if ch == KEY_LEFT {
-      vro_move_left()
-      vro_render()
+    if ch == KEY-LEFT {
+      vro-move-left()
+      vro-render()
       continue
     }
-    if ch == KEY_RIGHT {
-      vro_move_right()
-      vro_render()
+    if ch == KEY-RIGHT {
+      vro-move-right()
+      vro-render()
       continue
     }
-    if ch == KEY_UP {
-      vro_move_up()
-      vro_render()
+    if ch == KEY-UP {
+      vro-move-up()
+      vro-render()
       continue
     }
-    if ch == KEY_DOWN {
-      vro_move_down()
-      vro_render()
+    if ch == KEY-DOWN {
+      vro-move-down()
+      vro-render()
       continue
     }
-    if ch == KEY_HOME {
-      vro_move_home()
-      vro_render()
+    if ch == KEY-HOME {
+      vro-move-home()
+      vro-render()
       continue
     }
-    if ch == KEY_END {
-      vro_move_end()
-      vro_render()
+    if ch == KEY-END {
+      vro-move-end()
+      vro-render()
       continue
     }
-    if ch == KEY_PGUP {
-      vro_page_up()
-      vro_render()
+    if ch == KEY-PGUP {
+      vro-page-up()
+      vro-render()
       continue
     }
-    if ch == KEY_PGDN {
-      vro_page_down()
-      vro_render()
+    if ch == KEY-PGDN {
+      vro-page-down()
+      vro-render()
       continue
     }
-    if ch == KEY_DELETE {
-      vro_delete_byte()
-      vro_render()
+    if ch == KEY-DELETE {
+      vro-delete-byte()
+      vro-render()
       continue
     }
 
     if ch == 13 || ch == 10 {
-      vro_insert_newline()
-      vro_render()
+      vro-insert-newline()
+      vro-render()
       continue
     }
 
     if ch == 8 || ch == 127 {
-      vro_backspace()
-      vro_render()
+      vro-backspace()
+      vro-render()
       continue
     }
 
     if ch >= 32 && ch < 127 {
-      vro_insert_char(ch)
-      vro_render()
+      vro-insert-char(ch)
+      vro-render()
       continue
     }
   }
 
-  serial_alt_exit()
+  serial-alt-exit()
   return
 }
 
 // --- history ----------------------------------------------------------------
 
-fn history_add(cmd: Int) -> void {
-  if hist_count >= HIST_MAX {
+fn history-add(cmd: Int) -> void {
+  if hist-count >= HIST-MAX {
     let i = 0
-    while i < HIST_MAX - 1 {
-      cstr_copy(HIST_BUF + i * HIST_ENTRY_SIZE, HIST_BUF + (i + 1) * HIST_ENTRY_SIZE, HIST_ENTRY_SIZE - 1)
+    while i < HIST-MAX - 1 {
+      cstr-copy(HIST-BUF + i * HIST-ENTRY-SIZE, HIST-BUF + (i + 1) * HIST-ENTRY-SIZE, HIST-ENTRY-SIZE - 1)
       i = i + 1
     }
-    hist_count = HIST_MAX - 1
+    hist-count = HIST-MAX - 1
   }
-  let slot = HIST_BUF + hist_count * HIST_ENTRY_SIZE
-  cstr_copy(slot, cmd, HIST_ENTRY_SIZE - 1)
-  hist_count = hist_count + 1
+  let slot = HIST-BUF + hist-count * HIST-ENTRY-SIZE
+  cstr-copy(slot, cmd, HIST-ENTRY-SIZE - 1)
+  hist-count = hist-count + 1
   return
 }
 
-fn cmd_history() -> void {
-  serial_write_cstr("command history:")
-  serial_nl()
+fn cmd-history() -> void {
+  serial-write-cstr("command history:")
+  serial-nl()
   let i = 0
-  while i < hist_count {
-    let slot = HIST_BUF + i * HIST_ENTRY_SIZE
-    serial_write_num(i + 1)
-    serial_write_cstr("  ")
-    serial_write_cstr(slot)
-    serial_nl()
+  while i < hist-count {
+    let slot = HIST-BUF + i * HIST-ENTRY-SIZE
+    serial-write-num(i + 1)
+    serial-write-cstr("  ")
+    serial-write-cstr(slot)
+    serial-nl()
     i = i + 1
   }
   return
@@ -1382,7 +1382,7 @@ fn cmd_history() -> void {
 
 // --- string helpers ---------------------------------------------------------
 
-fn cstr_len(s: Int) -> Int {
+fn cstr-len(s: Int) -> Int {
   let i = 0
   while load8(s + i) != 0 {
     i = i + 1
@@ -1390,7 +1390,7 @@ fn cstr_len(s: Int) -> Int {
   return i
 }
 
-fn cstr_eq(a: Int, b: Int) -> Bool {
+fn cstr-eq(a: Int, b: Int) -> Bool {
   let i = 0
   while true {
     let ca = load8(a + i)
@@ -1406,7 +1406,7 @@ fn cstr_eq(a: Int, b: Int) -> Bool {
   return false
 }
 
-fn cstr_copy(dst: Int, src: Int, max: Int) -> Int {
+fn cstr-copy(dst: Int, src: Int, max: Int) -> Int {
   if max <= 0 {
     return 0
   }
@@ -1424,22 +1424,22 @@ fn cstr_copy(dst: Int, src: Int, max: Int) -> Int {
   return limit
 }
 
-fn arg_at(idx: Int) -> Int {
+fn arg-at(idx: Int) -> Int {
   let i = 0
   let n = 0
   while n < idx {
-    while load8(LINE_BUF + i) != 0 && load8(LINE_BUF + i) != 32 {
+    while load8(LINE-BUF + i) != 0 && load8(LINE-BUF + i) != 32 {
       i = i + 1
     }
-    while load8(LINE_BUF + i) == 32 {
+    while load8(LINE-BUF + i) == 32 {
       i = i + 1
     }
     n = n + 1
   }
-  if load8(LINE_BUF + i) == 0 {
+  if load8(LINE-BUF + i) == 0 {
     return 0
   }
-  return LINE_BUF + i
+  return LINE-BUF + i
 }
 
 // --- serial input -----------------------------------------------------------
@@ -1447,20 +1447,20 @@ fn arg_at(idx: Int) -> Int {
 // Returns special key codes (KEY_LEFT etc.) for escape sequences,
 // or raw byte for printable characters.
 
-fn serial_data_ready() -> Int {
-  return inb(COM1_PORT + 5) & 0x01
+fn serial-data-ready() -> Int {
+  return inb(COM1-PORT + 5) & 0x01
 }
 
-fn serial_read_byte() -> Int {
-  if serial_pushback != 0 {
-    let pb = serial_pushback
-    serial_pushback = 0
+fn serial-read-byte() -> Int {
+  if serial-pushback != 0 {
+    let pb = serial-pushback
+    serial-pushback = 0
     return pb
   }
-  while (inb(COM1_PORT + 5) & 0x01) == 0 {
+  while (inb(COM1-PORT + 5) & 0x01) == 0 {
     pause()
   }
-  return inb(COM1_PORT)
+  return inb(COM1-PORT)
 }
 
 // Read a key from serial. Handles ANSI escape sequences:
@@ -1468,83 +1468,83 @@ fn serial_read_byte() -> Int {
 //   \x1b[H = home  \x1b[F = end
 //   \x1b[5~ = pgup \x1b[6~ = pgdn   \x1b[3~ = delete
 // Returns the raw byte for printable chars, or KEY_* constants.
-fn serial_get_key() -> Int {
-  let b = serial_read_byte()
+fn serial-get-key() -> Int {
+  let b = serial-read-byte()
 
   if b != 27 {
     return b
   }
 
   // Escape sequence: read next byte
-  let b2 = serial_read_byte()
+  let b2 = serial-read-byte()
   if b2 != 91 {
     // Not a CSI sequence. Save b2 for next call, return ESC.
-    serial_pushback = b2
+    serial-pushback = b2
     return 27
   }
 
   // CSI sequence: read the final byte(s)
-  let b3 = serial_read_byte()
+  let b3 = serial-read-byte()
   if b3 == 65 {
-    return KEY_UP
+    return KEY-UP
   }
   if b3 == 66 {
-    return KEY_DOWN
+    return KEY-DOWN
   }
   if b3 == 67 {
-    return KEY_RIGHT
+    return KEY-RIGHT
   }
   if b3 == 68 {
-    return KEY_LEFT
+    return KEY-LEFT
   }
   if b3 == 72 {
-    return KEY_HOME
+    return KEY-HOME
   }
   if b3 == 70 {
-    return KEY_END
+    return KEY-END
   }
   if b3 == 51 {
     // \x1b[3~ = delete
-    serial_read_byte()
-    return KEY_DELETE
+    serial-read-byte()
+    return KEY-DELETE
   }
   if b3 == 53 {
     // \x1b[5~ = page up
-    serial_read_byte()
-    return KEY_PGUP
+    serial-read-byte()
+    return KEY-PGUP
   }
   if b3 == 54 {
     // \x1b[6~ = page down
-    serial_read_byte()
-    return KEY_PGDN
+    serial-read-byte()
+    return KEY-PGDN
   }
   return 0
 }
 
-fn read_line() -> Int {
-  let line_len = 0
+fn read-line() -> Int {
+  let line-len = 0
   while true {
-    let ch = serial_get_key()
+    let ch = serial-get-key()
     if ch == 0 {
       continue
     }
     if ch == 13 || ch == 10 {
-      store8(LINE_BUF + line_len, 0)
-      serial_nl()
-      return line_len
+      store8(LINE-BUF + line-len, 0)
+      serial-nl()
+      return line-len
     }
     if ch == 8 || ch == 127 {
-      if line_len > 0 {
-        line_len = line_len - 1
-        serial_put(8)
-        serial_put(32)
-        serial_put(8)
+      if line-len > 0 {
+        line-len = line-len - 1
+        serial-put(8)
+        serial-put(32)
+        serial-put(8)
       }
     } else if ch >= 32 && ch < 127 {
-      if line_len < 79 {
-        store8(LINE_BUF + line_len, ch)
-        line_len = line_len + 1
-        serial_put(ch)
+      if line-len < 79 {
+        store8(LINE-BUF + line-len, ch)
+        line-len = line-len + 1
+        serial-put(ch)
       }
     }
   }
@@ -1553,170 +1553,170 @@ fn read_line() -> Int {
 
 // --- serial -----------------------------------------------------------------
 
-fn serial_init() -> void {
-  outb(COM1_PORT + 1, 0x00)
-  outb(COM1_PORT + 3, 0x80)
-  outb(COM1_PORT + 0, 0x03)
-  outb(COM1_PORT + 1, 0x00)
-  outb(COM1_PORT + 3, 0x03)
-  outb(COM1_PORT + 2, 0x07)
-  outb(COM1_PORT + 4, 0x0B)
+fn serial-init() -> void {
+  outb(COM1-PORT + 1, 0x00)
+  outb(COM1-PORT + 3, 0x80)
+  outb(COM1-PORT + 0, 0x03)
+  outb(COM1-PORT + 1, 0x00)
+  outb(COM1-PORT + 3, 0x03)
+  outb(COM1-PORT + 2, 0x07)
+  outb(COM1-PORT + 4, 0x0B)
   // Flush any stray bytes in the receive buffer
-  while (inb(COM1_PORT + 5) & 0x01) != 0 {
-    inb(COM1_PORT)
+  while (inb(COM1-PORT + 5) & 0x01) != 0 {
+    inb(COM1-PORT)
   }
-  serial_pushback = 0
+  serial-pushback = 0
   return
 }
 
-fn serial_wait_tx() -> void {
-  while (inb(COM1_PORT + 5) & 0x20) == 0 {
+fn serial-wait-tx() -> void {
+  while (inb(COM1-PORT + 5) & 0x20) == 0 {
     pause()
   }
   return
 }
 
-fn serial_put(ch: Int) -> void {
-  serial_wait_tx()
-  outb(COM1_PORT, ch)
+fn serial-put(ch: Int) -> void {
+  serial-wait-tx()
+  outb(COM1-PORT, ch)
   return
 }
 
 // Send ESC + '[' + suffix (CSI sequence)
-fn serial_csi(a: Int, b: Int) -> void {
-  serial_put(27)
-  serial_put(91)
+fn serial-csi(a: Int, b: Int) -> void {
+  serial-put(27)
+  serial-put(91)
   if a != 0 {
-    serial_put(a)
+    serial-put(a)
   }
-  serial_put(b)
+  serial-put(b)
   return
 }
 
 // Send ESC + '[' + num + final (CSI with parameter)
-fn serial_csi_n(n: Int, final: Int) -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_write_num(n)
-  serial_put(final)
+fn serial-csi-n(n: Int, final: Int) -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-write-num(n)
+  serial-put(final)
   return
 }
 
 // Send ESC + '[' + n1 + ';' + n2 + final (CSI with two params)
-fn serial_csi_xy(n1: Int, n2: Int, final: Int) -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_write_num(n1)
-  serial_put(59)
-  serial_write_num(n2)
-  serial_put(final)
+fn serial-csi-xy(n1: Int, n2: Int, final: Int) -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-write-num(n1)
+  serial-put(59)
+  serial-write-num(n2)
+  serial-put(final)
   return
 }
 
 // Clear screen and home cursor
-fn serial_clear_screen() -> void {
-  serial_csi(50, 74)
-  serial_csi(0, 72)
+fn serial-clear-screen() -> void {
+  serial-csi(50, 74)
+  serial-csi(0, 72)
   return
 }
 
 // Enter alternate screen buffer
-fn serial_alt_enter() -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_put(63)
-  serial_put(49)
-  serial_put(48)
-  serial_put(52)
-  serial_put(57)
-  serial_put(104)
+fn serial-alt-enter() -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-put(63)
+  serial-put(49)
+  serial-put(48)
+  serial-put(52)
+  serial-put(57)
+  serial-put(104)
   return
 }
 
 // Exit alternate screen buffer
-fn serial_alt_exit() -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_put(63)
-  serial_put(49)
-  serial_put(48)
-  serial_put(52)
-  serial_put(57)
-  serial_put(108)
+fn serial-alt-exit() -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-put(63)
+  serial-put(49)
+  serial-put(48)
+  serial-put(52)
+  serial-put(57)
+  serial-put(108)
   return
 }
 
 // Hide cursor
-fn serial_cursor_hide() -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_put(63)
-  serial_put(50)
-  serial_put(53)
-  serial_put(108)
+fn serial-cursor-hide() -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-put(63)
+  serial-put(50)
+  serial-put(53)
+  serial-put(108)
   return
 }
 
 // Show cursor
-fn serial_cursor_show() -> void {
-  serial_put(27)
-  serial_put(91)
-  serial_put(63)
-  serial_put(50)
-  serial_put(53)
-  serial_put(104)
+fn serial-cursor-show() -> void {
+  serial-put(27)
+  serial-put(91)
+  serial-put(63)
+  serial-put(50)
+  serial-put(53)
+  serial-put(104)
   return
 }
 
-fn serial_nl() -> void {
-  serial_put(13)
-  serial_put(10)
+fn serial-nl() -> void {
+  serial-put(13)
+  serial-put(10)
   return
 }
 
-fn serial_write_cstr(addr: Int) -> void {
+fn serial-write-cstr(addr: Int) -> void {
   let i = 0
   let c = load8(addr + i)
   while c != 0 {
     if c == 10 {
-      serial_put(13)
+      serial-put(13)
     }
-    serial_put(c)
+    serial-put(c)
     i = i + 1
     c = load8(addr + i)
   }
   return
 }
 
-fn serial_write_hex32(value: Int) -> void {
+fn serial-write-hex32(value: Int) -> void {
   let shift = 28
   while shift >= 0 {
     let nibble = (value >> shift) & 0xF
     if nibble < 10 {
-      serial_put(48 + nibble)
+      serial-put(48 + nibble)
     } else {
-      serial_put(87 + nibble)
+      serial-put(87 + nibble)
     }
     shift = shift - 4
   }
   return
 }
 
-fn serial_write_num(value: Int) -> void {
+fn serial-write-num(value: Int) -> void {
   if value == 0 {
-    serial_put(48)
+    serial-put(48)
     return
   }
   let i = 0
   let v = value
   while v > 0 {
-    store8(NUM_BUF + i, 48 + (v % 10))
+    store8(NUM-BUF + i, 48 + (v % 10))
     v = v / 10
     i = i + 1
   }
   while i > 0 {
     i = i - 1
-    serial_put(load8(NUM_BUF + i))
+    serial-put(load8(NUM-BUF + i))
   }
   return
 }

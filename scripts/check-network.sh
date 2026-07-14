@@ -15,7 +15,7 @@ mkdir -p "$BUILD_DIR"
 echo "[1/3] Building compiler, trampoline, kernel..."
 [ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 nasm -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel_entry \
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry \
   --emit boot --trampoline "$BUILD_DIR/trampoline.bin" \
   --out "$BUILD_DIR/kernel.bin" >/dev/null
 

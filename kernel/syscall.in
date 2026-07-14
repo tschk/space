@@ -12,14 +12,14 @@ package space.kernel
 //   rax=112 rbx=104 rcx=96 rdx=88 rsi=80 rdi=72 rbp=64
 //   r8=56 r9=48 r10=40 r11=32 r12=24 r13=16 r14=8 r15=0
 
-fn sys_write(fd: Int, buf: Int, len: Int) -> Int {
+fn sys-write(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 1 {
     return -1
   }
   let port = com1()
   let i = 0
   while i < len {
-    serial_put(port, load8(buf + i))
+    serial-put(port, load8(buf + i))
     i = i + 1
   }
   return len
@@ -27,14 +27,14 @@ fn sys_write(fd: Int, buf: Int, len: Int) -> Int {
 
 // Syscall 1: sys_read(fd, buf, len) — read from serial (fd=0 = stdin, blocking).
 // Reads up to len bytes, stopping at a newline, and returns the byte count.
-fn sys_read(fd: Int, buf: Int, len: Int) -> Int {
+fn sys-read(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 0 {
     return -1
   }
   let port = com1()
   let i = 0
   while i < len {
-    let c = serial_read(port)
+    let c = serial-read(port)
     store8(buf + i, c)
     i = i + 1
     if c == 10 || c == 13 {
@@ -46,13 +46,13 @@ fn sys_read(fd: Int, buf: Int, len: Int) -> Int {
 
 // Syscall 2: sys_exit(code) — exit the current process/component.
 // In kernel context (thread 0) this halts the nanokernel.
-fn sys_exit(code: Int) -> Int {
+fn sys-exit(code: Int) -> Int {
   let port = com1()
-  serial_write_cstr(port, "space: sys_exit(code=0x")
-  serial_write_hex(port, code)
-  serial_write_cstr(port, ") from thread 0x")
-  serial_write_hex(port, current_task)
-  serial_nl(port)
+  serial-write-cstr(port, "space: sys_exit(code=0x")
+  serial-write-hex(port, code)
+  serial-write-cstr(port, ") from thread 0x")
+  serial-write-hex(port, current-task)
+  serial-nl(port)
   cli()
   while true {
     hlt()
@@ -62,85 +62,85 @@ fn sys_exit(code: Int) -> Int {
 
 // Syscall 3: sys_yield() — yield CPU to scheduler.
 // In kernel context this is a no-op since there is nothing to yield to.
-fn sys_yield() -> Int {
+fn sys-yield() -> Int {
   return 0
 }
 
 // Syscall 4: sys_getpid() — return current thread ID.
-fn sys_getpid() -> Int {
-  return current_task
+fn sys-getpid() -> Int {
+  return current-task
 }
 
 // Syscall 5: sys_chan_create(cap) — create a channel with capacity.
-fn sys_chan_create(cap: Int) -> Int {
-  return chan_new(cap)
+fn sys-chan-create(cap: Int) -> Int {
+  return chan-new(cap)
 }
 
 // Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
-fn sys_chan_send(ch: Int, msg: Int) -> void {
-  chan_send(ch, msg)
+fn sys-chan-send(ch: Int, msg: Int) -> void {
+  chan-send(ch, msg)
   return
 }
 
 // Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
-fn sys_chan_recv(ch: Int) -> Int {
-  return chan_recv(ch)
+fn sys-chan-recv(ch: Int) -> Int {
+  return chan-recv(ch)
 }
 
 // Syscall 8: sys_chan_close(ch) — close/free a channel.
-fn sys_chan_close(ch: Int) -> Int {
-  chan_heap_free(ch)
+fn sys-chan-close(ch: Int) -> Int {
+  chan-heap-free(ch)
   return 0
 }
 
 // Dispatch a syscall based on the number in the saved RAX slot of the frame.
 // Writes the return value back into the RAX slot (frame offset 112).
-fn syscall_dispatch(frame: Int) -> void {
+fn syscall-dispatch(frame: Int) -> void {
   let num = load64(frame + 112)
   if num == 0 {
     let fd = load64(frame + 72)
     let buf = load64(frame + 80)
     let len = load64(frame + 88)
-    store64(frame + 112, sys_write(fd, buf, len))
+    store64(frame + 112, sys-write(fd, buf, len))
   } else if num == 1 {
     let fd = load64(frame + 72)
     let buf = load64(frame + 80)
     let len = load64(frame + 88)
-    store64(frame + 112, sys_read(fd, buf, len))
+    store64(frame + 112, sys-read(fd, buf, len))
   } else if num == 2 {
     let code = load64(frame + 72)
-    store64(frame + 112, sys_exit(code))
+    store64(frame + 112, sys-exit(code))
   } else if num == 3 {
-    store64(frame + 112, sys_yield())
+    store64(frame + 112, sys-yield())
   } else if num == 4 {
-    store64(frame + 112, sys_getpid())
+    store64(frame + 112, sys-getpid())
   } else if num == 5 {
     let cap = load64(frame + 72)
-    store64(frame + 112, sys_chan_create(cap))
+    store64(frame + 112, sys-chan-create(cap))
   } else if num == 6 {
     let ch = load64(frame + 72)
     let msg = load64(frame + 80)
-    sys_chan_send(ch, msg)
+    sys-chan-send(ch, msg)
     store64(frame + 112, 0)
   } else if num == 7 {
     let ch = load64(frame + 72)
-    store64(frame + 112, sys_chan_recv(ch))
+    store64(frame + 112, sys-chan-recv(ch))
   } else if num == 8 {
     let ch = load64(frame + 72)
-    store64(frame + 112, sys_chan_close(ch))
+    store64(frame + 112, sys-chan-close(ch))
   } else {
     let port = com1()
-    serial_write_cstr(port, "space: unknown syscall 0x")
-    serial_write_hex(port, num)
-    serial_nl(port)
+    serial-write-cstr(port, "space: unknown syscall 0x")
+    serial-write-hex(port, num)
+    serial-nl(port)
     store64(frame + 112, -1)
   }
   return
 }
 
 // Install a 64-bit interrupt gate with DPL=3 so user-mode code can invoke it.
-fn idt_set_user(vec: Int, handler: Int) -> void {
-  let e = idt_base + vec * 16
+fn idt-set-user(vec: Int, handler: Int) -> void {
+  let e = idt-base + vec * 16
   store16(e + 0, handler & 0xFFFF)
   store16(e + 2, 0x08)
   store8(e + 4, 0)

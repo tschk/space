@@ -7,25 +7,25 @@ package space.kernel
 
 // Shared page layout (4096 bytes, all Int = 8 bytes):
 // [head(8)][tail(8)][capacity(8)][msg_size(8)]...[msg data ring(4096-32)]
-const CROSS_PAGE_HEADER_SIZE = 32
-const CROSS_PAGE_RING_OFFSET = 32
+const CROSS-PAGE-HEADER-SIZE = 32
+const CROSS-PAGE-RING-OFFSET = 32
 
 // Create a cross-domain channel endpoint on an existing shared page.
 // shared_page is the physical address from domain_create_shared_page.
 // local_domain is the local domain ID.
 // Returns a channel handle (for chan_cross_send / chan_cross_recv).
-fn chan_cross_bind(shared_page: Int, local_domain: Int, capacity: Int) -> Int {
+fn chan-cross-bind(shared-page: Int, local-domain: Int, capacity: Int) -> Int {
   // Allocate channel control block in kernel domain
-  let ch = alloc(CROSS_PAGE_HEADER_SIZE)
-  store64(ch + 0, shared_page)
-  store64(ch + 8, local_domain)
+  let ch = alloc(CROSS-PAGE-HEADER-SIZE)
+  store64(ch + 0, shared-page)
+  store64(ch + 8, local-domain)
   store64(ch + 16, 0)  // reserved
 
   // Initialize shared page header (sender = first user)
-  store64(shared_page + 0, 0)    // head = 0
-  store64(shared_page + 8, 0)    // tail = 0
-  store64(shared_page + 16, capacity)
-  store64(shared_page + 24, 8)   // msg_size = 8 (single Int)
+  store64(shared-page + 0, 0)    // head = 0
+  store64(shared-page + 8, 0)    // tail = 0
+  store64(shared-page + 16, capacity)
+  store64(shared-page + 24, 8)   // msg_size = 8 (single Int)
   return ch
 }
 
@@ -35,11 +35,11 @@ fn chan_cross_bind(shared_page: Int, local_domain: Int, capacity: Int) -> Int {
 // the counterparty wakes it when space/data becomes available. This replaces
 // the old poll-with-yield approach for zero-CPU-waste IPC.
 var chan0: Int = 0
-var comp_backbuf: Int = 0  // double-buffer for tear-free compositor
+var comp-backbuf: Int = 0  // double-buffer for tear-free compositor
 
-fn chan_new(cap: Int) -> Int {
+fn chan-new(cap: Int) -> Int {
   // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
-  let c = chan_alloc(48 + cap * 8)
+  let c = chan-alloc(48 + cap * 8)
   store64(c + 0, cap)
   store64(c + 8, 0)
   store64(c + 16, 0)
@@ -49,7 +49,7 @@ fn chan_new(cap: Int) -> Int {
   return c
 }
 
-fn chan_count(c: Int) -> Int {
+fn chan-count(c: Int) -> Int {
   return load64(c + 8)
 }
 
@@ -60,11 +60,11 @@ fn chan_count(c: Int) -> Int {
 // .in has no preemption between the state check and the wait registration.
 
 // Send to channel: block until room, then write. Wake a waiting receiver.
-fn chan_send(c: Int, msg: Int) -> void {
+fn chan-send(c: Int, msg: Int) -> void {
   let cap = load64(c + 0)
   while load64(c + 8) >= cap {
-    store64(c + 32, current_task)  // register as blocked sender
-    thr_block()
+    store64(c + 32, current-task)  // register as blocked sender
+    thr-block()
   }
   store64(c + 32, -1)  // clear waiter flag
   let wpos = load64(c + 24)
@@ -76,16 +76,16 @@ fn chan_send(c: Int, msg: Int) -> void {
   let rcv = load64(c + 40)
   if rcv != -1 {
     store64(c + 40, -1)
-    thr_wake(rcv)
+    thr-wake(rcv)
   }
   return
 }
 
 // Recv from channel: block until data, then read. Wake a waiting sender.
-fn chan_recv(c: Int) -> Int {
+fn chan-recv(c: Int) -> Int {
   while load64(c + 8) == 0 {
-    store64(c + 40, current_task)  // register as blocked receiver
-    thr_block()
+    store64(c + 40, current-task)  // register as blocked receiver
+    thr-block()
   }
   store64(c + 40, -1)  // clear waiter flag
   let cap = load64(c + 0)
@@ -98,7 +98,7 @@ fn chan_recv(c: Int) -> Int {
   let snd = load64(c + 32)
   if snd != -1 {
     store64(c + 32, -1)
-    thr_wake(snd)
+    thr-wake(snd)
   }
   return msg
 }

@@ -7,137 +7,137 @@ import "../components/storage.in"
 // starts the component and forwards NVMe read/write requests over the
 // cross-domain mailbox shared page.
 
-var nvme_ready: Int = 0
+var nvme-ready: Int = 0
 
-fn nvme_start_storage_component(port: Int) -> Int {
-  if storage_started != 0 {
+fn nvme-start-storage-component(port: Int) -> Int {
+  if storage-started != 0 {
     return 0
   }
-  storage_domain = domain_create()
-  if storage_domain == 0 {
-    storage_domain = 1
+  storage-domain = domain-create()
+  if storage-domain == 0 {
+    storage-domain = 1
   }
 
-  let shared_mailbox = domain_create_shared_page(0, storage_domain, STORAGE_MAILBOX_VIRT, STORAGE_MAILBOX_VIRT)
-  if shared_mailbox == 0 {
-    storage_mailbox = alloc(4096)
+  let shared-mailbox = domain-create-shared-page(0, storage-domain, STORAGE-MAILBOX-VIRT, STORAGE-MAILBOX-VIRT)
+  if shared-mailbox == 0 {
+    storage-mailbox = alloc(4096)
   } else {
-    storage_mailbox = STORAGE_MAILBOX_VIRT
+    storage-mailbox = STORAGE-MAILBOX-VIRT
   }
-  let shared_data = domain_create_shared_page(0, storage_domain, STORAGE_DATA_VIRT, STORAGE_DATA_VIRT)
-  if shared_data == 0 {
-    storage_data_page = alloc(4096)
-    storage_data_phys = storage_data_page
+  let shared-data = domain-create-shared-page(0, storage-domain, STORAGE-DATA-VIRT, STORAGE-DATA-VIRT)
+  if shared-data == 0 {
+    storage-data-page = alloc(4096)
+    storage-data-phys = storage-data-page
   } else {
-    storage_data_page = STORAGE_DATA_VIRT
-    storage_data_phys = shared_data
+    storage-data-page = STORAGE-DATA-VIRT
+    storage-data-phys = shared-data
   }
 
   let i = 0
   while i < 512 {
-    store64(storage_mailbox + i * 8, 0)
+    store64(storage-mailbox + i * 8, 0)
     i = i + 1
   }
 
-  storage_cap_info = alloc(24)
-  store64(storage_cap_info + 0, cap_count)
-  store64(storage_cap_info + 8, cap_table_base)
-  store64(storage_cap_info + 16, storage_mailbox)
+  storage-cap-info = alloc(24)
+  store64(storage-cap-info + 0, cap-count)
+  store64(storage-cap-info + 8, cap-table-base)
+  store64(storage-cap-info + 16, storage-mailbox)
 
-  let comp = component_register("storage", storage_entry, cap_storage() | cap_memory() | cap_serial())
-  cap_mint(comp, cap_storage() | cap_memory() | cap_serial())
-  domain_switch(storage_domain)
-  storage_entry(storage_cap_info)
-  domain_switch(0)
-  storage_started = 1
+  let comp = component-register("storage", storage-entry, cap-storage() | cap-memory() | cap-serial())
+  cap-mint(comp, cap-storage() | cap-memory() | cap-serial())
+  domain-switch(storage-domain)
+  storage-entry(storage-cap-info)
+  domain-switch(0)
+  storage-started = 1
 
-  if storage_ready != 1 {
-    serial_write_cstr(port, "  storage: component failed to become ready")
-    serial_nl(port)
+  if storage-ready != 1 {
+    serial-write-cstr(port, "  storage: component failed to become ready")
+    serial-nl(port)
     return -1
   }
   return 0
 }
 
-fn nvme_submit(op: Int, lba: Int, count: Int) -> Int {
-  while load64(storage_mailbox + STORAGE_OP_OFF) != 0 {
+fn nvme-submit(op: Int, lba: Int, count: Int) -> Int {
+  while load64(storage-mailbox + STORAGE-OP-OFF) != 0 {
   }
-  store64(storage_mailbox + STORAGE_LBA_OFF, lba)
-  store64(storage_mailbox + STORAGE_COUNT_OFF, count)
-  store64(storage_mailbox + STORAGE_STATUS_OFF, 0)
-  store64(storage_mailbox + STORAGE_OP_OFF, op)
+  store64(storage-mailbox + STORAGE-LBA-OFF, lba)
+  store64(storage-mailbox + STORAGE-COUNT-OFF, count)
+  store64(storage-mailbox + STORAGE-STATUS-OFF, 0)
+  store64(storage-mailbox + STORAGE-OP-OFF, op)
   // Save caller domain so nested RPC from Volume (or POSIX) restores CR3
   // correctly instead of always dropping back to domain 0.
-  let prev = domain_get_current()
-  domain_switch(storage_domain)
-  storage_service()
-  domain_switch(prev)
-  return load64(storage_mailbox + STORAGE_STATUS_OFF)
+  let prev = domain-get-current()
+  domain-switch(storage-domain)
+  storage-service()
+  domain-switch(prev)
+  return load64(storage-mailbox + STORAGE-STATUS-OFF)
 }
 
-fn nvme_init() -> Int {
-  if nvme_ready != 0 {
+fn nvme-init() -> Int {
+  if nvme-ready != 0 {
     return 0
   }
   let port = com1()
-  if nvme_start_storage_component(port) != 0 {
+  if nvme-start-storage-component(port) != 0 {
     return -1
   }
-  nvme_ready = 1
-  serial_write_cstr(port, "  nvme: storage component ready")
-  serial_nl(port)
+  nvme-ready = 1
+  serial-write-cstr(port, "  nvme: storage component ready")
+  serial-nl(port)
   return 0
 }
 
-fn nvme_read(lba: Int, count: Int, buf: Int) -> Int {
-  if nvme_ready == 0 {
-    if nvme_init() != 0 {
+fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
+  if nvme-ready == 0 {
+    if nvme-init() != 0 {
       return -1
     }
   }
-  let rc = nvme_submit(STORAGE_OP_READ, lba, count)
-  if rc == 0 && buf != storage_data_page {
+  let rc = nvme-submit(STORAGE-OP-READ, lba, count)
+  if rc == 0 && buf != storage-data-page {
     let i = 0
     while i < count * 512 {
-      store8(buf + i, load8(storage_data_page + i))
+      store8(buf + i, load8(storage-data-page + i))
       i = i + 1
     }
   }
   return rc
 }
 
-fn nvme_write(lba: Int, count: Int, buf: Int) -> Int {
-  if nvme_ready == 0 {
-    if nvme_init() != 0 {
+fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
+  if nvme-ready == 0 {
+    if nvme-init() != 0 {
       return -1
     }
   }
-  if buf != storage_data_page {
+  if buf != storage-data-page {
     let i = 0
     while i < count * 512 {
-      store8(storage_data_page + i, load8(buf + i))
+      store8(storage-data-page + i, load8(buf + i))
       i = i + 1
     }
   }
-  return nvme_submit(STORAGE_OP_WRITE, lba, count)
+  return nvme-submit(STORAGE-OP-WRITE, lba, count)
 }
 
-fn nvme_dump16(port: Int, buf: Int) -> void {
+fn nvme-dump16(port: Int, buf: Int) -> void {
   return
 }
 
-fn nvme_dump(port: Int, buf: Int, n: Int) -> void {
+fn nvme-dump(port: Int, buf: Int, n: Int) -> void {
   return
 }
 
-fn nvme_shell(port: Int) -> void {
-  serial_write_cstr(port, "  nvme: storage component shell not implemented")
-  serial_nl(port)
+fn nvme-shell(port: Int) -> void {
+  serial-write-cstr(port, "  nvme: storage component shell not implemented")
+  serial-nl(port)
   return
 }
 
-fn nvme_shell_read(port: Int, lba: Int) -> void {
-  serial_write_cstr(port, "  nvme: storage component shell read not implemented")
-  serial_nl(port)
+fn nvme-shell-read(port: Int, lba: Int) -> void {
+  serial-write-cstr(port, "  nvme: storage component shell read not implemented")
+  serial-nl(port)
   return
 }

@@ -4,46 +4,46 @@ package space.kernel
 // The full driver logic has moved to components/input.in. This file preserves
 // the public symbols so kernel-root.in and compositor.in continue to compile.
 
-var mouse_x: Int = 0
-var mouse_y: Int = 0
-var mouse_buttons: Int = 0
+var mouse-x: Int = 0
+var mouse-y: Int = 0
+var mouse-buttons: Int = 0
 
-fn mouse_init() -> Int {
+fn mouse-init() -> Int {
   return 0
 }
 
-fn mouse_has_data() -> Int {
+fn mouse-has-data() -> Int {
   return 0
 }
 
-fn mouse_process_byte(b: Int) -> Int {
+fn mouse-process-byte(b: Int) -> Int {
   return 0
 }
 
-fn mouse_poll() -> Int {
+fn mouse-poll() -> Int {
   return 0
 }
 
-fn mouse_left_pressed() -> Int {
+fn mouse-left-pressed() -> Int {
   return 0
 }
 
-fn mouse_right_pressed() -> Int {
+fn mouse-right-pressed() -> Int {
   return 0
 }
 
-fn ps2_kbd_init() -> Int {
+fn ps2-kbd-init() -> Int {
   return 0
 }
 
-fn ps2_kbd_has_data() -> Int {
+fn ps2-kbd-has-data() -> Int {
   return 0
 }
 
-fn ps2_scancode_ascii(sc: Int) -> Int {
+fn ps2-scancode-ascii(sc: Int) -> Int {
   return -1
 }
 
-fn ps2_kbd_getchar() -> Int {
+fn ps2-kbd-getchar() -> Int {
   return -1
 }
