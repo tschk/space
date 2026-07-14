@@ -1,0 +1,33 @@
+package space.kernel
+
+// --- PRNG and determinism ---------------------------------------------------
+fn det_next(s: Int) -> Int {
+  let x = s
+  x = x ^ (x << 13)
+  x = x ^ (x >> 7)
+  x = x ^ (x << 17)
+  return x
+}
+
+fn det_workload(seed: Int) -> Int {
+  let s = seed
+  let sum = 0
+  for i in 0..1000 {
+    s = det_next(s)
+    sum = sum + (s & 0xFF)
+  }
+  return sum
+}
+
+fn run_determinism(port: Int) -> void {
+  serial_write_cstr(port, "space: determinism test starting")
+  serial_nl(port)
+  let sum1 = det_workload(42)
+  let sum2 = det_workload(42)
+  serial_write_cstr(port, "space: seed 42 run 1 sum 0x")
+  serial_write_hex(port, sum1)
+  serial_write_cstr(port, " run 2 sum 0x")
+  serial_write_hex(port, sum2)
+  serial_nl(port)
+  return
+}

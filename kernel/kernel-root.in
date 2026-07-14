@@ -19,7 +19,7 @@ import "fs2_inode.in"
 import "fs2_dir.in"
 import "fs2_path.in"
 import "fs2_file.in"
-import "fs2.in"
+import "../components/filesystem.in"
 // Full libc (string, memory, ctype, stdio, stdlib, math, time).
 import "libc.in"
 // Process abstraction layer (domain + component + thread).
@@ -52,6 +52,7 @@ import "vfs_test.in"
 import "../services/time.in"
 import "../components/editor.in"
 import "../components/diagnostics.in"
+import "../components/determinism.in"
 
 
 // The nanokernel root component.
@@ -139,38 +140,6 @@ var preempt_cap_info: Int = 0
 var preempt_domain: Int = 0
 var preempt_pml4: Int = 0
 var preempt_count: Int = 0
-
-// --- PRNG and determinism ---------------------------------------------------
-fn det_next(s: Int) -> Int {
-  let x = s
-  x = x ^ (x << 13)
-  x = x ^ (x >> 7)
-  x = x ^ (x << 17)
-  return x
-}
-
-fn det_workload(seed: Int) -> Int {
-  let s = seed
-  let sum = 0
-  for i in 0..1000 {
-    s = det_next(s)
-    sum = sum + (s & 0xFF)
-  }
-  return sum
-}
-
-fn run_determinism(port: Int) -> void {
-  serial_write_cstr(port, "space: determinism test starting")
-  serial_nl(port)
-  let sum1 = det_workload(42)
-  let sum2 = det_workload(42)
-  serial_write_cstr(port, "space: seed 42 run 1 sum 0x")
-  serial_write_hex(port, sum1)
-  serial_write_cstr(port, " run 2 sum 0x")
-  serial_write_hex(port, sum2)
-  serial_nl(port)
-  return
-}
 
 // --- component supervisor ---------------------------------------------------
 fn component_register(name: Int, entry: Int, required: Int) -> Int {

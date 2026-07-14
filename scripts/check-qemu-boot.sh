@@ -49,6 +49,8 @@ echo "time" >&3
 sleep 0.5
 echo "fetch" >&3
 sleep 0.5
+echo "det" >&3
+sleep 0.5
 # Send 'halt' to cleanly stop the shell.
 echo "halt" >&3
 exec 3>&-
@@ -67,7 +69,9 @@ for m in "kernel root entered" \
          "unix:" \
          "uptime:" \
          "SpaceOS" \
-         "kernel      Space nanokernel"; do
+         "kernel      Space nanokernel" \
+         "space: determinism test starting" \
+         "space: seed 42 run 1 sum 0x"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then echo "  ok: $m"
   else echo "  MISSING: $m" >&2; fail=1; fi
 done
