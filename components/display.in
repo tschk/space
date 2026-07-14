@@ -1,7 +1,6 @@
 package space.display
 
 import "../protocol/display.in"
-import "vro.in"
 
 const SPDP_OBJ_SURFACE = 5
 
@@ -195,10 +194,6 @@ var total_ram: Int = 0
 var proc_count: Int = 0
 var domain_count: Int = 0
 var nvme_ready: Int = 0
-
-fn fs_write_file(path: Int, buf: Int, len: Int) -> Int {
-  return -1
-}
 
 fn chan_count(c: Int) -> Int {
   if c == 0 {
@@ -1277,7 +1272,6 @@ fn fb_glyph8(ch: Int, row: Int) -> Int {
 // Manages windows, renders them to the VBE framebuffer, and handles
 // mouse/keyboard input. This is a minimal display server that demonstrates
 // the Space OS desktop environment.
-// VRO text editor is in vro.in (imported below).
 //
 // Window record (64 bytes):
 //   [0..4]   id
@@ -1322,7 +1316,6 @@ const COMP_CURSOR_H = 16
 const COMP_ROLE_TEXT = 0
 const COMP_ROLE_UTILITIES = 2
 const COMP_ROLE_TERMINAL = 3
-const COMP_ROLE_VRO = 4
 const COMP_MIN_WIN_W = 280
 const COMP_MIN_WIN_H = 180
 const COMP_MIN_EDITOR_W = 640
@@ -1360,7 +1353,7 @@ fn comp_init() -> void {
   comp_running = 0
   comp_cur_drawn = 0
   comp_cursor_init()
-  comp_vro_init()
+  comp_term_init()
   return
 }
 
@@ -1638,10 +1631,60 @@ fn comp_draw_dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
   return cx
 }
 
+const COMP_TERM_BUF_SIZE = 512
+
+var comp_term_buf: Int = 0
+var comp_term_len: Int = 0
+var comp_term_mode: Int = 0
+
+fn comp_term_append(ch: Int) -> void {
+  if comp_term_len >= COMP_TERM_BUF_SIZE - 1 {
+    return
+  }
+  store8(comp_term_buf + comp_term_len, ch)
+  comp_term_len = comp_term_len + 1
+  store8(comp_term_buf + comp_term_len, 0)
+  return
+}
+
+fn comp_term_init() -> void {
+  if comp_term_buf == 0 {
+    comp_term_buf = alloc(COMP_TERM_BUF_SIZE)
+  }
+  comp_term_seed("")
+  return
+}
+
+fn comp_term_backspace() -> void {
+  if comp_term_len <= 0 {
+    return
+  }
+  comp_term_len = comp_term_len - 1
+  store8(comp_term_buf + comp_term_len, 0)
+  return
+}
+
+fn comp_term_seed(src: Int) -> void {
+  comp_term_len = 0
+  let i = 0
+  while i < COMP_TERM_BUF_SIZE - 1 {
+    let ch = load8(src + i)
+    if ch == 0 {
+      i = COMP_TERM_BUF_SIZE
+    } else {
+      store8(comp_term_buf + comp_term_len, ch)
+      comp_term_len = comp_term_len + 1
+      i = i + 1
+    }
+  }
+  store8(comp_term_buf + comp_term_len, 0)
+  return
+}
+
 fn comp_term_line_eq(str: Int) -> Int {
   let i = 0
   while i < 64 {
-    let a = load8(comp_vro_buf + i)
+    let a = load8(comp_term_buf + i)
     let b = load8(str + i)
     if a != b {
       return 0
@@ -1732,7 +1775,7 @@ fn comp_draw_terminal_content(base: Int) -> void {
   fb_fill_rect(x, content_y, w, 28, COMP_COLOR_DESKTOP)
   comp_draw_label(x + 12, content_y + 6, "TERMINAL", FB_COLOR_WHITE, COMP_COLOR_DESKTOP)
   let prompt_y = content_y + 54
-  if comp_vro_dirty > 1 {
+  if comp_term_mode > 1 {
     comp_draw_label(x + 16, content_y + 54, "SPACEOS", FB_COLOR_CYAN, COMP_COLOR_TERM_BG)
     comp_draw_label(x + 260, content_y + 54, "0.2.", COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
     comp_draw_dec(x + 332, content_y + 54, SPACE_VERSION_PATCH, COMP_COLOR_TERM_TEXT, COMP_COLOR_TERM_BG)
@@ -1769,7 +1812,7 @@ fn comp_draw_terminal_content(base: Int) -> void {
     prompt_y = content_y + 414
   }
   comp_draw_label(x + 16, prompt_y, "space> ", FB_COLOR_GREEN, COMP_COLOR_TERM_BG)
-  comp_draw_label(x + 16 + 7 * 18, prompt_y, comp_vro_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
+  comp_draw_label(x + 16 + 7 * 18, prompt_y, comp_term_buf, FB_COLOR_WHITE, COMP_COLOR_TERM_BG)
   return
 }
 
@@ -1831,8 +1874,6 @@ fn comp_render_window(idx: Int) -> void {
     comp_draw_utilities_content(base)
   } else if role == COMP_ROLE_TERMINAL {
     comp_draw_terminal_content(base)
-  } else if role == COMP_ROLE_VRO {
-    comp_draw_vro_content(base)
   } else {
     comp_draw_content_bg(base)
     comp_draw_content_text(base)
@@ -2155,40 +2196,21 @@ fn comp_handle_key(port: Int, key: Int) -> Int {
   }
   if role == COMP_ROLE_TERMINAL || comp_count == 1 {
     if key == 8 || key == 127 {
-      comp_vro_backspace()
+      comp_term_backspace()
     } else if key == 13 || key == 10 {
       if comp_term_line_eq("fetch") != 0 {
-        comp_vro_seed("")
-        comp_vro_dirty = 2
+        comp_term_seed("")
+        comp_term_mode = 2
       } else {
-        comp_vro_seed("")
-        comp_vro_dirty = 0
+        comp_term_seed("")
+        comp_term_mode = 0
       }
     } else if key >= 32 && key <= 126 {
-      if comp_vro_dirty == 2 {
-        comp_vro_dirty = 0
-        comp_vro_seed("")
+      if comp_term_mode == 2 {
+        comp_term_mode = 0
+        comp_term_seed("")
       }
-      comp_vro_append(key)
-    }
-  } else {
-    if key == 19 {
-      let rc = comp_vro_save()
-      serial_write_cstr(port, "space: VRO save notes.txt ")
-      if rc == 0 {
-        serial_write_cstr(port, "ok")
-      } else {
-        serial_write_cstr(port, "failed")
-      }
-      serial_nl(port)
-    } else if key == 8 || key == 127 {
-      comp_vro_backspace()
-    } else if key == 13 {
-      comp_vro_append(10)
-    } else if key == 10 {
-      comp_vro_append(10)
-    } else if key >= 32 && key <= 126 {
-      comp_vro_append(key)
+      comp_term_append(key)
     }
   }
   if comp_focused >= 0 {
@@ -2230,15 +2252,12 @@ fn comp_run(port: Int) -> void {
   let right_w = fb_width - 64 - left_w
   let right_h = (usable_h - 16) / 2
 
-  let win_ed = comp_win_create("EDITOR", 48, top_y, left_w, usable_h)
-  comp_win_set_role(win_ed, COMP_ROLE_VRO)
-  comp_win_focus(win_ed)
-
   let win_util = comp_win_create("UTILITIES", 48 + left_w + 16, top_y, right_w, right_h)
   comp_win_set_role(win_util, COMP_ROLE_UTILITIES)
 
   let win_term = comp_win_create("TERMINAL", 48 + left_w + 16, top_y + right_h + 16, right_w, right_h)
   comp_win_set_role(win_term, COMP_ROLE_TERMINAL)
+  comp_win_focus(win_term)
 
   comp_running = 1
   let prev_left = 0

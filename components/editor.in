@@ -1,0 +1,366 @@
+package space.kernel
+
+const EDITOR_BUF_SIZE = 4096
+const EDITOR_NAME_SIZE = 256
+const EDITOR_KEY_LEFT = 1000
+const EDITOR_KEY_RIGHT = 1001
+const EDITOR_KEY_UP = 1002
+const EDITOR_KEY_DOWN = 1003
+const EDITOR_KEY_HOME = 1004
+const EDITOR_KEY_END = 1005
+const EDITOR_KEY_PGUP = 1006
+const EDITOR_KEY_PGDN = 1007
+const EDITOR_KEY_DELETE = 1008
+
+var editor_buf: Int = 0
+var editor_name: Int = 0
+var editor_query: Int = 0
+var editor_len: Int = 0
+var editor_row: Int = 0
+var editor_col: Int = 0
+var editor_scroll: Int = 0
+var editor_dirty: Int = 0
+var editor_pushback: Int = 0
+
+fn editor_num(port: Int, value: Int) -> void {
+  serial_write_dec_wide(port, value)
+  return
+}
+
+fn editor_csi(port: Int, a: Int, b: Int) -> void {
+  serial_put(port, 27)
+  serial_put(port, 91)
+  if a != 0 { serial_put(port, a) }
+  serial_put(port, b)
+  return
+}
+
+fn editor_csi_xy(port: Int, row: Int, col: Int) -> void {
+  serial_put(port, 27)
+  serial_put(port, 91)
+  editor_num(port, row)
+  serial_put(port, 59)
+  editor_num(port, col)
+  serial_put(port, 72)
+  return
+}
+
+fn editor_alt_enter(port: Int) -> void {
+  serial_put(port, 27)
+  serial_put(port, 91)
+  serial_put(port, 63)
+  serial_put(port, 49)
+  serial_put(port, 48)
+  serial_put(port, 52)
+  serial_put(port, 57)
+  serial_put(port, 104)
+  serial_put(port, 27)
+  serial_put(port, 91)
+  serial_put(port, 63)
+  serial_put(port, 50)
+  serial_put(port, 53)
+  serial_put(port, 108)
+  return
+}
+
+fn editor_alt_exit(port: Int) -> void {
+  serial_put(port, 27)
+  serial_put(port, 91)
+  serial_put(port, 63)
+  serial_put(port, 49)
+  serial_put(port, 48)
+  serial_put(port, 52)
+  serial_put(port, 57)
+  serial_put(port, 108)
+  return
+}
+
+fn editor_read_byte(port: Int) -> Int {
+  if editor_pushback != 0 {
+    let ch = editor_pushback
+    editor_pushback = 0
+    return ch
+  }
+  return serial_read(port)
+}
+
+fn editor_read_key(port: Int) -> Int {
+  let ch = editor_read_byte(port)
+  if ch != 27 { return ch }
+  let next = editor_read_byte(port)
+  if next != 91 {
+    editor_pushback = next
+    return 27
+  }
+  let final = editor_read_byte(port)
+  if final == 65 { return EDITOR_KEY_UP }
+  if final == 66 { return EDITOR_KEY_DOWN }
+  if final == 67 { return EDITOR_KEY_RIGHT }
+  if final == 68 { return EDITOR_KEY_LEFT }
+  if final == 72 { return EDITOR_KEY_HOME }
+  if final == 70 { return EDITOR_KEY_END }
+  if final == 51 { editor_read_byte(port); return EDITOR_KEY_DELETE }
+  if final == 53 { editor_read_byte(port); return EDITOR_KEY_PGUP }
+  if final == 54 { editor_read_byte(port); return EDITOR_KEY_PGDN }
+  return 27
+}
+
+fn editor_copy(dst: Int, src: Int, max: Int) -> Int {
+  let i = 0
+  while i < max - 1 && load8(src + i) != 0 {
+    store8(dst + i, load8(src + i))
+    i = i + 1
+  }
+  store8(dst + i, 0)
+  return i
+}
+
+fn editor_row_offset(row: Int) -> Int {
+  let off = 0
+  let current = 0
+  while current < row && off < editor_len {
+    if load8(editor_buf + off) == 10 { current = current + 1 }
+    off = off + 1
+  }
+  return off
+}
+
+fn editor_row_length(row: Int) -> Int {
+  let off = editor_row_offset(row)
+  let len = 0
+  while off + len < editor_len && load8(editor_buf + off + len) != 10 {
+    len = len + 1
+  }
+  return len
+}
+
+fn editor_row_count() -> Int {
+  let count = 1
+  let i = 0
+  while i < editor_len {
+    if load8(editor_buf + i) == 10 { count = count + 1 }
+    i = i + 1
+  }
+  return count
+}
+
+fn editor_offset() -> Int {
+  return editor_row_offset(editor_row) + editor_col
+}
+
+fn editor_insert(ch: Int) -> void {
+  if editor_len >= EDITOR_BUF_SIZE - 1 { return }
+  let off = editor_offset()
+  let i = editor_len
+  while i > off {
+    store8(editor_buf + i, load8(editor_buf + i - 1))
+    i = i - 1
+  }
+  store8(editor_buf + off, ch)
+  editor_len = editor_len + 1
+  store8(editor_buf + editor_len, 0)
+  editor_dirty = 1
+  return
+}
+
+fn editor_delete() -> void {
+  let off = editor_offset()
+  if off >= editor_len { return }
+  let i = off
+  while i < editor_len - 1 {
+    store8(editor_buf + i, load8(editor_buf + i + 1))
+    i = i + 1
+  }
+  editor_len = editor_len - 1
+  store8(editor_buf + editor_len, 0)
+  editor_dirty = 1
+  return
+}
+
+fn editor_backspace() -> void {
+  let off = editor_offset()
+  if off == 0 { return }
+  if load8(editor_buf + off - 1) == 10 {
+    editor_row = editor_row - 1
+    editor_col = editor_row_length(editor_row)
+  } else {
+    editor_col = editor_col - 1
+  }
+  editor_delete()
+  return
+}
+
+fn editor_left() -> void {
+  if editor_col > 0 {
+    editor_col = editor_col - 1
+  } else if editor_row > 0 {
+    editor_row = editor_row - 1
+    editor_col = editor_row_length(editor_row)
+  }
+  return
+}
+
+fn editor_right() -> void {
+  if editor_col < editor_row_length(editor_row) {
+    editor_col = editor_col + 1
+  } else if editor_row < editor_row_count() - 1 {
+    editor_row = editor_row + 1
+    editor_col = 0
+  }
+  return
+}
+
+fn editor_vertical(delta: Int) -> void {
+  let row = editor_row + delta
+  if row < 0 { row = 0 }
+  let total = editor_row_count()
+  if row >= total { row = total - 1 }
+  editor_row = row
+  let width = editor_row_length(editor_row)
+  if editor_col > width { editor_col = width }
+  return
+}
+
+fn editor_adjust_scroll() -> void {
+  if editor_row < editor_scroll { editor_scroll = editor_row }
+  if editor_row >= editor_scroll + 22 { editor_scroll = editor_row - 21 }
+  return
+}
+
+fn editor_render(port: Int) -> void {
+  editor_adjust_scroll()
+  editor_csi(port, 50, 74)
+  editor_csi(port, 0, 72)
+  let y = 0
+  let total = editor_row_count()
+  while y < 22 {
+    let file_row = editor_scroll + y
+    editor_csi_xy(port, y + 1, 1)
+    if file_row < total {
+      let number = file_row + 1
+      serial_put(port, 32)
+      if number < 10 { serial_put(port, 32); serial_put(port, 32) } else if number < 100 { serial_put(port, 32) }
+      editor_num(port, number)
+      serial_put(port, 32)
+      let off = editor_row_offset(file_row)
+      let width = editor_row_length(file_row)
+      let x = 0
+      while x < width && x < 72 { serial_put(port, load8(editor_buf + off + x)); x = x + 1 }
+    } else {
+      serial_write_cstr(port, "    ~")
+    }
+    editor_csi(port, 0, 75)
+    y = y + 1
+  }
+  editor_csi_xy(port, 24, 1)
+  editor_csi(port, 55, 109)
+  serial_put(port, 32)
+  serial_write_cstr(port, editor_name)
+  if editor_dirty != 0 { serial_put(port, 43) } else { serial_put(port, 32) }
+  serial_write_cstr(port, "  Ctrl-S save  Ctrl-F find  Ctrl-Q quit")
+  editor_csi(port, 0, 75)
+  editor_csi(port, 48, 109)
+  serial_put(port, 27)
+  serial_put(port, 91)
+  serial_put(port, 63)
+  serial_put(port, 50)
+  serial_put(port, 53)
+  serial_put(port, 104)
+  editor_csi_xy(port, editor_row - editor_scroll + 1, editor_col + 6)
+  return
+}
+
+fn editor_match(start: Int, query_len: Int) -> Int {
+  if query_len == 0 { return -1 }
+  let i = start
+  while i + query_len <= editor_len {
+    let j = 0
+    while j < query_len && load8(editor_buf + i + j) == load8(editor_query + j) { j = j + 1 }
+    if j == query_len { return i }
+    i = i + 1
+  }
+  return -1
+}
+
+fn editor_cursor_at(offset: Int) -> void {
+  editor_row = 0
+  editor_col = 0
+  let i = 0
+  while i < offset {
+    if load8(editor_buf + i) == 10 { editor_row = editor_row + 1; editor_col = 0 } else { editor_col = editor_col + 1 }
+    i = i + 1
+  }
+  return
+}
+
+fn editor_find(port: Int) -> void {
+  let len = 0
+  store8(editor_query, 0)
+  while true {
+    editor_csi_xy(port, 23, 1)
+    serial_write_cstr(port, "find: ")
+    serial_write_cstr(port, editor_query)
+    editor_csi(port, 0, 75)
+    let found = editor_match(editor_offset() + 1, len)
+    if found >= 0 { editor_cursor_at(found); editor_render(port) }
+    let ch = editor_read_key(port)
+    if ch == 27 || ch == 13 || ch == 10 { return }
+    if ch == 8 || ch == 127 {
+      if len > 0 { len = len - 1; store8(editor_query + len, 0) }
+    } else if ch >= 32 && ch < 127 && len < 127 {
+      store8(editor_query + len, ch)
+      len = len + 1
+      store8(editor_query + len, 0)
+    }
+  }
+  return
+}
+
+fn editor_save() -> Int {
+  let rc = sparkfs_write(editor_name, editor_buf, editor_len)
+  if rc == 0 { editor_dirty = 0 }
+  return rc
+}
+
+fn editor_run(port: Int, name: Int) -> void {
+  if name == 0 || load8(name) == 0 {
+    serial_write_cstr(port, "usage: edit <file>")
+    serial_nl(port)
+    return
+  }
+  if editor_buf == 0 { editor_buf = alloc(EDITOR_BUF_SIZE); editor_name = alloc(EDITOR_NAME_SIZE); editor_query = alloc(128) }
+  editor_len = sparkfs_read(name, editor_buf, EDITOR_BUF_SIZE - 1)
+  if editor_len < 0 { editor_len = 0; store8(editor_buf, 0) }
+  let inode = sf_lookup_path(name)
+  if inode >= 0 && load32(sf_inode_addr(inode) + SF_IN_TYPE) != SF_TYPE_FILE {
+    serial_write_cstr(port, "edit: not a file")
+    serial_nl(port)
+    return
+  }
+  editor_copy(editor_name, name, EDITOR_NAME_SIZE)
+  editor_row = 0
+  editor_col = 0
+  editor_scroll = 0
+  editor_dirty = 0
+  editor_pushback = 0
+  editor_alt_enter(port)
+  editor_render(port)
+  while true {
+    let ch = editor_read_key(port)
+    if ch == 17 {
+      if editor_dirty != 0 {
+        editor_alt_exit(port)
+        serial_write_cstr(port, "edit: unsaved changes. Ctrl-Q again discards; other key resumes.")
+        serial_nl(port)
+        if editor_read_key(port) != 17 { editor_alt_enter(port); editor_render(port); continue }
+      }
+      editor_alt_exit(port)
+      return
+    }
+    if ch == 19 { editor_save(); editor_render(port); continue }
+    if ch == 6 { editor_find(port); editor_render(port); continue }
+    if ch == EDITOR_KEY_LEFT { editor_left() } else if ch == EDITOR_KEY_RIGHT { editor_right() } else if ch == EDITOR_KEY_UP { editor_vertical(-1) } else if ch == EDITOR_KEY_DOWN { editor_vertical(1) } else if ch == EDITOR_KEY_HOME { editor_col = 0 } else if ch == EDITOR_KEY_END { editor_col = editor_row_length(editor_row) } else if ch == EDITOR_KEY_PGUP { editor_vertical(-22) } else if ch == EDITOR_KEY_PGDN { editor_vertical(22) } else if ch == EDITOR_KEY_DELETE { editor_delete() } else if ch == 13 || ch == 10 { editor_insert(10); editor_row = editor_row + 1; editor_col = 0 } else if ch == 8 || ch == 127 { editor_backspace() } else if ch == 9 { editor_insert(32); editor_col = editor_col + 1; editor_insert(32); editor_col = editor_col + 1 } else if ch >= 32 && ch < 127 { editor_insert(ch); editor_col = editor_col + 1 }
+    editor_render(port)
+  }
+  return
+}

@@ -50,6 +50,7 @@ import "font.in"
 import "vfs.in"
 import "vfs_test.in"
 import "../services/time.in"
+import "../components/editor.in"
 
 
 // The nanokernel root component.

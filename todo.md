@@ -60,7 +60,6 @@ queued or nested component RPC before it can move behind the POSIX service.
 - [x] Taskbar window buttons (click to focus/restore)
 - [x] USB HID keyboard (replaces PS/2)
 - [x] Display server service (SPDP protocol)
-- [x] VRO text editor
 - [ ] Shell upgrade: pipe support, background processes, redirection
 - [ ] Multi-terminal support
 - [ ] Scrollable terminal content

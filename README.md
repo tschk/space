@@ -73,6 +73,7 @@ bash scripts/check-qemu-boot.sh      # full boot verification
 bash scripts/build-multicomponent.sh # SCI component loading demo
 bash scripts/check-sci-contract.sh   # metadata validation
 bash scripts/check-network.sh        # e1000 ARP/UDP test
+bash scripts/check-terminal-editor.sh # serial editor save test
 ```
 
 Browser demo (Alpenglow-style v86 shell): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
@@ -94,6 +95,7 @@ scripts/
   build-multicomponent.sh SCI loading demo
   check-sci-contract.sh   metadata validation
   check-network.sh        network driver test
+  check-terminal-editor.sh serial editor save test
 ```
 
 ## Relationship to Inauguration
