@@ -42,6 +42,9 @@ echo "--- driver serial output ---"
 sed -n '/space> net/,/space>/p' "$BUILD_DIR/serial.log" 2>/dev/null || true
 echo "----------------------------"
 
+grep -qF "net: component starting in domain" "$BUILD_DIR/serial.log"
+grep -qF "net: UDP datagram transmitted" "$BUILD_DIR/serial.log"
+
 echo "[3/3] Inspecting the captured pcap..."
 python3 - "$BUILD_DIR/net.pcap" <<'PY'
 import sys, struct

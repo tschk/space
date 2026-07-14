@@ -23,9 +23,10 @@ into Space primitives.
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
-under QEMU. The maintained boot check verifies the shell, in-kernel SCI loader
-self-test, Linux-personality demo, VFS, and time service. NVMe-backed storage,
-networking, and component deny-policy checks are not currently verified.
+under QEMU. The maintained checks verify the shell, in-kernel SCI loader
+self-test, Linux-personality demo, VFS, time service, component deny policy,
+network traffic, and external display/input SCI components. NVMe-backed writes
+still time out after storage-component startup.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 

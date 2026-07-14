@@ -54,22 +54,33 @@ fn main() -> Int {
 
 Expected: `5`. Actual: `0` or wrong count.
 
+### Bug 3: NVMe queue values are corrupted in native code
+
+The extracted storage component reaches NVMe queue creation under QEMU, but a
+request with queue size `63` is observed by QEMU as `255`, and later I/O
+doorbells target SQ0 instead of SQ1. Precomputed constants, direct MMIO writes,
+and reduced call arity do not change the result. The first I/O command times
+out after the component reports ready.
+
 ## Root-cause area
 
 `in-cli/src/native_emit/x86_64_lower.rs` in `../inauguration`:
 - Function call argument emission for stack arguments.
 - Function prologue stack-parameter slot assignment vs. load/store helper sign convention.
 - `Stmt::Loop` lowering for `LoopKind::While` with variable conditions.
+- Native local/global value preservation across MMIO command construction.
 
 ## Fix plan
 
 1. Implement generic fix in `../inauguration` so stack arguments are emitted and loaded at the correct `[rbp+16+(i-6)*8]` locations and `while` conditions are reloaded each iteration.
 2. Add compiler tests in `in-cli/src/native_emit/lower/lower_tests.rs` or the `in test` suite for both cases.
 3. Run `in test` and `in test --owned-native` in `../inauguration`.
-4. Return to Space, remove the NVMe workarounds, and re-run `scripts/check-qemu-boot-nvme.sh`.
+4. Add a generic native reproducer for the queue-value corruption and fix it.
+5. Return to Space, remove the NVMe workarounds, and re-run `scripts/check-qemu-boot-nvme.sh`.
 
 ## Acceptance
 
 - `in test` passes.
 - The two reproducers above return the expected values when run with `in execute`.
+- The queue-value reproducer preserves its expected values in native output.
 - Space kernel NVMe driver no longer needs the 6-argument limit or `while to < N` loop rewrite.

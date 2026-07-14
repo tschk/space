@@ -13,6 +13,7 @@ var posix_domain: Int = 0
 var posix_shared_page: Int = 0
 var posix_cap_info: Int = 0
 var posix_active: Int = 0
+var posix_tid: Int = 0
 
 fn linux_init() -> void {
   if posix_active != 0 {
@@ -38,7 +39,11 @@ fn linux_init() -> void {
   store64(posix_cap_info + 8, cap_table_base)
   store64(posix_cap_info + 16, posix_shared_page)
   component_register("posix", posix_entry, cap_serial() | cap_memory())
-  invoke1(posix_entry, posix_cap_info)
+  if ctxsw == 0 {
+    scheduler_init(32)
+  }
+  posix_tid = thr_create(posix_thread_wrapper)
+  thr_switch(posix_tid)
   posix_active = 1
   return
 }
@@ -58,7 +63,9 @@ fn linux_dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
   store64(posix_shared_page + POSIX_RPC_OFF_A5, a5)
   store64(posix_shared_page + POSIX_RPC_OFF_REQ, 1)
   store64(posix_shared_page + POSIX_RPC_OFF_RESP, 0)
-  posix_service(posix_shared_page)
+  while load64(posix_shared_page + POSIX_RPC_OFF_RESP) == 0 {
+    thr_switch(posix_tid)
+  }
   return load64(posix_shared_page + POSIX_RPC_OFF_RES)
 }
 

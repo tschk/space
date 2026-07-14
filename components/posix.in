@@ -469,5 +469,15 @@ fn posix_entry(cap_info: Int) -> Int {
     store64(shared_page + POSIX_RPC_OFF_REQ, 0)
     store64(shared_page + POSIX_RPC_OFF_RESP, 0)
   }
+  while true {
+    if load64(shared_page + POSIX_RPC_OFF_REQ) != 0 {
+      posix_service(shared_page)
+    }
+    thr_yield()
+  }
   return 0
+}
+
+fn posix_thread_wrapper() -> Int {
+  return posix_entry(posix_cap_info)
 }

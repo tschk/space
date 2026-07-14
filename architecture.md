@@ -258,23 +258,25 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
 
 ### Verified Today
 - Nanokernel enters x86_64 long mode under QEMU.
-- The maintained boot check verifies the serial shell, in-kernel SCI loader
-  self-test, Linux-personality demo, VFS, and time service.
+- The maintained checks verify the serial shell, in-kernel SCI loader
+  self-test, Linux-personality demo, VFS, time service, network traffic,
+  component deny policy, and external display/input SCI components.
 - SCI metadata-sidecar validation passes.
-- Display and input SCI components have been manually booted in isolated
-  domains; their execution lacks a maintained automated check.
+- Display and input SCI components boot in isolated domains under an automated
+  QEMU check.
 
 ### Component Transition
 - Storage, network, and POSIX source has moved into `components/`, with
   kernel-side transition wrappers.
-- Storage fails on the NVMe QEMU path while creating its I/O completion queue;
-  the successful Linux demo uses the memory-backed SparkFS fallback.
-- The network and POSIX wrappers are transitional: the network path lacks a
-  passing runtime check, and POSIX dispatch remains synchronous.
+- Storage starts and creates SQ1/CQ1 under QEMU, but its first real I/O command
+  times out; the successful Linux demo uses the memory-backed SparkFS fallback.
+- Network has a passing component RPC/pcap check. POSIX dispatch runs through a
+  component service thread.
 - Display and input are optional boot-image SCI components. Volume is extracted
   source but is not loaded by the kernel.
-- The SCI allow path is proven. The deny-policy check is currently invalid
-  because the root realm grants every capability.
+- SCI allow and deny paths are proven with per-image grants.
+- Volume requires queued or nested component RPC before it can run behind the
+  POSIX component service without a scheduler fault.
 
 ### Repository Layout
 

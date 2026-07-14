@@ -4,10 +4,10 @@
 
 Verified today: x86_64 boot, serial shell, memory domains, capabilities,
 cooperative + preemptive scheduling, channels, the in-kernel SCI loader,
-the Linux-personality demo, VFS, and time service. Display and input SCI
-components have manual QEMU proof. NVMe-backed storage, network runtime,
-component deny-policy enforcement, and the remaining component split are not
-yet verified.
+the Linux-personality demo, VFS, time service, network component RPC, and SCI
+allow/deny policy. Display and input SCI components have automated QEMU proof.
+NVMe-backed writes still time out after storage-component startup; Volume needs
+queued or nested component RPC before it can move behind the POSIX service.
 
 ## Phase 1: Storage
 

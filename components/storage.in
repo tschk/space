@@ -153,7 +153,7 @@ fn nvme_admin_submit(opcode: Int, nsid: Int, prp1: Int, prp2: Int, cdw10: Int, c
     let cqe = nvme_acq + nvme_cq_head * 16
     let dw3 = load32(cqe + 12)
     let phase = (dw3 >> 16) & 1
-    if phase == nvme_cq_phase {
+    if dw3 != 0 && phase == nvme_cq_phase {
       status = (dw3 >> 17) & 0x7FFF
       nvme_cq_head = (nvme_cq_head + 1) % NVME_ADMIN_Q
       if nvme_cq_head == 0 {
@@ -211,7 +211,7 @@ fn nvme_io_submit(opcode: Int, lba: Int, count: Int, buf: Int) -> Int {
     let cqe = nvme_iocq + nvme_io_cq_head * 16
     let dw3 = load32(cqe + 12)
     let phase = (dw3 >> 16) & 1
-    if phase == nvme_io_cq_phase {
+    if dw3 != 0 && phase == nvme_io_cq_phase {
       status = (dw3 >> 17) & 0x7FFF
       nvme_io_cq_head = (nvme_io_cq_head + 1) % NVME_IO_Q
       if nvme_io_cq_head == 0 {
@@ -294,6 +294,13 @@ fn storage_pci_init() -> Int {
 fn storage_init_controller() -> Int {
   let port = com1()
 
+  nvme_sq_tail = 0
+  nvme_cq_head = 0
+  nvme_cq_phase = 1
+  nvme_io_sq_tail = 0
+  nvme_io_cq_head = 0
+  nvme_io_cq_phase = 1
+  nvme_cid = 0
   nvme_asq = frame_alloc()
   nvme_acq = frame_alloc()
   nvme_iocq = frame_alloc()

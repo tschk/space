@@ -91,7 +91,7 @@ The loader rejects an SCI when:
 | Metadata + code in same artifact | ✅ Complete |
 | Boot image enters `.in`-compiled `kernel_entry` in long mode under QEMU | ✅ Complete |
 | Loader accepts a binary SCI manifest capability mask before entry | ✅ Complete |
-| Loader deny-policy enforcement | Not yet verified |
+| Loader deny-policy enforcement | ✅ Complete |
 
 ## Future Version Fields
 

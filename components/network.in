@@ -288,6 +288,7 @@ fn chan_cross_recv_impl(page: Int) -> Int {
       return msg
     }
     // poll until the kernel produces a request
+    thr_yield()
   }
 }
 
@@ -318,8 +319,6 @@ fn network_component_entry(cap_info: Int) -> Int {
 
   serial_write_cstr(port, "  net: component starting in domain")
   serial_nl(port)
-
-  e1000_init_impl(port)
 
   let running = 1
   while running != 0 {

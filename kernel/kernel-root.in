@@ -389,6 +389,9 @@ fn run_preemptive(port: Int) -> void {
 
 // --- SCI component loader ---------------------------------------------------
 const SCI_MAGIC = 0x5343490000000001
+const SCI_GUEST_GRANTS = 1
+const SCI_DISPLAY_GRANTS = 1
+const SCI_INPUT_GRANTS = 3
 
 const COMP_GNOME_DESKTOP = 0x001E1E2E
 const COMP_GNOME_PANEL = 0x00181825
@@ -418,7 +421,7 @@ fn comp_thread_wrapper() -> Int {
   return invoke1(comp_entry_arg, comp_cap_info_arg)
 }
 
-fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int) -> Int {
+fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int, grants: Int) -> Int {
   serial_write_cstr(port, "  SCI: loading ")
   serial_write_cstr(port, name)
   serial_nl(port)
@@ -441,7 +444,7 @@ fn sci_load_runtime_component(port: Int, load_addr: Int, name: Int) -> Int {
   serial_write_hex(port, entry)
   serial_nl(port)
 
-  let missing = required & (-1 ^ realm_grants)
+  let missing = required & (-1 ^ grants)
   if missing != 0 {
     serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
     serial_write_hex(port, missing)
@@ -546,7 +549,7 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_cstr(port, " entry 0x")
   serial_write_hex(port, entry)
   serial_nl(port)
-  let missing = required & (-1 ^ realm_grants)
+  let missing = required & (-1 ^ SCI_GUEST_GRANTS)
   if missing != 0 {
     serial_write_cstr(port, "  SCI: DENIED undeclared cap 0x")
     serial_write_hex(port, missing)
@@ -579,8 +582,11 @@ fn sci_load(port: Int, load_addr: Int) -> Int {
   serial_write_hex(port, obj_id(component))
   serial_nl(port)
   let cap_info = alloc(16)
-  store64(cap_info + 0, cap_count)
-  store64(cap_info + 8, cap_table_base)
+  let guest_cap_table = alloc(16)
+  store64(guest_cap_table + 0, component)
+  store64(guest_cap_table + 8, required)
+  store64(cap_info + 0, 1)
+  store64(cap_info + 8, guest_cap_table)
   domain_switch(domain)
   let status = invoke1(entry, cap_info)
   domain_switch(0)
@@ -825,12 +831,12 @@ fn kernel_entry(mb_info: Int) -> Int {
 
   let display_load = load64(0x1a0000)
   if display_load == SCI_MAGIC {
-    sci_load_runtime_component(port, 0x1a0000, "display")
+    sci_load_runtime_component(port, 0x1a0000, "display", SCI_DISPLAY_GRANTS)
   }
 
   let input_load = load64(0x1e0000)
   if input_load == SCI_MAGIC {
-    sci_load_runtime_component(port, 0x1e0000, "input")
+    sci_load_runtime_component(port, 0x1e0000, "input", SCI_INPUT_GRANTS)
   }
 
   shell(port)

@@ -14,6 +14,7 @@ var net_req_ch: Int = 0
 var net_resp_ch: Int = 0
 var net_component_started: Int = 0
 var net_component_obj: Int = 0
+var net_component_tid: Int = 0
 
 // --- channel helpers --------------------------------------------------------
 // The shared page ring header is initialized by chan_cross_bind in the kernel
@@ -45,7 +46,13 @@ fn net_chan_recv(ch: Int) -> Int {
       store64(page + 0, (head + 1) % cap)
       return msg
     }
+    thr_switch(net_component_tid)
   }
+}
+
+fn net_component_step() -> void {
+  thr_switch(net_component_tid)
+  return
 }
 
 // --- component lifecycle ----------------------------------------------------
@@ -76,7 +83,7 @@ fn net_component_start(port: Int) -> Int {
   store64(net_component_obj + 40, domain)
 
   net_component_cap_info = cap_info
-  thr_create(network_component_thread)
+  net_component_tid = thr_create(network_component_thread)
   net_component_started = 1
   return 1
 }
@@ -98,6 +105,7 @@ fn e1000_tx(len: Int) -> void {
   }
   net_chan_send(net_req_ch, NET_OP_TX)
   net_chan_send(net_req_ch, len)
+  net_component_step()
   return
 }
 
@@ -149,6 +157,7 @@ fn net_store_mac(p: Int) -> void {
   }
   net_chan_send(net_req_ch, NET_OP_STORE_MAC)
   net_chan_send(net_req_ch, p)
+  net_component_step()
   return
 }
 
@@ -183,5 +192,6 @@ fn run_net(port: Int) -> void {
     return
   }
   net_chan_send(net_req_ch, NET_OP_RUN)
+  net_component_step()
   return
 }
