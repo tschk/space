@@ -66,9 +66,12 @@ fn nvme_submit(op: Int, lba: Int, count: Int) -> Int {
   store64(storage_mailbox + STORAGE_COUNT_OFF, count)
   store64(storage_mailbox + STORAGE_STATUS_OFF, 0)
   store64(storage_mailbox + STORAGE_OP_OFF, op)
+  // Save caller domain so nested RPC from Volume (or POSIX) restores CR3
+  // correctly instead of always dropping back to domain 0.
+  let prev = domain_get_current()
   domain_switch(storage_domain)
   storage_service()
-  domain_switch(0)
+  domain_switch(prev)
   return load64(storage_mailbox + STORAGE_STATUS_OFF)
 }
 

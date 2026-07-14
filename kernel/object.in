@@ -104,3 +104,4 @@ fn cap_input() -> Int { return 64 }
 fn cap_storage() -> Int { return 32 }
 fn cap_display() -> Int { return 16 }
 fn cap_network() -> Int { return 128 }
+fn cap_volume() -> Int { return 256 }
