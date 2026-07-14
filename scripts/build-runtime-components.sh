@@ -44,7 +44,7 @@ NASM="${NASM:-nasm}"
 "$IN" compile --path "$SPACE_DIR/components/input.in" --entry input_entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$INPUT_ENTRY" --out "$BUILD_DIR/input.sci"
-"$IN" compile --path "$SPACE_DIR/components/volume-mem.in" --entry volume_mem_entry \
+"$IN" compile --path "$SPACE_DIR/components/volume.in" --entry volume_entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$VOLUME_ENTRY" --out "$BUILD_DIR/volume.sci"
 

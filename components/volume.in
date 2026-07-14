@@ -1,4 +1,16 @@
-package space.kernel
+package space.volume
+
+component Volume {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  export entry: VolumeEntry
+}
+
+interface VolumeEntry {
+  fn volume_entry(cap_info: Int) -> Int
+}
 
 // SparkFS + VFS standalone volume component.
 // This file is the extracted filesystem implementation.  It is intended to
@@ -139,6 +151,103 @@ var vol_sf_cache_misses: Int = 0
 // Page-aligned staging buffer for NVMe block I/O (PRP1 must be page-aligned).
 // Allocated in vol_sparkfs_init when the NVMe path is taken.
 var vol_sf_nvme_buf: Int = 0
+var vol_heap_next: Int = 0
+var vol_heap_end: Int = 0
+var ticks: Int = 0
+
+fn vol_heap_init(base: Int, size: Int) -> void {
+  if vol_heap_next == 0 {
+    vol_heap_next = base
+    vol_heap_end = base + size
+  }
+  return
+}
+
+fn alloc(n: Int) -> Int {
+  let aligned = (n + 15) & -16
+  let p = vol_heap_next
+  let next = p + aligned
+  if next > vol_heap_end {
+    return 0
+  }
+  vol_heap_next = next
+  return p
+}
+
+fn strdup(s: Int) -> Int {
+  let n = 0
+  while load8(s + n) != 0 {
+    n = n + 1
+  }
+  let copy = alloc(n + 1)
+  let i = 0
+  while i <= n {
+    store8(copy + i, load8(s + i))
+    i = i + 1
+  }
+  return copy
+}
+
+fn com1() -> Int {
+  return 0x3F8
+}
+
+fn serial_put(port: Int, c: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  outb(port, c)
+  return
+}
+
+fn serial_read(port: Int) -> Int {
+  while (inb(port + 5) & 1) == 0 {
+  }
+  return inb(port)
+}
+
+fn serial_write_cstr(port: Int, s: Int) -> void {
+  let i = 0
+  while load8(s + i) != 0 {
+    serial_put(port, load8(s + i))
+    i = i + 1
+  }
+  return
+}
+
+fn serial_nl(port: Int) -> void {
+  serial_put(port, 10)
+  return
+}
+
+fn serial_write_dec_wide(port: Int, value: Int) -> void {
+  if value == 0 {
+    serial_put(port, 48)
+    return
+  }
+  let divisor = 1
+  while value / divisor >= 10 {
+    divisor = divisor * 10
+  }
+  while divisor > 0 {
+    serial_put(port, 48 + (value / divisor) % 10)
+    divisor = divisor / 10
+  }
+  return
+}
+
+fn serial_write_hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let digit = (value >> shift) & 15
+    if digit < 10 {
+      serial_put(port, 48 + digit)
+    } else {
+      serial_put(port, 87 + digit)
+    }
+    shift = shift - 4
+  }
+  return
+}
 
 fn vol_sf_cache_init() -> void {
   vol_sf_cache_buf = alloc(SF_CACHE_ENTRIES * SF_BLOCK_SIZE)
@@ -202,72 +311,28 @@ fn vol_sf_cache_install(bno: Int, buf: Int) -> void {
 
 // Read block `bno` into `buf`. Returns 0 on success.
 fn vol_sf_read_block(bno: Int, buf: Int) -> Int {
-  if vol_sf_mem_disk != 0 {
-    let src = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
-    let i = 0
-    while i < SF_BLOCK_SIZE {
-      store8(buf + i, load8(src + i))
-      i = i + 1
-    }
-    return 0
-  }
-  let cached = vol_sf_cache_lookup(bno)
-  if cached >= 0 {
-    let src = vol_sf_cache_buf + cached * SF_BLOCK_SIZE
-    let i = 0
-    while i < SF_BLOCK_SIZE {
-      store8(buf + i, load8(src + i))
-      i = i + 1
-    }
-    vol_sf_cache_hits = vol_sf_cache_hits + 1
-    return 0
-  }
-  vol_sf_cache_misses = vol_sf_cache_misses + 1
-  let sector = bno * SF_SECTORS_PER_BLOCK
-  let rc = nvme_read(sector, SF_SECTORS_PER_BLOCK, vol_sf_nvme_buf)
-  if rc != 0 {
+  if vol_sf_mem_disk == 0 || bno < 0 || bno >= SF_MEM_DISK_BLOCKS {
     return -1
   }
+  let src = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
   let i = 0
   while i < SF_BLOCK_SIZE {
-    store8(buf + i, load8(vol_sf_nvme_buf + i))
+    store8(buf + i, load8(src + i))
     i = i + 1
   }
-  vol_sf_cache_install(bno, buf)
   return 0
 }
 
 // Write block `bno` from `buf`. Returns 0 on success. Write-through.
 fn vol_sf_write_block(bno: Int, buf: Int) -> Int {
-  if vol_sf_mem_disk != 0 {
-    let dst = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
-    let i = 0
-    while i < SF_BLOCK_SIZE {
-      store8(dst + i, load8(buf + i))
-      i = i + 1
-    }
-    return 0
-  }
-  let sector = bno * SF_SECTORS_PER_BLOCK
-  let i = 0
-  while i < SF_BLOCK_SIZE {
-    store8(vol_sf_nvme_buf + i, load8(buf + i))
-    i = i + 1
-  }
-  let rc = nvme_write(sector, SF_SECTORS_PER_BLOCK, vol_sf_nvme_buf)
-  if rc != 0 {
+  if vol_sf_mem_disk == 0 || bno < 0 || bno >= SF_MEM_DISK_BLOCKS {
     return -1
   }
-  let cached = vol_sf_cache_lookup(bno)
-  if cached >= 0 {
-    let dst = vol_sf_cache_buf + cached * SF_BLOCK_SIZE
-    let k = 0
-    while k < SF_BLOCK_SIZE {
-      store8(dst + k, load8(buf + k))
-      k = k + 1
-    }
-  } else {
-    vol_sf_cache_install(bno, buf)
+  let dst = vol_sf_mem_disk + bno * SF_BLOCK_SIZE
+  let i = 0
+  while i < SF_BLOCK_SIZE {
+    store8(dst + i, load8(buf + i))
+    i = i + 1
   }
   return 0
 }
@@ -676,59 +741,17 @@ fn vol_sf_lookup_parent(path: Int, name_out: Int) -> Int {
 // SparkFS high-level file operations: init, format, create, read, write, delete, list.
 
 fn vol_sparkfs_init() -> void {
+  if vol_sf_initialized != 0 {
+    return
+  }
   vol_sf_super = alloc(SF_BLOCK_SIZE)
   vol_sf_block_buf = alloc(SF_BLOCK_SIZE)
   vol_sf_disk_ready = 0
   vol_sf_initialized = 1
-  if nvme_ready == 0 {
-    vol_sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
-    let i = 0
-    while i < SF_MEM_DISK_SIZE {
-      store8(vol_sf_mem_disk + i, 0)
-      i = i + 1
-    }
-    vol_sf_disk_ready = 1
-    vol_sparkfs_format_mem_disk()
-    return
-  }
-  vol_sf_nvme_buf = frame_alloc()
-  vol_sf_cache_init()
-  if vol_sf_read_block(0, vol_sf_super) != 0 {
-    return
-  }
-  let magic = load32(vol_sf_super + SF_SB_MAGIC)
-  if magic != SF_MAGIC {
-    vol_sparkfs_format()
-    return
-  }
-  let total = load64(vol_sf_super + SF_SB_TOTAL_BLOCKS)
-  let ino_count = load32(vol_sf_super + SF_SB_INODE_COUNT)
-  let bitmap_bytes = (total + 7) / 8
-  vol_sf_bitmap = alloc(bitmap_bytes)
-  let i = 0
-  while i < bitmap_bytes {
-    store8(vol_sf_bitmap + i, 0)
-    i = i + 1
-  }
-  let bitmap_start = load64(vol_sf_super + SF_SB_BITMAP_START)
-  let bitmap_blocks = (bitmap_bytes + SF_BLOCK_SIZE - 1) / SF_BLOCK_SIZE
-  let b = 0
-  while b < bitmap_blocks {
-    vol_sf_read_block(bitmap_start + b, vol_sf_block_buf)
-    let k = 0
-    while k < SF_BLOCK_SIZE && b * SF_BLOCK_SIZE + k < bitmap_bytes {
-      store8(vol_sf_bitmap + b * SF_BLOCK_SIZE + k, load8(vol_sf_block_buf + k))
-      k = k + 1
-    }
-    b = b + 1
-  }
-  vol_sf_inodes = alloc(ino_count * SF_INODE_SIZE)
-  let ino = 0
-  while ino < ino_count {
-    vol_sf_read_inode(ino)
-    ino = ino + 1
-  }
+  vol_sf_mem_disk = alloc(SF_MEM_DISK_SIZE)
   vol_sf_disk_ready = 1
+  vol_sparkfs_format_mem_disk()
+  vol_vfs_init()
   return
 }
 
@@ -798,7 +821,7 @@ fn vol_sf_do_format(total: Int, ino_count: Int) -> void {
   }
   let root = vol_sf_inode_addr(0)
   store32(root + SF_IN_TYPE, SF_TYPE_DIR)
-  store32(root + SF_IN_MODE, 0o755)
+  store32(root + SF_IN_MODE, 493)
   store64(root + SF_IN_SIZE, 0)
   store64(root + SF_IN_CTIME, 0)
   store64(root + SF_IN_MTIME, 0)
@@ -845,9 +868,9 @@ fn vol_sparkfs_create(path: Int, is_dir: Int) -> Int {
         j = j + 1
       }
       store32(addr + SF_IN_TYPE, is_dir)
-      store32(addr + SF_IN_MODE, 0o644)
+      store32(addr + SF_IN_MODE, 420)
       if is_dir == SF_TYPE_DIR {
-        store32(addr + SF_IN_MODE, 0o755)
+        store32(addr + SF_IN_MODE, 493)
       }
       store64(addr + SF_IN_SIZE, 0)
       store32(addr + SF_IN_NLINK, 1)
@@ -1581,26 +1604,18 @@ fn volume_entry(cap_info: Int) -> Int {
   //  16: volume domain id
   //  24: shared page virtual address in volume domain
   //  32: kernel shared page virtual address
-  let phys = load64(cap_info + 0)
-  let volume_domain = load64(cap_info + 16)
-  let volume_virt = load64(cap_info + 24)
-  if volume_domain != 0 && volume_virt != 0 {
-    domain_map(volume_domain, volume_virt, phys, 0x3)
+  let heap = load64(cap_info + 16)
+  let heap_size = load64(cap_info + 24)
+  let page = load64(cap_info + 32)
+  if heap == 0 || heap_size < SF_MEM_DISK_SIZE + 131072 || page == 0 {
+    return -1
   }
-  let page = volume_virt
-  if page == 0 {
-    page = phys
-  }
+  vol_heap_init(heap, heap_size)
   vol_sparkfs_init()
-  while true {
-    if load64(page + VOL_OFF_REQ_READY) != 0 {
-      volume_dispatch_once(page)
-      store64(page + VOL_OFF_REQ_READY, 0)
-      store64(page + VOL_OFF_RESP_READY, 1)
-    }
-    // Busy-wait / cooperative pause while no request is pending.
-    pause()
-  }
+  volume_dispatch_once(page)
+  store64(page + VOL_OFF_REQ_READY, 0)
+  store64(page + VOL_OFF_RESP_READY, 1)
+  // Busy-wait / cooperative pause while no request is pending.
   return 0
 }
 
