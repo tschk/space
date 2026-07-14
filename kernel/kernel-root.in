@@ -1,7 +1,7 @@
 package space.kernel
 
 // PCI configuration-space access and bus enumeration.
-import "pci.in"
+import "../components/pci.in"
 // Cross-domain channel fabric.
 import "channel.in"
 // Intel e1000 NIC driver.
