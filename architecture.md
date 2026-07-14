@@ -272,11 +272,11 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
   times out; the successful Linux demo uses the memory-backed SparkFS fallback.
 - Network has a passing component RPC/pcap check. POSIX dispatch runs through a
   component service thread.
-- Display and input are optional boot-image SCI components. Volume is extracted
-  source but is not loaded by the kernel.
+- Display and input are optional boot-image SCI components. The memory-backed
+  Volume SCI component completes init, write, and read RPCs under QEMU.
 - SCI allow and deny paths are proven with per-image grants.
-- Volume requires queued or nested component RPC before it can run behind the
-  POSIX component service without a scheduler fault.
+- The full SparkFS Volume source remains separate from the memory-backed SCI
+  component and is not yet routed through POSIX.
 
 ### Repository Layout
 
@@ -286,7 +286,6 @@ kernel/
   domain.in             memory domain subsystem
   channel.in            cross-domain channel fabric
   net.in                e1000 NIC driver
-  pci.in                PCI bus enumeration
   nvme.in               NVMe storage driver
   usb.in                USB xHCI + HID keyboard driver
   fs.in                 flat filesystem layer
@@ -297,6 +296,9 @@ kernel/
   mouse.in              PS/2 mouse driver
   compositor.in         Wayland-style window manager + desktop
   guest-service.in      SCI guest component example
+components/
+  pci.in                PCI bus enumeration
+  volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up
 scripts/

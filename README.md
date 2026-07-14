@@ -26,7 +26,8 @@ The nanokernel root, written in `.in` and compiled by
 under QEMU. The maintained checks verify the shell, in-kernel SCI loader
 self-test, Linux-personality demo, VFS, time service, component deny policy,
 network traffic, and external display/input SCI components. NVMe-backed writes
-still time out after storage-component startup.
+still time out after storage-component startup. The standalone memory-backed
+Volume SCI component completes init, write, and read RPCs under QEMU.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 
@@ -86,8 +87,10 @@ kernel/
   domain.in               memory domain subsystem
   channel.in              cross-domain channel fabric
   net.in                  e1000 NIC driver
-  pci.in                  PCI bus enumeration
   guest-service.in        SCI guest component example
+components/
+  pci.in                  PCI bus enumeration
+  volume-mem.in           standalone memory-backed Volume SCI component
 boot/
   multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
 scripts/
