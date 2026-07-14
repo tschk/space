@@ -343,7 +343,7 @@ fn storage_init_controller() -> Int {
   nvme_w64(NVME_ACQ, nvme_acq)
 
   // Configure CC: IOSQES=6, IOCQES=4, MPS=0, CSS=0, AMS=0 (not yet enabled).
-  let cc = (NVME_CC_IOSQES << 24) | (NVME_CC_IOCQES << 20) | (NVME_CC_MPS << 7)
+  let cc = (NVME_CC_IOSQES << 16) | (NVME_CC_IOCQES << 20) | (NVME_CC_MPS << 7)
   nvme_w32(NVME_CC, cc)
 
   // Enable the controller (CC.EN = 1) and wait for CSTS.RDY = 1.
