@@ -70,4 +70,4 @@ needs deeper soak. Netstack exposes UDP sockets; TCP SYN-only connect path.
 - [x] TCP/IP stack (SYN-only connect TX; no ACK/window/retransmit yet)
 - [x] Socket API for user programs (UDP over e1000; TCP SYN_SENT/LISTEN)
 - [x] DHCP client (DISCOVER TX)
-- [x] DNS resolver (A query TX for space.test)
+- [x] DNS resolver (A query TX+RX parse; store dns-last-ip)

@@ -1,12 +1,94 @@
 package space.kernel
 
-// Minimal DNS client TX: A query for space.test via e1000 path.
+// DNS A client: TX query, poll UDP reply dport 0x3039, parse first A RDATA.
+
+var dns-last-ip: Int = 0
+
+fn dns-skip-name(pkt: Int, start: Int) -> Int {
+  let off = start
+  while true {
+    let lab = load8(pkt + off)
+    if lab == 0 {
+      return off + 1
+    }
+    if (lab & 0xC0) == 0xC0 {
+      return off + 2
+    }
+    off = off + 1 + lab
+  }
+}
+
+// Return packed IPv4 or 0. dns-off is start of DNS message; dlen is UDP payload len.
+fn dns-parse-a(pkt: Int, dns-off: Int, dlen: Int) -> Int {
+  if dlen < 12 {
+    return 0
+  }
+  let ancount = (load8(pkt + dns-off + 6) << 8) | load8(pkt + dns-off + 7)
+  let off = dns-skip-name(pkt, dns-off + 12)
+  off = off + 4
+  let i = 0
+  while i < ancount {
+    off = dns-skip-name(pkt, off)
+    let typ = (load8(pkt + off) << 8) | load8(pkt + off + 1)
+    let cls = (load8(pkt + off + 2) << 8) | load8(pkt + off + 3)
+    let rdlen = (load8(pkt + off + 8) << 8) | load8(pkt + off + 9)
+    off = off + 10
+    if (typ == 1) && (cls == 1) && (rdlen == 4) {
+      return (load8(pkt + off) << 24) | (load8(pkt + off + 1) << 16) | (load8(pkt + off + 2) << 8) | load8(pkt + off + 3)
+    }
+    off = off + rdlen
+    i = i + 1
+  }
+  return 0
+}
+
+fn dns-print-ip(port: Int, ip: Int) -> void {
+  serial-write-dec-wide(port, (ip >> 24) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, (ip >> 16) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, (ip >> 8) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, ip & 0xFF)
+  return
+}
 
 fn dns-query(port: Int, name-cstr: Int) -> Int {
   // Fixed QNAME space.test in builder; name-cstr reserved for later.
   let flen = build-dns-query()
   e1000-tx(flen)
-  serial-write-cstr(port, "dns: query sent")
+  let tries = 0
+  while tries < 3000000 {
+    let pkt = e1000-rx-poll()
+    if pkt != 0 {
+      let et = (load8(pkt + 12) << 8) | load8(pkt + 13)
+      if et == 0x0800 {
+        let ihl = (load8(pkt + 14) & 0x0F) * 4
+        if load8(pkt + 14 + 9) == 17 {
+          let udp = 14 + ihl
+          let dport = (load8(pkt + udp + 2) << 8) | load8(pkt + udp + 3)
+          if dport == 0x3039 {
+            let ulen = (load8(pkt + udp + 4) << 8) | load8(pkt + udp + 5)
+            if ulen >= 20 {
+              let ip = dns-parse-a(pkt, udp + 8, ulen - 8)
+              if ip != 0 {
+                dns-last-ip = ip
+                serial-write-cstr(port, "dns: a ")
+                dns-print-ip(port, ip)
+                serial-nl(port)
+                return 0
+              }
+              serial-write-cstr(port, "dns: no answer")
+              serial-nl(port)
+              return 0
+            }
+          }
+        }
+      }
+    }
+    tries = tries + 1
+  }
+  serial-write-cstr(port, "dns: timeout")
   serial-nl(port)
-  return 0
+  return -1
 }
