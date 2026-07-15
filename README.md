@@ -23,10 +23,9 @@ into Space primitives.
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
-under QEMU. Maintained checks cover shell, SCI loader (incl. user `hello`/`uecho`),
-Linux-personality demo, VFS, time, deny policy, display/input SCI, NVMe volume RPC,
-and multi-file volume-ready shell soak across reboot. Net: UDP sockets + e1000;
-TCP active-open handshake; DHCP DORA + lease; DNS A TX+RX parse.
+under QEMU. Maintained checks: shell + full runtime display/input (preempt-stop),
+SCI loader (`hello`/`uecho`), execve SCI from FS, Linux demo, VFS, NVMe volume
+multi-file soak, UDP/TCP data path, DHCP lease, DNS A for dotted names.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 

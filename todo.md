@@ -5,14 +5,12 @@
 Verified today: x86_64 boot, serial shell, memory domains, capabilities,
 cooperative + preemptive scheduling, channels, the in-kernel SCI loader,
 the Linux-personality demo, VFS, time service, network component RPC, and SCI
-allow/deny policy. Display and input SCI components have automated QEMU proof.
-NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume SCI
-on NVMe passes RPC + multi-file shell soak across reboot (`check-qemu-volume-nvme`,
-`check-volume-soak`) on the volume-ready FS path. Second user SCI (`uecho` @
-0x1b0000) loads under QEMU. Netstack: UDP sockets work; TCP active open does
-SYN→SYN+ACK→ACK plus best-effort PSH+ACK data path (sock-send/recv, one
-retransmit, no window/congestion); DHCP full DORA + lease; DNS A query TX+RX
-parse (dns-last-ip). HTTP to 10.0.2.2 may RST under QEMU user net.
+allow/deny policy. Display/input SCI load then `preempt-stop` so serial shell
+lives on full runtime images (`check-runtime-components`, volume soak `image: full`).
+Volume multi-file soak across reboot; user SCI `hello`/`uecho`; `exec` loads SCI
+from sparkfs (`check-execve-sci`). Net: UDP; TCP handshake + PSH+ACK data path;
+DHCP DORA lease; DNS dotted QNAME A parse (`check-dns`, e.g. example.com).
+Still not full TCP window/congestion; Darwin/Windows remain stub demos.
 
 ## Phase 1: Storage
 
