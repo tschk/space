@@ -19,6 +19,18 @@ package space.kernel
 //  12  WIN-GetStdHandle  → a0 nStdHandle: -10=stdin→0, -11=stdout→1, -12=stderr→2
 //  13  WIN-MoveFileA     → fs-rename; return 1/0
 //  14  WIN-FlushFileBuffers → 1 no-op success for open handle
+//  15  WIN-CreateDirectoryA → fs-mkdir; return 1/0
+//  16  WIN-RemoveDirectoryA → fs-rmdir; return 1/0
+//  17  WIN-GetLastError → win-last-error
+//  18  WIN-SetLastError → a0 err
+//  19  WIN-VirtualAlloc → posix-sys-mmap / alloc; return ptr
+//  20  WIN-VirtualFree → posix-sys-munmap stand-in; return 1/0
+//  21  WIN-CreateProcessA → proc-spawn-sci; return 100+pid or 0
+//  22  WIN-WaitForSingleObject → proc-wait if process handle
+//  23  WIN-GetCommandLineA → static "space-windows" cstr ptr
+//  24  WIN-WriteConsoleA → WriteFile on stdout/stderr
+//
+// Honest: not full Win32, not PE loader, not CSRSS, not real NT objects.
 
 const WIN-CALL-WRITEFILE = 1
 const WIN-CALL-GETCURRENTPROCESSID = 2
@@ -34,16 +46,32 @@ const WIN-CALL-SETFILEPOINTER = 11
 const WIN-CALL-GETSTDHANDLE = 12
 const WIN-CALL-MOVEFILEA = 13
 const WIN-CALL-FLUSHFILEBUFFERS = 14
+const WIN-CALL-CREATEDIRECTORYA = 15
+const WIN-CALL-REMOVEDIRECTORYA = 16
+const WIN-CALL-GETLASTERROR = 17
+const WIN-CALL-SETLASTERROR = 18
+const WIN-CALL-VIRTUALALLOC = 19
+const WIN-CALL-VIRTUALFREE = 20
+const WIN-CALL-CREATEPROCESSA = 21
+const WIN-CALL-WAITFORSINGLEOBJECT = 22
+const WIN-CALL-GETCOMMANDLINEA = 23
+const WIN-CALL-WRITECONSOLEA = 24
 
 const WIN-MAX-HANDLES = 16
 const WIN-INVALID-HANDLE = 0
 const WIN-ACCESS-READ = 0
 const WIN-ACCESS-WRITE = 1
+const WIN-ERROR-FILE-NOT-FOUND = 2
+const WIN-ERROR-INVALID-HANDLE = 6
+const WIN-PROCESS-HANDLE-BASE = 100
 
 // Handle table: slot 0 unused/free marker space, 1=stdout, 2=stderr reserved.
 // Slots 3..15 store a VFS fd (or 0 if free).
+// Process handles are fake: WIN-PROCESS-HANDLE-BASE + pid (no table row).
 var win-ready: Int = 0
 var win-handles: Int = 0
+var win-last-error: Int = 0
+var win-cmdline: Int = 0
 
 fn win-init() -> void {
   if win-ready != 0 {
@@ -58,6 +86,23 @@ fn win-init() -> void {
   // Reserved console handles (no VFS fd backing).
   store64(win-handles + 1 * 8, 1)
   store64(win-handles + 2 * 8, 2)
+  // Static command line for GetCommandLineA (not real argv).
+  win-cmdline = alloc(16)
+  store8(win-cmdline + 0, 115)
+  store8(win-cmdline + 1, 112)
+  store8(win-cmdline + 2, 97)
+  store8(win-cmdline + 3, 99)
+  store8(win-cmdline + 4, 101)
+  store8(win-cmdline + 5, 45)
+  store8(win-cmdline + 6, 119)
+  store8(win-cmdline + 7, 105)
+  store8(win-cmdline + 8, 110)
+  store8(win-cmdline + 9, 100)
+  store8(win-cmdline + 10, 111)
+  store8(win-cmdline + 11, 119)
+  store8(win-cmdline + 12, 115)
+  store8(win-cmdline + 13, 0)
+  win-last-error = 0
   win-ready = 1
   return
 }
@@ -116,16 +161,20 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
         serial-put(port, load8(buf + i))
         i = i + 1
       }
+      win-last-error = 0
       return len
     }
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     let n = vfs-write(vfd, buf, len)
     if n < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    win-last-error = 0
     return n
   }
   if num == WIN-CALL-GETCURRENTPROCESSID {
@@ -144,13 +193,16 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     let vfd = vfs-open(path, flags)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
       return WIN-INVALID-HANDLE
     }
     let h = win-handle-alloc(vfd)
     if h == WIN-INVALID-HANDLE {
       vfs-close(vfd)
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return WIN-INVALID-HANDLE
     }
+    win-last-error = 0
     return h
   }
   if num == WIN-CALL-READFILE {
@@ -159,42 +211,57 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let len = a2
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     let n = vfs-read(vfd, buf, len)
     if n < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    win-last-error = 0
     return n
   }
   if num == WIN-CALL-CLOSEHANDLE {
     let handle = a0
     if handle == 1 || handle == 2 {
+      win-last-error = 0
+      return 1
+    }
+    // Process handles: fake 100+pid — free is no-op success.
+    if handle >= WIN-PROCESS-HANDLE-BASE {
+      win-last-error = 0
       return 1
     }
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     vfs-close(vfd)
     win-handle-free(handle)
+    win-last-error = 0
     return 1
   }
   if num == WIN-CALL-GETFILESIZE {
     let handle = a0
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     if vfs-fd-valid(vfd) == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     let base = vfs-fd-table + vfd * 32
     let path = load64(base + 0)
     let sz = vfs-sparkfs-file-size(path)
     if sz < 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
       return 0
     }
+    win-last-error = 0
     return sz
   }
   if num == WIN-CALL-SLEEP {
@@ -220,8 +287,10 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let path = a0
     let rc = fs-delete(path)
     if rc != 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
       return 0
     }
+    win-last-error = 0
     return 1
   }
   if num == WIN-CALL-SETFILEPOINTER {
@@ -230,21 +299,27 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let whence = a2
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return -1
     }
+    win-last-error = 0
     return vfs-lseek(vfd, offset, whence)
   }
   if num == WIN-CALL-GETSTDHANDLE {
     // Space-local: -10 stdin→0, -11 stdout→1, -12 stderr→2
     if a0 == -10 {
+      win-last-error = 0
       return 0
     }
     if a0 == -11 {
+      win-last-error = 0
       return 1
     }
     if a0 == -12 {
+      win-last-error = 0
       return 2
     }
+    win-last-error = WIN-ERROR-INVALID-HANDLE
     return WIN-INVALID-HANDLE
   }
   if num == WIN-CALL-MOVEFILEA {
@@ -252,21 +327,141 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let newp = a1
     let rc = fs-rename(oldp, newp)
     if rc != 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
       return 0
     }
+    win-last-error = 0
     return 1
   }
   if num == WIN-CALL-FLUSHFILEBUFFERS {
     let handle = a0
     if handle == 1 || handle == 2 {
+      win-last-error = 0
       return 1
     }
     let vfd = win-handle-vfd(handle)
     if vfd < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
     // No-op success: VFS writes are already durable enough for this subset.
+    win-last-error = 0
     return 1
+  }
+  if num == WIN-CALL-CREATEDIRECTORYA {
+    let path = a0
+    let rc = fs-mkdir(path)
+    if rc != 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    win-last-error = 0
+    return 1
+  }
+  if num == WIN-CALL-REMOVEDIRECTORYA {
+    let path = a0
+    let rc = fs-rmdir(path)
+    if rc != 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    win-last-error = 0
+    return 1
+  }
+  if num == WIN-CALL-GETLASTERROR {
+    return win-last-error
+  }
+  if num == WIN-CALL-SETLASTERROR {
+    win-last-error = a0
+    return 0
+  }
+  if num == WIN-CALL-VIRTUALALLOC {
+    // a0 preferred addr ignored; a1 size. Not real VirtualAlloc/MEM_*.
+    let size = a1
+    if size < 1 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let p = posix-sys-mmap(0, size, 0, 0, -1, 0)
+    if p == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    win-last-error = 0
+    return p
+  }
+  if num == WIN-CALL-VIRTUALFREE {
+    // a0 addr a1 size. Best-effort munmap stand-in; not real MEM_RELEASE.
+    let addr = a0
+    let size = a1
+    if addr == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    if size < 1 {
+      size = 4096
+    }
+    posix-sys-munmap(addr, size)
+    win-last-error = 0
+    return 1
+  }
+  if num == WIN-CALL-CREATEPROCESSA {
+    // a0 app path only. Not real CreateProcessA / PE spawn.
+    let path = a0
+    if path == 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    if load8(path) == 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    let status = proc-spawn-sci(port, path)
+    if status < 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    // Fake process handle = 100 + last pid (table grew on success).
+    let pid = proc-count - 1
+    if pid < 0 {
+      pid = 0
+    }
+    win-last-error = 0
+    return WIN-PROCESS-HANDLE-BASE + pid
+  }
+  if num == WIN-CALL-WAITFORSINGLEOBJECT {
+    // Demo: process-like handles only. Not real wait objects / timeouts.
+    let handle = a0
+    if handle < WIN-PROCESS-HANDLE-BASE {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let pid = handle - WIN-PROCESS-HANDLE-BASE
+    let code = proc-wait(pid)
+    if code < 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    win-last-error = 0
+    return 0
+  }
+  if num == WIN-CALL-GETCOMMANDLINEA {
+    if win-cmdline == 0 {
+      win-init()
+    }
+    win-last-error = 0
+    return win-cmdline
+  }
+  if num == WIN-CALL-WRITECONSOLEA {
+    // Alias WriteFile on console handles 1/2 only.
+    let handle = a0
+    let buf = a1
+    let len = a2
+    if handle != 1 && handle != 2 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    return win-dispatch(port, WIN-CALL-WRITEFILE, handle, buf, len, 0)
   }
   return 0
 }
@@ -406,6 +601,85 @@ fn win-demo(port: Int) -> void {
   serial-nl(port)
   // Cleanup either name if rename failed mid-demo.
   win-dispatch(port, WIN-CALL-DELETEFILEA, fname, 0, 0, 0)
+
+  // Directory + nested file (subset only).
+  let dname = "win-dir"
+  let mdrc = win-dispatch(port, WIN-CALL-CREATEDIRECTORYA, dname, 0, 0, 0)
+  serial-write-cstr(port, "windows: CreateDirectoryA(win-dir) = ")
+  serial-write-dec-wide(port, mdrc)
+  serial-nl(port)
+  let nested = "win-dir/nested.txt"
+  let nh = win-dispatch(port, WIN-CALL-CREATEFILEA, nested, WIN-ACCESS-WRITE, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(win-dir/nested.txt, write) = ")
+  serial-write-dec-wide(port, nh)
+  serial-nl(port)
+  if nh != WIN-INVALID-HANDLE {
+    let nmsg = "nested"
+    win-dispatch(port, WIN-CALL-WRITEFILE, nh, nmsg, 6, 0)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, nh, 0, 0, 0)
+  }
+  win-dispatch(port, WIN-CALL-DELETEFILEA, nested, 0, 0, 0)
+  let rdrc = win-dispatch(port, WIN-CALL-REMOVEDIRECTORYA, dname, 0, 0, 0)
+  serial-write-cstr(port, "windows: RemoveDirectoryA(win-dir) = ")
+  serial-write-dec-wide(port, rdrc)
+  serial-nl(port)
+
+  // GetLastError after missing CreateFileA.
+  let bad = "win-missing-no-such.txt"
+  let bh = win-dispatch(port, WIN-CALL-CREATEFILEA, bad, WIN-ACCESS-READ, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(missing) = ")
+  serial-write-dec-wide(port, bh)
+  serial-nl(port)
+  let glerr = win-dispatch(port, WIN-CALL-GETLASTERROR, 0, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetLastError() after missing CreateFileA = ")
+  serial-write-dec-wide(port, glerr)
+  serial-nl(port)
+
+  // GetCommandLineA → static "space-windows".
+  let cl = win-dispatch(port, WIN-CALL-GETCOMMANDLINEA, 0, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetCommandLineA() = '")
+  if cl != 0 {
+    serial-write-cstr(port, cl)
+  }
+  serial-write-cstr(port, "'")
+  serial-nl(port)
+
+  // VirtualAlloc / VirtualFree stand-ins.
+  let va = win-dispatch(port, WIN-CALL-VIRTUALALLOC, 0, 64, 0, 0)
+  serial-write-cstr(port, "windows: VirtualAlloc(0, 64) = ")
+  serial-write-hex(port, va)
+  serial-nl(port)
+  if va != 0 {
+    store8(va + 0, 65)
+    let vfrc = win-dispatch(port, WIN-CALL-VIRTUALFREE, va, 64, 0, 0)
+    serial-write-cstr(port, "windows: VirtualFree(ptr, 64) = ")
+    serial-write-dec-wide(port, vfrc)
+    serial-nl(port)
+  }
+
+  // WriteConsoleA → WriteFile on stdout.
+  let cmsg = "  hello via WriteConsoleA\n"
+  let clen = 0
+  while load8(cmsg + clen) != 0 {
+    clen = clen + 1
+  }
+  let cwrc = win-dispatch(port, WIN-CALL-WRITECONSOLEA, 1, cmsg, clen, 0)
+  serial-write-cstr(port, "windows: WriteConsoleA(stdout, msg, ")
+  serial-write-dec-wide(port, clen)
+  serial-write-cstr(port, ") = ")
+  serial-write-dec-wide(port, cwrc)
+  serial-nl(port)
+
+  // CreateProcessA on missing path → fail + GetLastError.
+  let missapp = "no-such-space-app.sci"
+  let cprc = win-dispatch(port, WIN-CALL-CREATEPROCESSA, missapp, 0, 0, 0)
+  serial-write-cstr(port, "windows: CreateProcessA(missing) = ")
+  serial-write-dec-wide(port, cprc)
+  serial-nl(port)
+  let perr = win-dispatch(port, WIN-CALL-GETLASTERROR, 0, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetLastError() after CreateProcessA = ")
+  serial-write-dec-wide(port, perr)
+  serial-nl(port)
 
   let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: ExitProcess(0) mapped (demo status ")
