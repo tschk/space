@@ -11,7 +11,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
-INAUG_DIR="${INAUGURATION_DIR:-$SPACE_DIR/../inauguration}"
+# shellcheck source=inauguration-dir.sh
+source "$SCRIPT_DIR/inauguration-dir.sh"
+INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-multi}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 

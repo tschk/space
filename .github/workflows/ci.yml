@@ -9,6 +9,7 @@ jobs:
   ci:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
+      inauguration-path: vendor/inauguration
       install-deps: "nasm"
       build-command: |
         mkdir -p /tmp/space-boot

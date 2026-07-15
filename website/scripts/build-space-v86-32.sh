@@ -3,7 +3,8 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 SPACE="$(CDPATH= cd -- "$ROOT/.." && pwd)"
-INAUG="${INAUGURATION_DIR:-$SPACE/../inauguration}"
+source "$SPACE/scripts/inauguration-dir.sh"
+INAUG="$(inauguration_dir "$SPACE")"
 BUILD="${BUILD_DIR:-/tmp/space-v86-32}"
 OUT_DIR="$ROOT/public/v86"
 IN="$INAUG/in-cli/target/release/in"

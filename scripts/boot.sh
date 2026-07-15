@@ -39,13 +39,16 @@
 #   ./scripts/boot.sh --no-gui     # boot without VGA display (serial only, no desktop)
 #   ./scripts/boot.sh --net --usb  # both USB and network
 #
-# Requirements: nasm, qemu-system-x86_64, ../inauguration checked out
+# Requirements: nasm, qemu-system-x86_64, Inauguration (submodule or ../inauguration)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=inauguration-dir.sh
+source "$SCRIPT_DIR/inauguration-dir.sh"
+INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-boot}"
-IN="${IN:-$(which in 2>/dev/null || echo /Users/undivisible/projects/inauguration/in-cli/target/release/in)}"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
 USE_NET=0
 USE_SCI=0

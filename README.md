@@ -66,8 +66,12 @@ and serial output through the emulated 16550 UART.
 
 ## Build and run
 
-Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration checked
-out at `../inauguration`.
+Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration (git
+submodule under `vendor/inauguration`, or a sibling checkout at `../inauguration`).
+
+```sh
+git submodule update --init --recursive
+```
 
 ```sh
 bash scripts/check-qemu-boot.sh      # full boot verification

@@ -22,9 +22,15 @@ passed, failed = 0, 0
 def main():
     kernel_in = os.environ.get("KERNEL_IN",
         os.path.join(os.path.dirname(__file__) or ".", "..", "kernel", "kernel-root.in"))
+    space_dir = os.path.abspath(os.path.join(os.path.dirname(__file__) or ".", ".."))
+    if os.environ.get("INAUGURATION_DIR"):
+        inaug_dir = os.environ["INAUGURATION_DIR"]
+    elif os.path.isdir(os.path.join(space_dir, "vendor", "inauguration", "in-cli")):
+        inaug_dir = os.path.join(space_dir, "vendor", "inauguration")
+    else:
+        inaug_dir = os.path.join(os.path.dirname(space_dir), "inauguration")
     in_bin = os.environ.get("IN",
-        os.path.join(os.path.dirname(__file__) or ".", "..", "..", "inauguration",
-                     "in-cli", "target", "release", "in"))
+        os.path.join(inaug_dir, "in-cli", "target", "release", "in"))
     build_dir = os.environ.get("BUILD_DIR", "/tmp/space-sci-check")
 
     os.makedirs(build_dir, exist_ok=True)

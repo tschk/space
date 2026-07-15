@@ -1,3 +1,6 @@
 [submodule "ci-recipes"]
 	path = ci-recipes
 	url = https://github.com/tschk/ci-recipes.git
+[submodule "vendor/inauguration"]
+	path = vendor/inauguration
+	url = https://github.com/tschk/inauguration.git
