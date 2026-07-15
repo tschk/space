@@ -48,8 +48,8 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 18. `SetLastError` — set `win-last-error` from `a0`
 19. `VirtualAlloc` — `posix-sys-mmap` / `alloc(size)`; preferred addr ignored
 20. `VirtualFree` — `posix-sys-munmap` stand-in; return 1/0
-21. `CreateProcessA` — `proc-spawn-sci` on path; handle = `100+pid` or 0
-22. `WaitForSingleObject` — process-like handles only → `proc-wait`
+21. `CreateProcessA` — `proc-spawn-sci` on path; typed table handle (type process) or 0
+22. `WaitForSingleObject` — type process only → `proc-wait`
 23. `GetCommandLineA` — static cstr `"space-windows"`
 24. `WriteConsoleA` — alias `WriteFile` on handles 1/2
 25. `GetModuleFileNameA` — copy `"space.exe"` into buf; return len
@@ -59,8 +59,10 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 29. `GetEnvironmentVariableA` — `PATH` → `"/"`, else empty; return len
 30. `OutputDebugStringA` — `serial-write-cstr`
 
-Handle table: max 16 slots; 1/2 reserved as stdout/stderr; 3..15 hold VFS fds.
-Process handles are fake (`100+pid`), not full typed object table.
+Typed handle table: max 16 slots, 16-byte records (`type` + `value`).
+Types: `0=free`, `1=console`, `2=file`, `3=process`.
+Slots 1/2 reserved console (value 1/2); 3..15 hold file `vfd` or process `pid`.
+All handles (file + process) are table indices 1..15 — no `100+pid` fakes.
 
 **Honest limit:** not full Win32, not PE loader, not CSRSS, not real NT objects.
 Shell command `windows` runs `win-demo`.

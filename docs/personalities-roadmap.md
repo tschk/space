@@ -56,7 +56,7 @@ and Darwin (BSD layer over Mach) — see [`personalities.md`](personalities.md).
 | 15–24 | Create/RemoveDirectoryA, Get/SetLastError, VirtualAlloc/Free, CreateProcessA, WaitForSingleObject, GetCommandLineA, WriteConsoleA |
 | 25–30 | GetModuleFileNameA, HeapAlloc/Free, CopyFileA, GetEnvironmentVariableA, OutputDebugStringA |
 
-Handle table: 1/2 stdio; 3–15 VFS; process handles `100+pid` (fake).
+Typed handle table: 16-byte records; 1/2 console; 3–15 file/process; types free/console/file/process.
 
 ### Darwin translator (BSD-shaped)
 | Area | Calls (examples) |
@@ -101,10 +101,11 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 - Darwin: fork/execve/wait4 **dispatch**, mmap, sockets, pipe-lite
 - Still missing: safe fork+wait demo without halt; PE/Mach-O loaders
 
-### M4 — Service-thread parity with Linux (next)
-- Windows/Darwin optional domain + shared-page RPC like `posix-service`
-- Typed handle/object table (file vs process vs event)
-- LastError / errno consistency end-to-end
+### M4 — Service-thread parity with Linux (partial)
+- [partial] Windows typed handle table (file/console/process; 16-byte records) — done on `feat/personalities`
+- Windows/Darwin optional domain + shared-page RPC like `posix-service` (next)
+- Event/sync object types still missing
+- LastError / errno consistency end-to-end (next)
 
 ### M5 — Binary loaders (far)
 - Windows: PE/COFF load into domain + ntdll-shaped entry (not full kernel32)
@@ -122,7 +123,7 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 
 | Gap | Why it matters | Depends on |
 |-----|----------------|------------|
-| Typed object/handle table | Wait/DuplicateHandle realism | object graph |
+| Typed object/handle table | Wait/DuplicateHandle realism | **Windows file/console/process done**; event/sync still open |
 | Windows PE load | “Run .exe” | SCI/domain loader + reloc |
 | Darwin Mach-O load | “Run Mach-O” | same |
 | Real pipe / socketpair | Shell pipelines under Darwin | channel fabric |

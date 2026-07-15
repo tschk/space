@@ -25,8 +25,8 @@ package space.kernel
 //  18  WIN-SetLastError → a0 err
 //  19  WIN-VirtualAlloc → posix-sys-mmap / alloc; return ptr
 //  20  WIN-VirtualFree → posix-sys-munmap stand-in; return 1/0
-//  21  WIN-CreateProcessA → proc-spawn-sci; return 100+pid or 0
-//  22  WIN-WaitForSingleObject → proc-wait if process handle
+//  21  WIN-CreateProcessA → proc-spawn-sci; return table handle (type process) or 0
+//  22  WIN-WaitForSingleObject → proc-wait if type process
 //  23  WIN-GetCommandLineA → static "space-windows" cstr ptr
 //  24  WIN-WriteConsoleA → WriteFile on stdout/stderr
 //  25  WIN-GetModuleFileNameA → copy "space.exe" into buf; return len
@@ -70,34 +70,76 @@ const WIN-CALL-GETENVIRONMENTVARIABLEA = 29
 const WIN-CALL-OUTPUTDEBUGSTRINGA = 30
 
 const WIN-MAX-HANDLES = 16
+const WIN-HANDLE-STRIDE = 16
 const WIN-INVALID-HANDLE = 0
 const WIN-ACCESS-READ = 0
 const WIN-ACCESS-WRITE = 1
 const WIN-ERROR-FILE-NOT-FOUND = 2
 const WIN-ERROR-INVALID-HANDLE = 6
-const WIN-PROCESS-HANDLE-BASE = 100
+const WIN-HANDLE-TYPE-FREE = 0
+const WIN-HANDLE-TYPE-CONSOLE = 1
+const WIN-HANDLE-TYPE-FILE = 2
+const WIN-HANDLE-TYPE-PROCESS = 3
 
-// Handle table: slot 0 unused/free marker space, 1=stdout, 2=stderr reserved.
-// Slots 3..15 store a VFS fd (or 0 if free).
-// Process handles are fake: WIN-PROCESS-HANDLE-BASE + pid (no table row).
+// Typed handle table: 16-byte records, slots 0..15.
+// offset 0: type (0=free, 1=console, 2=file, 3=process)
+// offset 8: value (console 1/2, file vfd, process pid)
+// Slots 1/2 reserved console; 3..15 file or process.
 var win-ready: Int = 0
 var win-handles: Int = 0
 var win-last-error: Int = 0
 var win-cmdline: Int = 0
 
+fn win-handle-base(handle: Int) -> Int {
+  return win-handles + handle * WIN-HANDLE-STRIDE
+}
+
+fn win-handle-set(h: Int, typ: Int, value: Int) -> void {
+  if h < 0 {
+    return
+  }
+  if h >= WIN-MAX-HANDLES {
+    return
+  }
+  let base = win-handle-base(h)
+  store64(base + 0, typ)
+  store64(base + 8, value)
+  return
+}
+
+fn win-handle-type(h: Int) -> Int {
+  if h < 0 {
+    return WIN-HANDLE-TYPE-FREE
+  }
+  if h >= WIN-MAX-HANDLES {
+    return WIN-HANDLE-TYPE-FREE
+  }
+  return load64(win-handle-base(h) + 0)
+}
+
+fn win-handle-value(h: Int) -> Int {
+  if h < 0 {
+    return 0
+  }
+  if h >= WIN-MAX-HANDLES {
+    return 0
+  }
+  return load64(win-handle-base(h) + 8)
+}
+
 fn win-init() -> void {
   if win-ready != 0 {
     return
   }
-  win-handles = alloc(WIN-MAX-HANDLES * 8)
+  win-handles = alloc(WIN-MAX-HANDLES * WIN-HANDLE-STRIDE)
   let i = 0
   while i < WIN-MAX-HANDLES {
-    store64(win-handles + i * 8, 0)
+    win-handle-set(i, WIN-HANDLE-TYPE-FREE, 0)
     i = i + 1
   }
   // Reserved console handles (no VFS fd backing).
-  store64(win-handles + 1 * 8, 1)
-  store64(win-handles + 2 * 8, 2)
+  win-handle-set(1, WIN-HANDLE-TYPE-CONSOLE, 1)
+  win-handle-set(2, WIN-HANDLE-TYPE-CONSOLE, 2)
   // Static command line for GetCommandLineA (not real argv).
   win-cmdline = alloc(16)
   store8(win-cmdline + 0, 115)
@@ -122,8 +164,20 @@ fn win-init() -> void {
 fn win-handle-alloc(vfd: Int) -> Int {
   let i = 3
   while i < WIN-MAX-HANDLES {
-    if load64(win-handles + i * 8) == 0 {
-      store64(win-handles + i * 8, vfd)
+    if win-handle-type(i) == WIN-HANDLE-TYPE-FREE {
+      win-handle-set(i, WIN-HANDLE-TYPE-FILE, vfd)
+      return i
+    }
+    i = i + 1
+  }
+  return WIN-INVALID-HANDLE
+}
+
+fn win-handle-alloc-process(pid: Int) -> Int {
+  let i = 3
+  while i < WIN-MAX-HANDLES {
+    if win-handle-type(i) == WIN-HANDLE-TYPE-FREE {
+      win-handle-set(i, WIN-HANDLE-TYPE-PROCESS, pid)
       return i
     }
     i = i + 1
@@ -132,17 +186,10 @@ fn win-handle-alloc(vfd: Int) -> Int {
 }
 
 fn win-handle-vfd(handle: Int) -> Int {
-  if handle < 3 {
+  if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
     return -1
   }
-  if handle >= WIN-MAX-HANDLES {
-    return -1
-  }
-  let v = load64(win-handles + handle * 8)
-  if v == 0 {
-    return -1
-  }
-  return v
+  return win-handle-value(handle)
 }
 
 fn win-handle-free(handle: Int) -> Int {
@@ -152,10 +199,10 @@ fn win-handle-free(handle: Int) -> Int {
   if handle >= WIN-MAX-HANDLES {
     return -1
   }
-  if load64(win-handles + handle * 8) == 0 {
+  if win-handle-type(handle) == WIN-HANDLE-TYPE-FREE {
     return -1
   }
-  store64(win-handles + handle * 8, 0)
+  win-handle-set(handle, WIN-HANDLE-TYPE-FREE, 0)
   return 0
 }
 
@@ -167,7 +214,8 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let handle = a0
     let buf = a1
     let len = a2
-    if handle == 1 || handle == 2 {
+    let htype = win-handle-type(handle)
+    if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
       let i = 0
       while i < len {
         serial-put(port, load8(buf + i))
@@ -176,11 +224,11 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       win-last-error = 0
       return len
     }
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if htype != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    let vfd = win-handle-value(handle)
     let n = vfs-write(vfd, buf, len)
     if n < 0 {
       win-last-error = WIN-ERROR-INVALID-HANDLE
@@ -221,11 +269,11 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let handle = a0
     let buf = a1
     let len = a2
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    let vfd = win-handle-value(handle)
     let n = vfs-read(vfd, buf, len)
     if n < 0 {
       win-last-error = WIN-ERROR-INVALID-HANDLE
@@ -236,20 +284,21 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
   }
   if num == WIN-CALL-CLOSEHANDLE {
     let handle = a0
-    if handle == 1 || handle == 2 {
+    let htype = win-handle-type(handle)
+    if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
       win-last-error = 0
       return 1
     }
-    // Process handles: fake 100+pid — free is no-op success.
-    if handle >= WIN-PROCESS-HANDLE-BASE {
+    if htype == WIN-HANDLE-TYPE-PROCESS {
+      win-handle-free(handle)
       win-last-error = 0
       return 1
     }
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if htype != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    let vfd = win-handle-value(handle)
     vfs-close(vfd)
     win-handle-free(handle)
     win-last-error = 0
@@ -257,11 +306,11 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
   }
   if num == WIN-CALL-GETFILESIZE {
     let handle = a0
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
+    let vfd = win-handle-value(handle)
     if vfs-fd-valid(vfd) == 0 {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
@@ -309,11 +358,11 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let handle = a0
     let offset = a1
     let whence = a2
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return -1
     }
+    let vfd = win-handle-value(handle)
     win-last-error = 0
     return vfs-lseek(vfd, offset, whence)
   }
@@ -347,12 +396,12 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
   }
   if num == WIN-CALL-FLUSHFILEBUFFERS {
     let handle = a0
-    if handle == 1 || handle == 2 {
+    let htype = win-handle-type(handle)
+    if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
       win-last-error = 0
       return 1
     }
-    let vfd = win-handle-vfd(handle)
-    if vfd < 0 {
+    if htype != WIN-HANDLE-TYPE-FILE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
@@ -433,22 +482,26 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       win-last-error = WIN-ERROR-FILE-NOT-FOUND
       return 0
     }
-    // Fake process handle = 100 + last pid (table grew on success).
     let pid = proc-count - 1
     if pid < 0 {
       pid = 0
     }
-    win-last-error = 0
-    return WIN-PROCESS-HANDLE-BASE + pid
-  }
-  if num == WIN-CALL-WAITFORSINGLEOBJECT {
-    // Demo: process-like handles only. Not real wait objects / timeouts.
-    let handle = a0
-    if handle < WIN-PROCESS-HANDLE-BASE {
+    let h = win-handle-alloc-process(pid)
+    if h == WIN-INVALID-HANDLE {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
-    let pid = handle - WIN-PROCESS-HANDLE-BASE
+    win-last-error = 0
+    return h
+  }
+  if num == WIN-CALL-WAITFORSINGLEOBJECT {
+    // Demo: process handles only. Not real wait objects / timeouts.
+    let handle = a0
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-PROCESS {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let pid = win-handle-value(handle)
     let code = proc-wait(pid)
     if code < 0 {
       win-last-error = WIN-ERROR-INVALID-HANDLE
@@ -465,11 +518,11 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     return win-cmdline
   }
   if num == WIN-CALL-WRITECONSOLEA {
-    // Alias WriteFile on console handles 1/2 only.
+    // Alias WriteFile on console handles only.
     let handle = a0
     let buf = a1
     let len = a2
-    if handle != 1 && handle != 2 {
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-CONSOLE && handle != 1 && handle != 2 {
       win-last-error = WIN-ERROR-INVALID-HANDLE
       return 0
     }
@@ -608,6 +661,8 @@ fn win-demo(port: Int) -> void {
   }
   serial-write-cstr(port, "windows: Win32 subset personality registered (translator)")
   serial-nl(port)
+  serial-write-cstr(port, "windows: typed handles active")
+  serial-nl(port)
 
   let msg = "  hello from windows personality (WriteFile stdout)\n"
   let mlen = 0
@@ -657,6 +712,10 @@ fn win-demo(port: Int) -> void {
   serial-nl(port)
 
   if rh != WIN-INVALID-HANDLE {
+    let rtype = win-handle-type(rh)
+    serial-write-cstr(port, "windows: handle type(file) = ")
+    serial-write-dec-wide(port, rtype)
+    serial-nl(port)
     let rbuf = alloc(256)
     let rlen = win-dispatch(port, WIN-CALL-READFILE, rh, rbuf, 255, 0)
     serial-write-cstr(port, "windows: ReadFile(handle, buf, 255) = ")
@@ -816,6 +875,19 @@ fn win-demo(port: Int) -> void {
   serial-write-cstr(port, "windows: GetLastError() after CreateProcessA = ")
   serial-write-dec-wide(port, perr)
   serial-nl(port)
+  // Optional: if test.sci present, spawn + typed process handle.
+  let testapp = "test.sci"
+  let okh = win-dispatch(port, WIN-CALL-CREATEPROCESSA, testapp, 0, 0, 0)
+  if okh != WIN-INVALID-HANDLE {
+    serial-write-cstr(port, "windows: CreateProcessA(test.sci) handle = ")
+    serial-write-dec-wide(port, okh)
+    serial-nl(port)
+    serial-write-cstr(port, "windows: handle type(process) = ")
+    serial-write-dec-wide(port, win-handle-type(okh))
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-WAITFORSINGLEOBJECT, okh, 0, 0, 0)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, okh, 0, 0, 0)
+  }
 
   // HeapAlloc / HeapFree.
   let hp = win-dispatch(port, WIN-CALL-HEAPALLOC, 0, 0, 32, 0)
