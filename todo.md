@@ -9,8 +9,9 @@ allow/deny policy. Display and input SCI components have automated QEMU proof.
 NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume SCI
 on NVMe passes RPC + multi-file shell soak across reboot (`check-qemu-volume-nvme`,
 `check-volume-soak`) on the volume-ready FS path. Second user SCI (`uecho` @
-0x1b0000) loads under QEMU. Netstack: UDP sockets work; TCP is SYN-only connect
-TX (no ACK/window/retransmit); DHCP DISCOVER TX; DNS A-query TX for space.test.
+0x1b0000) loads under QEMU. Netstack: UDP sockets work; TCP active open does
+SYN→SYN+ACK→ACK (no window/retransmit/data path yet); DHCP full DORA + lease;
+DNS A query TX+RX parse (dns-last-ip).
 
 ## Phase 1: Storage
 
@@ -49,7 +50,7 @@ TX (no ACK/window/retransmit); DHCP DISCOVER TX; DNS A-query TX for space.test.
   - [x] Process syscalls: fork, exec, wait, exit, getpid, kill
   - [x] Memory syscalls: mmap, munmap, brk
   - [x] Misc syscalls: getcwd, chdir
-  - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP SYN-only connect)
+  - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP active open handshake)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
 - [x] Darwin compat layer (Mach/BSD subset) — stub personality demos
 - [x] Windows compat layer (Win32 subset) — stub personality demos
@@ -69,7 +70,7 @@ TX (no ACK/window/retransmit); DHCP DISCOVER TX; DNS A-query TX for space.test.
 
 ## Phase 7: Networking Stack
 
-- [x] TCP/IP stack (SYN-only connect TX; no ACK/window/retransmit yet)
-- [x] Socket API for user programs (UDP over e1000; TCP SYN_SENT/LISTEN)
+- [x] TCP/IP stack (active open handshake; no window/retransmit/data path yet)
+- [x] Socket API for user programs (UDP over e1000; TCP handshake/LISTEN)
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)

@@ -26,7 +26,7 @@ The nanokernel root, written in `.in` and compiled by
 under QEMU. Maintained checks cover shell, SCI loader (incl. user `hello`/`uecho`),
 Linux-personality demo, VFS, time, deny policy, display/input SCI, NVMe volume RPC,
 and multi-file volume-ready shell soak across reboot. Net: UDP sockets + e1000;
-TCP SYN-only; DHCP/DNS TX only so far.
+TCP active-open handshake; DHCP DORA + lease; DNS A TX+RX parse.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 
