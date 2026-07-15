@@ -994,7 +994,10 @@ fn input-entry(cap-info: Int) -> Int {
       }
     }
 
+    // comp_invoke_stub enters with cli; sti so timer can return to kernel/shell.
+    sti()
     hlt()
+    pause()
   }
   return 0
 }

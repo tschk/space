@@ -388,6 +388,16 @@ fn kernel-entry(mb-info: Int) -> Int {
     sci-load-runtime-component(port, 0x1e0000, "input", SCI-INPUT-GRANTS)
   }
 
+  // Let preemptive display/input print boot markers, then stop the timer
+  // scheduler so the serial shell owns the CPU (input/display hlt forever).
+  if preempt-count > 0 {
+    let grace = ticks + 300
+    while ticks < grace {
+      hlt()
+    }
+  }
+  preempt-stop(port)
+
   shell(port)
 
   serial-write-cstr(port, "space: nanokernel ready, total ticks 0x")

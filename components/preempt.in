@@ -110,6 +110,18 @@ fn preempt-worker-b() -> Int {
   return 0
 }
 
+fn preempt-stop(port: Int) -> void {
+  cli()
+  idt-set(32, load64(0x4008))
+  store64(0x4028, 0)
+  sti()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: preemptive scheduler stopped")
+    serial-nl(port)
+  }
+  return
+}
+
 fn run-preemptive(port: Int) -> void {
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: preemptive scheduler (timer-driven)")
@@ -133,9 +145,7 @@ fn run-preemptive(port: Int) -> void {
   while ticks < preempt-deadline {
     hlt()
   }
-  cli()
-  idt-set(32, load64(0x4008))
-  sti()
+  preempt-stop(port)
   serial-write-cstr(port, "space: preemption ended; worker A iters 0x")
   serial-write-hex(port, work-a)
   serial-write-cstr(port, " worker B iters 0x")

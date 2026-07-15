@@ -294,7 +294,8 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   volume-entry-addr = entry
   volume-cap-info = cap-info
   volume-heap-frames = heap-frames
-  volume-shared = COMP-SHARED-VIRT
+  // Physical page: display/input later remap COMP-SHARED-VIRT in domain 0.
+  volume-shared = shared
   serial-write-cstr(port, "volume: client bound")
   serial-nl(port)
   return 0
