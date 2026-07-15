@@ -20,8 +20,8 @@ kernel.” It is a thin translator, same idea as `linux.in` → `posix.in`.
 | Personality | Entry | Maps onto |
 |-------------|-------|-----------|
 | Linux / POSIX | `linux.in` / `posix.in` | VFS, process, serial |
-| Darwin (stub+) | `darwin.in` | serial + process ids |
-| Windows (subset) | `windows.in` | VFS handles, serial, yield |
+| Darwin (BSD subset) | `darwin.in` | BSD nums → VFS/process; Mach stubs only |
+| Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial; not PE/CSRSS |
 
 Windows call numbers are **Space-local**, not real NT syscall numbers:
 
@@ -40,3 +40,30 @@ Handle table: max 16 slots; 1/2 reserved as stdout/stderr; 3..15 hold VFS fds.
 
 **Honest limit:** not full Win32, not PE loader, not CSRSS, not real NT objects.
 Shell command `windows` runs `win-demo`.
+
+## Darwin / XNU layering (research takeaway)
+
+Darwin kernel = **Mach** + **BSD**. Userland OS personality for files/process is
+mostly **BSD syscalls** (`syscalls.master`), not raw Mach IPC. Mach is for ports,
+tasks, and VM; BSD supplies process model, VFS, networking, POSIX-ish APIs.
+
+Space Darwin personality follows that split:
+
+- Implement a **BSD-shaped** call surface first (open/read/write/close/unlink/getpid/kill).
+- Keep **Mach** as explicit stubs (`task_self` → 1, `mach_msg` → -1) until a real
+  port/message fabric exists.
+
+BSD numbers used (classic / xnu-adjacent, documented in `darwin.in`):
+
+| # | call | maps to |
+|---|------|---------|
+| 1 | exit | status only (no kernel halt) |
+| 3 / 4 | read / write | VFS + serial stdio |
+| 5 / 6 | open / close | `vfs-open` / `vfs-close` |
+| 10 | unlink | `fs-delete` |
+| 20 | getpid | `current-task` |
+| 37 | kill | `proc-signal` |
+| 0x1000 | mach task_self | constant 1 |
+| 0x1001 | mach_msg | -1 |
+
+Checks: `scripts/check-darwin-personality.sh`, `scripts/check-windows-personality.sh`.

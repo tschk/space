@@ -10,7 +10,8 @@ lives on full runtime images (`check-runtime-components`, volume soak `image: fu
 Volume multi-file soak across reboot; user SCI `hello`/`uecho`; `exec` loads SCI
 from sparkfs (`check-execve-sci`). Net: UDP; TCP handshake + PSH+ACK data path;
 DHCP DORA lease; DNS dotted QNAME A parse (`check-dns`, e.g. example.com).
-Still not full TCP window/congestion; Darwin/Windows remain stub demos.
+Still not full TCP window/congestion. Darwin/Windows are translator subsets
+(VFS/process/serial), not full XNU/NT ABIs — see docs/personalities.md.
 
 ## Phase 1: Storage
 
@@ -51,8 +52,8 @@ Still not full TCP window/congestion; Darwin/Windows remain stub demos.
   - [x] Misc syscalls: getcwd, chdir
   - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP active open handshake)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
-- [x] Darwin compat layer (Mach/BSD subset) — stub personality demos
-- [x] Windows compat layer (Win32 subset) — stub personality demos
+- [x] Darwin compat layer (BSD subset: open/read/write/close/unlink/getpid/kill + Mach stubs)
+- [x] Windows compat layer (CreateFile/Read/Write/Close/Delete + process ids; NT-shaped, not PE)
 
 ## Phase 6: Interactive Usability
 
