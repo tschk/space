@@ -1,26 +1,56 @@
 #!/usr/bin/env bash
-# check-darwin-personality.sh — static markers for Darwin BSD/Mach subset personality.
-# Honest: not full XNU; greps demo complete + open/write markers in source.
+# Prove Darwin personality open/write/mkdir/getcwd/lseek/fstat demo path boots.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
-SRC="$SPACE_DIR/components/darwin.in"
+# shellcheck source=inauguration-dir.sh
+source "$SCRIPT_DIR/inauguration-dir.sh"
+INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
+BUILD_DIR="${BUILD_DIR:-/tmp/space-darwin-personality}"
+IN="$INAUG_DIR/in-cli/target/release/in"
+SERIAL_BASE="$BUILD_DIR/serial"
+SERIAL_IN="$SERIAL_BASE.in"
+SERIAL_OUT="$SERIAL_BASE.out"
+SERIAL_LOG="$BUILD_DIR/serial.log"
 
-[ -f "$SRC" ] || { echo "MISSING: $SRC" >&2; exit 1; }
+mkdir -p "$BUILD_DIR"
+rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG"
 
-for marker in \
-  "darwin: personality demo complete" \
-  "darwin: open(darwin-hello.txt" \
-  "darwin: write(fd, content," \
-  "darwin: write(1, msg," \
-  "darwin: unlink(darwin-hello.txt)" \
-  "darwin: kill(invalid)" \
-  "DARWIN-SYS-OPEN = 5" \
-  "DARWIN-SYS-WRITE = 4" \
-  "DARWIN-SYS-KILL = 37" \
-  "fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int)"; do
-  grep -qF "$marker" "$SRC" || { echo "MISSING: $marker" >&2; exit 1; }
+[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+NASM="${NASM:-nasm}"
+"$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
+"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
+  --trampoline "$BUILD_DIR/trampoline.bin" \
+  --target native --target-triple x86_64-unknown-none --linkage static-lib \
+  --out "$BUILD_DIR/kernel.bin"
+
+mkfifo "$SERIAL_IN" "$SERIAL_OUT"
+qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M -no-reboot \
+  -display none -serial "pipe:$SERIAL_BASE" -daemonize
+timeout 40 cat "$SERIAL_OUT" > "$SERIAL_LOG" &
+CATPID=$!
+for _ in $(seq 1 300); do
+  grep -qF "space interactive shell" "$SERIAL_LOG" 2>/dev/null && break
+  sleep 0.1
 done
+if ! grep -qF "space interactive shell" "$SERIAL_LOG" 2>/dev/null; then
+  echo "FAIL: shell did not start" >&2
+  kill "$CATPID" 2>/dev/null || true
+  wait "$CATPID" 2>/dev/null || true
+  rm -f "$SERIAL_IN" "$SERIAL_OUT"
+  exit 1
+fi
 
-echo "PASS"
+printf 'darwin\nhalt\n' > "$SERIAL_IN"
+for _ in $(seq 1 200); do
+  grep -qF "darwin: personality demo complete" "$SERIAL_LOG" 2>/dev/null && break
+  sleep 0.1
+done
+kill "$CATPID" 2>/dev/null || true
+wait "$CATPID" 2>/dev/null || true
+rm -f "$SERIAL_IN" "$SERIAL_OUT"
+
+grep -qE "darwin: open\\(|darwin: write\\(" "$SERIAL_LOG"
+grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
+echo "PASS: Darwin personality demo (open/write path)"

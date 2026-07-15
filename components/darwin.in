@@ -6,7 +6,9 @@ package space.kernel
 // for files/process. Space follows that: BSD numbers → vfs-*/fs-*/proc-signal.
 //
 // Classic BSD/xnu numbers used here:
-//   exit=1, read=3, write=4, open=5, close=6, unlink=10, getpid=20, kill=37
+//   exit=1, read=3, write=4, open=5, close=6, unlink=10, chdir=12,
+//   getpid=20, kill=37, mkdir=136, fstat=189, getcwd=192 (Space-doc'd; FreeBSD 326),
+//   lseek=199
 // Open flags: BSD/Darwin O_CREAT=0x200, O_TRUNC=0x400 (mapped onto VFS-O-*).
 // Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
 
@@ -16,8 +18,16 @@ const DARWIN-SYS-WRITE = 4
 const DARWIN-SYS-OPEN = 5
 const DARWIN-SYS-CLOSE = 6
 const DARWIN-SYS-UNLINK = 10
+const DARWIN-SYS-CHDIR = 12
 const DARWIN-SYS-GETPID = 20
 const DARWIN-SYS-KILL = 37
+const DARWIN-SYS-MKDIR = 136
+const DARWIN-SYS-FSTAT = 189
+const DARWIN-SYS-GETCWD = 192
+const DARWIN-SYS-LSEEK = 199
+const DARWIN-SEEK-SET = 0
+const DARWIN-STAT-SIZE = 144
+const DARWIN-STAT-OFF-SIZE = 48
 
 // BSD/Darwin open flags (not Linux).
 const DARWIN-O-RDONLY = 0
@@ -109,6 +119,54 @@ fn darwin-sys-exit(code: Int) -> Int {
   return code
 }
 
+fn darwin-sys-getcwd(buf: Int, size: Int) -> Int {
+  return posix-sys-getcwd(buf, size)
+}
+
+fn darwin-sys-chdir(path: Int) -> Int {
+  let rc = posix-sys-chdir(path)
+  if rc != 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+fn darwin-sys-mkdir(path: Int, mode: Int) -> Int {
+  let rc = fs-mkdir(path)
+  if rc < 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+fn darwin-sys-fstat(fd: Int, buf: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
+    return DARWIN-EBADF
+  }
+  let i = 0
+  while i < DARWIN-STAT-SIZE {
+    store8(buf + i, 0)
+    i = i + 1
+  }
+  if fd < 3 {
+    store64(buf + DARWIN-STAT-OFF-SIZE, 0)
+    return 0
+  }
+  let base = vfs-fd-table + fd * 32
+  let fpath = load64(base + 0)
+  let sfbuf = alloc(64)
+  let st = fs-stat(fpath, sfbuf)
+  if st != 0 {
+    return DARWIN-ENOENT
+  }
+  store64(buf + DARWIN-STAT-OFF-SIZE, load64(sfbuf + SF-ST-SIZE))
+  return 0
+}
+
+fn darwin-sys-lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  return vfs-lseek(fd, offset, whence)
+}
+
 // BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
 fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
   if darwin-ready == 0 {
@@ -129,11 +187,26 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-UNLINK {
     return darwin-sys-unlink(a0)
   }
+  if num == DARWIN-SYS-CHDIR {
+    return darwin-sys-chdir(a0)
+  }
   if num == DARWIN-SYS-GETPID {
     return darwin-sys-getpid()
   }
   if num == DARWIN-SYS-KILL {
     return darwin-sys-kill(a0, a1)
+  }
+  if num == DARWIN-SYS-MKDIR {
+    return darwin-sys-mkdir(a0, a1)
+  }
+  if num == DARWIN-SYS-FSTAT {
+    return darwin-sys-fstat(a0, a1)
+  }
+  if num == DARWIN-SYS-GETCWD {
+    return darwin-sys-getcwd(a0, a1)
+  }
+  if num == DARWIN-SYS-LSEEK {
+    return darwin-sys-lseek(a0, a1, a2)
   }
   if num == DARWIN-SYS-EXIT {
     return darwin-sys-exit(a0)
@@ -214,6 +287,50 @@ fn darwin-demo(port: Int) -> void {
     serial-write-cstr(port, "'")
     serial-nl(port)
     darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
+  }
+
+  let dname = "darwin-dir"
+  let mrc = darwin-dispatch(port, DARWIN-SYS-MKDIR, dname, 0o755, 0, 0)
+  serial-write-cstr(port, "darwin: mkdir(darwin-dir) = ")
+  serial-write-dec-wide(port, mrc)
+  serial-nl(port)
+
+  if mrc == 0 {
+    let crc = darwin-dispatch(port, DARWIN-SYS-CHDIR, dname, 0, 0, 0)
+    serial-write-cstr(port, "darwin: chdir(darwin-dir) = ")
+    serial-write-dec-wide(port, crc)
+    serial-nl(port)
+  }
+
+  let cwdbuf = alloc(64)
+  let cwdrc = darwin-dispatch(port, DARWIN-SYS-GETCWD, cwdbuf, 64, 0, 0)
+  serial-write-cstr(port, "darwin: getcwd() = '")
+  if cwdrc != 0 {
+    serial-write-cstr(port, cwdbuf)
+  }
+  serial-write-cstr(port, "'")
+  serial-nl(port)
+
+  let sfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fname, DARWIN-O-RDONLY, 0, 0)
+  serial-write-cstr(port, "darwin: open(darwin-hello.txt, O_RDONLY) for lseek/fstat = ")
+  serial-write-dec-wide(port, sfd)
+  serial-nl(port)
+  if sfd >= 0 {
+    let pos = darwin-dispatch(port, DARWIN-SYS-LSEEK, sfd, 7, DARWIN-SEEK-SET, 0)
+    serial-write-cstr(port, "darwin: lseek(fd, 7, SEEK_SET) = ")
+    serial-write-dec-wide(port, pos)
+    serial-nl(port)
+
+    let stbuf = alloc(DARWIN-STAT-SIZE)
+    let frc = darwin-dispatch(port, DARWIN-SYS-FSTAT, sfd, stbuf, 0, 0)
+    serial-write-cstr(port, "darwin: fstat(fd) = ")
+    serial-write-dec-wide(port, frc)
+    if frc == 0 {
+      serial-write-cstr(port, ", st_size = ")
+      serial-write-dec-wide(port, load64(stbuf + DARWIN-STAT-OFF-SIZE))
+    }
+    serial-nl(port)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, sfd, 0, 0, 0)
   }
 
   let urc = darwin-dispatch(port, DARWIN-SYS-UNLINK, fname, 0, 0, 0)
