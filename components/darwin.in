@@ -1,11 +1,39 @@
 package space.kernel
 
-// Darwin personality stub (Mach/BSD subset demo only).
-// Not a full ABI — maps a few BSD-ish call numbers onto Space primitives.
+// Darwin personality (Mach + BSD subset demo only).
+// Honest: not full XNU. Maps classic BSD/xnu syscall numbers onto Space VFS/process.
+// Userland OS personality on Darwin is mostly BSD syscalls (syscalls.master), not raw Mach
+// for files/process. Space follows that: BSD numbers → vfs-*/fs-*/proc-signal.
+//
+// Classic BSD/xnu numbers used here:
+//   exit=1, read=3, write=4, open=5, close=6, unlink=10, getpid=20, kill=37
+// Open flags: BSD/Darwin O_CREAT=0x200, O_TRUNC=0x400 (mapped onto VFS-O-*).
+// Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
 
-const DARWIN-SYS-WRITE = 4
-const DARWIN-SYS-GETPID = 20
 const DARWIN-SYS-EXIT = 1
+const DARWIN-SYS-READ = 3
+const DARWIN-SYS-WRITE = 4
+const DARWIN-SYS-OPEN = 5
+const DARWIN-SYS-CLOSE = 6
+const DARWIN-SYS-UNLINK = 10
+const DARWIN-SYS-GETPID = 20
+const DARWIN-SYS-KILL = 37
+
+// BSD/Darwin open flags (not Linux).
+const DARWIN-O-RDONLY = 0
+const DARWIN-O-WRONLY = 1
+const DARWIN-O-RDWR = 2
+const DARWIN-O-CREAT = 0x200
+const DARWIN-O-TRUNC = 0x400
+
+// Optional Mach trap stubs (not real MIG/IPC).
+const DARWIN-MACH-TASK-SELF = 0x1000
+const DARWIN-MACH-MSG = 0x1001
+
+const DARWIN-ESRCH = -3
+const DARWIN-EBADF = -9
+const DARWIN-ENOENT = -2
+const DARWIN-ENOSYS = -38
 
 var darwin-ready: Int = 0
 
@@ -13,41 +41,117 @@ fn darwin-init() -> void {
   if darwin-ready != 0 {
     return
   }
+  if vfs-fd-table == 0 {
+    vfs-init()
+  }
   darwin-ready = 1
   return
 }
 
-// Tiny dispatch table: write -> serial, getpid -> current-task, exit -> status only.
-fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
-  if num == DARWIN-SYS-WRITE {
-    let fd = a0
-    let buf = a1
-    let len = a2
-    if fd == 1 || fd == 2 {
-      let i = 0
-      while i < len {
-        serial-put(port, load8(buf + i))
-        i = i + 1
-      }
-      return len
+// Map BSD/Darwin open flags onto Space VFS flags (Linux-shaped bits under the hood).
+fn darwin-map-open-flags(flags: Int) -> Int {
+  let vf = flags & 3
+  if (flags & DARWIN-O-CREAT) != 0 {
+    vf = vf | VFS-O-CREAT
+  }
+  return vf
+}
+
+fn darwin-sys-open(pathname: Int, flags: Int, mode: Int) -> Int {
+  return vfs-open(pathname, darwin-map-open-flags(flags))
+}
+
+fn darwin-sys-close(fd: Int) -> Int {
+  return vfs-close(fd)
+}
+
+fn darwin-sys-read(fd: Int, buf: Int, count: Int) -> Int {
+  return vfs-read(fd, buf, count)
+}
+
+fn darwin-sys-write(port: Int, fd: Int, buf: Int, count: Int) -> Int {
+  // Keep serial port path for stdio so demos can target COM1 explicitly.
+  if fd == 1 || fd == 2 {
+    let i = 0
+    while i < count {
+      serial-put(port, load8(buf + i))
+      i = i + 1
     }
-    return -1
+    return count
+  }
+  return vfs-write(fd, buf, count)
+}
+
+fn darwin-sys-unlink(pathname: Int) -> Int {
+  let rc = fs-delete(pathname)
+  if rc != 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+fn darwin-sys-getpid() -> Int {
+  return current-task
+}
+
+fn darwin-sys-kill(pid: Int, sig: Int) -> Int {
+  if pid < 0 || pid >= proc-count {
+    return DARWIN-ESRCH
+  }
+  if proc-signal(pid, sig) != 0 {
+    return DARWIN-ESRCH
+  }
+  return 0
+}
+
+fn darwin-sys-exit(code: Int) -> Int {
+  // Demo only: report status, do not halt the kernel.
+  return code
+}
+
+// BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
+fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
+  if darwin-ready == 0 {
+    darwin-init()
+  }
+  if num == DARWIN-SYS-READ {
+    return darwin-sys-read(a0, a1, a2)
+  }
+  if num == DARWIN-SYS-WRITE {
+    return darwin-sys-write(port, a0, a1, a2)
+  }
+  if num == DARWIN-SYS-OPEN {
+    return darwin-sys-open(a0, a1, a2)
+  }
+  if num == DARWIN-SYS-CLOSE {
+    return darwin-sys-close(a0)
+  }
+  if num == DARWIN-SYS-UNLINK {
+    return darwin-sys-unlink(a0)
   }
   if num == DARWIN-SYS-GETPID {
-    return current-task
+    return darwin-sys-getpid()
+  }
+  if num == DARWIN-SYS-KILL {
+    return darwin-sys-kill(a0, a1)
   }
   if num == DARWIN-SYS-EXIT {
-    // Demo only: do not halt the kernel.
-    return a0
+    return darwin-sys-exit(a0)
   }
-  return -1
+  if num == DARWIN-MACH-TASK-SELF {
+    return 1
+  }
+  if num == DARWIN-MACH-MSG {
+    return -1
+  }
+  return DARWIN-ENOSYS
 }
 
 fn darwin-demo(port: Int) -> void {
   if darwin-ready == 0 {
     darwin-init()
   }
-  serial-write-cstr(port, "darwin: Mach/BSD subset personality registered (stub)")
+  serial-write-cstr(port, "darwin: Mach/BSD subset personality registered (not full XNU)")
   serial-nl(port)
 
   let msg = "  hello from darwin personality (write)\n"
@@ -55,19 +159,82 @@ fn darwin-demo(port: Int) -> void {
   while load8(msg + mlen) != 0 {
     mlen = mlen + 1
   }
-  let wrc = darwin-dispatch(port, DARWIN-SYS-WRITE, 1, msg, mlen)
+  let wrc = darwin-dispatch(port, DARWIN-SYS-WRITE, 1, msg, mlen, 0)
   serial-write-cstr(port, "darwin: write(1, msg, ")
   serial-write-dec-wide(port, mlen)
   serial-write-cstr(port, ") = ")
   serial-write-dec-wide(port, wrc)
   serial-nl(port)
 
-  let pid = darwin-dispatch(port, DARWIN-SYS-GETPID, 0, 0, 0)
+  let pid = darwin-dispatch(port, DARWIN-SYS-GETPID, 0, 0, 0, 0)
   serial-write-cstr(port, "darwin: getpid() = ")
   serial-write-dec-wide(port, pid)
   serial-nl(port)
 
-  let erc = darwin-dispatch(port, DARWIN-SYS-EXIT, 0, 0, 0)
+  let fname = "darwin-hello.txt"
+  let fd = darwin-dispatch(port, DARWIN-SYS-OPEN, fname, DARWIN-O-CREAT | DARWIN-O-RDWR, 0, 0)
+  serial-write-cstr(port, "darwin: open(darwin-hello.txt, O_CREAT|O_RDWR) = ")
+  serial-write-dec-wide(port, fd)
+  serial-nl(port)
+
+  if fd >= 0 {
+    let content = "darwin file content"
+    let clen = 0
+    while load8(content + clen) != 0 {
+      clen = clen + 1
+    }
+    let fwrc = darwin-dispatch(port, DARWIN-SYS-WRITE, fd, content, clen, 0)
+    serial-write-cstr(port, "darwin: write(fd, content, ")
+    serial-write-dec-wide(port, clen)
+    serial-write-cstr(port, ") = ")
+    serial-write-dec-wide(port, fwrc)
+    serial-nl(port)
+
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, fd, 0, 0, 0)
+    serial-write-cstr(port, "darwin: close(fd) = 0")
+    serial-nl(port)
+  }
+
+  let rfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fname, DARWIN-O-RDONLY, 0, 0)
+  serial-write-cstr(port, "darwin: open(darwin-hello.txt, O_RDONLY) = ")
+  serial-write-dec-wide(port, rfd)
+  serial-nl(port)
+
+  if rfd >= 0 {
+    let rbuf = alloc(256)
+    let rlen = darwin-dispatch(port, DARWIN-SYS-READ, rfd, rbuf, 255, 0)
+    serial-write-cstr(port, "darwin: read(fd, buf, 255) = ")
+    serial-write-dec-wide(port, rlen)
+    serial-write-cstr(port, " -> '")
+    let ri = 0
+    while ri < rlen {
+      serial-put(port, load8(rbuf + ri))
+      ri = ri + 1
+    }
+    serial-write-cstr(port, "'")
+    serial-nl(port)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
+  }
+
+  let urc = darwin-dispatch(port, DARWIN-SYS-UNLINK, fname, 0, 0, 0)
+  serial-write-cstr(port, "darwin: unlink(darwin-hello.txt) = ")
+  serial-write-dec-wide(port, urc)
+  serial-nl(port)
+
+  let krc = darwin-dispatch(port, DARWIN-SYS-KILL, 99999, SIGKILL, 0, 0)
+  serial-write-cstr(port, "darwin: kill(invalid) = ")
+  serial-write-dec-wide(port, krc)
+  if krc == DARWIN-ESRCH {
+    serial-write-cstr(port, " (ESRCH expected)")
+  }
+  serial-nl(port)
+
+  let task = darwin-dispatch(port, DARWIN-MACH-TASK-SELF, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: mach_task_self stub = ")
+  serial-write-dec-wide(port, task)
+  serial-nl(port)
+
+  let erc = darwin-dispatch(port, DARWIN-SYS-EXIT, 0, 0, 0, 0)
   serial-write-cstr(port, "darwin: exit(0) mapped (demo status ")
   serial-write-dec-wide(port, erc)
   serial-write-cstr(port, ", no halt)")
