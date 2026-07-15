@@ -62,8 +62,8 @@ needs deeper soak. Netstack exposes UDP sockets; TCP SYN-only connect path.
 - [x] USB HID keyboard (replaces PS/2)
 - [x] Display server service (SPDP protocol)
 - [x] Shell upgrade: pipe support, background processes, redirection (minimal echo demos)
-- [ ] Multi-terminal support
-- [ ] Scrollable terminal content
+- [x] Multi-terminal support (dual TERMINAL windows + focus)
+- [x] Scrollable terminal content (32-line ring, PgUp/PgDn)
 
 ## Phase 7: Networking Stack
 
