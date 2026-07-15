@@ -26,6 +26,7 @@ if ! grep -qF "interactive shell" "$SERIAL" 2>/dev/null; then
   rm -f "$FIFO"
   exit 1
 fi
+
 echo "hello" >&3
 for _ in $(seq 1 200); do
   if grep -qF "hello from user SCI" "$SERIAL" 2>/dev/null \
@@ -35,6 +36,17 @@ for _ in $(seq 1 200); do
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
+
+echo "uecho" >&3
+for _ in $(seq 1 200); do
+  if grep -qF "user echo SCI" "$SERIAL" 2>/dev/null \
+     || grep -qF "SCI: component returned status 0x0000000000004543" "$SERIAL" 2>/dev/null; then
+    break
+  fi
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 0.1
+done
+
 echo "halt" >&3
 exec 3>&-
 sleep 0.5
@@ -42,16 +54,24 @@ kill "$QPID" 2>/dev/null || true
 wait "$QPID" 2>/dev/null || true
 rm -f "$FIFO"
 
-ok=0
-if grep -qF "hello from user SCI" "$SERIAL" 2>/dev/null; then
-  ok=1
+ok_hello=0
+ok_echo=0
+if grep -qF "hello from user SCI" "$SERIAL" 2>/dev/null \
+   || grep -qF "SCI: component returned status 0x0000000000004849" "$SERIAL" 2>/dev/null; then
+  ok_hello=1
 fi
-if grep -qF "SCI: component returned status 0x0000000000004849" "$SERIAL" 2>/dev/null; then
-  ok=1
+if grep -qF "user echo SCI" "$SERIAL" 2>/dev/null \
+   || grep -qF "SCI: component returned status 0x0000000000004543" "$SERIAL" 2>/dev/null; then
+  ok_echo=1
 fi
-if [ "$ok" != "1" ]; then
+if [ "$ok_hello" != "1" ]; then
   echo "FAIL: user SCI hello marker missing" >&2
   sed -n '/space>/,/halt/p' "$SERIAL" 2>/dev/null | tail -40 >&2 || true
   exit 1
 fi
-echo "PASS: user SCI hello loaded and ran"
+if [ "$ok_echo" != "1" ]; then
+  echo "FAIL: user SCI uecho marker missing" >&2
+  sed -n '/space>/,/halt/p' "$SERIAL" 2>/dev/null | tail -40 >&2 || true
+  exit 1
+fi
+echo "PASS: user SCI hello + uecho loaded and ran"

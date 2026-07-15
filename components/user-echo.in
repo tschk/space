@@ -1,0 +1,50 @@
+package space.user
+
+component EchoUser {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: EchoEntry
+}
+
+interface EchoEntry {
+  fn echo-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+fn e-wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn e-put(port: Int, ch: Int) -> void {
+  e-wait(port)
+  outb(port, ch)
+  return
+}
+
+fn e-write(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    e-put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn echo-entry(cap-info: Int) -> Int {
+  let port = COM1
+  e-write(port, "user echo SCI\n")
+  return 0x4543
+}

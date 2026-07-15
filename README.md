@@ -23,11 +23,10 @@ into Space primitives.
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
-under QEMU. The maintained checks verify the shell, in-kernel SCI loader
-self-test, Linux-personality demo, VFS, time service, component deny policy,
-network traffic, and external display/input SCI components. NVMe-backed writes
-still time out after storage-component startup. The standalone memory-backed
-Volume SCI component completes init, write, and read RPCs under QEMU.
+under QEMU. Maintained checks cover shell, SCI loader (incl. user `hello`/`uecho`),
+Linux-personality demo, VFS, time, deny policy, display/input SCI, NVMe volume RPC,
+and multi-file volume-ready shell soak across reboot. Net: UDP sockets + e1000;
+TCP SYN-only; DHCP/DNS TX only so far.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 
