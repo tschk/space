@@ -1,11 +1,184 @@
 package space.kernel
 
-// Minimal DHCP client TX: broadcast DISCOVER via e1000 path.
+// Minimal DHCP client: DISCOVER -> OFFER -> REQUEST -> ACK over e1000.
+
+var dhcp-ip: Int = 0
+var dhcp-server: Int = 0
+var dhcp-ready: Int = 0
+
+fn dhcp-print-ip(port: Int, ip: Int) -> void {
+  serial-write-dec-wide(port, (ip >> 24) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, (ip >> 16) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, (ip >> 8) & 0xFF)
+  serial-put(port, 46)
+  serial-write-dec-wide(port, ip & 0xFF)
+  return
+}
+
+fn dhcp-load-ip(addr: Int) -> Int {
+  return (load8(addr) << 24) | (load8(addr + 1) << 16) | (load8(addr + 2) << 8) | load8(addr + 3)
+}
+
+// Returns pointer to option value (after type+len), or 0.
+fn dhcp-find-opt(bootp: Int, end: Int, code: Int) -> Int {
+  let i = bootp + 240
+  while i + 1 < end {
+    let t = load8(i)
+    if t == 255 {
+      return 0
+    }
+    if t == 0 {
+      i = i + 1
+    } else {
+      let l = load8(i + 1)
+      if i + 2 + l > end {
+        return 0
+      }
+      if t == code {
+        return i + 2
+      }
+      i = i + 2 + l
+    }
+  }
+  return 0
+}
+
+fn dhcp-frame-bootp(buf: Int) -> Int {
+  if nic-rx-len < 282 {
+    return 0
+  }
+  let eth = (load8(buf + 12) << 8) | load8(buf + 13)
+  if eth != 0x0800 {
+    return 0
+  }
+  if load8(buf + 23) != 17 {
+    return 0
+  }
+  let ihl = (load8(buf + 14) & 0x0F) * 4
+  if ihl < 20 {
+    return 0
+  }
+  let udp = buf + 14 + ihl
+  if udp + 8 > buf + nic-rx-len {
+    return 0
+  }
+  let sport = (load8(udp + 0) << 8) | load8(udp + 1)
+  let dport = (load8(udp + 2) << 8) | load8(udp + 3)
+  if sport != 67 {
+    return 0
+  }
+  if dport != 68 {
+    return 0
+  }
+  let bootp = udp + 8
+  if load8(bootp + 0) != 2 {
+    return 0
+  }
+  if load8(bootp + 4) != 0x12 {
+    return 0
+  }
+  if load8(bootp + 5) != 0x34 {
+    return 0
+  }
+  if load8(bootp + 6) != 0x56 {
+    return 0
+  }
+  if load8(bootp + 7) != 0x78 {
+    return 0
+  }
+  return bootp
+}
+
+// Wait for BOOTP reply with DHCP msg-type == want. Returns frame buf or 0.
+fn dhcp-rx-wait-type(want: Int) -> Int {
+  let tries = 0
+  while tries < 4 {
+    let buf = e1000-rx-wait()
+    if buf == 0 {
+      return 0
+    }
+    let bootp = dhcp-frame-bootp(buf)
+    if bootp != 0 {
+      let end = buf + nic-rx-len
+      let opt = dhcp-find-opt(bootp, end, 53)
+      let mt = 0
+      if opt != 0 {
+        mt = load8(opt)
+      }
+      if mt == want {
+        return buf
+      }
+    }
+    tries = tries + 1
+  }
+  return 0
+}
+
+fn dhcp-server-from(bootp: Int, end: Int) -> Int {
+  let opt = dhcp-find-opt(bootp, end, 54)
+  if opt != 0 {
+    return dhcp-load-ip(opt)
+  }
+  let si = dhcp-load-ip(bootp + 20)
+  if si != 0 {
+    return si
+  }
+  // QEMU user-net default.
+  return 0x0A000202
+}
 
 fn dhcp-discover(port: Int) -> Int {
+  dhcp-ready = 0
+  dhcp-ip = 0
+  dhcp-server = 0
+  if e1000-init(port) == 0 {
+    serial-write-cstr(port, "dhcp: no nic")
+    serial-nl(port)
+    return 0
+  }
   let flen = build-dhcp-discover()
   e1000-tx(flen)
   serial-write-cstr(port, "dhcp: discover sent")
   serial-nl(port)
-  return 0
+
+  let offer = dhcp-rx-wait-type(2)
+  if offer == 0 {
+    serial-write-cstr(port, "dhcp: timeout")
+    serial-nl(port)
+    return 0
+  }
+  let bootp = dhcp-frame-bootp(offer)
+  let end = offer + nic-rx-len
+  let yi = dhcp-load-ip(bootp + 16)
+  let srv = dhcp-server-from(bootp, end)
+  serial-write-cstr(port, "dhcp: offer ")
+  dhcp-print-ip(port, yi)
+  serial-nl(port)
+
+  let rlen = build-dhcp-request(yi, srv)
+  e1000-tx(rlen)
+
+  let ack = dhcp-rx-wait-type(5)
+  if ack == 0 {
+    serial-write-cstr(port, "dhcp: timeout")
+    serial-nl(port)
+    return 0
+  }
+  bootp = dhcp-frame-bootp(ack)
+  end = ack + nic-rx-len
+  yi = dhcp-load-ip(bootp + 16)
+  srv = dhcp-server-from(bootp, end)
+  serial-write-cstr(port, "dhcp: ack ")
+  dhcp-print-ip(port, yi)
+  serial-nl(port)
+
+  dhcp-ip = yi
+  dhcp-server = srv
+  dhcp-ready = 1
+  serial-write-cstr(port, "dhcp: lease ")
+  dhcp-print-ip(port, yi)
+  serial-nl(port)
+  return 1
 }

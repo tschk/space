@@ -6,9 +6,11 @@ Verified today: x86_64 boot, serial shell, memory domains, capabilities,
 cooperative + preemptive scheduling, channels, the in-kernel SCI loader,
 the Linux-personality demo, VFS, time service, network component RPC, and SCI
 allow/deny policy. Display and input SCI components have automated QEMU proof.
-NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume RPC
-and POSIX volume-ready branches exist; full SparkFS-on-Volume product path still
-needs deeper soak. Netstack exposes UDP sockets; TCP SYN-only connect path.
+NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume SCI
+on NVMe passes RPC + multi-file shell soak across reboot (`check-qemu-volume-nvme`,
+`check-volume-soak`) on the volume-ready FS path. Second user SCI (`uecho` @
+0x1b0000) loads under QEMU. Netstack: UDP sockets work; TCP is SYN-only connect
+TX (no ACK/window/retransmit); DHCP DISCOVER TX; DNS A-query TX for space.test.
 
 ## Phase 1: Storage
 
@@ -69,5 +71,5 @@ needs deeper soak. Netstack exposes UDP sockets; TCP SYN-only connect path.
 
 - [x] TCP/IP stack (SYN-only connect TX; no ACK/window/retransmit yet)
 - [x] Socket API for user programs (UDP over e1000; TCP SYN_SENT/LISTEN)
-- [x] DHCP client (DISCOVER TX)
+- [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)

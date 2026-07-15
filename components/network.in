@@ -34,8 +34,8 @@ const NET-OP-SHUTDOWN = 9
 const NET-OP-BUILD-TCP-SYN = 10
 const NET-OP-BUILD-DHCP = 11
 const NET-OP-BUILD-DNS = 12
-const NET-OP-BUILD-DHCP-REQ = 13
 const NET-OP-BUILD-TCP-ACK = 13
+const NET-OP-BUILD-DHCP-REQ = 14
 
 var tcp-last-seq: Int = 0
 var tcp-last-ack: Int = 0
