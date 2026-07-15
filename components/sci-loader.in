@@ -471,6 +471,26 @@ fn volume-rpc-rename(old-path: Int, new-path: Int) -> Int {
   return volume-rpc-call(12, 1)
 }
 
+// List directory entries via Volume RPC into caller buffer. Returns byte count.
+fn volume-rpc-list(path: Int, buf: Int, max: Int) -> Int {
+  volume-copy-path(volume-shared + 256, path)
+  let n = volume-rpc-call(8, 0)
+  if n < 0 {
+    return n
+  }
+  let copy = n
+  if copy > max - 1 {
+    copy = max - 1
+  }
+  let i = 0
+  while i < copy {
+    store8(buf + i, load8(volume-shared + 768 + i))
+    i = i + 1
+  }
+  store8(buf + copy, 0)
+  return copy
+}
+
 fn volume-rpc-read-file(path: Int, buf: Int, max: Int) -> Int {
   return volume-rpc-pread(path, buf, max, 0)
 }

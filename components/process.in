@@ -6,11 +6,12 @@ package space.kernel
 // object in the kernel graph, and a cooperative thread. The process table is a
 // flat array of 64-byte records allocated from the kernel heap.
 //
-// Process record (64 bytes):
-//   [id][domain_id][thread_id][entry_addr][caps][name_addr][status][exit_code]
+// Process record (72 bytes):
+//   [id][domain_id][thread_id][entry_addr][caps][name_addr][status][exit_code][pending]
 // Status: 0=ready, 1=running, 2=blocked, 3=exited, 4=killed
+// Pending: bit N set means signal N is pending (SIGKILL=9, SIGTERM=15)
 
-const PROC-SIZE = 64
+const PROC-SIZE = 72
 const PROC-OFF-ID = 0
 const PROC-OFF-DOMAIN = 8
 const PROC-OFF-THREAD = 16
@@ -19,6 +20,7 @@ const PROC-OFF-CAPS = 32
 const PROC-OFF-NAME = 40
 const PROC-OFF-STATUS = 48
 const PROC-OFF-EXIT-CODE = 56
+const PROC-OFF-PENDING = 64
 
 const PROC-READY = 0
 const PROC-RUNNING = 1
@@ -26,11 +28,17 @@ const PROC-BLOCKED = 2
 const PROC-EXITED = 3
 const PROC-KILLED = 4
 
+const SIGKILL = 9
+const SIGTERM = 15
+
 var proc-table: Int = 0
 var proc-count: Int = 0
 var proc-max: Int = 0
 var proc-current: Int = 0
 var proc-entry-arg: Int = 0
+var sci-last-domain: Int = 0
+var sci-last-entry: Int = 0
+var sci-last-caps: Int = 0
 
 // Allocate the process table with room for `max` processes.
 fn proc-init(max: Int) -> void {
@@ -51,6 +59,7 @@ fn proc-init(max: Int) -> void {
     store64(proc-table + i * PROC-SIZE + PROC-OFF-NAME, 0)
     store64(proc-table + i * PROC-SIZE + PROC-OFF-STATUS, PROC-READY)
     store64(proc-table + i * PROC-SIZE + PROC-OFF-EXIT-CODE, 0)
+    store64(proc-table + i * PROC-SIZE + PROC-OFF-PENDING, 0)
     i = i + 1
   }
   return
@@ -75,6 +84,7 @@ fn proc-create(name: Int, entry: Int, caps: Int) -> Int {
   store64(base + PROC-OFF-NAME, name)
   store64(base + PROC-OFF-STATUS, PROC-READY)
   store64(base + PROC-OFF-EXIT-CODE, 0)
+  store64(base + PROC-OFF-PENDING, 0)
   proc-count = proc-count + 1
   return pid
 }
@@ -91,10 +101,70 @@ fn proc-exit(code: Int) -> void {
 
 // Mark a process as killed. The thread is left to be reaped by the scheduler.
 fn proc-kill(pid: Int) -> void {
-  if pid >= proc-count { return }
+  if pid < 0 || pid >= proc-count { return }
   let base = proc-table + pid * PROC-SIZE
   store64(base + PROC-OFF-STATUS, PROC-KILLED)
+  store64(base + PROC-OFF-EXIT-CODE, 128 + SIGKILL)
+  store64(base + PROC-OFF-PENDING, 0)
   return
+}
+
+// Queue or deliver a minimal signal. SIGKILL forces exit; SIGTERM sets pending.
+fn proc-signal(pid: Int, sig: Int) -> Int {
+  if pid < 0 || pid >= proc-count {
+    return -1
+  }
+  if sig != SIGKILL && sig != SIGTERM {
+    return -1
+  }
+  let base = proc-table + pid * PROC-SIZE
+  let status = load64(base + PROC-OFF-STATUS)
+  if status == PROC-EXITED || status == PROC-KILLED {
+    return -1
+  }
+  if sig == SIGKILL {
+    proc-kill(pid)
+    return 0
+  }
+  let pending = load64(base + PROC-OFF-PENDING)
+  store64(base + PROC-OFF-PENDING, pending | (1 << SIGTERM))
+  return 0
+}
+
+// Return non-zero if `sig` is pending on `pid`.
+fn proc-signal-pending(pid: Int, sig: Int) -> Int {
+  if pid < 0 || pid >= proc-count {
+    return 0
+  }
+  if sig < 0 || sig > 63 {
+    return 0
+  }
+  let base = proc-table + pid * PROC-SIZE
+  let pending = load64(base + PROC-OFF-PENDING)
+  if (pending & (1 << sig)) != 0 {
+    return 1
+  }
+  return 0
+}
+
+// Cooperative SIGTERM consume: if pending, mark exited with 128+SIGTERM.
+fn proc-poll-signals(pid: Int) -> Int {
+  if pid < 0 || pid >= proc-count {
+    return 0
+  }
+  let base = proc-table + pid * PROC-SIZE
+  let status = load64(base + PROC-OFF-STATUS)
+  if status == PROC-EXITED || status == PROC-KILLED {
+    return 0
+  }
+  let pending = load64(base + PROC-OFF-PENDING)
+  if (pending & (1 << SIGTERM)) != 0 {
+    store64(base + PROC-OFF-STATUS, PROC-EXITED)
+    store64(base + PROC-OFF-EXIT-CODE, 128 + SIGTERM)
+    store64(base + PROC-OFF-PENDING, pending & (-1 ^ (1 << SIGTERM)))
+    return 1
+  }
+  return 0
 }
 
 // Block the caller until `pid` has exited or been killed, then return its exit
@@ -103,6 +173,7 @@ fn proc-wait(pid: Int) -> Int {
   if pid >= proc-count { return -1 }
   let base = proc-table + pid * PROC-SIZE
   while load64(base + PROC-OFF-STATUS) != PROC-EXITED && load64(base + PROC-OFF-STATUS) != PROC-KILLED {
+    proc-poll-signals(pid)
     thr-yield()
   }
   return load64(base + PROC-OFF-EXIT-CODE)
@@ -238,6 +309,9 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     serial-nl(port)
     return -1
   }
+  sci-last-domain = domain
+  sci-last-entry = entry
+  sci-last-caps = required
 
   let component = component-register(pathname, entry, required)
   let virt-load = entry - 32
@@ -264,6 +338,42 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   serial-write-cstr(port, pathname)
   serial-write-cstr(port, " returned status 0x")
   serial-write-hex(port, status)
+  serial-nl(port)
+  return status
+}
+
+// Load SCI from disk (sci-load-file) and record a process table row for it.
+// Guest already ran synchronously; status is stored as exit_code.
+fn proc-spawn-sci(port: Int, pathname: Int) -> Int {
+  sci-last-domain = 0
+  sci-last-entry = 0
+  sci-last-caps = 0
+  let status = sci-load-file(port, pathname)
+  if status < 0 {
+    return -1
+  }
+  if proc-table == 0 {
+    return status
+  }
+  if proc-count >= proc-max {
+    serial-write-cstr(port, "  SCI: process table full after load")
+    serial-nl(port)
+    return status
+  }
+  let pid = proc-count
+  let base = proc-table + pid * PROC-SIZE
+  store64(base + PROC-OFF-ID, pid)
+  store64(base + PROC-OFF-DOMAIN, sci-last-domain)
+  store64(base + PROC-OFF-THREAD, 0)
+  store64(base + PROC-OFF-ENTRY, sci-last-entry)
+  store64(base + PROC-OFF-CAPS, sci-last-caps)
+  store64(base + PROC-OFF-NAME, pathname)
+  store64(base + PROC-OFF-STATUS, PROC-EXITED)
+  store64(base + PROC-OFF-EXIT-CODE, status)
+  store64(base + PROC-OFF-PENDING, 0)
+  proc-count = proc-count + 1
+  serial-write-cstr(port, "  SCI: tracked as process ")
+  serial-write-dec-wide(port, pid)
   serial-nl(port)
   return status
 }
@@ -315,7 +425,19 @@ fn proc-selftest() -> Int {
   let pid4 = proc-create("test4", 0x4000, 0)
   proc-kill(pid4)
   let wait-killed = proc-wait(pid4)
-  pass = pass & proc-check(wait-killed == 0, "proc_wait returns 0 for killed process")
+  pass = pass & proc-check(wait-killed == 128 + SIGKILL, "proc_wait returns 128+SIGKILL for killed process")
+
+  let pid5 = proc-create("test5", 0x5000, 0)
+  pass = pass & proc-check(proc-signal(pid5, SIGTERM) == 0, "proc_signal queues SIGTERM")
+  pass = pass & proc-check(proc-signal-pending(pid5, SIGTERM) == 1, "SIGTERM pending after queue")
+  pass = pass & proc-check(proc-poll-signals(pid5) == 1, "proc_poll_signals consumes SIGTERM")
+  let wait-term = proc-wait(pid5)
+  pass = pass & proc-check(wait-term == 128 + SIGTERM, "proc_wait returns 128+SIGTERM")
+
+  let pid6 = proc-create("test6", 0x6000, 0)
+  pass = pass & proc-check(proc-signal(pid6, SIGKILL) == 0, "proc_signal delivers SIGKILL")
+  let wait-sigkill = proc-wait(pid6)
+  pass = pass & proc-check(wait-sigkill == 128 + SIGKILL, "SIGKILL forces exit")
 
   if pass != 0 {
     serial-write-cstr(port, "proc_selftest: PASS")

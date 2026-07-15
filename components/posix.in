@@ -338,8 +338,10 @@ fn posix-sys-kill(pid: Int, sig: Int) -> Int {
   if pid < 0 || pid >= proc-count {
     return LINUX-ESRCH
   }
-  if sig == 9 || sig == 15 {
-    proc-kill(pid)
+  if sig == SIGKILL || sig == SIGTERM {
+    if proc-signal(pid, sig) != 0 {
+      return LINUX-ESRCH
+    }
     return 0
   }
   return 0

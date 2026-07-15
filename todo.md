@@ -15,14 +15,14 @@ queued or nested component RPC before it can move behind the POSIX service.
 - [x] Simple flat filesystem (read-only, then write)
 - [x] NVMe driver with MMIO
 - [ ] VFS abstraction layer
-- [ ] Load SCI components from disk at runtime
+- [x] Load SCI components from disk at runtime
 
 ## Phase 2: Process Abstraction
 
 - [x] Process struct (domain + caps + entry + lifecycle)
 - [x] Process lifecycle: spawn, exit, wait, kill
 - [x] Process table and listing (`ps` command)
-- [ ] Process loader (read SCI image from disk, create domain, map, jump)
+- [x] Process loader (read SCI image from disk, create domain, map, jump)
 
 ## Phase 3: Syscall Interface
 
@@ -47,7 +47,7 @@ queued or nested component RPC before it can move behind the POSIX service.
   - [x] Memory syscalls: mmap, munmap, brk
   - [x] Misc syscalls: getcwd, chdir
   - [ ] Socket syscalls: socket, bind, listen, accept, connect, send, recv
-  - [ ] Signal handling (minimal: SIGTERM, SIGKILL)
+  - [x] Signal handling (minimal: SIGTERM, SIGKILL)
 - [ ] Darwin compat layer (Mach/BSD subset)
 - [ ] Windows compat layer (Win32 subset)
 

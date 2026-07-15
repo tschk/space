@@ -143,6 +143,114 @@ fn array-selftest() -> Int {
   return sum
 }
 
+
+fn shell-bg-noop() -> void {
+  return
+}
+
+fn shell-strip-bg(port: Int) -> void {
+  let n = strlen(line)
+  while n > 0 && load8(line + n - 1) == 32 {
+    n = n - 1
+    store8(line + n, 0)
+  }
+  if n >= 2 && load8(line + n - 1) == 38 && load8(line + n - 2) == 32 {
+    store8(line + n - 2, 0)
+    let tid = thr-create(shell-bg-noop)
+    serial-write-cstr(port, "  bg: thr ")
+    serial-write-dec-wide(port, tid)
+    serial-nl(port)
+  }
+  return
+}
+
+fn shell-try-pipe(port: Int) -> Int {
+  let i = 0
+  while load8(line + i) != 0 {
+    if load8(line + i) == 124 {
+      store8(line + i, 0)
+      let right = i + 1
+      while load8(line + right) == 32 {
+        right = right + 1
+      }
+      let le = i
+      while le > 0 && load8(line + le - 1) == 32 {
+        le = le - 1
+        store8(line + le, 0)
+      }
+      let er = line-prefix("echo ")
+      if er < 0 {
+        serial-write-cstr(port, "  pipe: echo only")
+        serial-nl(port)
+        return 1
+      }
+      let r0 = load8(line + right)
+      let r1 = load8(line + right + 1)
+      let r2 = load8(line + right + 2)
+      let r3 = load8(line + right + 3)
+      let r4 = load8(line + right + 4)
+      let r5 = load8(line + right + 5)
+      let ok = 0
+      if r0 == 99 && r1 == 97 && r2 == 116 && (r3 == 0 || r3 == 32) {
+        ok = 1
+      }
+      if r0 == 119 && r1 == 114 && r2 == 105 && r3 == 116 && r4 == 101 && (r5 == 0 || r5 == 32) {
+        ok = 1
+      }
+      if ok != 0 {
+        serial-write-cstr(port, line + er)
+        serial-nl(port)
+      } else {
+        serial-write-cstr(port, "  pipe: right must be cat|write")
+        serial-nl(port)
+      }
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn shell-try-redir(port: Int) -> Int {
+  let i = 0
+  while load8(line + i) != 0 {
+    if load8(line + i) == 62 {
+      store8(line + i, 0)
+      let path = i + 1
+      while load8(line + path) == 32 {
+        path = path + 1
+      }
+      let le = i
+      while le > 0 && load8(line + le - 1) == 32 {
+        le = le - 1
+        store8(line + le, 0)
+      }
+      let er = line-prefix("echo ")
+      if er < 0 {
+        serial-write-cstr(port, "  redir: echo only")
+        serial-nl(port)
+        return 1
+      }
+      if load8(line + path) == 0 {
+        serial-write-cstr(port, "  usage: echo <text> > <path>")
+        serial-nl(port)
+        return 1
+      }
+      let text = line + er
+      let tlen = strlen(text)
+      if fs-write-file(line + path, text, tlen) == 0 {
+        serial-write-cstr(port, "  written")
+      } else {
+        serial-write-cstr(port, "  failed")
+      }
+      serial-nl(port)
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
 // --- interactive serial shell ------------------------------------------------
 fn shell(port: Int) -> void {
   line = alloc(256)
@@ -152,8 +260,11 @@ fn shell(port: Int) -> void {
   while true {
     serial-write-cstr(port, "space> ")
     let n = read-line(port)
-    if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+    shell-strip-bg(port)
+    if shell-try-pipe(port) != 0 {
+    } else if shell-try-redir(port) != 0 {
+    } else if line-eq("help") != 0 {
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -304,6 +415,34 @@ fn shell(port: Int) -> void {
       serial-nl(port)
     } else if line-eq("ps") != 0 {
       proc-list(port)
+    } else if line-prefix("kill ") >= 0 {
+      let arg = line-prefix("kill ")
+      let pid = atoi(line + arg)
+      let sig = SIGTERM
+      let sp = next-arg(arg)
+      if sp > 0 {
+        let a0 = atoi(line + arg)
+        let a1 = atoi(line + sp)
+        // Support both `kill <pid> [sig]` and `kill -<sig> <pid>`.
+        if load8(line + arg) == 45 {
+          sig = 0 - a0
+          pid = a1
+        } else {
+          pid = a0
+          if a1 != 0 {
+            sig = a1
+          }
+        }
+      }
+      if proc-signal(pid, sig) != 0 {
+        serial-write-cstr(port, "  kill: no such process or signal")
+      } else {
+        serial-write-cstr(port, "  kill: sent ")
+        serial-write-dec-wide(port, sig)
+        serial-write-cstr(port, " to pid ")
+        serial-write-dec-wide(port, pid)
+      }
+      serial-nl(port)
     } else if line-eq("test") != 0 {
       serial-write-cstr(port, "  array selftest sum 0x")
       serial-write-hex(port, array-selftest())
@@ -514,8 +653,12 @@ fn shell(port: Int) -> void {
             } else {
               let rest = line-prefix("load_sci ")
               if rest >= 0 {
-                sci-load-file(port, line + rest)
+                proc-spawn-sci(port, line + rest)
               } else {
+                let rest = line-prefix("run ")
+                if rest >= 0 {
+                  proc-spawn-sci(port, line + rest)
+                } else {
                 let rest = line-prefix("proc ")
                 if rest >= 0 {
                   let pid = proc-create(line + rest, proc-dummy-entry, cap-serial())
@@ -595,6 +738,7 @@ fn shell(port: Int) -> void {
                       }
                     }
                   }
+                }
                 }
               }
             }

@@ -11,12 +11,39 @@ fn fs-format() -> Int {
   return sparkfs-format()
 }
 
+fn fs-list-volume(path: Int, port: Int) -> void {
+  let buf = alloc(3328)
+  let n = volume-rpc-list(path, buf, 3328)
+  if n < 0 {
+    serial-write-cstr(port, "  ls: failed")
+    serial-nl(port)
+    return
+  }
+  let i = 0
+  while i < n {
+    serial-put(port, load8(buf + i))
+    i = i + 1
+  }
+  if n == 0 || load8(buf + n - 1) != 10 {
+    serial-nl(port)
+  }
+  return
+}
+
 fn fs-list(port: Int) -> void {
+  if volume-ready != 0 {
+    fs-list-volume("/", port)
+    return
+  }
   sparkfs-list("/", port)
   return
 }
 
 fn fs-list-path(path: Int, port: Int) -> void {
+  if volume-ready != 0 {
+    fs-list-volume(path, port)
+    return
+  }
   sparkfs-list(path, port)
   return
 }
