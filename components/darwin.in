@@ -1,0 +1,79 @@
+package space.kernel
+
+// Darwin personality stub (Mach/BSD subset demo only).
+// Not a full ABI — maps a few BSD-ish call numbers onto Space primitives.
+
+const DARWIN-SYS-WRITE = 4
+const DARWIN-SYS-GETPID = 20
+const DARWIN-SYS-EXIT = 1
+
+var darwin-ready: Int = 0
+
+fn darwin-init() -> void {
+  if darwin-ready != 0 {
+    return
+  }
+  darwin-ready = 1
+  return
+}
+
+// Tiny dispatch table: write -> serial, getpid -> current-task, exit -> status only.
+fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
+  if num == DARWIN-SYS-WRITE {
+    let fd = a0
+    let buf = a1
+    let len = a2
+    if fd == 1 || fd == 2 {
+      let i = 0
+      while i < len {
+        serial-put(port, load8(buf + i))
+        i = i + 1
+      }
+      return len
+    }
+    return -1
+  }
+  if num == DARWIN-SYS-GETPID {
+    return current-task
+  }
+  if num == DARWIN-SYS-EXIT {
+    // Demo only: do not halt the kernel.
+    return a0
+  }
+  return -1
+}
+
+fn darwin-demo(port: Int) -> void {
+  if darwin-ready == 0 {
+    darwin-init()
+  }
+  serial-write-cstr(port, "darwin: Mach/BSD subset personality registered (stub)")
+  serial-nl(port)
+
+  let msg = "  hello from darwin personality (write)\n"
+  let mlen = 0
+  while load8(msg + mlen) != 0 {
+    mlen = mlen + 1
+  }
+  let wrc = darwin-dispatch(port, DARWIN-SYS-WRITE, 1, msg, mlen)
+  serial-write-cstr(port, "darwin: write(1, msg, ")
+  serial-write-dec-wide(port, mlen)
+  serial-write-cstr(port, ") = ")
+  serial-write-dec-wide(port, wrc)
+  serial-nl(port)
+
+  let pid = darwin-dispatch(port, DARWIN-SYS-GETPID, 0, 0, 0)
+  serial-write-cstr(port, "darwin: getpid() = ")
+  serial-write-dec-wide(port, pid)
+  serial-nl(port)
+
+  let erc = darwin-dispatch(port, DARWIN-SYS-EXIT, 0, 0, 0)
+  serial-write-cstr(port, "darwin: exit(0) mapped (demo status ")
+  serial-write-dec-wide(port, erc)
+  serial-write-cstr(port, ", no halt)")
+  serial-nl(port)
+
+  serial-write-cstr(port, "darwin: personality demo complete")
+  serial-nl(port)
+  return
+}

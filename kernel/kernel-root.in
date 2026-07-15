@@ -31,6 +31,10 @@ import "../components/sci-loader.in"
 import "../components/process.in"
 // Linux personality layer (POSIX syscall translation).
 import "../components/linux.in"
+// Darwin personality stub (Mach/BSD subset demo).
+import "../components/darwin.in"
+// Windows personality stub (Win32 subset demo).
+import "../components/windows.in"
 // VBE framebuffer driver (drawing primitives + bitmap font).
 import "../components/fb.in"
 // PS/2 mouse driver (polling).
@@ -300,6 +304,16 @@ fn kernel-entry(mb-info: Int) -> Int {
   linux-init()
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
+    serial-nl(port)
+  }
+  darwin-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Darwin personality stub registered (Mach/BSD subset demo)")
+    serial-nl(port)
+  }
+  win-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Windows personality stub registered (Win32 subset demo)")
     serial-nl(port)
   }
   if volume-ready != 0 {

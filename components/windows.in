@@ -1,0 +1,81 @@
+package space.kernel
+
+// Windows personality stub (Win32 subset demo only).
+// Not a full ABI — maps a few Win32-like calls onto Space primitives.
+
+const WIN-CALL-WRITEFILE = 1
+const WIN-CALL-GETCURRENTPROCESSID = 2
+const WIN-CALL-EXITPROCESS = 3
+
+var win-ready: Int = 0
+
+fn win-init() -> void {
+  if win-ready != 0 {
+    return
+  }
+  win-ready = 1
+  return
+}
+
+// Tiny dispatch table: WriteFile -> serial, GetCurrentProcessId -> current-task,
+// ExitProcess -> status only (demo, no halt).
+fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
+  if num == WIN-CALL-WRITEFILE {
+    let handle = a0
+    let buf = a1
+    let len = a2
+    // STD_OUTPUT_HANDLE / STD_ERROR_HANDLE stand-ins
+    if handle == 1 || handle == 2 {
+      let i = 0
+      while i < len {
+        serial-put(port, load8(buf + i))
+        i = i + 1
+      }
+      return len
+    }
+    return 0
+  }
+  if num == WIN-CALL-GETCURRENTPROCESSID {
+    return current-task
+  }
+  if num == WIN-CALL-EXITPROCESS {
+    // Demo only: do not halt the kernel.
+    return a0
+  }
+  return 0
+}
+
+fn win-demo(port: Int) -> void {
+  if win-ready == 0 {
+    win-init()
+  }
+  serial-write-cstr(port, "windows: Win32 subset personality registered (stub)")
+  serial-nl(port)
+
+  let msg = "  hello from windows personality (WriteFile)\n"
+  let mlen = 0
+  while load8(msg + mlen) != 0 {
+    mlen = mlen + 1
+  }
+  let wrc = win-dispatch(port, WIN-CALL-WRITEFILE, 1, msg, mlen)
+  serial-write-cstr(port, "windows: WriteFile(stdout, msg, ")
+  serial-write-dec-wide(port, mlen)
+  serial-write-cstr(port, ") = ")
+  serial-write-dec-wide(port, wrc)
+  serial-nl(port)
+
+  let pid = win-dispatch(port, WIN-CALL-GETCURRENTPROCESSID, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetCurrentProcessId() = ")
+  serial-write-dec-wide(port, pid)
+  serial-nl(port)
+
+  let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0)
+  serial-write-cstr(port, "windows: ExitProcess(0) mapped (demo status ")
+  serial-write-dec-wide(port, erc)
+  serial-write-cstr(port, ", no halt)")
+  serial-nl(port)
+
+  serial-write-cstr(port, "windows: personality demo complete")
+  serial-nl(port)
+  return
+}

@@ -264,7 +264,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -591,6 +591,10 @@ fn shell(port: Int) -> void {
       linux-demo(port)
     } else if line-eq("linuxelf") != 0 {
       linux-elf-probe(port)
+    } else if line-eq("darwin") != 0 {
+      darwin-demo(port)
+    } else if line-eq("windows") != 0 {
+      win-demo(port)
     } else if line-eq("fetch") != 0 {
       diagnostics-fetch(port)
     } else if line-eq("desktop") != 0 {

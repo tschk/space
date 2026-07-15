@@ -49,8 +49,8 @@ needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
   - [x] Misc syscalls: getcwd, chdir
   - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP ENOSYS)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
-- [ ] Darwin compat layer (Mach/BSD subset)
-- [ ] Windows compat layer (Win32 subset)
+- [x] Darwin compat layer (Mach/BSD subset) — stub personality demos
+- [x] Windows compat layer (Win32 subset) — stub personality demos
 
 ## Phase 6: Interactive Usability
 
