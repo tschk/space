@@ -28,6 +28,7 @@ SCI loader (`hello`/`uecho`), execve SCI from FS, Linux demo, VFS, NVMe volume
 multi-file soak, UDP/TCP data path, DHCP lease, DNS A for dotted names.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
+Linux/Windows/Darwin personality progress: [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
 
 ## Benchmarks
 

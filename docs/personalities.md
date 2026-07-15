@@ -4,6 +4,9 @@ Space nanokernel does not implement foreign kernel ABIs. Personalities are
 translator microservices: a small foreign-shaped call surface maps onto Space
 VFS, process, and serial primitives.
 
+**Progress + milestones:** [`personalities-roadmap.md`](personalities-roadmap.md)
+(branch `feat/personalities`). Verify: `bash scripts/check-personalities.sh`.
+
 ## ReactOS / NT layering (research takeaway)
 
 On real Windows / ReactOS:
