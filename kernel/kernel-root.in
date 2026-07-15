@@ -8,6 +8,10 @@ import "../components/channel.in"
 import "../components/net.in"
 // Minimal socket table over e1000/UDP.
 import "../components/netstack.in"
+// DHCP discover TX helper.
+import "../components/dhcp.in"
+// DNS query TX helper.
+import "../components/dns.in"
 // Memory domain subsystem (Phase 0).
 import "../components/domain.in"
 // NVMe storage driver (PCIe-based, MMIO).

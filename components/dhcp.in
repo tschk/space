@@ -1,0 +1,11 @@
+package space.kernel
+
+// Minimal DHCP client TX: broadcast DISCOVER via e1000 path.
+
+fn dhcp-discover(port: Int) -> Int {
+  let flen = build-dhcp-discover()
+  e1000-tx(flen)
+  serial-write-cstr(port, "dhcp: discover sent")
+  serial-nl(port)
+  return 0
+}

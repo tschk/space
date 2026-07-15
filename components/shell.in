@@ -264,7 +264,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci hello load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend dhcp dns snapshot spawn restore map sci hello load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -318,6 +318,10 @@ fn shell(port: Int) -> void {
         serial-nl(port)
         sock-close(sfd)
       }
+    } else if line-eq("dhcp") != 0 {
+      dhcp-discover(port)
+    } else if line-eq("dns") != 0 {
+      dns-query(port, "space.test")
     } else if line-eq("det") != 0 {
       run-determinism(port)
     } else if line-eq("domain") != 0 {

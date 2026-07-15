@@ -31,6 +31,9 @@ const NET-OP-STORE-MAC = 6
 const NET-OP-GET-MAC = 7
 const NET-OP-RUN = 8
 const NET-OP-SHUTDOWN = 9
+const NET-OP-BUILD-TCP-SYN = 10
+const NET-OP-BUILD-DHCP = 11
+const NET-OP-BUILD-DNS = 12
 
 fn mmio-r32-impl(off: Int) -> Int {
   return load32(nic-mmio + off)
@@ -231,6 +234,132 @@ fn build-udp-impl(payload: Int) -> Int {
   return 14 + iplen
 }
 
+// Ethernet+IPv4+TCP SYN (no options/payload). rip packed as 0xAABBCCDD.
+fn build-tcp-syn-impl(rip: Int, rport: Int) -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let ip = p + 14
+  let iplen = 40
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x06)
+  store8(ip + 12, 10); store8(ip + 13, 0)
+  store8(ip + 14, 2); store8(ip + 15, 15)
+  store8(ip + 16, (rip >> 24) & 0xFF)
+  store8(ip + 17, (rip >> 16) & 0xFF)
+  store8(ip + 18, (rip >> 8) & 0xFF)
+  store8(ip + 19, rip & 0xFF)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let tcp = ip + 20
+  store8(tcp + 0, 0x30); store8(tcp + 1, 0x39)
+  store8(tcp + 2, (rport >> 8) & 0xFF); store8(tcp + 3, rport & 0xFF)
+  store8(tcp + 4, 0x00); store8(tcp + 5, 0x00)
+  store8(tcp + 6, 0x00); store8(tcp + 7, 0x01)
+  store8(tcp + 8, 0x00); store8(tcp + 9, 0x00)
+  store8(tcp + 10, 0x00); store8(tcp + 11, 0x00)
+  store8(tcp + 12, 0x50)
+  store8(tcp + 13, 0x02)
+  store8(tcp + 14, 0xFF); store8(tcp + 15, 0xFF)
+  store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
+  store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
+  return 54
+}
+
+// UDP broadcast DHCP DISCOVER (68->67) with msg-type=1 + end.
+fn build-dhcp-discover-impl() -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, 0xFF) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let ip = p + 14
+  let bootp-len = 240 + 4
+  let iplen = 28 + bootp-len
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x11)
+  store8(ip + 12, 0); store8(ip + 13, 0)
+  store8(ip + 14, 0); store8(ip + 15, 0)
+  store8(ip + 16, 255); store8(ip + 17, 255)
+  store8(ip + 18, 255); store8(ip + 19, 255)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let udp = ip + 20
+  let ulen = 8 + bootp-len
+  store8(udp + 0, 0x00); store8(udp + 1, 68)
+  store8(udp + 2, 0x00); store8(udp + 3, 67)
+  store8(udp + 4, (ulen >> 8) & 0xFF); store8(udp + 5, ulen & 0xFF)
+  store8(udp + 6, 0x00); store8(udp + 7, 0x00)
+  let bootp = udp + 8
+  for i in 0..bootp-len { store8(bootp + i, 0) }
+  store8(bootp + 0, 1)
+  store8(bootp + 1, 1)
+  store8(bootp + 2, 6)
+  store8(bootp + 4, 0x12); store8(bootp + 5, 0x34)
+  store8(bootp + 6, 0x56); store8(bootp + 7, 0x78)
+  store8(bootp + 10, 0x80)
+  net-store-mac-impl(bootp + 28)
+  store8(bootp + 236, 99); store8(bootp + 237, 130)
+  store8(bootp + 238, 83); store8(bootp + 239, 99)
+  store8(bootp + 240, 53); store8(bootp + 241, 1); store8(bootp + 242, 1)
+  store8(bootp + 243, 255)
+  return 14 + iplen
+}
+
+// DNS A query for fixed name space.test -> 10.0.2.3:53.
+fn build-dns-query-impl() -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let qlen = 12 + 12 + 4
+  let ip = p + 14
+  let iplen = 28 + qlen
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x11)
+  store8(ip + 12, 10); store8(ip + 13, 0)
+  store8(ip + 14, 2); store8(ip + 15, 15)
+  store8(ip + 16, 10); store8(ip + 17, 0)
+  store8(ip + 18, 2); store8(ip + 19, 3)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let udp = ip + 20
+  let ulen = 8 + qlen
+  store8(udp + 0, 0x30); store8(udp + 1, 0x39)
+  store8(udp + 2, 0x00); store8(udp + 3, 53)
+  store8(udp + 4, (ulen >> 8) & 0xFF); store8(udp + 5, ulen & 0xFF)
+  store8(udp + 6, 0x00); store8(udp + 7, 0x00)
+  let dns = udp + 8
+  store8(dns + 0, 0x12); store8(dns + 1, 0x34)
+  store8(dns + 2, 0x01); store8(dns + 3, 0x00)
+  store8(dns + 4, 0x00); store8(dns + 5, 0x01)
+  store8(dns + 6, 0x00); store8(dns + 7, 0x00)
+  store8(dns + 8, 0x00); store8(dns + 9, 0x00)
+  store8(dns + 10, 0x00); store8(dns + 11, 0x00)
+  store8(dns + 12, 5)
+  store8(dns + 13, 115); store8(dns + 14, 112); store8(dns + 15, 97)
+  store8(dns + 16, 99); store8(dns + 17, 101)
+  store8(dns + 18, 4)
+  store8(dns + 19, 116); store8(dns + 20, 101); store8(dns + 21, 115)
+  store8(dns + 22, 116)
+  store8(dns + 23, 0)
+  store8(dns + 24, 0x00); store8(dns + 25, 0x01)
+  store8(dns + 26, 0x00); store8(dns + 27, 0x01)
+  return 14 + iplen
+}
+
 fn net-get-rx-len-impl() -> Int {
   return nic-rx-len
 }
@@ -343,6 +472,17 @@ fn network-component-entry(cap-info: Int) -> Int {
     } else if op == NET-OP-BUILD-UDP {
       let payload = chan-cross-recv-impl(req-page)
       let len = build-udp-impl(payload)
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-TCP-SYN {
+      let rip = chan-cross-recv-impl(req-page)
+      let rport = chan-cross-recv-impl(req-page)
+      let len = build-tcp-syn-impl(rip, rport)
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-DHCP {
+      let len = build-dhcp-discover-impl()
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-DNS {
+      let len = build-dns-query-impl()
       chan-cross-send-impl(resp-page, len)
     } else if op == NET-OP-STORE-MAC {
       let p = chan-cross-recv-impl(req-page)

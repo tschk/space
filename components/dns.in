@@ -1,0 +1,12 @@
+package space.kernel
+
+// Minimal DNS client TX: A query for space.test via e1000 path.
+
+fn dns-query(port: Int, name-cstr: Int) -> Int {
+  // Fixed QNAME space.test in builder; name-cstr reserved for later.
+  let flen = build-dns-query()
+  e1000-tx(flen)
+  serial-write-cstr(port, "dns: query sent")
+  serial-nl(port)
+  return 0
+}

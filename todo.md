@@ -8,7 +8,7 @@ the Linux-personality demo, VFS, time service, network component RPC, and SCI
 allow/deny policy. Display and input SCI components have automated QEMU proof.
 NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume RPC
 and POSIX volume-ready branches exist; full SparkFS-on-Volume product path still
-needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
+needs deeper soak. Netstack exposes UDP sockets; TCP SYN-only connect path.
 
 ## Phase 1: Storage
 
@@ -47,7 +47,7 @@ needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
   - [x] Process syscalls: fork, exec, wait, exit, getpid, kill
   - [x] Memory syscalls: mmap, munmap, brk
   - [x] Misc syscalls: getcwd, chdir
-  - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP ENOSYS)
+  - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP SYN-only connect)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
 - [x] Darwin compat layer (Mach/BSD subset) — stub personality demos
 - [x] Windows compat layer (Win32 subset) — stub personality demos
@@ -67,7 +67,7 @@ needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
 
 ## Phase 7: Networking Stack
 
-- [ ] TCP/IP stack (SYN/ACK, sliding window, retransmit)
-- [x] Socket API for user programs (UDP over e1000; TCP stubs)
-- [ ] DHCP client
-- [ ] DNS resolver
+- [x] TCP/IP stack (SYN-only connect TX; no ACK/window/retransmit yet)
+- [x] Socket API for user programs (UDP over e1000; TCP SYN_SENT/LISTEN)
+- [x] DHCP client (DISCOVER TX)
+- [x] DNS resolver (A query TX for space.test)

@@ -19,6 +19,9 @@ const SOCK-TYPE-TCP = 2
 const SOCK-STATE-FREE = 0
 const SOCK-STATE-OPEN = 1
 const SOCK-STATE-BOUND = 2
+const SOCK-STATE-LISTEN = 3
+const SOCK-STATE-SYN-SENT = 4
+const SOCK-STATE-ESTABLISHED = 5
 
 const AF-INET = 2
 const SOCK-DGRAM = 2
@@ -152,15 +155,43 @@ fn sock-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
 }
 
 fn sock-listen(fd: Int, backlog: Int) -> Int {
-  return -38
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-TCP {
+    return -1
+  }
+  store64(base + SOCK-OFF-STATE, SOCK-STATE-LISTEN)
+  return 0
 }
 
 fn sock-accept(fd: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-STATE) != SOCK-STATE-LISTEN {
+    return -1
+  }
   return -38
 }
 
 fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
-  return -38
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-TCP {
+    return -1
+  }
+  store32(base + SOCK-OFF-RIP, ip)
+  store32(base + SOCK-OFF-RPORT, port & 0xFFFF)
+  store64(base + SOCK-OFF-STATE, SOCK-STATE-SYN-SENT)
+  // ponytail: SYN-only, no handshake wait / ACK path yet
+  let flen = build-tcp-syn(ip, port & 0xFFFF)
+  e1000-tx(flen)
+  return 0
 }
 
 fn sock-close(fd: Int) -> Int {

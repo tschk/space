@@ -150,6 +150,32 @@ fn build-udp(payload: Int) -> Int {
   return net-chan-recv(net-resp-ch)
 }
 
+fn build-tcp-syn(rip: Int, rport: Int) -> Int {
+  if net-component-started == 0 {
+    return build-tcp-syn-impl(rip, rport)
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-TCP-SYN)
+  net-chan-send(net-req-ch, rip)
+  net-chan-send(net-req-ch, rport)
+  return net-chan-recv(net-resp-ch)
+}
+
+fn build-dhcp-discover() -> Int {
+  if net-component-started == 0 {
+    return build-dhcp-discover-impl()
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-DHCP)
+  return net-chan-recv(net-resp-ch)
+}
+
+fn build-dns-query() -> Int {
+  if net-component-started == 0 {
+    return build-dns-query-impl()
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-DNS)
+  return net-chan-recv(net-resp-ch)
+}
+
 fn net-store-mac(p: Int) -> void {
   if net-component-started == 0 {
     net-store-mac-impl(p)
