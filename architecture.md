@@ -210,7 +210,7 @@ Implemented POSIX syscalls:
 | 12      | brk       | program break tracking                 |
 | 39      | getpid    | current_task                           |
 | 57      | fork      | proc_create (simplified)               |
-| 59      | execve    | ENOSYS (not yet implemented)           |
+| 59      | execve    | load SCI/ELF image from volume or sparkfs |
 | 60      | exit      | halt                                   |
 | 61      | wait4     | proc_wait                              |
 | 62      | kill      | proc_kill                              |

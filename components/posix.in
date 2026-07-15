@@ -274,7 +274,8 @@ fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
 }
 
 fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  if size < 64 {
+  // SCI header is 32 bytes; ELF probe needs more and checks itself.
+  if size < 32 {
     return LINUX-ENOEXEC
   }
   let magic = load64(image + 0)
@@ -306,21 +307,17 @@ fn posix-sys-execve(path: Int, argv: Int, envp: Int) -> Int {
     let addr = sf-inode-addr(ino)
     file-size = load64(addr + SF-IN-SIZE)
   }
-  if file-size < 64 {
+  if file-size < 32 {
     return LINUX-ENOEXEC
   }
-  let buf = load-arena-alloc(file-size)
-  let got = 0
-  if volume-ready != 0 {
-    got = volume-rpc-read-file(path, buf, file-size)
-  } else {
-    got = sparkfs-read(path, buf, file-size)
-  }
-  if got < file-size {
+  let pages = (file-size + 4095) / 4096
+  let buf = load-arena-alloc(pages * 4096)
+  let got = fs-read-file(path, buf)
+  if got < 0 || got < file-size {
     return LINUX-EIO
   }
   let port = com1()
-  return posix-exec-image(port, buf, file-size, path)
+  return posix-exec-image(port, buf, got, path)
 }
 
 fn posix-sys-wait4(pid: Int, wstatus: Int, options: Int, rusage: Int) -> Int {

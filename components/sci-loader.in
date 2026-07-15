@@ -508,9 +508,9 @@ fn volume-rpc-write-file(path: Int, buf: Int, size: Int) -> Int {
 }
 
 fn sci-load(port: Int, load-addr: Int) -> Int {
-  if load-addr == 0 || load-addr > 0x200000 {
-    serial-write-cstr(port, "  SCI: load address out of range 0x")
-    serial-write-hex(port, load-addr)
+  // Heap buffers (execve / load-arena) sit above the fixed boot SCI slots.
+  if load-addr == 0 {
+    serial-write-cstr(port, "  SCI: null load address")
     serial-nl(port)
     return -1
   }

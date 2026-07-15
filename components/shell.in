@@ -264,7 +264,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -334,6 +334,17 @@ fn shell(port: Int) -> void {
           serial-write-cstr(port, "  tcp: connect ok fd=")
           serial-write-dec-wide(port, sfd)
           serial-nl(port)
+          // Best-effort data path: HTTP GET may get RST on QEMU user net.
+          let req = "GET / HTTP/1.0\r\n\r\n"
+          let sn = sock-send(sfd, req, 18)
+          serial-write-cstr(port, "  tcp: sent ")
+          serial-write-dec-wide(port, sn)
+          serial-nl(port)
+          let rbuf = frame-alloc()
+          let rn = sock-recv(sfd, rbuf, 512)
+          serial-write-cstr(port, "  tcp: recv ")
+          serial-write-dec-wide(port, rn)
+          serial-nl(port)
         } else {
           serial-write-cstr(port, "  tcp: connect failed")
           serial-nl(port)
@@ -343,8 +354,11 @@ fn shell(port: Int) -> void {
       }
     } else if line-eq("dhcp") != 0 {
       dhcp-discover(port)
+    } else if line-prefix("dns ") >= 0 {
+      let dpr = line-prefix("dns ")
+      dns-query(port, line + dpr)
     } else if line-eq("dns") != 0 {
-      dns-query(port, "space.test")
+      dns-query(port, 0)
     } else if line-eq("det") != 0 {
       run-determinism(port)
     } else if line-eq("domain") != 0 {
@@ -403,6 +417,12 @@ fn shell(port: Int) -> void {
       sci-load(port, 0x190000)
     } else if line-eq("uecho") != 0 {
       sci-load(port, 0x1b0000)
+    } else if line-prefix("exec ") >= 0 {
+      let arg = line-prefix("exec ")
+      let rc = posix-sys-execve(line + arg, 0, 0)
+      serial-write-cstr(port, "  exec: returned ")
+      serial-write-dec-wide(port, rc)
+      serial-nl(port)
     } else if line-eq("map") != 0 {
       let frame = frame-alloc()
       map-page(0x40000000, frame, 3)
