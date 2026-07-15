@@ -52,5 +52,7 @@ wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
 
 grep -qE "CreateFile|WriteFile" "$SERIAL_LOG"
+grep -qE "SetFilePointer|MoveFile" "$SERIAL_LOG"
+# GetStdHandle optional deeper marker
 grep -qF "windows: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Windows personality demo (CreateFile/WriteFile path)"
+echo "PASS: Windows personality demo (CreateFile/WriteFile/SetFilePointer path)"

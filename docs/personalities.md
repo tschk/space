@@ -35,6 +35,10 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 8. `Sleep` — small pause loop (shell path cannot `thr-yield`)
 9. `GetCurrentThreadId` → `current-task`
 10. `DeleteFileA` — `fs-delete` / volume RPC
+11. `SetFilePointer` — `vfs-lseek(vfd, off, whence)` (0=SET)
+12. `GetStdHandle` — `-10`→0 stdin, `-11`→1 stdout, `-12`→2 stderr
+13. `MoveFileA` — `fs-rename`; return 1/0
+14. `FlushFileBuffers` — no-op success (1) for open handle
 
 Handle table: max 16 slots; 1/2 reserved as stdout/stderr; 3..15 hold VFS fds.
 
@@ -49,7 +53,7 @@ tasks, and VM; BSD supplies process model, VFS, networking, POSIX-ish APIs.
 
 Space Darwin personality follows that split:
 
-- Implement a **BSD-shaped** call surface first (open/read/write/close/unlink/getpid/kill).
+- Implement a **BSD-shaped** call surface first (open/read/write/close/unlink/chdir/getpid/kill/mkdir/fstat/getcwd/lseek).
 - Keep **Mach** as explicit stubs (`task_self` → 1, `mach_msg` → -1) until a real
   port/message fabric exists.
 
@@ -61,8 +65,13 @@ BSD numbers used (classic / xnu-adjacent, documented in `darwin.in`):
 | 3 / 4 | read / write | VFS + serial stdio |
 | 5 / 6 | open / close | `vfs-open` / `vfs-close` |
 | 10 | unlink | `fs-delete` |
+| 12 | chdir | `posix-sys-chdir` |
 | 20 | getpid | `current-task` |
 | 37 | kill | `proc-signal` |
+| 136 | mkdir | `fs-mkdir` |
+| 189 | fstat | VFS path + `fs-stat` size into buf |
+| 192 | getcwd | `posix-sys-getcwd` (Space-doc'd; FreeBSD 326) |
+| 199 | lseek | `vfs-lseek` |
 | 0x1000 | mach task_self | constant 1 |
 | 0x1001 | mach_msg | -1 |
 

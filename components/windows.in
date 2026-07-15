@@ -15,6 +15,10 @@ package space.kernel
 //   8  WIN-Sleep         → short pause loop (no thr-yield from shell)
 //   9  WIN-GetCurrentThreadId → current-task
 //  10  WIN-DeleteFileA   → fs-delete / volume
+//  11  WIN-SetFilePointer → vfs-lseek(vfd, off, whence); a0=handle a1=offset a2=whence(0=SET)
+//  12  WIN-GetStdHandle  → a0 nStdHandle: -10=stdin→0, -11=stdout→1, -12=stderr→2
+//  13  WIN-MoveFileA     → fs-rename; return 1/0
+//  14  WIN-FlushFileBuffers → 1 no-op success for open handle
 
 const WIN-CALL-WRITEFILE = 1
 const WIN-CALL-GETCURRENTPROCESSID = 2
@@ -26,6 +30,10 @@ const WIN-CALL-GETFILESIZE = 7
 const WIN-CALL-SLEEP = 8
 const WIN-CALL-GETCURRENTTHREADID = 9
 const WIN-CALL-DELETEFILEA = 10
+const WIN-CALL-SETFILEPOINTER = 11
+const WIN-CALL-GETSTDHANDLE = 12
+const WIN-CALL-MOVEFILEA = 13
+const WIN-CALL-FLUSHFILEBUFFERS = 14
 
 const WIN-MAX-HANDLES = 16
 const WIN-INVALID-HANDLE = 0
@@ -216,6 +224,50 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     return 1
   }
+  if num == WIN-CALL-SETFILEPOINTER {
+    let handle = a0
+    let offset = a1
+    let whence = a2
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return -1
+    }
+    return vfs-lseek(vfd, offset, whence)
+  }
+  if num == WIN-CALL-GETSTDHANDLE {
+    // Space-local: -10 stdin→0, -11 stdout→1, -12 stderr→2
+    if a0 == -10 {
+      return 0
+    }
+    if a0 == -11 {
+      return 1
+    }
+    if a0 == -12 {
+      return 2
+    }
+    return WIN-INVALID-HANDLE
+  }
+  if num == WIN-CALL-MOVEFILEA {
+    let oldp = a0
+    let newp = a1
+    let rc = fs-rename(oldp, newp)
+    if rc != 0 {
+      return 0
+    }
+    return 1
+  }
+  if num == WIN-CALL-FLUSHFILEBUFFERS {
+    let handle = a0
+    if handle == 1 || handle == 2 {
+      return 1
+    }
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return 0
+    }
+    // No-op success: VFS writes are already durable enough for this subset.
+    return 1
+  }
   return 0
 }
 
@@ -289,6 +341,51 @@ fn win-demo(port: Int) -> void {
     win-dispatch(port, WIN-CALL-CLOSEHANDLE, rh, 0, 0, 0)
   }
 
+  // Patch mid-file, rename, std handle write, flush (subset only).
+  let ph = win-dispatch(port, WIN-CALL-CREATEFILEA, fname, WIN-ACCESS-WRITE, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(win-hello.txt, write reopen) = ")
+  serial-write-dec-wide(port, ph)
+  serial-nl(port)
+  if ph != WIN-INVALID-HANDLE {
+    let spos = win-dispatch(port, WIN-CALL-SETFILEPOINTER, ph, 8, 0, 0)
+    serial-write-cstr(port, "windows: SetFilePointer(handle, 8, SET) = ")
+    serial-write-dec-wide(port, spos)
+    serial-nl(port)
+    let patch = "PATCH"
+    let plen = 5
+    let pwrc = win-dispatch(port, WIN-CALL-WRITEFILE, ph, patch, plen, 0)
+    serial-write-cstr(port, "windows: WriteFile(handle, PATCH, 5) = ")
+    serial-write-dec-wide(port, pwrc)
+    serial-nl(port)
+    let frc = win-dispatch(port, WIN-CALL-FLUSHFILEBUFFERS, ph, 0, 0, 0)
+    serial-write-cstr(port, "windows: FlushFileBuffers(handle) = ")
+    serial-write-dec-wide(port, frc)
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, ph, 0, 0, 0)
+  }
+
+  let fname2 = "win-hello2.txt"
+  let mrc = win-dispatch(port, WIN-CALL-MOVEFILEA, fname, fname2, 0, 0)
+  serial-write-cstr(port, "windows: MoveFileA(win-hello.txt, win-hello2.txt) = ")
+  serial-write-dec-wide(port, mrc)
+  serial-nl(port)
+
+  let stdout-h = win-dispatch(port, WIN-CALL-GETSTDHANDLE, -11, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetStdHandle(STD_OUTPUT_HANDLE) = ")
+  serial-write-dec-wide(port, stdout-h)
+  serial-nl(port)
+  let smsg = "  hello via GetStdHandle+WriteFile\n"
+  let slen = 0
+  while load8(smsg + slen) != 0 {
+    slen = slen + 1
+  }
+  let swrc = win-dispatch(port, WIN-CALL-WRITEFILE, stdout-h, smsg, slen, 0)
+  serial-write-cstr(port, "windows: WriteFile(GetStdHandle, msg, ")
+  serial-write-dec-wide(port, slen)
+  serial-write-cstr(port, ") = ")
+  serial-write-dec-wide(port, swrc)
+  serial-nl(port)
+
   let pid = win-dispatch(port, WIN-CALL-GETCURRENTPROCESSID, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: GetCurrentProcessId() = ")
   serial-write-dec-wide(port, pid)
@@ -303,10 +400,12 @@ fn win-demo(port: Int) -> void {
   serial-write-cstr(port, "windows: Sleep(1) mapped (pause loop)")
   serial-nl(port)
 
-  let drc = win-dispatch(port, WIN-CALL-DELETEFILEA, fname, 0, 0, 0)
-  serial-write-cstr(port, "windows: DeleteFileA(win-hello.txt) = ")
+  let drc = win-dispatch(port, WIN-CALL-DELETEFILEA, fname2, 0, 0, 0)
+  serial-write-cstr(port, "windows: DeleteFileA(win-hello2.txt) = ")
   serial-write-dec-wide(port, drc)
   serial-nl(port)
+  // Cleanup either name if rename failed mid-demo.
+  win-dispatch(port, WIN-CALL-DELETEFILEA, fname, 0, 0, 0)
 
   let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: ExitProcess(0) mapped (demo status ")
