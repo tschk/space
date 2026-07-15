@@ -37,7 +37,7 @@ import "../components/process.in"
 import "../components/linux.in"
 // Darwin personality stub (Mach/BSD subset demo).
 import "../components/darwin.in"
-// Windows personality stub (Win32 subset demo).
+// Windows personality translator (Win32/NT-shaped subset, not full ABI).
 import "../components/windows.in"
 // VBE framebuffer driver (drawing primitives + bitmap font).
 import "../components/fb.in"
@@ -317,7 +317,7 @@ fn kernel-entry(mb-info: Int) -> Int {
   }
   win-init()
   if boot-quiet == 0 {
-    serial-write-cstr(port, "space: Windows personality stub registered (Win32 subset demo)")
+    serial-write-cstr(port, "space: Windows personality registered (Win32 subset translator)")
     serial-nl(port)
   }
   if volume-ready != 0 {

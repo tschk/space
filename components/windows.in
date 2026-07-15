@@ -1,30 +1,107 @@
 package space.kernel
 
-// Windows personality stub (Win32 subset demo only).
-// Not a full ABI — maps a few Win32-like calls onto Space primitives.
+// Windows personality — translator microservice (Win32/NT-shaped surface only).
+// Not a kernel ABI and not full Win32/NT. Pattern matches linux.in → posix.in:
+// map a small call surface onto Space VFS / process / serial.
+//
+// Space-local call numbers (not real NT syscall numbers):
+//   1  WIN-NtWriteFile / WriteFile
+//   2  WIN-GetCurrentProcessId
+//   3  WIN-ExitProcess
+//   4  WIN-CreateFileA   (path, access: 0=read 1=write/create)
+//   5  WIN-ReadFile
+//   6  WIN-CloseHandle
+//   7  WIN-GetFileSize
+//   8  WIN-Sleep         → short pause loop (no thr-yield from shell)
+//   9  WIN-GetCurrentThreadId → current-task
+//  10  WIN-DeleteFileA   → fs-delete / volume
 
 const WIN-CALL-WRITEFILE = 1
 const WIN-CALL-GETCURRENTPROCESSID = 2
 const WIN-CALL-EXITPROCESS = 3
+const WIN-CALL-CREATEFILEA = 4
+const WIN-CALL-READFILE = 5
+const WIN-CALL-CLOSEHANDLE = 6
+const WIN-CALL-GETFILESIZE = 7
+const WIN-CALL-SLEEP = 8
+const WIN-CALL-GETCURRENTTHREADID = 9
+const WIN-CALL-DELETEFILEA = 10
 
+const WIN-MAX-HANDLES = 16
+const WIN-INVALID-HANDLE = 0
+const WIN-ACCESS-READ = 0
+const WIN-ACCESS-WRITE = 1
+
+// Handle table: slot 0 unused/free marker space, 1=stdout, 2=stderr reserved.
+// Slots 3..15 store a VFS fd (or 0 if free).
 var win-ready: Int = 0
+var win-handles: Int = 0
 
 fn win-init() -> void {
   if win-ready != 0 {
     return
   }
+  win-handles = alloc(WIN-MAX-HANDLES * 8)
+  let i = 0
+  while i < WIN-MAX-HANDLES {
+    store64(win-handles + i * 8, 0)
+    i = i + 1
+  }
+  // Reserved console handles (no VFS fd backing).
+  store64(win-handles + 1 * 8, 1)
+  store64(win-handles + 2 * 8, 2)
   win-ready = 1
   return
 }
 
-// Tiny dispatch table: WriteFile -> serial, GetCurrentProcessId -> current-task,
-// ExitProcess -> status only (demo, no halt).
-fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
+fn win-handle-alloc(vfd: Int) -> Int {
+  let i = 3
+  while i < WIN-MAX-HANDLES {
+    if load64(win-handles + i * 8) == 0 {
+      store64(win-handles + i * 8, vfd)
+      return i
+    }
+    i = i + 1
+  }
+  return WIN-INVALID-HANDLE
+}
+
+fn win-handle-vfd(handle: Int) -> Int {
+  if handle < 3 {
+    return -1
+  }
+  if handle >= WIN-MAX-HANDLES {
+    return -1
+  }
+  let v = load64(win-handles + handle * 8)
+  if v == 0 {
+    return -1
+  }
+  return v
+}
+
+fn win-handle-free(handle: Int) -> Int {
+  if handle < 3 {
+    return 0
+  }
+  if handle >= WIN-MAX-HANDLES {
+    return -1
+  }
+  if load64(win-handles + handle * 8) == 0 {
+    return -1
+  }
+  store64(win-handles + handle * 8, 0)
+  return 0
+}
+
+fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
+  if win-ready == 0 {
+    win-init()
+  }
   if num == WIN-CALL-WRITEFILE {
     let handle = a0
     let buf = a1
     let len = a2
-    // STD_OUTPUT_HANDLE / STD_ERROR_HANDLE stand-ins
     if handle == 1 || handle == 2 {
       let i = 0
       while i < len {
@@ -33,7 +110,15 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
       }
       return len
     }
-    return 0
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return 0
+    }
+    let n = vfs-write(vfd, buf, len)
+    if n < 0 {
+      return 0
+    }
+    return n
   }
   if num == WIN-CALL-GETCURRENTPROCESSID {
     return current-task
@@ -42,6 +127,95 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int) -> Int {
     // Demo only: do not halt the kernel.
     return a0
   }
+  if num == WIN-CALL-CREATEFILEA {
+    let path = a0
+    let access = a1
+    let flags = VFS-O-RDONLY
+    if access == WIN-ACCESS-WRITE {
+      flags = VFS-O-RDWR | VFS-O-CREAT
+    }
+    let vfd = vfs-open(path, flags)
+    if vfd < 0 {
+      return WIN-INVALID-HANDLE
+    }
+    let h = win-handle-alloc(vfd)
+    if h == WIN-INVALID-HANDLE {
+      vfs-close(vfd)
+      return WIN-INVALID-HANDLE
+    }
+    return h
+  }
+  if num == WIN-CALL-READFILE {
+    let handle = a0
+    let buf = a1
+    let len = a2
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return 0
+    }
+    let n = vfs-read(vfd, buf, len)
+    if n < 0 {
+      return 0
+    }
+    return n
+  }
+  if num == WIN-CALL-CLOSEHANDLE {
+    let handle = a0
+    if handle == 1 || handle == 2 {
+      return 1
+    }
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return 0
+    }
+    vfs-close(vfd)
+    win-handle-free(handle)
+    return 1
+  }
+  if num == WIN-CALL-GETFILESIZE {
+    let handle = a0
+    let vfd = win-handle-vfd(handle)
+    if vfd < 0 {
+      return 0
+    }
+    if vfs-fd-valid(vfd) == 0 {
+      return 0
+    }
+    let base = vfs-fd-table + vfd * 32
+    let path = load64(base + 0)
+    let sz = vfs-sparkfs-file-size(path)
+    if sz < 0 {
+      return 0
+    }
+    return sz
+  }
+  if num == WIN-CALL-SLEEP {
+    // Shell/demo path is not thr- worker stack: thr-yield ctxsw faults.
+    // Small busy pause only (honest Sleep stand-in).
+    let n = a0
+    if n < 1 {
+      n = 1
+    }
+    if n > 64 {
+      n = 64
+    }
+    let i = 0
+    while i < n * 256 {
+      i = i + 1
+    }
+    return 0
+  }
+  if num == WIN-CALL-GETCURRENTTHREADID {
+    return current-task
+  }
+  if num == WIN-CALL-DELETEFILEA {
+    let path = a0
+    let rc = fs-delete(path)
+    if rc != 0 {
+      return 0
+    }
+    return 1
+  }
   return 0
 }
 
@@ -49,27 +223,92 @@ fn win-demo(port: Int) -> void {
   if win-ready == 0 {
     win-init()
   }
-  serial-write-cstr(port, "windows: Win32 subset personality registered (stub)")
+  serial-write-cstr(port, "windows: Win32 subset personality registered (translator)")
   serial-nl(port)
 
-  let msg = "  hello from windows personality (WriteFile)\n"
+  let msg = "  hello from windows personality (WriteFile stdout)\n"
   let mlen = 0
   while load8(msg + mlen) != 0 {
     mlen = mlen + 1
   }
-  let wrc = win-dispatch(port, WIN-CALL-WRITEFILE, 1, msg, mlen)
+  let wrc = win-dispatch(port, WIN-CALL-WRITEFILE, 1, msg, mlen, 0)
   serial-write-cstr(port, "windows: WriteFile(stdout, msg, ")
   serial-write-dec-wide(port, mlen)
   serial-write-cstr(port, ") = ")
   serial-write-dec-wide(port, wrc)
   serial-nl(port)
 
-  let pid = win-dispatch(port, WIN-CALL-GETCURRENTPROCESSID, 0, 0, 0)
+  let fname = "win-hello.txt"
+  let wh = win-dispatch(port, WIN-CALL-CREATEFILEA, fname, WIN-ACCESS-WRITE, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(win-hello.txt, write) = ")
+  serial-write-dec-wide(port, wh)
+  serial-nl(port)
+
+  if wh != WIN-INVALID-HANDLE {
+    let content = "windows file content"
+    let clen = 0
+    while load8(content + clen) != 0 {
+      clen = clen + 1
+    }
+    let fwrc = win-dispatch(port, WIN-CALL-WRITEFILE, wh, content, clen, 0)
+    serial-write-cstr(port, "windows: WriteFile(handle, content, ")
+    serial-write-dec-wide(port, clen)
+    serial-write-cstr(port, ") = ")
+    serial-write-dec-wide(port, fwrc)
+    serial-nl(port)
+
+    let fsz = win-dispatch(port, WIN-CALL-GETFILESIZE, wh, 0, 0, 0)
+    serial-write-cstr(port, "windows: GetFileSize(handle) = ")
+    serial-write-dec-wide(port, fsz)
+    serial-nl(port)
+
+    let crc = win-dispatch(port, WIN-CALL-CLOSEHANDLE, wh, 0, 0, 0)
+    serial-write-cstr(port, "windows: CloseHandle(write) = ")
+    serial-write-dec-wide(port, crc)
+    serial-nl(port)
+  }
+
+  let rh = win-dispatch(port, WIN-CALL-CREATEFILEA, fname, WIN-ACCESS-READ, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(win-hello.txt, read) = ")
+  serial-write-dec-wide(port, rh)
+  serial-nl(port)
+
+  if rh != WIN-INVALID-HANDLE {
+    let rbuf = alloc(256)
+    let rlen = win-dispatch(port, WIN-CALL-READFILE, rh, rbuf, 255, 0)
+    serial-write-cstr(port, "windows: ReadFile(handle, buf, 255) = ")
+    serial-write-dec-wide(port, rlen)
+    serial-write-cstr(port, " -> '")
+    let ri = 0
+    while ri < rlen {
+      serial-put(port, load8(rbuf + ri))
+      ri = ri + 1
+    }
+    serial-write-cstr(port, "'")
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, rh, 0, 0, 0)
+  }
+
+  let pid = win-dispatch(port, WIN-CALL-GETCURRENTPROCESSID, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: GetCurrentProcessId() = ")
   serial-write-dec-wide(port, pid)
   serial-nl(port)
 
-  let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0)
+  let tid = win-dispatch(port, WIN-CALL-GETCURRENTTHREADID, 0, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetCurrentThreadId() = ")
+  serial-write-dec-wide(port, tid)
+  serial-nl(port)
+
+  win-dispatch(port, WIN-CALL-SLEEP, 1, 0, 0, 0)
+  serial-write-cstr(port, "windows: Sleep(1) mapped (pause loop)")
+  serial-nl(port)
+
+  let drc = win-dispatch(port, WIN-CALL-DELETEFILEA, fname, 0, 0, 0)
+  serial-write-cstr(port, "windows: DeleteFileA(win-hello.txt) = ")
+  serial-write-dec-wide(port, drc)
+  serial-nl(port)
+
+  let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: ExitProcess(0) mapped (demo status ")
   serial-write-dec-wide(port, erc)
   serial-write-cstr(port, ", no halt)")
