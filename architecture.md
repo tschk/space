@@ -282,25 +282,19 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
 
 ```
 kernel/
-  kernel-root.in        nanokernel root component
-  domain.in             memory domain subsystem
-  channel.in            cross-domain channel fabric
-  net.in                e1000 NIC driver
-  nvme.in               NVMe storage driver
-  usb.in                USB xHCI + HID keyboard driver
-  fs.in                 flat filesystem layer
-  process.in            process abstraction layer
-  libc.in               C standard library equivalent
-  linux.in              Linux personality (POSIX syscalls)
-  fb.in                 VBE framebuffer driver + bitmap font
-  mouse.in              PS/2 mouse driver
-  compositor.in         Wayland-style window manager + desktop
+  kernel-root.in        nanokernel root component + boot entry
   guest-service.in      SCI guest component example
+  v86-kernel.in         32-bit browser demo kernel
 components/
-  pci.in                PCI bus enumeration
-  supervisor.in         component register/activate graph
-  selftest.in           bundled boot diagnostics
-  fs2-*.in              SparkFS implementation modules
+  channel.in            cross-domain channel fabric
+  domain.in             memory domain subsystem
+  serial.in memory.in object.in interrupts.in syscall.in
+  sched.in process.in shell.in libc.in linux.in vfs.in
+  net.in nvme.in usb.in fb.in mouse.in compositor.in
+  pci.in filesystem.in fs2-*.in storage.in network.in posix.in
+  supervisor.in preempt.in sci-loader.in selftest.in
+  diagnostics.in determinism.in editor.in time.in
+  display.in input.in volume.in font.in
   volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up

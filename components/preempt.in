@@ -1,0 +1,145 @@
+package space.kernel
+
+var ptasks: Int = 0
+var pcount: Int = 0
+var pcurrent: Int = 0
+var preempt-deadline: Int = 0
+var work-a: Int = 0
+var work-b: Int = 0
+
+const MAX-PREEMPT-COMPS = 8
+var preempt-entry: Int = 0
+var preempt-cap-info: Int = 0
+var preempt-domain: Int = 0
+var preempt-pml4: Int = 0
+var preempt-count: Int = 0
+
+fn build-preempt-task(entry: Int, stack-top: Int, arg: Int) -> Int {
+  let sp = stack-top - 160
+  for i in 0..15 {
+    store64(sp + i * 8, 0)
+  }
+  // The isr_timer_preempt stub pushes RAX,RBX,RCX,RDX,RSI,RDI,RBP,R8-R15 and
+  // pops them in reverse order (R15..RAX), so the saved-register layout is:
+  // sp+0 = R15, sp+8 = R14, ..., sp+72 = RDI, ..., sp+112 = RAX.
+  store64(sp + 72, arg)       // RDI slot: first argument to the entry function
+  store64(sp + 120, entry)    // RIP
+  store64(sp + 128, 0x08)     // CS
+  store64(sp + 136, 0x202)    // RFLAGS (interrupts enabled; component stub cli's before switching)
+  store64(sp + 144, stack-top) // RSP
+  store64(sp + 152, 0x10)     // SS
+  return sp
+}
+
+fn schedule-tick(ctx: Int) -> Int {
+  ticks = ticks + 1
+  outb(0x20, 0x20)
+  store64(ptasks + pcurrent * 8, ctx)
+  pcurrent = (pcurrent + 1) % pcount
+  if preempt-pml4 != 0 {
+    let pml4 = load64(preempt-pml4 + pcurrent * 8)
+    if pml4 != 0 {
+      invoke1(load64(0x4060), pml4)
+    }
+  }
+  return load64(ptasks + pcurrent * 8)
+}
+
+fn preempt-register-component(port: Int, entry: Int, cap-info: Int, domain: Int, stack-top: Int) -> Int {
+  let i = pcount
+  store64(preempt-entry + i * 8, entry)
+  store64(preempt-cap-info + i * 8, cap-info)
+  store64(preempt-domain + i * 8, domain)
+  store64(preempt-pml4 + i * 8, load64(domain-table + domain * 24))
+  let ctx = build-preempt-task(load64(0x4080), stack-top, i)
+  store64(ptasks + i * 8, ctx)
+  pcount = pcount + 1
+  preempt-count = preempt-count + 1
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "  preempt: registered component i=0x")
+    serial-write-hex(port, i)
+    serial-write-cstr(port, " pcount=0x")
+    serial-write-hex(port, pcount)
+    serial-write-cstr(port, " ctx=0x")
+    serial-write-hex(port, ctx)
+    serial-nl(port)
+  }
+  return i
+}
+
+fn preempt-start(port: Int) -> void {
+  ptasks = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  pcount = 1
+  pcurrent = 0
+  preempt-count = 0
+  preempt-entry = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-cap-info = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-domain = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  preempt-pml4 = alloc((MAX-PREEMPT-COMPS + 1) * 8)
+  store64(ptasks, 0)
+  store64(preempt-domain, 0)
+  store64(preempt-pml4, load64(0x40B8))
+  store64(0x40A0, preempt-entry)
+  store64(0x40A8, preempt-cap-info)
+  store64(0x40B0, preempt-pml4)
+  store64(0x40C0, load64(0x40B8))
+  cli()
+  store64(0x4028, schedule-tick)
+  idt-set(32, load64(0x4020))
+  sti()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: preemptive scheduler active")
+    serial-nl(port)
+  }
+  return
+}
+
+fn preempt-worker-a() -> Int {
+  while true {
+    work-a = work-a + 1
+    pause()
+  }
+  return 0
+}
+
+fn preempt-worker-b() -> Int {
+  while true {
+    work-b = work-b + 1
+    pause()
+  }
+  return 0
+}
+
+fn run-preemptive(port: Int) -> void {
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: preemptive scheduler (timer-driven)")
+    serial-nl(port)
+  }
+  ptasks = alloc(3 * 8)
+  pcount = 3
+  pcurrent = 0
+  store64(ptasks + 0, 0)
+  let sa = alloc(16384)
+  let sb = alloc(16384)
+  let ctx-a = build-preempt-task(preempt-worker-a, sa + 16384)
+  let ctx-b = build-preempt-task(preempt-worker-b, sb + 16384)
+  store64(ptasks + 8, ctx-a)
+  store64(ptasks + 16, ctx-b)
+  preempt-deadline = ticks + 2
+  cli()
+  store64(0x4028, schedule-tick)
+  idt-set(32, load64(0x4020))
+  sti()
+  while ticks < preempt-deadline {
+    hlt()
+  }
+  cli()
+  idt-set(32, load64(0x4008))
+  sti()
+  serial-write-cstr(port, "space: preemption ended; worker A iters 0x")
+  serial-write-hex(port, work-a)
+  serial-write-cstr(port, " worker B iters 0x")
+  serial-write-hex(port, work-b)
+  serial-nl(port)
+  return
+}

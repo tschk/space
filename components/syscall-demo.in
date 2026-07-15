@@ -1,0 +1,17 @@
+package space.kernel
+
+fn run-syscall-demo(port: Int) -> void {
+  serial-write-cstr(port, "space: syscall demo -- calling sys_write via int 0x80")
+  serial-nl(port)
+  let demo = load64(0x4078)
+  let msg = "  hello from syscall (int 0x80)!\n"
+  let len = 0
+  while load8(msg + len) != 0 {
+    len = len + 1
+  }
+  let result = invoke2(demo, msg, len)
+  serial-write-cstr(port, "space: sys_write returned 0x")
+  serial-write-hex(port, result)
+  serial-nl(port)
+  return
+}

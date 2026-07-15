@@ -1,6 +1,6 @@
 package space.kernel
 
-import "../components/storage.in"
+import "storage.in"
 
 // Kernel-side stub for the extracted Storage component. The real NVMe driver
 // lives in components/storage.in and runs in its own isolated domain. This file

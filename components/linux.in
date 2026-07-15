@@ -1,6 +1,6 @@
 package space.kernel
 
-import "../components/posix.in"
+import "posix.in"
 
 // Linux personality layer for the Space nanokernel.
 // This file is now a thin dispatch wrapper over the extracted Posix component.

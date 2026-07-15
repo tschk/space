@@ -1,0 +1,990 @@
+package space.display
+
+const FB-FONT-WIDTH = 8
+const FB-FONT-HEIGHT = 8
+var fb-font: Int = 0
+
+fn fb-font-set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
+  let p = fb-font + ch * 8
+  store8(p + 0, r0)
+  store8(p + 1, r1)
+  store8(p + 2, r2)
+  store8(p + 3, r3)
+  store8(p + 4, r4)
+  store8(p + 5, r5)
+  store8(p + 6, r6)
+  store8(p + 7, r7)
+  return
+}
+
+// Initialize the 8x8 bitmap font with a basic ASCII subset.
+fn fb-font-init() -> void {
+  fb-font = alloc(128 * 8)
+  let i = 0
+  while i < 1024 {
+    store8(fb-font + i, 0)
+    i = i + 1
+  }
+  // Space (32)
+  fb-font-set(32, 0, 0, 0, 0, 0, 0, 0, 0)
+  // ! (33)
+  fb-font-set(33, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00)
+  // " (34)
+  fb-font-set(34, 0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // ( (40)
+  fb-font-set(40, 0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00)
+  // ) (41)
+  fb-font-set(41, 0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x18, 0x30, 0x00)
+  // * (42)
+  fb-font-set(42, 0x00, 0x66, 0x3C, 0xFF, 0x3C, 0x66, 0x00, 0x00)
+  // + (43)
+  fb-font-set(43, 0x00, 0x18, 0x18, 0x7E, 0x18, 0x18, 0x00, 0x00)
+  // , (44)
+  fb-font-set(44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // - (45)
+  fb-font-set(45, 0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00)
+  // . (46)
+  fb-font-set(46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // / (47)
+  fb-font-set(47, 0x00, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x70, 0x60)
+  // 0-9 (48-57)
+  fb-font-set(48, 0x3C, 0x66, 0x6E, 0x76, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(49, 0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00)
+  fb-font-set(50, 0x3C, 0x66, 0x06, 0x0C, 0x30, 0x60, 0x7E, 0x00)
+  fb-font-set(51, 0x3C, 0x66, 0x06, 0x1C, 0x06, 0x66, 0x3C, 0x00)
+  fb-font-set(52, 0x0E, 0x1E, 0x36, 0x66, 0x7F, 0x06, 0x06, 0x00)
+  fb-font-set(53, 0x7E, 0x60, 0x7C, 0x06, 0x06, 0x66, 0x3C, 0x00)
+  fb-font-set(54, 0x3C, 0x66, 0x60, 0x7C, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(55, 0x7E, 0x66, 0x0C, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb-font-set(56, 0x3C, 0x66, 0x66, 0x3C, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(57, 0x3C, 0x66, 0x66, 0x3E, 0x06, 0x66, 0x3C, 0x00)
+  // : (58)
+  fb-font-set(58, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00)
+  // ; (59)
+  fb-font-set(59, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30)
+  // < (60)
+  fb-font-set(60, 0x06, 0x0C, 0x18, 0x30, 0x18, 0x0C, 0x06, 0x00)
+  // = (61)
+  fb-font-set(61, 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00)
+  // > (62)
+  fb-font-set(62, 0x60, 0x30, 0x18, 0x0C, 0x18, 0x30, 0x60, 0x00)
+  // ? (63)
+  fb-font-set(63, 0x3C, 0x66, 0x06, 0x0C, 0x18, 0x00, 0x18, 0x00)
+  // A-Z (65-90)
+  fb-font-set(65, 0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00)
+  fb-font-set(66, 0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00)
+  fb-font-set(67, 0x3C, 0x66, 0x60, 0x60, 0x60, 0x66, 0x3C, 0x00)
+  fb-font-set(68, 0x78, 0x6C, 0x66, 0x66, 0x66, 0x6C, 0x78, 0x00)
+  fb-font-set(69, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x7E, 0x00)
+  fb-font-set(70, 0x7E, 0x60, 0x60, 0x78, 0x60, 0x60, 0x60, 0x00)
+  fb-font-set(71, 0x3C, 0x66, 0x60, 0x6E, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(72, 0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00)
+  fb-font-set(73, 0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb-font-set(74, 0x1E, 0x0C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38, 0x00)
+  fb-font-set(75, 0x66, 0x6C, 0x78, 0x70, 0x78, 0x6C, 0x66, 0x00)
+  fb-font-set(76, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x7E, 0x00)
+  fb-font-set(77, 0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00)
+  fb-font-set(78, 0x66, 0x76, 0x7E, 0x7E, 0x6E, 0x66, 0x66, 0x00)
+  fb-font-set(79, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(80, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60, 0x60, 0x00)
+  fb-font-set(81, 0x3C, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x0E, 0x00)
+  fb-font-set(82, 0x7C, 0x66, 0x66, 0x7C, 0x78, 0x6C, 0x66, 0x00)
+  fb-font-set(83, 0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00)
+  fb-font-set(84, 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb-font-set(85, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(86, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb-font-set(87, 0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00)
+  fb-font-set(88, 0x66, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x66, 0x00)
+  fb-font-set(89, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x18, 0x18, 0x00)
+  fb-font-set(90, 0x7E, 0x06, 0x0C, 0x18, 0x30, 0x60, 0x7E, 0x00)
+  // [ (91)
+  fb-font-set(91, 0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00)
+  // ] (93)
+  fb-font-set(93, 0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00)
+  // _ (95)
+  fb-font-set(95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF)
+  // a-z (97-122) -- simplified lowercase (same as uppercase for now)
+  fb-font-set(97, 0x00, 0x00, 0x3C, 0x06, 0x3E, 0x66, 0x3E, 0x00)
+  fb-font-set(98, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00)
+  fb-font-set(99, 0x00, 0x00, 0x3C, 0x60, 0x60, 0x60, 0x3C, 0x00)
+  fb-font-set(100, 0x06, 0x06, 0x3E, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb-font-set(101, 0x00, 0x00, 0x3C, 0x66, 0x7E, 0x60, 0x3C, 0x00)
+  fb-font-set(102, 0x0E, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x18, 0x00)
+  fb-font-set(103, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x3C)
+  fb-font-set(104, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb-font-set(105, 0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb-font-set(106, 0x0C, 0x00, 0x1C, 0x0C, 0x0C, 0x0C, 0x6C, 0x38)
+  fb-font-set(107, 0x60, 0x60, 0x66, 0x6C, 0x78, 0x6C, 0x66, 0x00)
+  fb-font-set(108, 0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00)
+  fb-font-set(109, 0x00, 0x00, 0x66, 0x7F, 0x7F, 0x6B, 0x63, 0x00)
+  fb-font-set(110, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00)
+  fb-font-set(111, 0x00, 0x00, 0x3C, 0x66, 0x66, 0x66, 0x3C, 0x00)
+  fb-font-set(112, 0x00, 0x00, 0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60)
+  fb-font-set(113, 0x00, 0x00, 0x3E, 0x66, 0x66, 0x3E, 0x06, 0x06)
+  fb-font-set(114, 0x00, 0x00, 0x7C, 0x66, 0x60, 0x60, 0x60, 0x00)
+  fb-font-set(115, 0x00, 0x00, 0x3E, 0x60, 0x3C, 0x06, 0x7C, 0x00)
+  fb-font-set(116, 0x18, 0x18, 0x3E, 0x18, 0x18, 0x18, 0x0E, 0x00)
+  fb-font-set(117, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0x3E, 0x00)
+  fb-font-set(118, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00)
+  fb-font-set(119, 0x00, 0x00, 0x63, 0x6B, 0x7F, 0x3F, 0x36, 0x00)
+  fb-font-set(120, 0x00, 0x00, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x00)
+  fb-font-set(121, 0x00, 0x00, 0x66, 0x66, 0x66, 0x3E, 0x0C, 0x38)
+  fb-font-set(122, 0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00)
+  // { (123)
+  fb-font-set(123, 0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00)
+  // } (125)
+  fb-font-set(125, 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00)
+  // | (124)
+  fb-font-set(124, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  // ~ (126)
+  fb-font-set(126, 0x00, 0x00, 0x60, 0x7E, 0x06, 0x00, 0x00, 0x00)
+  // # (35)
+  fb-font-set(35, 0x66, 0x66, 0xFF, 0xFF, 0x66, 0x66, 0xFF, 0xFF)
+  return
+}
+
+fn fb-glyph8(ch: Int, row: Int) -> Int {
+  if ch == 33 && row == 0 { return 0x18 }
+  if ch == 33 && row == 1 { return 0x18 }
+  if ch == 33 && row == 2 { return 0x18 }
+  if ch == 33 && row == 3 { return 0x18 }
+  if ch == 33 && row == 4 { return 0x18 }
+  if ch == 33 && row == 6 { return 0x18 }
+  if ch == 34 && row == 0 { return 0x66 }
+  if ch == 34 && row == 1 { return 0x66 }
+  if ch == 34 && row == 2 { return 0x66 }
+  if ch == 35 && row == 0 { return 0x66 }
+  if ch == 35 && row == 1 { return 0x66 }
+  if ch == 35 && row == 2 { return 0xFF }
+  if ch == 35 && row == 3 { return 0xFF }
+  if ch == 35 && row == 4 { return 0x66 }
+  if ch == 35 && row == 5 { return 0x66 }
+  if ch == 35 && row == 6 { return 0xFF }
+  if ch == 35 && row == 7 { return 0xFF }
+  if ch == 40 && row == 0 { return 0x0C }
+  if ch == 40 && row == 1 { return 0x18 }
+  if ch == 40 && row == 2 { return 0x30 }
+  if ch == 40 && row == 3 { return 0x30 }
+  if ch == 40 && row == 4 { return 0x30 }
+  if ch == 40 && row == 5 { return 0x18 }
+  if ch == 40 && row == 6 { return 0x0C }
+  if ch == 41 && row == 0 { return 0x30 }
+  if ch == 41 && row == 1 { return 0x18 }
+  if ch == 41 && row == 2 { return 0x0C }
+  if ch == 41 && row == 3 { return 0x0C }
+  if ch == 41 && row == 4 { return 0x0C }
+  if ch == 41 && row == 5 { return 0x18 }
+  if ch == 41 && row == 6 { return 0x30 }
+  if ch == 42 && row == 1 { return 0x66 }
+  if ch == 42 && row == 2 { return 0x3C }
+  if ch == 42 && row == 3 { return 0xFF }
+  if ch == 42 && row == 4 { return 0x3C }
+  if ch == 42 && row == 5 { return 0x66 }
+  if ch == 43 && row == 1 { return 0x18 }
+  if ch == 43 && row == 2 { return 0x18 }
+  if ch == 43 && row == 3 { return 0x7E }
+  if ch == 43 && row == 4 { return 0x18 }
+  if ch == 43 && row == 5 { return 0x18 }
+  if ch == 44 && row == 5 { return 0x18 }
+  if ch == 44 && row == 6 { return 0x18 }
+  if ch == 44 && row == 7 { return 0x30 }
+  if ch == 45 && row == 3 { return 0x7E }
+  if ch == 46 && row == 5 { return 0x18 }
+  if ch == 46 && row == 6 { return 0x18 }
+  if ch == 47 && row == 1 { return 0x03 }
+  if ch == 47 && row == 2 { return 0x07 }
+  if ch == 47 && row == 3 { return 0x0E }
+  if ch == 47 && row == 4 { return 0x1C }
+  if ch == 47 && row == 5 { return 0x38 }
+  if ch == 47 && row == 6 { return 0x70 }
+  if ch == 47 && row == 7 { return 0x60 }
+  if ch == 48 && row == 0 { return 0x3C }
+  if ch == 48 && row == 1 { return 0x66 }
+  if ch == 48 && row == 2 { return 0x6E }
+  if ch == 48 && row == 3 { return 0x76 }
+  if ch == 48 && row == 4 { return 0x66 }
+  if ch == 48 && row == 5 { return 0x66 }
+  if ch == 48 && row == 6 { return 0x3C }
+  if ch == 49 && row == 0 { return 0x18 }
+  if ch == 49 && row == 1 { return 0x38 }
+  if ch == 49 && row == 2 { return 0x18 }
+  if ch == 49 && row == 3 { return 0x18 }
+  if ch == 49 && row == 4 { return 0x18 }
+  if ch == 49 && row == 5 { return 0x18 }
+  if ch == 49 && row == 6 { return 0x7E }
+  if ch == 50 && row == 0 { return 0x3C }
+  if ch == 50 && row == 1 { return 0x66 }
+  if ch == 50 && row == 2 { return 0x06 }
+  if ch == 50 && row == 3 { return 0x0C }
+  if ch == 50 && row == 4 { return 0x30 }
+  if ch == 50 && row == 5 { return 0x60 }
+  if ch == 50 && row == 6 { return 0x7E }
+  if ch == 51 && row == 0 { return 0x3C }
+  if ch == 51 && row == 1 { return 0x66 }
+  if ch == 51 && row == 2 { return 0x06 }
+  if ch == 51 && row == 3 { return 0x1C }
+  if ch == 51 && row == 4 { return 0x06 }
+  if ch == 51 && row == 5 { return 0x66 }
+  if ch == 51 && row == 6 { return 0x3C }
+  if ch == 52 && row == 0 { return 0x0E }
+  if ch == 52 && row == 1 { return 0x1E }
+  if ch == 52 && row == 2 { return 0x36 }
+  if ch == 52 && row == 3 { return 0x66 }
+  if ch == 52 && row == 4 { return 0x7F }
+  if ch == 52 && row == 5 { return 0x06 }
+  if ch == 52 && row == 6 { return 0x06 }
+  if ch == 53 && row == 0 { return 0x7E }
+  if ch == 53 && row == 1 { return 0x60 }
+  if ch == 53 && row == 2 { return 0x7C }
+  if ch == 53 && row == 3 { return 0x06 }
+  if ch == 53 && row == 4 { return 0x06 }
+  if ch == 53 && row == 5 { return 0x66 }
+  if ch == 53 && row == 6 { return 0x3C }
+  if ch == 54 && row == 0 { return 0x3C }
+  if ch == 54 && row == 1 { return 0x66 }
+  if ch == 54 && row == 2 { return 0x60 }
+  if ch == 54 && row == 3 { return 0x7C }
+  if ch == 54 && row == 4 { return 0x66 }
+  if ch == 54 && row == 5 { return 0x66 }
+  if ch == 54 && row == 6 { return 0x3C }
+  if ch == 55 && row == 0 { return 0x7E }
+  if ch == 55 && row == 1 { return 0x66 }
+  if ch == 55 && row == 2 { return 0x0C }
+  if ch == 55 && row == 3 { return 0x18 }
+  if ch == 55 && row == 4 { return 0x18 }
+  if ch == 55 && row == 5 { return 0x18 }
+  if ch == 55 && row == 6 { return 0x18 }
+  if ch == 56 && row == 0 { return 0x3C }
+  if ch == 56 && row == 1 { return 0x66 }
+  if ch == 56 && row == 2 { return 0x66 }
+  if ch == 56 && row == 3 { return 0x3C }
+  if ch == 56 && row == 4 { return 0x66 }
+  if ch == 56 && row == 5 { return 0x66 }
+  if ch == 56 && row == 6 { return 0x3C }
+  if ch == 57 && row == 0 { return 0x3C }
+  if ch == 57 && row == 1 { return 0x66 }
+  if ch == 57 && row == 2 { return 0x66 }
+  if ch == 57 && row == 3 { return 0x3E }
+  if ch == 57 && row == 4 { return 0x06 }
+  if ch == 57 && row == 5 { return 0x66 }
+  if ch == 57 && row == 6 { return 0x3C }
+  if ch == 58 && row == 1 { return 0x18 }
+  if ch == 58 && row == 2 { return 0x18 }
+  if ch == 58 && row == 5 { return 0x18 }
+  if ch == 58 && row == 6 { return 0x18 }
+  if ch == 59 && row == 1 { return 0x18 }
+  if ch == 59 && row == 2 { return 0x18 }
+  if ch == 59 && row == 5 { return 0x18 }
+  if ch == 59 && row == 6 { return 0x18 }
+  if ch == 59 && row == 7 { return 0x30 }
+  if ch == 60 && row == 0 { return 0x06 }
+  if ch == 60 && row == 1 { return 0x0C }
+  if ch == 60 && row == 2 { return 0x18 }
+  if ch == 60 && row == 3 { return 0x30 }
+  if ch == 60 && row == 4 { return 0x18 }
+  if ch == 60 && row == 5 { return 0x0C }
+  if ch == 60 && row == 6 { return 0x06 }
+  if ch == 61 && row == 2 { return 0x7E }
+  if ch == 61 && row == 4 { return 0x7E }
+  if ch == 62 && row == 0 { return 0x60 }
+  if ch == 62 && row == 1 { return 0x30 }
+  if ch == 62 && row == 2 { return 0x18 }
+  if ch == 62 && row == 3 { return 0x0C }
+  if ch == 62 && row == 4 { return 0x18 }
+  if ch == 62 && row == 5 { return 0x30 }
+  if ch == 62 && row == 6 { return 0x60 }
+  if ch == 63 && row == 0 { return 0x3C }
+  if ch == 63 && row == 1 { return 0x66 }
+  if ch == 63 && row == 2 { return 0x06 }
+  if ch == 63 && row == 3 { return 0x0C }
+  if ch == 63 && row == 4 { return 0x18 }
+  if ch == 63 && row == 6 { return 0x18 }
+  if ch == 65 && row == 0 { return 0x18 }
+  if ch == 65 && row == 1 { return 0x3C }
+  if ch == 65 && row == 2 { return 0x66 }
+  if ch == 65 && row == 3 { return 0x66 }
+  if ch == 65 && row == 4 { return 0x7E }
+  if ch == 65 && row == 5 { return 0x66 }
+  if ch == 65 && row == 6 { return 0x66 }
+  if ch == 66 && row == 0 { return 0x7C }
+  if ch == 66 && row == 1 { return 0x66 }
+  if ch == 66 && row == 2 { return 0x66 }
+  if ch == 66 && row == 3 { return 0x7C }
+  if ch == 66 && row == 4 { return 0x66 }
+  if ch == 66 && row == 5 { return 0x66 }
+  if ch == 66 && row == 6 { return 0x7C }
+  if ch == 67 && row == 0 { return 0x3C }
+  if ch == 67 && row == 1 { return 0x66 }
+  if ch == 67 && row == 2 { return 0x60 }
+  if ch == 67 && row == 3 { return 0x60 }
+  if ch == 67 && row == 4 { return 0x60 }
+  if ch == 67 && row == 5 { return 0x66 }
+  if ch == 67 && row == 6 { return 0x3C }
+  if ch == 68 && row == 0 { return 0x78 }
+  if ch == 68 && row == 1 { return 0x6C }
+  if ch == 68 && row == 2 { return 0x66 }
+  if ch == 68 && row == 3 { return 0x66 }
+  if ch == 68 && row == 4 { return 0x66 }
+  if ch == 68 && row == 5 { return 0x6C }
+  if ch == 68 && row == 6 { return 0x78 }
+  if ch == 69 && row == 0 { return 0x7E }
+  if ch == 69 && row == 1 { return 0x60 }
+  if ch == 69 && row == 2 { return 0x60 }
+  if ch == 69 && row == 3 { return 0x78 }
+  if ch == 69 && row == 4 { return 0x60 }
+  if ch == 69 && row == 5 { return 0x60 }
+  if ch == 69 && row == 6 { return 0x7E }
+  if ch == 70 && row == 0 { return 0x7E }
+  if ch == 70 && row == 1 { return 0x60 }
+  if ch == 70 && row == 2 { return 0x60 }
+  if ch == 70 && row == 3 { return 0x78 }
+  if ch == 70 && row == 4 { return 0x60 }
+  if ch == 70 && row == 5 { return 0x60 }
+  if ch == 70 && row == 6 { return 0x60 }
+  if ch == 71 && row == 0 { return 0x3C }
+  if ch == 71 && row == 1 { return 0x66 }
+  if ch == 71 && row == 2 { return 0x60 }
+  if ch == 71 && row == 3 { return 0x6E }
+  if ch == 71 && row == 4 { return 0x66 }
+  if ch == 71 && row == 5 { return 0x66 }
+  if ch == 71 && row == 6 { return 0x3C }
+  if ch == 72 && row == 0 { return 0x66 }
+  if ch == 72 && row == 1 { return 0x66 }
+  if ch == 72 && row == 2 { return 0x66 }
+  if ch == 72 && row == 3 { return 0x7E }
+  if ch == 72 && row == 4 { return 0x66 }
+  if ch == 72 && row == 5 { return 0x66 }
+  if ch == 72 && row == 6 { return 0x66 }
+  if ch == 73 && row == 0 { return 0x3C }
+  if ch == 73 && row == 1 { return 0x18 }
+  if ch == 73 && row == 2 { return 0x18 }
+  if ch == 73 && row == 3 { return 0x18 }
+  if ch == 73 && row == 4 { return 0x18 }
+  if ch == 73 && row == 5 { return 0x18 }
+  if ch == 73 && row == 6 { return 0x3C }
+  if ch == 74 && row == 0 { return 0x1E }
+  if ch == 74 && row == 1 { return 0x0C }
+  if ch == 74 && row == 2 { return 0x0C }
+  if ch == 74 && row == 3 { return 0x0C }
+  if ch == 74 && row == 4 { return 0x0C }
+  if ch == 74 && row == 5 { return 0x6C }
+  if ch == 74 && row == 6 { return 0x38 }
+  if ch == 75 && row == 0 { return 0x66 }
+  if ch == 75 && row == 1 { return 0x6C }
+  if ch == 75 && row == 2 { return 0x78 }
+  if ch == 75 && row == 3 { return 0x70 }
+  if ch == 75 && row == 4 { return 0x78 }
+  if ch == 75 && row == 5 { return 0x6C }
+  if ch == 75 && row == 6 { return 0x66 }
+  if ch == 76 && row == 0 { return 0x60 }
+  if ch == 76 && row == 1 { return 0x60 }
+  if ch == 76 && row == 2 { return 0x60 }
+  if ch == 76 && row == 3 { return 0x60 }
+  if ch == 76 && row == 4 { return 0x60 }
+  if ch == 76 && row == 5 { return 0x60 }
+  if ch == 76 && row == 6 { return 0x7E }
+  if ch == 77 && row == 0 { return 0x63 }
+  if ch == 77 && row == 1 { return 0x77 }
+  if ch == 77 && row == 2 { return 0x7F }
+  if ch == 77 && row == 3 { return 0x6B }
+  if ch == 77 && row == 4 { return 0x63 }
+  if ch == 77 && row == 5 { return 0x63 }
+  if ch == 77 && row == 6 { return 0x63 }
+  if ch == 78 && row == 0 { return 0x66 }
+  if ch == 78 && row == 1 { return 0x76 }
+  if ch == 78 && row == 2 { return 0x7E }
+  if ch == 78 && row == 3 { return 0x7E }
+  if ch == 78 && row == 4 { return 0x6E }
+  if ch == 78 && row == 5 { return 0x66 }
+  if ch == 78 && row == 6 { return 0x66 }
+  if ch == 79 && row == 0 { return 0x3C }
+  if ch == 79 && row == 1 { return 0x66 }
+  if ch == 79 && row == 2 { return 0x66 }
+  if ch == 79 && row == 3 { return 0x66 }
+  if ch == 79 && row == 4 { return 0x66 }
+  if ch == 79 && row == 5 { return 0x66 }
+  if ch == 79 && row == 6 { return 0x3C }
+  if ch == 80 && row == 0 { return 0x7C }
+  if ch == 80 && row == 1 { return 0x66 }
+  if ch == 80 && row == 2 { return 0x66 }
+  if ch == 80 && row == 3 { return 0x7C }
+  if ch == 80 && row == 4 { return 0x60 }
+  if ch == 80 && row == 5 { return 0x60 }
+  if ch == 80 && row == 6 { return 0x60 }
+  if ch == 81 && row == 0 { return 0x3C }
+  if ch == 81 && row == 1 { return 0x66 }
+  if ch == 81 && row == 2 { return 0x66 }
+  if ch == 81 && row == 3 { return 0x66 }
+  if ch == 81 && row == 4 { return 0x66 }
+  if ch == 81 && row == 5 { return 0x3C }
+  if ch == 81 && row == 6 { return 0x0E }
+  if ch == 82 && row == 0 { return 0x7C }
+  if ch == 82 && row == 1 { return 0x66 }
+  if ch == 82 && row == 2 { return 0x66 }
+  if ch == 82 && row == 3 { return 0x7C }
+  if ch == 82 && row == 4 { return 0x78 }
+  if ch == 82 && row == 5 { return 0x6C }
+  if ch == 82 && row == 6 { return 0x66 }
+  if ch == 83 && row == 0 { return 0x3C }
+  if ch == 83 && row == 1 { return 0x66 }
+  if ch == 83 && row == 2 { return 0x60 }
+  if ch == 83 && row == 3 { return 0x3C }
+  if ch == 83 && row == 4 { return 0x06 }
+  if ch == 83 && row == 5 { return 0x66 }
+  if ch == 83 && row == 6 { return 0x3C }
+  if ch == 84 && row == 0 { return 0x7E }
+  if ch == 84 && row == 1 { return 0x18 }
+  if ch == 84 && row == 2 { return 0x18 }
+  if ch == 84 && row == 3 { return 0x18 }
+  if ch == 84 && row == 4 { return 0x18 }
+  if ch == 84 && row == 5 { return 0x18 }
+  if ch == 84 && row == 6 { return 0x18 }
+  if ch == 85 && row == 0 { return 0x66 }
+  if ch == 85 && row == 1 { return 0x66 }
+  if ch == 85 && row == 2 { return 0x66 }
+  if ch == 85 && row == 3 { return 0x66 }
+  if ch == 85 && row == 4 { return 0x66 }
+  if ch == 85 && row == 5 { return 0x66 }
+  if ch == 85 && row == 6 { return 0x3C }
+  if ch == 86 && row == 0 { return 0x66 }
+  if ch == 86 && row == 1 { return 0x66 }
+  if ch == 86 && row == 2 { return 0x66 }
+  if ch == 86 && row == 3 { return 0x66 }
+  if ch == 86 && row == 4 { return 0x66 }
+  if ch == 86 && row == 5 { return 0x3C }
+  if ch == 86 && row == 6 { return 0x18 }
+  if ch == 87 && row == 0 { return 0x63 }
+  if ch == 87 && row == 1 { return 0x63 }
+  if ch == 87 && row == 2 { return 0x63 }
+  if ch == 87 && row == 3 { return 0x6B }
+  if ch == 87 && row == 4 { return 0x7F }
+  if ch == 87 && row == 5 { return 0x77 }
+  if ch == 87 && row == 6 { return 0x63 }
+  if ch == 88 && row == 0 { return 0x66 }
+  if ch == 88 && row == 1 { return 0x66 }
+  if ch == 88 && row == 2 { return 0x3C }
+  if ch == 88 && row == 3 { return 0x18 }
+  if ch == 88 && row == 4 { return 0x3C }
+  if ch == 88 && row == 5 { return 0x66 }
+  if ch == 88 && row == 6 { return 0x66 }
+  if ch == 89 && row == 0 { return 0x66 }
+  if ch == 89 && row == 1 { return 0x66 }
+  if ch == 89 && row == 2 { return 0x66 }
+  if ch == 89 && row == 3 { return 0x3C }
+  if ch == 89 && row == 4 { return 0x18 }
+  if ch == 89 && row == 5 { return 0x18 }
+  if ch == 89 && row == 6 { return 0x18 }
+  if ch == 90 && row == 0 { return 0x7E }
+  if ch == 90 && row == 1 { return 0x06 }
+  if ch == 90 && row == 2 { return 0x0C }
+  if ch == 90 && row == 3 { return 0x18 }
+  if ch == 90 && row == 4 { return 0x30 }
+  if ch == 90 && row == 5 { return 0x60 }
+  if ch == 90 && row == 6 { return 0x7E }
+  if ch == 91 && row == 0 { return 0x3C }
+  if ch == 91 && row == 1 { return 0x30 }
+  if ch == 91 && row == 2 { return 0x30 }
+  if ch == 91 && row == 3 { return 0x30 }
+  if ch == 91 && row == 4 { return 0x30 }
+  if ch == 91 && row == 5 { return 0x30 }
+  if ch == 91 && row == 6 { return 0x3C }
+  if ch == 93 && row == 0 { return 0x3C }
+  if ch == 93 && row == 1 { return 0x0C }
+  if ch == 93 && row == 2 { return 0x0C }
+  if ch == 93 && row == 3 { return 0x0C }
+  if ch == 93 && row == 4 { return 0x0C }
+  if ch == 93 && row == 5 { return 0x0C }
+  if ch == 93 && row == 6 { return 0x3C }
+  if ch == 95 && row == 7 { return 0xFF }
+  if ch == 97 && row == 2 { return 0x3C }
+  if ch == 97 && row == 3 { return 0x06 }
+  if ch == 97 && row == 4 { return 0x3E }
+  if ch == 97 && row == 5 { return 0x66 }
+  if ch == 97 && row == 6 { return 0x3E }
+  if ch == 98 && row == 0 { return 0x60 }
+  if ch == 98 && row == 1 { return 0x60 }
+  if ch == 98 && row == 2 { return 0x7C }
+  if ch == 98 && row == 3 { return 0x66 }
+  if ch == 98 && row == 4 { return 0x66 }
+  if ch == 98 && row == 5 { return 0x66 }
+  if ch == 98 && row == 6 { return 0x7C }
+  if ch == 99 && row == 2 { return 0x3C }
+  if ch == 99 && row == 3 { return 0x60 }
+  if ch == 99 && row == 4 { return 0x60 }
+  if ch == 99 && row == 5 { return 0x60 }
+  if ch == 99 && row == 6 { return 0x3C }
+  if ch == 100 && row == 0 { return 0x06 }
+  if ch == 100 && row == 1 { return 0x06 }
+  if ch == 100 && row == 2 { return 0x3E }
+  if ch == 100 && row == 3 { return 0x66 }
+  if ch == 100 && row == 4 { return 0x66 }
+  if ch == 100 && row == 5 { return 0x66 }
+  if ch == 100 && row == 6 { return 0x3E }
+  if ch == 101 && row == 2 { return 0x3C }
+  if ch == 101 && row == 3 { return 0x66 }
+  if ch == 101 && row == 4 { return 0x7E }
+  if ch == 101 && row == 5 { return 0x60 }
+  if ch == 101 && row == 6 { return 0x3C }
+  if ch == 102 && row == 0 { return 0x0E }
+  if ch == 102 && row == 1 { return 0x18 }
+  if ch == 102 && row == 2 { return 0x3E }
+  if ch == 102 && row == 3 { return 0x18 }
+  if ch == 102 && row == 4 { return 0x18 }
+  if ch == 102 && row == 5 { return 0x18 }
+  if ch == 102 && row == 6 { return 0x18 }
+  if ch == 103 && row == 2 { return 0x3E }
+  if ch == 103 && row == 3 { return 0x66 }
+  if ch == 103 && row == 4 { return 0x66 }
+  if ch == 103 && row == 5 { return 0x3E }
+  if ch == 103 && row == 6 { return 0x06 }
+  if ch == 103 && row == 7 { return 0x3C }
+  if ch == 104 && row == 0 { return 0x60 }
+  if ch == 104 && row == 1 { return 0x60 }
+  if ch == 104 && row == 2 { return 0x7C }
+  if ch == 104 && row == 3 { return 0x66 }
+  if ch == 104 && row == 4 { return 0x66 }
+  if ch == 104 && row == 5 { return 0x66 }
+  if ch == 104 && row == 6 { return 0x66 }
+  if ch == 105 && row == 0 { return 0x18 }
+  if ch == 105 && row == 2 { return 0x38 }
+  if ch == 105 && row == 3 { return 0x18 }
+  if ch == 105 && row == 4 { return 0x18 }
+  if ch == 105 && row == 5 { return 0x18 }
+  if ch == 105 && row == 6 { return 0x3C }
+  if ch == 106 && row == 0 { return 0x0C }
+  if ch == 106 && row == 2 { return 0x1C }
+  if ch == 106 && row == 3 { return 0x0C }
+  if ch == 106 && row == 4 { return 0x0C }
+  if ch == 106 && row == 5 { return 0x0C }
+  if ch == 106 && row == 6 { return 0x6C }
+  if ch == 106 && row == 7 { return 0x38 }
+  if ch == 107 && row == 0 { return 0x60 }
+  if ch == 107 && row == 1 { return 0x60 }
+  if ch == 107 && row == 2 { return 0x66 }
+  if ch == 107 && row == 3 { return 0x6C }
+  if ch == 107 && row == 4 { return 0x78 }
+  if ch == 107 && row == 5 { return 0x6C }
+  if ch == 107 && row == 6 { return 0x66 }
+  if ch == 108 && row == 0 { return 0x38 }
+  if ch == 108 && row == 1 { return 0x18 }
+  if ch == 108 && row == 2 { return 0x18 }
+  if ch == 108 && row == 3 { return 0x18 }
+  if ch == 108 && row == 4 { return 0x18 }
+  if ch == 108 && row == 5 { return 0x18 }
+  if ch == 108 && row == 6 { return 0x3C }
+  if ch == 109 && row == 2 { return 0x66 }
+  if ch == 109 && row == 3 { return 0x7F }
+  if ch == 109 && row == 4 { return 0x7F }
+  if ch == 109 && row == 5 { return 0x6B }
+  if ch == 109 && row == 6 { return 0x63 }
+  if ch == 110 && row == 2 { return 0x7C }
+  if ch == 110 && row == 3 { return 0x66 }
+  if ch == 110 && row == 4 { return 0x66 }
+  if ch == 110 && row == 5 { return 0x66 }
+  if ch == 110 && row == 6 { return 0x66 }
+  if ch == 111 && row == 2 { return 0x3C }
+  if ch == 111 && row == 3 { return 0x66 }
+  if ch == 111 && row == 4 { return 0x66 }
+  if ch == 111 && row == 5 { return 0x66 }
+  if ch == 111 && row == 6 { return 0x3C }
+  if ch == 112 && row == 2 { return 0x7C }
+  if ch == 112 && row == 3 { return 0x66 }
+  if ch == 112 && row == 4 { return 0x66 }
+  if ch == 112 && row == 5 { return 0x7C }
+  if ch == 112 && row == 6 { return 0x60 }
+  if ch == 112 && row == 7 { return 0x60 }
+  if ch == 113 && row == 2 { return 0x3E }
+  if ch == 113 && row == 3 { return 0x66 }
+  if ch == 113 && row == 4 { return 0x66 }
+  if ch == 113 && row == 5 { return 0x3E }
+  if ch == 113 && row == 6 { return 0x06 }
+  if ch == 113 && row == 7 { return 0x06 }
+  if ch == 114 && row == 2 { return 0x7C }
+  if ch == 114 && row == 3 { return 0x66 }
+  if ch == 114 && row == 4 { return 0x60 }
+  if ch == 114 && row == 5 { return 0x60 }
+  if ch == 114 && row == 6 { return 0x60 }
+  if ch == 115 && row == 2 { return 0x3E }
+  if ch == 115 && row == 3 { return 0x60 }
+  if ch == 115 && row == 4 { return 0x3C }
+  if ch == 115 && row == 5 { return 0x06 }
+  if ch == 115 && row == 6 { return 0x7C }
+  if ch == 116 && row == 0 { return 0x18 }
+  if ch == 116 && row == 1 { return 0x18 }
+  if ch == 116 && row == 2 { return 0x3E }
+  if ch == 116 && row == 3 { return 0x18 }
+  if ch == 116 && row == 4 { return 0x18 }
+  if ch == 116 && row == 5 { return 0x18 }
+  if ch == 116 && row == 6 { return 0x0E }
+  if ch == 117 && row == 2 { return 0x66 }
+  if ch == 117 && row == 3 { return 0x66 }
+  if ch == 117 && row == 4 { return 0x66 }
+  if ch == 117 && row == 5 { return 0x66 }
+  if ch == 117 && row == 6 { return 0x3E }
+  if ch == 118 && row == 2 { return 0x66 }
+  if ch == 118 && row == 3 { return 0x66 }
+  if ch == 118 && row == 4 { return 0x66 }
+  if ch == 118 && row == 5 { return 0x3C }
+  if ch == 118 && row == 6 { return 0x18 }
+  if ch == 119 && row == 2 { return 0x63 }
+  if ch == 119 && row == 3 { return 0x6B }
+  if ch == 119 && row == 4 { return 0x7F }
+  if ch == 119 && row == 5 { return 0x3F }
+  if ch == 119 && row == 6 { return 0x36 }
+  if ch == 120 && row == 2 { return 0x66 }
+  if ch == 120 && row == 3 { return 0x3C }
+  if ch == 120 && row == 4 { return 0x18 }
+  if ch == 120 && row == 5 { return 0x3C }
+  if ch == 120 && row == 6 { return 0x66 }
+  if ch == 121 && row == 2 { return 0x66 }
+  if ch == 121 && row == 3 { return 0x66 }
+  if ch == 121 && row == 4 { return 0x66 }
+  if ch == 121 && row == 5 { return 0x3E }
+  if ch == 121 && row == 6 { return 0x0C }
+  if ch == 121 && row == 7 { return 0x38 }
+  if ch == 122 && row == 2 { return 0x7E }
+  if ch == 122 && row == 3 { return 0x0C }
+  if ch == 122 && row == 4 { return 0x18 }
+  if ch == 122 && row == 5 { return 0x30 }
+  if ch == 122 && row == 6 { return 0x7E }
+  if ch == 123 && row == 0 { return 0x0E }
+  if ch == 123 && row == 1 { return 0x18 }
+  if ch == 123 && row == 2 { return 0x18 }
+  if ch == 123 && row == 3 { return 0x70 }
+  if ch == 123 && row == 4 { return 0x18 }
+  if ch == 123 && row == 5 { return 0x18 }
+  if ch == 123 && row == 6 { return 0x0E }
+  if ch == 124 && row == 0 { return 0x18 }
+  if ch == 124 && row == 1 { return 0x18 }
+  if ch == 124 && row == 2 { return 0x18 }
+  if ch == 124 && row == 3 { return 0x18 }
+  if ch == 124 && row == 4 { return 0x18 }
+  if ch == 124 && row == 5 { return 0x18 }
+  if ch == 124 && row == 6 { return 0x18 }
+  if ch == 125 && row == 0 { return 0x70 }
+  if ch == 125 && row == 1 { return 0x18 }
+  if ch == 125 && row == 2 { return 0x18 }
+  if ch == 125 && row == 3 { return 0x0E }
+  if ch == 125 && row == 4 { return 0x18 }
+  if ch == 125 && row == 5 { return 0x18 }
+  if ch == 125 && row == 6 { return 0x70 }
+  if ch == 126 && row == 2 { return 0x60 }
+  if ch == 126 && row == 3 { return 0x7E }
+  if ch == 126 && row == 4 { return 0x06 }
+  return 0
+}
+
+
+// Wayland-style compositor for the Space nanokernel.
+// Manages windows, renders them to the VBE framebuffer, and handles
+// mouse/keyboard input. This is a minimal display server that demonstrates
+// the Space OS desktop environment.
+//
+// Window record (64 bytes):
+//   [0..4]   id
+//   [4..8]   x
+//   [8..12]  y
+//   [12..16] width
+//   [16..20] height
+//   [20..24] flags (bit 0 = visible, bit 1 = focused, bit 2 = dirty)
+//   [24..32] title string address
+//   [32..40] content buffer address (or 0 for auto-rendered)
+//   [40..48] reserved
+//   [48..56] reserved
+//   [56..64] reserved
+
+// --- window constants -------------------------------------------------------
+const COMP-MAX-WINDOWS = 16
+const COMP-WIN-SIZE = 64
+const COMP-TITLE-BAR-H = 28
+const COMP-BORDER-W = 1
+const COMP-TASKBAR-H = 28
+const COMP-COLOR-DESKTOP = 0x000B0909
+const COMP-COLOR-PANEL = 0x001B1818
+const COMP-COLOR-PANEL-LINE = 0x0027272A
+const COMP-COLOR-TITLE = 0x00333336
+const COMP-COLOR-TITLE-ACTIVE = 0x00444444
+const COMP-COLOR-WINDOW = 0x00FFFFFF
+const COMP-COLOR-BORDER = 0x003F3F46
+const COMP-COLOR-ACCENT = 0x00F8BD38
+const COMP-COLOR-TEXT = 0x0018181B
+const COMP-COLOR-MUTED = 0x00AAA1A1
+const COMP-COLOR-SURFACE = 0x00FFFFFF
+const COMP-COLOR-SURFACE-ALT = 0x00E4E4E7
+const COMP-COLOR-TERM-BG = 0x000B0909
+const COMP-COLOR-TERM-TEXT = 0x00F5F4F4
+
+const COMP-WIN-VISIBLE = 1
+const COMP-WIN-FOCUSED = 2
+const COMP-WIN-DIRTY = 4
+const COMP-WIN-MINIMIZED = 8
+const COMP-CURSOR-W = 16
+const COMP-CURSOR-H = 16
+const COMP-ROLE-TEXT = 0
+const COMP-ROLE-UTILITIES = 2
+const COMP-ROLE-TERMINAL = 3
+const COMP-MIN-WIN-W = 280
+const COMP-MIN-WIN-H = 180
+const COMP-MIN-EDITOR-W = 640
+const COMP-MIN-SIDE-W = 520
+
+// --- compositor state -------------------------------------------------------
+var comp-windows: Int = 0    // array of window records
+var comp-count: Int = 0      // number of windows
+var comp-focused: Int = 0    // index of focused window
+// Track drag mode: 1 = move (title bar), 2 = resize (bottom-right corner)
+var comp-drag-mode: Int = 0   // index of window being dragged (-1 = none)
+var comp-drag-off-x: Int = 0 // drag offset from window origin to mouse
+var comp-drag-off-y: Int = 0
+var comp-running: Int = 0    // 1 when compositor loop is active
+// --- window management ------------------------------------------------------
+
+// Initialize the compositor.
+fn comp-init() -> void {
+  // ponytail: backbuffer at top of heap avoids alloc/heap_next (optimizer crash).
+  if fb-width > 0 && fb-height > 0 {
+    let heap-top = 0x0FFE0000
+    let sz = fb-width * fb-height * 4
+    comp-backbuf = heap-top - ((sz + 4095) & -4096)
+  }
+  comp-windows = alloc(COMP-MAX-WINDOWS * COMP-WIN-SIZE)
+  let i = 0
+  while i < COMP-MAX-WINDOWS {
+    comp-win-clear(i)
+    i = i + 1
+  }
+  comp-count = 0
+  comp-focused = -1
+  comp-drag-mode = -1
+  comp-dragging = -1
+  comp-running = 0
+  comp-cur-drawn = 0
+  comp-cursor-init()
+  comp-term-init()
+  return
+}
+
+
+
+// Clear a window slot.
+fn comp-win-clear(idx: Int) -> void {
+  let base = comp-windows + idx * COMP-WIN-SIZE
+  let i = 0
+  while i < COMP-WIN-SIZE {
+    store8(base + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+// Get the base address of a window record.
+fn comp-win-base(idx: Int) -> Int {
+  return comp-windows + idx * COMP-WIN-SIZE
+}
+
+// Create a new window. Returns the window index or -1 if the table is full.
+fn comp-win-create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
+  if comp-count >= COMP-MAX-WINDOWS {
+    return -1
+  }
+  let idx = comp-count
+  let base = comp-win-base(idx)
+  store32(base + 0, idx)
+  store32(base + 4, x)
+  store32(base + 8, y)
+  store32(base + 12, w)
+  store32(base + 16, h)
+  store32(base + 20, COMP-WIN-VISIBLE | COMP-WIN-DIRTY)
+  store64(base + 24, title)
+  store64(base + 32, 0)
+  store64(base + 40, COMP-ROLE-TEXT)
+  comp-count = comp-count + 1
+  comp-focused = idx
+  return idx
+}
+
+// Set a window's content buffer (for custom rendering).
+fn comp-win-set-content(idx: Int, buf: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  store64(comp-win-base(idx) + 32, buf)
+  return
+}
+
+fn comp-win-set-role(idx: Int, role: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  store64(comp-win-base(idx) + 40, role)
+  return
+}
+
+// Check if a point is inside a window's title bar.
+fn comp-win-in-titlebar(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp-win-base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  if mx >= x && mx < x + w && my >= y && my < y + COMP-TITLE-BAR-H {
+    return 1
+  }
+  return 0
+}
+
+// Check if a point is inside a window (including title bar).
+fn comp-win-contains(idx: Int, mx: Int, my: Int) -> Int {
+  let base = comp-win-base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  if mx >= x && mx < x + w && my >= y && my < y + h + COMP-TITLE-BAR-H {
+    return 1
+  }
+  return 0
+}
+
+// Find the topmost window at a point. Returns index or -1.
+fn comp-win-at-point(mx: Int, my: Int) -> Int {
+  let i = comp-count - 1
+  while i >= 0 {
+    let flags = load32(comp-win-base(i) + 20)
+    if (flags & COMP-WIN-VISIBLE) != 0 {
+      if comp-win-contains(i, mx, my) != 0 {
+        return i
+      }
+    }
+    i = i - 1
+  }
+  return -1
+}
+
+// Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp-win-close(idx: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  // Shift remaining windows down
+  let i = idx
+  while i < comp-count - 1 {
+    let src = comp-win-base(i + 1)
+    let dst = comp-win-base(i)
+    let j = 0
+    while j < COMP-WIN-SIZE {
+      store8(dst + j, load8(src + j))
+      j = j + 1
+    }
+    i = i + 1
+  }
+  comp-win-clear(comp-count - 1)
+  comp-count = comp-count - 1
+  // Adjust focused index
+  if comp-focused >= comp-count {
+    comp-focused = comp-count - 1
+  }
+  // Mark full redraw (window removed)
+  comp-full-redraw = 1
+  return
+}
+
+// Minimize window — clear VISIBLE flag, set MINIMIZED.
+fn comp-win-minimize(idx: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  let base = comp-win-base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags | COMP-WIN-MINIMIZED | COMP-WIN-DIRTY) & -2)
+  comp-full-redraw = 1
+  return
+}
+
+// Restore a minimized window — set VISIBLE, clear MINIMIZED.
+fn comp-win-restore(idx: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  let base = comp-win-base(idx)
+  let flags = load32(base + 20)
+  store32(base + 20, (flags & -9) | COMP-WIN-VISIBLE | COMP-WIN-DIRTY)
+  comp-win-focus(idx)
+  comp-full-redraw = 1
+  return
+}
+
+// Focus a window (bring to front conceptually — we just update the focused flag).
+fn comp-win-focus(idx: Int) -> void {
+  let i = 0
+  while i < comp-count {
+    let base = comp-win-base(i)
+    let flags = load32(base + 20)
+    if i == idx {
+      store32(base + 20, flags | COMP-WIN-FOCUSED | COMP-WIN-DIRTY)
+    } else {
+      store32(base + 20, (flags & -3) | COMP-WIN-DIRTY)
+    }
+    i = i + 1
+  }
+  comp-focused = idx
+  return
+}
+
+// --- rendering --------------------------------------------------------------
+
+// Draw the desktop background (flat color, no stripes — ponytail: stripes were 20 loops per frame).
+fn comp-render-background() -> void {
+  fb-clear(COMP-COLOR-DESKTOP)
+}
+
+// X11-style arrow cursor bitmap (16x16, top-left hotspot)
+// MSB = leftmost pixel, row-major, 2 bytes per row, 32 bytes total
+var comp-cursor-bits: Int = 0
+
+fn comp-cursor-init() -> void {
+  comp-cursor-bits = alloc(32)
+  store8(comp-cursor-bits + 0, 0x80); store8(comp-cursor-bits + 1, 0x00)
+  store8(comp-cursor-bits + 2, 0xC0); store8(comp-cursor-bits + 3, 0x00)
+  store8(comp-cursor-bits + 4, 0xE0); store8(comp-cursor-bits + 5, 0x00)
+  store8(comp-cursor-bits + 6, 0xF0); store8(comp-cursor-bits + 7, 0x00)
+  store8(comp-cursor-bits + 8, 0xF8); store8(comp-cursor-bits + 9, 0x00)
+  store8(comp-cursor-bits + 10, 0xFC); store8(comp-cursor-bits + 11, 0x00)
+  store8(comp-cursor-bits + 12, 0xFE); store8(comp-cursor-bits + 13, 0x00)
+  store8(comp-cursor-bits + 14, 0xFF); store8(comp-cursor-bits + 15, 0x00)
+  store8(comp-cursor-bits + 16, 0xFF); store8(comp-cursor-bits + 17, 0x80)
+  store8(comp-cursor-bits + 18, 0xFF); store8(comp-cursor-bits + 19, 0xC0)
+  store8(comp-cursor-bits + 20, 0xFF); store8(comp-cursor-bits + 21, 0xE0)
+  store8(comp-cursor-bits + 22, 0xFC); store8(comp-cursor-bits + 23, 0x00)
+  store8(comp-cursor-bits + 24, 0xFC); store8(comp-cursor-bits + 25, 0x60)
+  store8(comp-cursor-bits + 26, 0xFC); store8(comp-cursor-bits + 27, 0x70)
+  store8(comp-cursor-bits + 28, 0xFC); store8(comp-cursor-bits + 29, 0x38)
+  store8(comp-cursor-bits + 30, 0x00); store8(comp-cursor-bits + 31, 0x1C)
+}
+
+// Draw the X11-style arrow cursor (white, no outline — ponytail: outline was 256 extra pixel calls per frame).
+fn comp-render-cursor() -> void {
+  let x = mouse-x
+  let y = mouse-y
+  let row = 0
+  while row < COMP-CURSOR-H {
+    let b0 = load8(comp-cursor-bits + row * 2)
+    let b1 = load8(comp-cursor-bits + row * 2 + 1)
+    let col = 0
+    while col < COMP-CURSOR-W {
+      let bit = 0
+      if col < 8 {
+        bit = (b0 >> (7 - col)) & 1
+      } else {
+        bit = (b1 >> (15 - col)) & 1
+      }
+      if bit != 0 {
+        let px = x + col
+        let py = y + row
+        fb-put-pixel(px, py, FB-COLOR-WHITE)
+      }
+      col = col + 1
+    }
+    row = row + 1
+  }
+}
+

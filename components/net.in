@@ -7,7 +7,7 @@ package space.kernel
 // channels, otherwise they fall through to the implementation directly so the
 // legacy "net" shell command still works.
 
-import "../components/network.in"
+import "network.in"
 
 // Cross-domain channel state to the network component.
 var net-req-ch: Int = 0
