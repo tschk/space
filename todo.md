@@ -6,15 +6,16 @@ Verified today: x86_64 boot, serial shell, memory domains, capabilities,
 cooperative + preemptive scheduling, channels, the in-kernel SCI loader,
 the Linux-personality demo, VFS, time service, network component RPC, and SCI
 allow/deny policy. Display and input SCI components have automated QEMU proof.
-NVMe-backed writes still time out after storage-component startup; Volume needs
-queued or nested component RPC before it can move behind the POSIX service.
+NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume RPC
+and POSIX volume-ready branches exist; full SparkFS-on-Volume product path still
+needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
 
 ## Phase 1: Storage
 
 - [x] ATA/PIO disk driver (read sectors from QEMU IDE disk)
 - [x] Simple flat filesystem (read-only, then write)
 - [x] NVMe driver with MMIO
-- [ ] VFS abstraction layer
+- [x] VFS abstraction layer
 - [x] Load SCI components from disk at runtime
 
 ## Phase 2: Process Abstraction
@@ -30,7 +31,7 @@ queued or nested component RPC before it can move behind the POSIX service.
 - [x] Syscall dispatch table
 - [x] Core syscalls: write, read, exit, yield, getpid
 - [x] Channel syscalls: create, send, recv, close
-- [ ] Capability syscalls: mint, revoke, check
+- [x] Capability syscalls: mint, revoke, check
 
 ## Phase 4: Userspace Runtime
 
@@ -46,7 +47,7 @@ queued or nested component RPC before it can move behind the POSIX service.
   - [x] Process syscalls: fork, exec, wait, exit, getpid, kill
   - [x] Memory syscalls: mmap, munmap, brk
   - [x] Misc syscalls: getcwd, chdir
-  - [ ] Socket syscalls: socket, bind, listen, accept, connect, send, recv
+  - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP ENOSYS)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
 - [ ] Darwin compat layer (Mach/BSD subset)
 - [ ] Windows compat layer (Win32 subset)
@@ -60,13 +61,13 @@ queued or nested component RPC before it can move behind the POSIX service.
 - [x] Taskbar window buttons (click to focus/restore)
 - [x] USB HID keyboard (replaces PS/2)
 - [x] Display server service (SPDP protocol)
-- [ ] Shell upgrade: pipe support, background processes, redirection
+- [x] Shell upgrade: pipe support, background processes, redirection (minimal echo demos)
 - [ ] Multi-terminal support
 - [ ] Scrollable terminal content
 
 ## Phase 7: Networking Stack
 
 - [ ] TCP/IP stack (SYN/ACK, sliding window, retransmit)
-- [ ] Socket API for user programs
+- [x] Socket API for user programs (UDP over e1000; TCP stubs)
 - [ ] DHCP client
 - [ ] DNS resolver
