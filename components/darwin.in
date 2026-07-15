@@ -7,11 +7,12 @@ package space.kernel
 //
 // Classic BSD/xnu numbers used here (FreeBSD-leaning where Darwin conflicts):
 //   exit=1, fork=2, read=3, write=4, open=5, close=6, wait4=7 (FreeBSD; Darwin 199=lseek),
-//   unlink=10, chdir=12, getpid=20, getuid=24, geteuid=25, access=33, kill=37,
-//   dup=41, pipe=42, execve=59, rename=128, mkdir=136, rmdir=137,
-//   fstat=189, getcwd=192 (Space-doc'd; FreeBSD 326), lseek=199
+//   unlink=10, chdir=12, getpid=20, getuid=24, geteuid=25, recvfrom=29, access=33, kill=37,
+//   dup=41, pipe=42, execve=59, socket=97, connect=98, sendto=133, rename=128,
+//   mkdir=136, rmdir=137, stat=188, fstat=189, getcwd=192, mmap=197, lseek=199, munmap=73
 // Open flags: BSD/Darwin O_CREAT=0x200, O_TRUNC=0x400 (mapped onto VFS-O-*).
 // Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
+// Pipe lite: max 4 pipes, 4KB ring; vfs fd type field (+24) = 2, pipe idx at +8.
 
 const DARWIN-SYS-EXIT = 1
 const DARWIN-SYS-FORK = 2
@@ -25,16 +26,23 @@ const DARWIN-SYS-CHDIR = 12
 const DARWIN-SYS-GETPID = 20
 const DARWIN-SYS-GETUID = 24
 const DARWIN-SYS-GETEUID = 25
+const DARWIN-SYS-RECVFROM = 29
 const DARWIN-SYS-ACCESS = 33
 const DARWIN-SYS-KILL = 37
 const DARWIN-SYS-DUP = 41
 const DARWIN-SYS-PIPE = 42
 const DARWIN-SYS-EXECVE = 59
+const DARWIN-SYS-MUNMAP = 73
+const DARWIN-SYS-SOCKET = 97
+const DARWIN-SYS-CONNECT = 98
 const DARWIN-SYS-RENAME = 128
+const DARWIN-SYS-SENDTO = 133
 const DARWIN-SYS-MKDIR = 136
 const DARWIN-SYS-RMDIR = 137
+const DARWIN-SYS-STAT = 188
 const DARWIN-SYS-FSTAT = 189
 const DARWIN-SYS-GETCWD = 192
+const DARWIN-SYS-MMAP = 197
 const DARWIN-SYS-LSEEK = 199
 const DARWIN-SEEK-SET = 0
 const DARWIN-STAT-SIZE = 144
@@ -47,6 +55,11 @@ const DARWIN-O-RDWR = 2
 const DARWIN-O-CREAT = 0x200
 const DARWIN-O-TRUNC = 0x400
 
+// BSD socket types (match netstack SOCK-STREAM/DGRAM).
+const DARWIN-SOCK-STREAM = 1
+const DARWIN-SOCK-DGRAM = 2
+const DARWIN-AF-INET = 2
+
 // Optional Mach trap stubs (not real MIG/IPC).
 const DARWIN-MACH-TASK-SELF = 0x1000
 const DARWIN-MACH-MSG = 0x1001
@@ -55,8 +68,43 @@ const DARWIN-ESRCH = -3
 const DARWIN-EBADF = -9
 const DARWIN-ENOENT = -2
 const DARWIN-ENOSYS = -38
+const DARWIN-ENOMEM = -12
+
+// Pipe side-table: slot = used|buf|head|count|r_open|w_open (48 bytes).
+const DARWIN-PIPE-MAX = 4
+const DARWIN-PIPE-CAP = 4096
+const DARWIN-PIPE-SLOT = 48
+const DARWIN-PIPE-OFF-USED = 0
+const DARWIN-PIPE-OFF-BUF = 8
+const DARWIN-PIPE-OFF-HEAD = 16
+const DARWIN-PIPE-OFF-COUNT = 24
+const DARWIN-PIPE-OFF-ROPEN = 32
+const DARWIN-PIPE-OFF-WOPEN = 40
+const DARWIN-FD-TYPE-PIPE = 2
+const DARWIN-PIPE-END-READ = 0
+const DARWIN-PIPE-END-WRITE = 1
 
 var darwin-ready: Int = 0
+var darwin-pipe-table: Int = 0
+
+fn darwin-pipe-table-init() -> void {
+  if darwin-pipe-table != 0 {
+    return
+  }
+  darwin-pipe-table = alloc(DARWIN-PIPE-MAX * DARWIN-PIPE-SLOT)
+  let i = 0
+  while i < DARWIN-PIPE-MAX {
+    let base = darwin-pipe-table + i * DARWIN-PIPE-SLOT
+    store64(base + DARWIN-PIPE-OFF-USED, 0)
+    store64(base + DARWIN-PIPE-OFF-BUF, 0)
+    store64(base + DARWIN-PIPE-OFF-HEAD, 0)
+    store64(base + DARWIN-PIPE-OFF-COUNT, 0)
+    store64(base + DARWIN-PIPE-OFF-ROPEN, 0)
+    store64(base + DARWIN-PIPE-OFF-WOPEN, 0)
+    i = i + 1
+  }
+  return
+}
 
 fn darwin-init() -> void {
   if darwin-ready != 0 {
@@ -65,6 +113,7 @@ fn darwin-init() -> void {
   if vfs-fd-table == 0 {
     vfs-init()
   }
+  darwin-pipe-table-init()
   darwin-ready = 1
   return
 }
@@ -78,15 +127,158 @@ fn darwin-map-open-flags(flags: Int) -> Int {
   return vf
 }
 
+fn darwin-fd-is-pipe(fd: Int) -> Int {
+  if fd < 3 {
+    return 0
+  }
+  if vfs-fd-valid(fd) == 0 {
+    return 0
+  }
+  if load64(vfs-fd-table + fd * 32 + 24) == DARWIN-FD-TYPE-PIPE {
+    return 1
+  }
+  return 0
+}
+
+fn darwin-pipe-slot(fd: Int) -> Int {
+  return load64(vfs-fd-table + fd * 32 + 8)
+}
+
+fn darwin-pipe-end(fd: Int) -> Int {
+  return load64(vfs-fd-table + fd * 32 + 16)
+}
+
+fn darwin-pipe-release(idx: Int, end: Int) -> void {
+  if idx < 0 || idx >= DARWIN-PIPE-MAX {
+    return
+  }
+  let base = darwin-pipe-table + idx * DARWIN-PIPE-SLOT
+  if load64(base + DARWIN-PIPE-OFF-USED) == 0 {
+    return
+  }
+  if end == DARWIN-PIPE-END-READ {
+    store64(base + DARWIN-PIPE-OFF-ROPEN, 0)
+  } else {
+    store64(base + DARWIN-PIPE-OFF-WOPEN, 0)
+  }
+  if load64(base + DARWIN-PIPE-OFF-ROPEN) == 0 {
+    if load64(base + DARWIN-PIPE-OFF-WOPEN) == 0 {
+      store64(base + DARWIN-PIPE-OFF-USED, 0)
+      store64(base + DARWIN-PIPE-OFF-BUF, 0)
+      store64(base + DARWIN-PIPE-OFF-HEAD, 0)
+      store64(base + DARWIN-PIPE-OFF-COUNT, 0)
+    }
+  }
+  return
+}
+
 fn darwin-sys-open(pathname: Int, flags: Int, mode: Int) -> Int {
   return vfs-open(pathname, darwin-map-open-flags(flags))
 }
 
 fn darwin-sys-close(fd: Int) -> Int {
+  if darwin-fd-is-pipe(fd) != 0 {
+    let idx = darwin-pipe-slot(fd)
+    let end = darwin-pipe-end(fd)
+    darwin-pipe-release(idx, end)
+    vfs-fd-clear(fd)
+    return 0
+  }
   return vfs-close(fd)
 }
 
+fn darwin-pipe-read(fd: Int, buf: Int, count: Int) -> Int {
+  if count <= 0 {
+    return 0
+  }
+  if darwin-pipe-end(fd) != DARWIN-PIPE-END-READ {
+    return DARWIN-EBADF
+  }
+  let idx = darwin-pipe-slot(fd)
+  if idx < 0 || idx >= DARWIN-PIPE-MAX {
+    return DARWIN-EBADF
+  }
+  let base = darwin-pipe-table + idx * DARWIN-PIPE-SLOT
+  if load64(base + DARWIN-PIPE-OFF-USED) == 0 {
+    return DARWIN-EBADF
+  }
+  let n = load64(base + DARWIN-PIPE-OFF-COUNT)
+  if n == 0 {
+    if load64(base + DARWIN-PIPE-OFF-WOPEN) == 0 {
+      return 0
+    }
+    return 0
+  }
+  let take = count
+  if take > n {
+    take = n
+  }
+  let pbuf = load64(base + DARWIN-PIPE-OFF-BUF)
+  let head = load64(base + DARWIN-PIPE-OFF-HEAD)
+  let i = 0
+  while i < take {
+    store8(buf + i, load8(pbuf + head))
+    head = head + 1
+    if head >= DARWIN-PIPE-CAP {
+      head = 0
+    }
+    i = i + 1
+  }
+  store64(base + DARWIN-PIPE-OFF-HEAD, head)
+  store64(base + DARWIN-PIPE-OFF-COUNT, n - take)
+  return take
+}
+
+fn darwin-pipe-write(fd: Int, buf: Int, count: Int) -> Int {
+  if count <= 0 {
+    return 0
+  }
+  if darwin-pipe-end(fd) != DARWIN-PIPE-END-WRITE {
+    return DARWIN-EBADF
+  }
+  let idx = darwin-pipe-slot(fd)
+  if idx < 0 || idx >= DARWIN-PIPE-MAX {
+    return DARWIN-EBADF
+  }
+  let base = darwin-pipe-table + idx * DARWIN-PIPE-SLOT
+  if load64(base + DARWIN-PIPE-OFF-USED) == 0 {
+    return DARWIN-EBADF
+  }
+  if load64(base + DARWIN-PIPE-OFF-ROPEN) == 0 {
+    return DARWIN-EBADF
+  }
+  let n = load64(base + DARWIN-PIPE-OFF-COUNT)
+  let space = DARWIN-PIPE-CAP - n
+  if space <= 0 {
+    return 0
+  }
+  let put = count
+  if put > space {
+    put = space
+  }
+  let pbuf = load64(base + DARWIN-PIPE-OFF-BUF)
+  let head = load64(base + DARWIN-PIPE-OFF-HEAD)
+  let tail = head + n
+  while tail >= DARWIN-PIPE-CAP {
+    tail = tail - DARWIN-PIPE-CAP
+  }
+  let i = 0
+  while i < put {
+    store8(pbuf + tail, load8(buf + i))
+    tail = tail + 1
+    if tail >= DARWIN-PIPE-CAP {
+      tail = 0
+    }
+    i = i + 1
+  }
+  store64(base + DARWIN-PIPE-OFF-COUNT, n + put)
+  return put
+}
+
 fn darwin-sys-read(fd: Int, buf: Int, count: Int) -> Int {
+  if darwin-fd-is-pipe(fd) != 0 {
+    return darwin-pipe-read(fd, buf, count)
+  }
   return vfs-read(fd, buf, count)
 }
 
@@ -99,6 +291,9 @@ fn darwin-sys-write(port: Int, fd: Int, buf: Int, count: Int) -> Int {
       i = i + 1
     }
     return count
+  }
+  if darwin-fd-is-pipe(fd) != 0 {
+    return darwin-pipe-write(fd, buf, count)
   }
   return vfs-write(fd, buf, count)
 }
@@ -255,9 +450,98 @@ fn darwin-sys-execve(path: Int, argv: Int, envp: Int) -> Int {
   return posix-sys-execve(path, argv, envp)
 }
 
-// pipe: no pipe buffer fabric yet.
+// pipe lite: two vfs fds (type=2) share 4KB ring in side table (max 4 pipes).
 fn darwin-sys-pipe(fds: Int) -> Int {
-  return DARWIN-ENOSYS
+  darwin-pipe-table-init()
+  let idx = -1
+  let i = 0
+  while i < DARWIN-PIPE-MAX {
+    let base = darwin-pipe-table + i * DARWIN-PIPE-SLOT
+    if load64(base + DARWIN-PIPE-OFF-USED) == 0 {
+      idx = i
+      break
+    }
+    i = i + 1
+  }
+  if idx < 0 {
+    return DARWIN-ENOMEM
+  }
+  let rfd = vfs-fd-alloc()
+  if rfd < 0 {
+    return DARWIN-ENOMEM
+  }
+  let wfd = vfs-fd-alloc()
+  if wfd < 0 {
+    vfs-fd-clear(rfd)
+    return DARWIN-ENOMEM
+  }
+  let pbuf = alloc(DARWIN-PIPE-CAP)
+  let pbase = darwin-pipe-table + idx * DARWIN-PIPE-SLOT
+  store64(pbase + DARWIN-PIPE-OFF-USED, 1)
+  store64(pbase + DARWIN-PIPE-OFF-BUF, pbuf)
+  store64(pbase + DARWIN-PIPE-OFF-HEAD, 0)
+  store64(pbase + DARWIN-PIPE-OFF-COUNT, 0)
+  store64(pbase + DARWIN-PIPE-OFF-ROPEN, 1)
+  store64(pbase + DARWIN-PIPE-OFF-WOPEN, 1)
+  // path unused for pipe; mark non--1 so vfs-fd-valid accepts slot.
+  let rbase = vfs-fd-table + rfd * 32
+  store64(rbase + 0, 0)
+  store64(rbase + 8, idx)
+  store64(rbase + 16, DARWIN-PIPE-END-READ)
+  store64(rbase + 24, DARWIN-FD-TYPE-PIPE)
+  let wbase = vfs-fd-table + wfd * 32
+  store64(wbase + 0, 0)
+  store64(wbase + 8, idx)
+  store64(wbase + 16, DARWIN-PIPE-END-WRITE)
+  store64(wbase + 24, DARWIN-FD-TYPE-PIPE)
+  if fds != 0 {
+    store32(fds + 0, rfd)
+    store32(fds + 4, wfd)
+  }
+  return 0
+}
+
+// mmap simplified: a0 addr a1 len a2 prot → posix-sys-mmap (anon).
+fn darwin-sys-mmap(addr: Int, len: Int, prot: Int) -> Int {
+  return posix-sys-mmap(addr, len, prot, 0, -1, 0)
+}
+
+fn darwin-sys-munmap(addr: Int, len: Int) -> Int {
+  return posix-sys-munmap(addr, len)
+}
+
+// path fs-stat size into buf (same shape as fstat).
+fn darwin-sys-stat(path: Int, buf: Int) -> Int {
+  let i = 0
+  while i < DARWIN-STAT-SIZE {
+    store8(buf + i, 0)
+    i = i + 1
+  }
+  let sfbuf = alloc(64)
+  let st = fs-stat(path, sfbuf)
+  if st != 0 {
+    return DARWIN-ENOENT
+  }
+  store64(buf + DARWIN-STAT-OFF-SIZE, load64(sfbuf + SF-ST-SIZE))
+  return 0
+}
+
+// BSD SOCK_STREAM=1 DGRAM=2 already match netstack; domain AF_INET=2.
+fn darwin-sys-socket(domain: Int, stype: Int, proto: Int) -> Int {
+  return sock-socket(domain, stype, proto)
+}
+
+fn darwin-sys-connect(fd: Int, ip: Int, port: Int) -> Int {
+  return sock-connect(fd, ip, port)
+}
+
+fn darwin-sys-sendto(fd: Int, buf: Int, len: Int, rip: Int) -> Int {
+  // a3 = remote ip; port defaults 0 for demo (caller may use connect first).
+  return sock-sendto(fd, buf, len, rip, 0)
+}
+
+fn darwin-sys-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
+  return sock-recvfrom(fd, buf, len)
 }
 
 // BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
@@ -298,6 +582,9 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-GETEUID {
     return darwin-sys-geteuid()
   }
+  if num == DARWIN-SYS-RECVFROM {
+    return darwin-sys-recvfrom(a0, a1, a2)
+  }
   if num == DARWIN-SYS-ACCESS {
     return darwin-sys-access(a0, a1)
   }
@@ -313,8 +600,20 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-EXECVE {
     return darwin-sys-execve(a0, a1, a2)
   }
+  if num == DARWIN-SYS-MUNMAP {
+    return darwin-sys-munmap(a0, a1)
+  }
+  if num == DARWIN-SYS-SOCKET {
+    return darwin-sys-socket(a0, a1, a2)
+  }
+  if num == DARWIN-SYS-CONNECT {
+    return darwin-sys-connect(a0, a1, a2)
+  }
   if num == DARWIN-SYS-RENAME {
     return darwin-sys-rename(a0, a1)
+  }
+  if num == DARWIN-SYS-SENDTO {
+    return darwin-sys-sendto(a0, a1, a2, a3)
   }
   if num == DARWIN-SYS-MKDIR {
     return darwin-sys-mkdir(a0, a1)
@@ -322,11 +621,17 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-RMDIR {
     return darwin-sys-rmdir(a0)
   }
+  if num == DARWIN-SYS-STAT {
+    return darwin-sys-stat(a0, a1)
+  }
   if num == DARWIN-SYS-FSTAT {
     return darwin-sys-fstat(a0, a1)
   }
   if num == DARWIN-SYS-GETCWD {
     return darwin-sys-getcwd(a0, a1)
+  }
+  if num == DARWIN-SYS-MMAP {
+    return darwin-sys-mmap(a0, a1, a2)
   }
   if num == DARWIN-SYS-LSEEK {
     return darwin-sys-lseek(a0, a1, a2)
@@ -498,13 +803,83 @@ fn darwin-demo(port: Int) -> void {
   serial-write-dec-wide(port, rrc)
   serial-nl(port)
 
-  let prc = darwin-dispatch(port, DARWIN-SYS-PIPE, 0, 0, 0, 0)
-  serial-write-cstr(port, "darwin: pipe() = ")
-  serial-write-dec-wide(port, prc)
-  if prc == DARWIN-ENOSYS {
-    serial-write-cstr(port, " (ENOSYS expected)")
+  // Recreate a small file for path stat after earlier rename/unlink.
+  let sname = "darwin-stat.txt"
+  let stfd = darwin-dispatch(port, DARWIN-SYS-OPEN, sname, DARWIN-O-CREAT | DARWIN-O-RDWR, 0, 0)
+  if stfd >= 0 {
+    let scontent = "stat-me"
+    let slen = 0
+    while load8(scontent + slen) != 0 {
+      slen = slen + 1
+    }
+    darwin-dispatch(port, DARWIN-SYS-WRITE, stfd, scontent, slen, 0)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, stfd, 0, 0, 0)
+  }
+  let stpath = alloc(DARWIN-STAT-SIZE)
+  let strc = darwin-dispatch(port, DARWIN-SYS-STAT, sname, stpath, 0, 0)
+  serial-write-cstr(port, "darwin: stat(darwin-stat.txt) = ")
+  serial-write-dec-wide(port, strc)
+  if strc == 0 {
+    serial-write-cstr(port, ", st_size = ")
+    serial-write-dec-wide(port, load64(stpath + DARWIN-STAT-OFF-SIZE))
   }
   serial-nl(port)
+  darwin-dispatch(port, DARWIN-SYS-UNLINK, sname, 0, 0, 0)
+
+  let map = darwin-dispatch(port, DARWIN-SYS-MMAP, 0, 64, 0, 0)
+  serial-write-cstr(port, "darwin: mmap(0, 64) = ")
+  serial-write-dec-wide(port, map)
+  serial-nl(port)
+  if map > 0 {
+    store8(map + 0, 65)
+    let urc = darwin-dispatch(port, DARWIN-SYS-MUNMAP, map, 64, 0, 0)
+    serial-write-cstr(port, "darwin: munmap(map, 64) = ")
+    serial-write-dec-wide(port, urc)
+    serial-nl(port)
+  }
+
+  let sock = darwin-dispatch(port, DARWIN-SYS-SOCKET, DARWIN-AF-INET, DARWIN-SOCK-DGRAM, 0, 0)
+  serial-write-cstr(port, "darwin: socket(AF_INET, SOCK_DGRAM, 0) = ")
+  serial-write-dec-wide(port, sock)
+  serial-nl(port)
+
+  let pfds = alloc(8)
+  let prc = darwin-dispatch(port, DARWIN-SYS-PIPE, pfds, 0, 0, 0)
+  serial-write-cstr(port, "darwin: pipe() = ")
+  serial-write-dec-wide(port, prc)
+  serial-nl(port)
+  if prc == 0 {
+    let rfd = load32(pfds + 0)
+    let wfd = load32(pfds + 4)
+    serial-write-cstr(port, "darwin: pipe fds r=")
+    serial-write-dec-wide(port, rfd)
+    serial-write-cstr(port, " w=")
+    serial-write-dec-wide(port, wfd)
+    serial-nl(port)
+    let pmsg = "pipe-lite"
+    let plen = 0
+    while load8(pmsg + plen) != 0 {
+      plen = plen + 1
+    }
+    let pw = darwin-dispatch(port, DARWIN-SYS-WRITE, wfd, pmsg, plen, 0)
+    serial-write-cstr(port, "darwin: write(pipe_w, pipe-lite) = ")
+    serial-write-dec-wide(port, pw)
+    serial-nl(port)
+    let pbuf = alloc(32)
+    let pr = darwin-dispatch(port, DARWIN-SYS-READ, rfd, pbuf, 31, 0)
+    serial-write-cstr(port, "darwin: read(pipe_r) = ")
+    serial-write-dec-wide(port, pr)
+    serial-write-cstr(port, " -> '")
+    let pi = 0
+    while pi < pr {
+      serial-put(port, load8(pbuf + pi))
+      pi = pi + 1
+    }
+    serial-write-cstr(port, "'")
+    serial-nl(port)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, wfd, 0, 0, 0)
+  }
 
   // fork/execve wired in dispatch; shell demo skips (proc-wait yields; execve replaces image).
 

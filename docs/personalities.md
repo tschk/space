@@ -90,16 +90,23 @@ BSD numbers used (classic / FreeBSD-leaning, documented in `darwin.in`):
 | 12 | chdir | `posix-sys-chdir` |
 | 20 | getpid | `current-task` |
 | 24 / 25 | getuid / geteuid | constant 0 |
+| 29 | recvfrom | `sock-recvfrom` (FreeBSD num) |
 | 33 | access | `fs-stat` probe → 0 / ENOENT |
 | 37 | kill | `proc-signal` |
 | 41 | dup | clone vfs-fd-table entry |
-| 42 | pipe | ENOSYS (no pipe fabric yet) |
+| 42 | pipe | lite 4KB ring, max 4 pipes; vfs type=2 |
 | 59 | execve | `posix-sys-execve` (dispatch only; shell demo skips) |
+| 73 | munmap | `posix-sys-munmap` |
+| 97 | socket | `sock-socket` (AF_INET; STREAM=1 DGRAM=2) |
+| 98 | connect | `sock-connect` |
 | 128 | rename | `fs-rename` |
+| 133 | sendto | `sock-sendto` (a3=rip, port 0 demo) |
 | 136 | mkdir | `fs-mkdir` |
 | 137 | rmdir | `fs-rmdir` |
+| 188 | stat | path `fs-stat` size into buf |
 | 189 | fstat | VFS path + `fs-stat` size into buf |
 | 192 | getcwd | `posix-sys-getcwd` (Space-doc'd; FreeBSD 326) |
+| 197 | mmap | `posix-sys-mmap` (a0 addr a1 len a2 prot; anon) |
 | 199 | lseek | `vfs-lseek` |
 | 0x1000 | mach task_self | constant 1 |
 | 0x1001 | mach_msg | -1 |

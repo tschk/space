@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove Darwin personality BSD-ish demo path boots (open/write/mkdir/getcwd/rename).
+# Prove Darwin personality BSD-ish demo path boots (open/write/mkdir/getcwd/rename + depth).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -51,9 +51,14 @@ kill "$CATPID" 2>/dev/null || true
 wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
 
-grep -qE "darwin: open\\(|darwin: write\\(" "$SERIAL_LOG"
+grep -qE 'darwin: open\(|darwin: write\(' "$SERIAL_LOG"
 grep -qF "darwin: mkdir(darwin-dir)" "$SERIAL_LOG"
 grep -qF "darwin: getcwd()" "$SERIAL_LOG"
-grep -qE "darwin: rename\\(" "$SERIAL_LOG"
+grep -qE 'darwin: rename\(' "$SERIAL_LOG"
+# Deeper BSD surface: at least one of pipe/mmap/socket/stat must appear.
+if ! grep -qE 'darwin: (pipe\(\)|mmap\(|socket\(|stat\()' "$SERIAL_LOG"; then
+  echo "FAIL: missing pipe/mmap/socket/stat serial line" >&2
+  exit 1
+fi
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename)"
+echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat)"
