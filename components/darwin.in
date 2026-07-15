@@ -5,23 +5,34 @@ package space.kernel
 // Userland OS personality on Darwin is mostly BSD syscalls (syscalls.master), not raw Mach
 // for files/process. Space follows that: BSD numbers → vfs-*/fs-*/proc-signal.
 //
-// Classic BSD/xnu numbers used here:
-//   exit=1, read=3, write=4, open=5, close=6, unlink=10, chdir=12,
-//   getpid=20, kill=37, mkdir=136, fstat=189, getcwd=192 (Space-doc'd; FreeBSD 326),
-//   lseek=199
+// Classic BSD/xnu numbers used here (FreeBSD-leaning where Darwin conflicts):
+//   exit=1, fork=2, read=3, write=4, open=5, close=6, wait4=7 (FreeBSD; Darwin 199=lseek),
+//   unlink=10, chdir=12, getpid=20, getuid=24, geteuid=25, access=33, kill=37,
+//   dup=41, pipe=42, execve=59, rename=128, mkdir=136, rmdir=137,
+//   fstat=189, getcwd=192 (Space-doc'd; FreeBSD 326), lseek=199
 // Open flags: BSD/Darwin O_CREAT=0x200, O_TRUNC=0x400 (mapped onto VFS-O-*).
 // Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
 
 const DARWIN-SYS-EXIT = 1
+const DARWIN-SYS-FORK = 2
 const DARWIN-SYS-READ = 3
 const DARWIN-SYS-WRITE = 4
 const DARWIN-SYS-OPEN = 5
 const DARWIN-SYS-CLOSE = 6
+const DARWIN-SYS-WAIT4 = 7
 const DARWIN-SYS-UNLINK = 10
 const DARWIN-SYS-CHDIR = 12
 const DARWIN-SYS-GETPID = 20
+const DARWIN-SYS-GETUID = 24
+const DARWIN-SYS-GETEUID = 25
+const DARWIN-SYS-ACCESS = 33
 const DARWIN-SYS-KILL = 37
+const DARWIN-SYS-DUP = 41
+const DARWIN-SYS-PIPE = 42
+const DARWIN-SYS-EXECVE = 59
+const DARWIN-SYS-RENAME = 128
 const DARWIN-SYS-MKDIR = 136
+const DARWIN-SYS-RMDIR = 137
 const DARWIN-SYS-FSTAT = 189
 const DARWIN-SYS-GETCWD = 192
 const DARWIN-SYS-LSEEK = 199
@@ -167,10 +178,95 @@ fn darwin-sys-lseek(fd: Int, offset: Int, whence: Int) -> Int {
   return vfs-lseek(fd, offset, whence)
 }
 
+fn darwin-sys-rename(oldp: Int, newp: Int) -> Int {
+  let rc = fs-rename(oldp, newp)
+  if rc != 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+fn darwin-sys-rmdir(path: Int) -> Int {
+  let rc = fs-rmdir(path)
+  if rc != 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+// access: existence probe via fs-stat (mode bits ignored for now).
+fn darwin-sys-access(path: Int, mode: Int) -> Int {
+  let stbuf = alloc(64)
+  let st = fs-stat(path, stbuf)
+  if st != 0 {
+    return DARWIN-ENOENT
+  }
+  return 0
+}
+
+fn darwin-sys-getuid() -> Int {
+  return 0
+}
+
+fn darwin-sys-geteuid() -> Int {
+  return 0
+}
+
+// Clone path/offset/flags from an open vfs fd into a new slot.
+fn darwin-sys-dup(fd: Int) -> Int {
+  if vfs-fd-valid(fd) == 0 {
+    return DARWIN-EBADF
+  }
+  if fd < 3 {
+    let nfd = vfs-fd-alloc()
+    if nfd < 0 {
+      return DARWIN-ENOSYS
+    }
+    let nbase = vfs-fd-table + nfd * 32
+    store64(nbase + 0, 0)
+    store64(nbase + 8, 0)
+    store64(nbase + 16, load64(vfs-fd-table + fd * 32 + 16))
+    store64(nbase + 24, 0)
+    return nfd
+  }
+  let base = vfs-fd-table + fd * 32
+  let path = load64(base + 0)
+  let nfd = vfs-fd-alloc()
+  if nfd < 0 {
+    return DARWIN-ENOSYS
+  }
+  let nbase = vfs-fd-table + nfd * 32
+  store64(nbase + 0, path)
+  store64(nbase + 8, load64(base + 8))
+  store64(nbase + 16, load64(base + 16))
+  store64(nbase + 24, load64(base + 24))
+  return nfd
+}
+
+fn darwin-sys-fork() -> Int {
+  return posix-sys-fork()
+}
+
+fn darwin-sys-wait4(pid: Int, wstatus: Int, options: Int, rusage: Int) -> Int {
+  return posix-sys-wait4(pid, wstatus, options, rusage)
+}
+
+fn darwin-sys-execve(path: Int, argv: Int, envp: Int) -> Int {
+  return posix-sys-execve(path, argv, envp)
+}
+
+// pipe: no pipe buffer fabric yet.
+fn darwin-sys-pipe(fds: Int) -> Int {
+  return DARWIN-ENOSYS
+}
+
 // BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
 fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
   if darwin-ready == 0 {
     darwin-init()
+  }
+  if num == DARWIN-SYS-FORK {
+    return darwin-sys-fork()
   }
   if num == DARWIN-SYS-READ {
     return darwin-sys-read(a0, a1, a2)
@@ -184,6 +280,9 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-CLOSE {
     return darwin-sys-close(a0)
   }
+  if num == DARWIN-SYS-WAIT4 {
+    return darwin-sys-wait4(a0, a1, a2, a3)
+  }
   if num == DARWIN-SYS-UNLINK {
     return darwin-sys-unlink(a0)
   }
@@ -193,11 +292,35 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-SYS-GETPID {
     return darwin-sys-getpid()
   }
+  if num == DARWIN-SYS-GETUID {
+    return darwin-sys-getuid()
+  }
+  if num == DARWIN-SYS-GETEUID {
+    return darwin-sys-geteuid()
+  }
+  if num == DARWIN-SYS-ACCESS {
+    return darwin-sys-access(a0, a1)
+  }
   if num == DARWIN-SYS-KILL {
     return darwin-sys-kill(a0, a1)
   }
+  if num == DARWIN-SYS-DUP {
+    return darwin-sys-dup(a0)
+  }
+  if num == DARWIN-SYS-PIPE {
+    return darwin-sys-pipe(a0)
+  }
+  if num == DARWIN-SYS-EXECVE {
+    return darwin-sys-execve(a0, a1, a2)
+  }
+  if num == DARWIN-SYS-RENAME {
+    return darwin-sys-rename(a0, a1)
+  }
   if num == DARWIN-SYS-MKDIR {
     return darwin-sys-mkdir(a0, a1)
+  }
+  if num == DARWIN-SYS-RMDIR {
+    return darwin-sys-rmdir(a0)
   }
   if num == DARWIN-SYS-FSTAT {
     return darwin-sys-fstat(a0, a1)
@@ -311,8 +434,26 @@ fn darwin-demo(port: Int) -> void {
   serial-write-cstr(port, "'")
   serial-nl(port)
 
+  // chdir back to root so later absolute-ish paths stay simple
+  darwin-dispatch(port, DARWIN-SYS-CHDIR, "/", 0, 0, 0)
+
+  let uid = darwin-dispatch(port, DARWIN-SYS-GETUID, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: getuid() = ")
+  serial-write-dec-wide(port, uid)
+  serial-nl(port)
+
+  let euid = darwin-dispatch(port, DARWIN-SYS-GETEUID, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: geteuid() = ")
+  serial-write-dec-wide(port, euid)
+  serial-nl(port)
+
+  let arc = darwin-dispatch(port, DARWIN-SYS-ACCESS, fname, 0, 0, 0)
+  serial-write-cstr(port, "darwin: access(darwin-hello.txt, F_OK) = ")
+  serial-write-dec-wide(port, arc)
+  serial-nl(port)
+
   let sfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fname, DARWIN-O-RDONLY, 0, 0)
-  serial-write-cstr(port, "darwin: open(darwin-hello.txt, O_RDONLY) for lseek/fstat = ")
+  serial-write-cstr(port, "darwin: open(darwin-hello.txt, O_RDONLY) for lseek/fstat/dup = ")
   serial-write-dec-wide(port, sfd)
   serial-nl(port)
   if sfd >= 0 {
@@ -330,13 +471,42 @@ fn darwin-demo(port: Int) -> void {
       serial-write-dec-wide(port, load64(stbuf + DARWIN-STAT-OFF-SIZE))
     }
     serial-nl(port)
+
+    let dfd = darwin-dispatch(port, DARWIN-SYS-DUP, sfd, 0, 0, 0)
+    serial-write-cstr(port, "darwin: dup(fd) = ")
+    serial-write-dec-wide(port, dfd)
+    serial-nl(port)
+    if dfd >= 0 {
+      darwin-dispatch(port, DARWIN-SYS-CLOSE, dfd, 0, 0, 0)
+    }
     darwin-dispatch(port, DARWIN-SYS-CLOSE, sfd, 0, 0, 0)
   }
 
-  let urc = darwin-dispatch(port, DARWIN-SYS-UNLINK, fname, 0, 0, 0)
-  serial-write-cstr(port, "darwin: unlink(darwin-hello.txt) = ")
+  let fname2 = "darwin-hello2.txt"
+  let rnrc = darwin-dispatch(port, DARWIN-SYS-RENAME, fname, fname2, 0, 0)
+  serial-write-cstr(port, "darwin: rename(darwin-hello.txt, darwin-hello2.txt) = ")
+  serial-write-dec-wide(port, rnrc)
+  serial-nl(port)
+
+  let urc = darwin-dispatch(port, DARWIN-SYS-UNLINK, fname2, 0, 0, 0)
+  serial-write-cstr(port, "darwin: unlink(darwin-hello2.txt) = ")
   serial-write-dec-wide(port, urc)
   serial-nl(port)
+
+  let rrc = darwin-dispatch(port, DARWIN-SYS-RMDIR, dname, 0, 0, 0)
+  serial-write-cstr(port, "darwin: rmdir(darwin-dir) = ")
+  serial-write-dec-wide(port, rrc)
+  serial-nl(port)
+
+  let prc = darwin-dispatch(port, DARWIN-SYS-PIPE, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: pipe() = ")
+  serial-write-dec-wide(port, prc)
+  if prc == DARWIN-ENOSYS {
+    serial-write-cstr(port, " (ENOSYS expected)")
+  }
+  serial-nl(port)
+
+  // fork/execve wired in dispatch; shell demo skips (proc-wait yields; execve replaces image).
 
   let krc = darwin-dispatch(port, DARWIN-SYS-KILL, 99999, SIGKILL, 0, 0)
   serial-write-cstr(port, "darwin: kill(invalid) = ")

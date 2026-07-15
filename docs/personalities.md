@@ -21,7 +21,7 @@ kernel.” It is a thin translator, same idea as `linux.in` → `posix.in`.
 |-------------|-------|-----------|
 | Linux / POSIX | `linux.in` / `posix.in` | VFS, process, serial |
 | Darwin (BSD subset) | `darwin.in` | BSD nums → VFS/process; Mach stubs only |
-| Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial; not PE/CSRSS |
+| Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial/process; not PE/CSRSS |
 
 Windows call numbers are **Space-local**, not real NT syscall numbers:
 
@@ -39,8 +39,19 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 12. `GetStdHandle` — `-10`→0 stdin, `-11`→1 stdout, `-12`→2 stderr
 13. `MoveFileA` — `fs-rename`; return 1/0
 14. `FlushFileBuffers` — no-op success (1) for open handle
+15. `CreateDirectoryA` — `fs-mkdir`; return 1/0
+16. `RemoveDirectoryA` — `fs-rmdir`; return 1/0
+17. `GetLastError` — `win-last-error` global (2=ENOENT-style, 6=invalid handle)
+18. `SetLastError` — set `win-last-error` from `a0`
+19. `VirtualAlloc` — `posix-sys-mmap` / `alloc(size)`; preferred addr ignored
+20. `VirtualFree` — `posix-sys-munmap` stand-in; return 1/0
+21. `CreateProcessA` — `proc-spawn-sci` on path; handle = `100+pid` or 0
+22. `WaitForSingleObject` — process-like handles only → `proc-wait`
+23. `GetCommandLineA` — static cstr `"space-windows"`
+24. `WriteConsoleA` — alias `WriteFile` on handles 1/2
 
 Handle table: max 16 slots; 1/2 reserved as stdout/stderr; 3..15 hold VFS fds.
+Process handles are fake (`100+pid`), not full typed object table.
 
 **Honest limit:** not full Win32, not PE loader, not CSRSS, not real NT objects.
 Shell command `windows` runs `win-demo`.
@@ -53,22 +64,34 @@ tasks, and VM; BSD supplies process model, VFS, networking, POSIX-ish APIs.
 
 Space Darwin personality follows that split:
 
-- Implement a **BSD-shaped** call surface first (open/read/write/close/unlink/chdir/getpid/kill/mkdir/fstat/getcwd/lseek).
+- Implement a **BSD-shaped** call surface first (not full XNU).
 - Keep **Mach** as explicit stubs (`task_self` → 1, `mach_msg` → -1) until a real
   port/message fabric exists.
+- Where Darwin and FreeBSD numbers conflict on Space (Darwin `wait4` vs `lseek`
+  both claim 199 in some tables), Space uses FreeBSD-leaning picks: `wait4=7`,
+  `lseek=199`.
 
-BSD numbers used (classic / xnu-adjacent, documented in `darwin.in`):
+BSD numbers used (classic / FreeBSD-leaning, documented in `darwin.in`):
 
 | # | call | maps to |
 |---|------|---------|
 | 1 | exit | status only (no kernel halt) |
+| 2 | fork | `posix-sys-fork` (dispatch only; shell demo skips) |
 | 3 / 4 | read / write | VFS + serial stdio |
 | 5 / 6 | open / close | `vfs-open` / `vfs-close` |
+| 7 | wait4 | `posix-sys-wait4` (FreeBSD; Darwin 199 = lseek here) |
 | 10 | unlink | `fs-delete` |
 | 12 | chdir | `posix-sys-chdir` |
 | 20 | getpid | `current-task` |
+| 24 / 25 | getuid / geteuid | constant 0 |
+| 33 | access | `fs-stat` probe → 0 / ENOENT |
 | 37 | kill | `proc-signal` |
+| 41 | dup | clone vfs-fd-table entry |
+| 42 | pipe | ENOSYS (no pipe fabric yet) |
+| 59 | execve | `posix-sys-execve` (dispatch only; shell demo skips) |
+| 128 | rename | `fs-rename` |
 | 136 | mkdir | `fs-mkdir` |
+| 137 | rmdir | `fs-rmdir` |
 | 189 | fstat | VFS path + `fs-stat` size into buf |
 | 192 | getcwd | `posix-sys-getcwd` (Space-doc'd; FreeBSD 326) |
 | 199 | lseek | `vfs-lseek` |

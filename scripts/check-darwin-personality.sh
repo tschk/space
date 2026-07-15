@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove Darwin personality open/write/mkdir/getcwd/lseek/fstat demo path boots.
+# Prove Darwin personality BSD-ish demo path boots (open/write/mkdir/getcwd/rename).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -52,5 +52,8 @@ wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
 
 grep -qE "darwin: open\\(|darwin: write\\(" "$SERIAL_LOG"
+grep -qF "darwin: mkdir(darwin-dir)" "$SERIAL_LOG"
+grep -qF "darwin: getcwd()" "$SERIAL_LOG"
+grep -qE "darwin: rename\\(" "$SERIAL_LOG"
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Darwin personality demo (open/write path)"
+echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename)"
