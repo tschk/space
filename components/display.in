@@ -943,60 +943,192 @@ fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
   return cx
 }
 
-const COMP-TERM-BUF-SIZE = 512
+const COMP-TERM-SLOTS = 2
+const COMP-TERM-BUF-SIZE = 128
+const COMP-TERM-LINES = 32
+const COMP-TERM-COLS = 80
+const COMP-TERM-VIEW = 10
+// Special key codes (not printable): scroll
+const COMP-KEY-PGUP = 128
+const COMP-KEY-PGDN = 129
 
-var comp-term-buf: Int = 0
-var comp-term-len: Int = 0
-var comp-term-mode: Int = 0
+// Input line buffers: slot * COMP-TERM-BUF-SIZE
+var comp-term-input: Int = 0
+// Ring of fixed-width lines: slot * LINES * COLS
+var comp-term-ring: Int = 0
+// Per-slot packed state in small arrays (8 bytes each slot)
+var comp-term-len: Int = 0      // input length[slot]
+var comp-term-head: Int = 0     // next ring write index[slot]
+var comp-term-count: Int = 0    // lines stored[slot] (0..LINES)
+var comp-term-scroll: Int = 0   // lines up from bottom[slot]
+var comp-term-mode: Int = 0     // 0 normal, 2 fetch banner[slot]
 
-fn comp-term-append(ch: Int) -> void {
-  if comp-term-len >= COMP-TERM-BUF-SIZE - 1 {
+fn comp-term-input-of(slot: Int) -> Int {
+  return comp-term-input + slot * COMP-TERM-BUF-SIZE
+}
+
+fn comp-term-ring-line(slot: Int, idx: Int) -> Int {
+  let i = idx - (idx / COMP-TERM-LINES) * COMP-TERM-LINES
+  if i < 0 {
+    i = i + COMP-TERM-LINES
+  }
+  return comp-term-ring + (slot * COMP-TERM-LINES + i) * COMP-TERM-COLS
+}
+
+fn comp-term-get-len(slot: Int) -> Int {
+  return load32(comp-term-len + slot * 4)
+}
+
+fn comp-term-set-len(slot: Int, v: Int) -> void {
+  store32(comp-term-len + slot * 4, v)
+  return
+}
+
+fn comp-term-get-head(slot: Int) -> Int {
+  return load32(comp-term-head + slot * 4)
+}
+
+fn comp-term-set-head(slot: Int, v: Int) -> void {
+  store32(comp-term-head + slot * 4, v)
+  return
+}
+
+fn comp-term-get-count(slot: Int) -> Int {
+  return load32(comp-term-count + slot * 4)
+}
+
+fn comp-term-set-count(slot: Int, v: Int) -> void {
+  store32(comp-term-count + slot * 4, v)
+  return
+}
+
+fn comp-term-get-scroll(slot: Int) -> Int {
+  return load32(comp-term-scroll + slot * 4)
+}
+
+fn comp-term-set-scroll(slot: Int, v: Int) -> void {
+  store32(comp-term-scroll + slot * 4, v)
+  return
+}
+
+fn comp-term-get-mode(slot: Int) -> Int {
+  return load32(comp-term-mode + slot * 4)
+}
+
+fn comp-term-set-mode(slot: Int, v: Int) -> void {
+  store32(comp-term-mode + slot * 4, v)
+  return
+}
+
+fn comp-term-clear-line(addr: Int) -> void {
+  let i = 0
+  while i < COMP-TERM-COLS {
+    store8(addr + i, 0)
+    i = i + 1
+  }
+  return
+}
+
+fn comp-term-push-line(slot: Int, src: Int) -> void {
+  let head = comp-term-get-head(slot)
+  let dst = comp-term-ring-line(slot, head)
+  comp-term-clear-line(dst)
+  let i = 0
+  while i < COMP-TERM-COLS - 1 {
+    let ch = load8(src + i)
+    if ch == 0 {
+      i = COMP-TERM-COLS
+    } else {
+      store8(dst + i, ch)
+      i = i + 1
+    }
+  }
+  comp-term-set-head(slot, head + 1)
+  let c = comp-term-get-count(slot)
+  if c < COMP-TERM-LINES {
+    comp-term-set-count(slot, c + 1)
+  }
+  // New output pins view to bottom.
+  comp-term-set-scroll(slot, 0)
+  return
+}
+
+fn comp-term-append(slot: Int, ch: Int) -> void {
+  let len = comp-term-get-len(slot)
+  if len >= COMP-TERM-BUF-SIZE - 1 {
     return
   }
-  store8(comp-term-buf + comp-term-len, ch)
-  comp-term-len = comp-term-len + 1
-  store8(comp-term-buf + comp-term-len, 0)
+  let buf = comp-term-input-of(slot)
+  store8(buf + len, ch)
+  len = len + 1
+  store8(buf + len, 0)
+  comp-term-set-len(slot, len)
   return
 }
 
 fn comp-term-init() -> void {
-  if comp-term-buf == 0 {
-    comp-term-buf = alloc(COMP-TERM-BUF-SIZE)
+  if comp-term-input == 0 {
+    comp-term-input = alloc(COMP-TERM-SLOTS * COMP-TERM-BUF-SIZE)
+    comp-term-ring = alloc(COMP-TERM-SLOTS * COMP-TERM-LINES * COMP-TERM-COLS)
+    comp-term-len = alloc(COMP-TERM-SLOTS * 4)
+    comp-term-head = alloc(COMP-TERM-SLOTS * 4)
+    comp-term-count = alloc(COMP-TERM-SLOTS * 4)
+    comp-term-scroll = alloc(COMP-TERM-SLOTS * 4)
+    comp-term-mode = alloc(COMP-TERM-SLOTS * 4)
   }
-  comp-term-seed("")
+  let s = 0
+  while s < COMP-TERM-SLOTS {
+    comp-term-set-len(s, 0)
+    comp-term-set-head(s, 0)
+    comp-term-set-count(s, 0)
+    comp-term-set-scroll(s, 0)
+    comp-term-set-mode(s, 0)
+    store8(comp-term-input-of(s), 0)
+    let li = 0
+    while li < COMP-TERM-LINES {
+      comp-term-clear-line(comp-term-ring-line(s, li))
+      li = li + 1
+    }
+    s = s + 1
+  }
   return
 }
 
-fn comp-term-backspace() -> void {
-  if comp-term-len <= 0 {
+fn comp-term-backspace(slot: Int) -> void {
+  let len = comp-term-get-len(slot)
+  if len <= 0 {
     return
   }
-  comp-term-len = comp-term-len - 1
-  store8(comp-term-buf + comp-term-len, 0)
+  len = len - 1
+  store8(comp-term-input-of(slot) + len, 0)
+  comp-term-set-len(slot, len)
   return
 }
 
-fn comp-term-seed(src: Int) -> void {
-  comp-term-len = 0
+fn comp-term-seed(slot: Int, src: Int) -> void {
+  let buf = comp-term-input-of(slot)
+  let len = 0
   let i = 0
   while i < COMP-TERM-BUF-SIZE - 1 {
     let ch = load8(src + i)
     if ch == 0 {
       i = COMP-TERM-BUF-SIZE
     } else {
-      store8(comp-term-buf + comp-term-len, ch)
-      comp-term-len = comp-term-len + 1
+      store8(buf + len, ch)
+      len = len + 1
       i = i + 1
     }
   }
-  store8(comp-term-buf + comp-term-len, 0)
+  store8(buf + len, 0)
+  comp-term-set-len(slot, len)
   return
 }
 
-fn comp-term-line-eq(str: Int) -> Int {
+fn comp-term-line-eq(slot: Int, str: Int) -> Int {
+  let buf = comp-term-input-of(slot)
   let i = 0
   while i < 64 {
-    let a = load8(comp-term-buf + i)
+    let a = load8(buf + i)
     let b = load8(str + i)
     if a != b {
       return 0
@@ -1007,6 +1139,43 @@ fn comp-term-line-eq(str: Int) -> Int {
     i = i + 1
   }
   return 0
+}
+
+fn comp-term-scroll-by(slot: Int, delta: Int) -> void {
+  let sc = comp-term-get-scroll(slot) + delta
+  if sc < 0 {
+    sc = 0
+  }
+  let max = comp-term-get-count(slot)
+  if max > COMP-TERM-VIEW {
+    max = max - COMP-TERM-VIEW
+  } else {
+    max = 0
+  }
+  if sc > max {
+    sc = max
+  }
+  comp-term-set-scroll(slot, sc)
+  return
+}
+
+fn comp-term-slot-of-win(base: Int) -> Int {
+  let slot = load64(base + 32)
+  if slot < 0 || slot >= COMP-TERM-SLOTS {
+    return 0
+  }
+  return slot
+}
+
+fn comp-term-focused-slot() -> Int {
+  if comp-focused < 0 {
+    return 0
+  }
+  let base = comp-win-base(comp-focused)
+  if load64(base + 40) != COMP-ROLE-TERMINAL {
+    return 0
+  }
+  return comp-term-slot-of-win(base)
 }
 
 // Helper: draw content text (or default placeholder for empty windows)
@@ -1083,48 +1252,40 @@ fn comp-draw-terminal-content(base: Int) -> void {
   let content-y = y + COMP-TITLE-BAR-H
   let cw = fb-font-scale * 8 + 2
   let lh = cw + 3
+  let slot = comp-term-slot-of-win(base)
   fb-fill-rect(x, content-y, w, h, COMP-COLOR-TERM-BG)
   fb-fill-rect(x, content-y, w, 28, COMP-COLOR-DESKTOP)
-  comp-draw-label(x + 12, content-y + 6, "TERMINAL", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
-  let prompt-y = content-y + 54
-  if comp-term-mode > 1 {
-    comp-draw-label(x + 16, content-y + 54, "SPACEOS", FB-COLOR-CYAN, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, content-y + 54, "0.2.", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-dec(x + 332, content-y + 54, SPACE-VERSION-PATCH, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 84, "KERNEL", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, content-y + 84, "SPACE NANOKERNEL", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 114, "ARCH", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, content-y + 114, "X86_64 LONG MODE", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 144, "MEMORY", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    let mx = comp-draw-dec(x + 260, content-y + 144, total-ram / 1048576, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(mx, content-y + 144, " MIB", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 174, "DISPLAY", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    let dx = comp-draw-dec(x + 260, content-y + 174, fb-width, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(dx, content-y + 174, " x ", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    let dx2 = comp-draw-dec(dx + 54, content-y + 174, fb-height, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(dx2, content-y + 174, " x ", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-dec(dx2 + 54, content-y + 174, fb-bpp, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 204, "FRAMEBUFFER", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    let vx = comp-draw-dec(x + 260, content-y + 204, fb-size / 1048576, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(vx, content-y + 204, " MIB", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 234, "STORAGE", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    if nvme-ready != 0 {
-      comp-draw-label(x + 260, content-y + 234, "SPARKFS NVME", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    } else {
-      comp-draw-label(x + 260, content-y + 234, "SPARKFS MEM", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    }
-    comp-draw-label(x + 16, content-y + 264, "INPUT", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, content-y + 264, "PS/2 KEYBOARD + MOUSE", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 294, "LINUX ABI", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, content-y + 294, "SYSCALL PERSONALITY", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 324, "PROCESSES", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-dec(x + 260, content-y + 324, proc-count, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 16, content-y + 354, "DOMAINS", COMP-COLOR-MUTED, COMP-COLOR-TERM-BG)
-    comp-draw-dec(x + 260, content-y + 354, domain-count, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    prompt-y = content-y + 414
+  if slot == 0 {
+    comp-draw-label(x + 12, content-y + 6, "TERMINAL 1", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
+  } else {
+    comp-draw-label(x + 12, content-y + 6, "TERMINAL 2", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
+  }
+  let prompt-y = content-y + 40
+  // Visible history: last COMP-TERM-VIEW lines, shifted by scroll.
+  let count = comp-term-get-count(slot)
+  let sc = comp-term-get-scroll(slot)
+  let head = comp-term-get-head(slot)
+  let show = count
+  if show > COMP-TERM-VIEW {
+    show = COMP-TERM-VIEW
+  }
+  // Newest line index is head-1. Start at newest - sc - show + 1.
+  let start = head - sc - show
+  let row = 0
+  while row < show {
+    let line = comp-term-ring-line(slot, start + row)
+    comp-draw-label(x + 16, prompt-y + row * lh, line, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
+    row = row + 1
+  }
+  prompt-y = prompt-y + show * lh + 8
+  if comp-term-get-mode(slot) > 1 {
+    comp-draw-label(x + 16, prompt-y, "SPACEOS", FB-COLOR-CYAN, COMP-COLOR-TERM-BG)
+    comp-draw-label(x + 260, prompt-y, "0.2.", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
+    comp-draw-dec(x + 332, prompt-y, SPACE-VERSION-PATCH, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
+    prompt-y = prompt-y + lh
   }
   comp-draw-label(x + 16, prompt-y, "space> ", FB-COLOR-GREEN, COMP-COLOR-TERM-BG)
-  comp-draw-label(x + 16 + 7 * 18, prompt-y, comp-term-buf, FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
+  comp-draw-label(x + 16 + 7 * 18, prompt-y, comp-term-input-of(slot), FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
   return
 }
 
@@ -1506,23 +1667,30 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
   if comp-focused >= 0 {
     role = load64(comp-win-base(comp-focused) + 40)
   }
-  if role == COMP-ROLE-TERMINAL || comp-count == 1 {
-    if key == 8 || key == 127 {
-      comp-term-backspace()
+  if role == COMP-ROLE-TERMINAL {
+    let slot = comp-term-focused-slot()
+    // Scroll: PgUp/PgDn codes, or Ctrl-P / Ctrl-N (16/14)
+    if key == COMP-KEY-PGUP || key == 16 {
+      comp-term-scroll-by(slot, 4)
+    } else if key == COMP-KEY-PGDN || key == 14 {
+      comp-term-scroll-by(slot, -4)
+    } else if key == 8 || key == 127 {
+      comp-term-backspace(slot)
     } else if key == 13 || key == 10 {
-      if comp-term-line-eq("fetch") != 0 {
-        comp-term-seed("")
-        comp-term-mode = 2
+      // Push current input into ring, then clear line.
+      comp-term-push-line(slot, comp-term-input-of(slot))
+      if comp-term-line-eq(slot, "fetch") != 0 {
+        comp-term-seed(slot, "")
+        comp-term-set-mode(slot, 2)
       } else {
-        comp-term-seed("")
-        comp-term-mode = 0
+        comp-term-seed(slot, "")
+        comp-term-set-mode(slot, 0)
       }
     } else if key >= 32 && key <= 126 {
-      if comp-term-mode == 2 {
-        comp-term-mode = 0
-        comp-term-seed("")
+      if comp-term-get-mode(slot) == 2 {
+        comp-term-set-mode(slot, 0)
       }
-      comp-term-append(key)
+      comp-term-append(slot, key)
     }
   }
   if comp-focused >= 0 {
@@ -1564,12 +1732,17 @@ fn comp-run(port: Int) -> void {
   let right-w = fb-width - 64 - left-w
   let right-h = (usable-h - 16) / 2
 
+  let win-term0 = comp-win-create("TERMINAL 1", 32, top-y, left-w, usable-h)
+  comp-win-set-role(win-term0, COMP-ROLE-TERMINAL)
+  comp-win-set-content(win-term0, 0)
+
   let win-util = comp-win-create("UTILITIES", 48 + left-w + 16, top-y, right-w, right-h)
   comp-win-set-role(win-util, COMP-ROLE-UTILITIES)
 
-  let win-term = comp-win-create("TERMINAL", 48 + left-w + 16, top-y + right-h + 16, right-w, right-h)
-  comp-win-set-role(win-term, COMP-ROLE-TERMINAL)
-  comp-win-focus(win-term)
+  let win-term1 = comp-win-create("TERMINAL 2", 48 + left-w + 16, top-y + right-h + 16, right-w, right-h)
+  comp-win-set-role(win-term1, COMP-ROLE-TERMINAL)
+  comp-win-set-content(win-term1, 1)
+  comp-win-focus(win-term0)
 
   comp-running = 1
   let prev-left = 0

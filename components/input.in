@@ -642,6 +642,8 @@ fn hid-to-ascii(usage: Int) -> Int {
   if usage == 0x37 { return 46 }
   if usage == 0x38 { return 47 }
   if usage == 0x4C { return 10 }
+  if usage == 0x4B { return 128 } // PageUp
+  if usage == 0x4E { return 129 } // PageDown
   return 0
 }
 
@@ -862,6 +864,8 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
   if sc == 0x01 { return 27 }
   if sc == 0x0E { return 8 }
   if sc == 0x1C { return 10 }
+  if sc == 0x49 { return 128 } // PageUp
+  if sc == 0x51 { return 129 } // PageDown
   if sc == 0x39 { return 32 }
   if sc == 0x02 { return 49 }
   if sc == 0x03 { return 50 }
