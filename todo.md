@@ -38,7 +38,7 @@ needs deeper soak. Netstack exposes UDP sockets; TCP remains ENOSYS.
 - [x] Minimal libc in .in (print, open, read, write, close, exit)
 - [x] Userspace heap (malloc/free on top of mmap)
 - [x] String and memory utilities
-- [ ] Build user programs as SCI components
+- [x] Build user programs as SCI components
 
 ## Phase 5: OS Personalities
 

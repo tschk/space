@@ -264,7 +264,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci hello load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -372,7 +372,8 @@ fn shell(port: Int) -> void {
       serial-nl(port)
     } else if line-eq("sci") != 0 {
       sci-load(port, 0x180000)
-
+    } else if line-eq("hello") != 0 {
+      sci-load(port, 0x190000)
     } else if line-eq("map") != 0 {
       let frame = frame-alloc()
       map-page(0x40000000, frame, 3)

@@ -1,0 +1,50 @@
+package space.user
+
+component HelloUser {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: HelloEntry
+}
+
+interface HelloEntry {
+  fn hello-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+fn h-wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn h-put(port: Int, ch: Int) -> void {
+  h-wait(port)
+  outb(port, ch)
+  return
+}
+
+fn h-write(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    h-put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn hello-entry(cap-info: Int) -> Int {
+  let port = COM1
+  h-write(port, "hello from user SCI\n")
+  return 0x4849
+}
