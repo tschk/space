@@ -1,0 +1,207 @@
+package space.kernel
+
+// Minimal socket table surface over existing e1000/UDP helpers in net.in.
+// TCP is stub-only (ENOSYS-style). No full stack yet.
+
+const SOCK-MAX = 16
+const SOCK-SIZE = 40
+const SOCK-OFF-USED = 0
+const SOCK-OFF-TYPE = 8
+const SOCK-OFF-LPORT = 16
+const SOCK-OFF-LIP = 20
+const SOCK-OFF-RPORT = 24
+const SOCK-OFF-RIP = 28
+const SOCK-OFF-STATE = 32
+
+const SOCK-TYPE-UDP = 1
+const SOCK-TYPE-TCP = 2
+
+const SOCK-STATE-FREE = 0
+const SOCK-STATE-OPEN = 1
+const SOCK-STATE-BOUND = 2
+
+const AF-INET = 2
+const SOCK-DGRAM = 2
+const SOCK-STREAM = 1
+const IPPROTO-UDP = 17
+const IPPROTO-TCP = 6
+const IPPROTO-IP = 0
+
+var sock-table: Int = 0
+
+fn sock-table-init() -> void {
+  if sock-table != 0 {
+    return
+  }
+  sock-table = alloc(SOCK-MAX * SOCK-SIZE)
+  for i in 0..SOCK-MAX {
+    let base = sock-table + i * SOCK-SIZE
+    store64(base + SOCK-OFF-USED, 0)
+    store64(base + SOCK-OFF-TYPE, 0)
+    store32(base + SOCK-OFF-LPORT, 0)
+    store32(base + SOCK-OFF-LIP, 0)
+    store32(base + SOCK-OFF-RPORT, 0)
+    store32(base + SOCK-OFF-RIP, 0)
+    store64(base + SOCK-OFF-STATE, SOCK-STATE-FREE)
+  }
+  return
+}
+
+fn sock-valid(fd: Int) -> Int {
+  if sock-table == 0 {
+    return 0
+  }
+  if (fd < 0) || (fd >= SOCK-MAX) {
+    return 0
+  }
+  if load64(sock-table + fd * SOCK-SIZE + SOCK-OFF-USED) == 0 {
+    return 0
+  }
+  return 1
+}
+
+fn sock-socket(domain: Int, stype: Int, protocol: Int) -> Int {
+  sock-table-init()
+  if domain != AF-INET {
+    return -1
+  }
+  let kind = 0
+  if (stype == SOCK-DGRAM) && ((protocol == IPPROTO-UDP) || (protocol == IPPROTO-IP)) {
+    kind = SOCK-TYPE-UDP
+  } else if (stype == SOCK-STREAM) && ((protocol == IPPROTO-TCP) || (protocol == IPPROTO-IP)) {
+    kind = SOCK-TYPE-TCP
+  } else {
+    return -1
+  }
+  for i in 0..SOCK-MAX {
+    let base = sock-table + i * SOCK-SIZE
+    if load64(base + SOCK-OFF-USED) == 0 {
+      store64(base + SOCK-OFF-USED, 1)
+      store64(base + SOCK-OFF-TYPE, kind)
+      store32(base + SOCK-OFF-LPORT, 0)
+      store32(base + SOCK-OFF-LIP, 0)
+      store32(base + SOCK-OFF-RPORT, 0)
+      store32(base + SOCK-OFF-RIP, 0)
+      store64(base + SOCK-OFF-STATE, SOCK-STATE-OPEN)
+      return i
+    }
+  }
+  return -1
+}
+
+fn sock-bind(fd: Int, ip: Int, port: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  store32(base + SOCK-OFF-LIP, ip)
+  store32(base + SOCK-OFF-LPORT, port & 0xFFFF)
+  store64(base + SOCK-OFF-STATE, SOCK-STATE-BOUND)
+  return 0
+}
+
+fn sock-sendto(fd: Int, buf: Int, len: Int, rip: Int, rport: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-UDP {
+    return -1
+  }
+  store32(base + SOCK-OFF-RIP, rip)
+  store32(base + SOCK-OFF-RPORT, rport & 0xFFFF)
+  // Existing build-udp hardcodes 10.0.2.15->10.0.2.2:9999; still drive TX path.
+  let payload = buf
+  if len <= 0 {
+    payload = "space-udp"
+  }
+  let flen = build-udp(payload)
+  e1000-tx(flen)
+  if len > 0 {
+    return len
+  }
+  return 9
+}
+
+fn sock-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-UDP {
+    return -1
+  }
+  let pkt = e1000-rx-poll()
+  if pkt == 0 {
+    return 0
+  }
+  // Best-effort: copy min(len, rx payload after eth+ip+udp = 42) from frame.
+  let n = nic-rx-len
+  if n > 42 {
+    n = n - 42
+  } else {
+    n = 0
+  }
+  if n > len {
+    n = len
+  }
+  for i in 0..n {
+    store8(buf + i, load8(pkt + 42 + i))
+  }
+  return n
+}
+
+fn sock-listen(fd: Int, backlog: Int) -> Int {
+  return -38
+}
+
+fn sock-accept(fd: Int) -> Int {
+  return -38
+}
+
+fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
+  return -38
+}
+
+fn sock-close(fd: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  store64(base + SOCK-OFF-USED, 0)
+  store64(base + SOCK-OFF-TYPE, 0)
+  store32(base + SOCK-OFF-LPORT, 0)
+  store32(base + SOCK-OFF-LIP, 0)
+  store32(base + SOCK-OFF-RPORT, 0)
+  store32(base + SOCK-OFF-RIP, 0)
+  store64(base + SOCK-OFF-STATE, SOCK-STATE-FREE)
+  return 0
+}
+
+fn sock-netstat(port: Int) -> void {
+  sock-table-init()
+  serial-write-cstr(port, "  fd  type  state  lport  rport")
+  serial-nl(port)
+  for i in 0..SOCK-MAX {
+    let base = sock-table + i * SOCK-SIZE
+    if load64(base + SOCK-OFF-USED) != 0 {
+      serial-write-cstr(port, "  ")
+      serial-write-dec-wide(port, i)
+      serial-write-cstr(port, "  ")
+      let t = load64(base + SOCK-OFF-TYPE)
+      if t == SOCK-TYPE-UDP {
+        serial-write-cstr(port, "UDP")
+      } else {
+        serial-write-cstr(port, "TCP")
+      }
+      serial-write-cstr(port, "  ")
+      serial-write-dec-wide(port, load64(base + SOCK-OFF-STATE))
+      serial-write-cstr(port, "  ")
+      serial-write-dec-wide(port, load32(base + SOCK-OFF-LPORT))
+      serial-write-cstr(port, "  ")
+      serial-write-dec-wide(port, load32(base + SOCK-OFF-RPORT))
+      serial-nl(port)
+    }
+  }
+  return
+}

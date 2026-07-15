@@ -28,6 +28,13 @@ const LINUX-SYS-EXECVE = 59
 const LINUX-SYS-EXIT = 60
 const LINUX-SYS-WAIT4 = 61
 const LINUX-SYS-KILL = 62
+const LINUX-SYS-SOCKET = 41
+const LINUX-SYS-CONNECT = 42
+const LINUX-SYS-ACCEPT = 43
+const LINUX-SYS-SENDTO = 44
+const LINUX-SYS-RECVFROM = 45
+const LINUX-SYS-BIND = 49
+const LINUX-SYS-LISTEN = 50
 const LINUX-SYS-GETCWD = 79
 const LINUX-SYS-CHDIR = 80
 
@@ -475,6 +482,28 @@ fn posix-dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
   }
   if num == LINUX-SYS-CHDIR {
     return posix-sys-chdir(a0)
+  }
+  if num == LINUX-SYS-SOCKET {
+    return sock-socket(a0, a1, a2)
+  }
+  if num == LINUX-SYS-BIND {
+    // a1 = sockaddr ptr (sin_port@2, sin_addr@4) when present; treat a1/a2 as ip/port for bare kernel.
+    return sock-bind(a0, a1, a2)
+  }
+  if num == LINUX-SYS-SENDTO {
+    return sock-sendto(a0, a1, a2, a3, a4)
+  }
+  if num == LINUX-SYS-RECVFROM {
+    return sock-recvfrom(a0, a1, a2)
+  }
+  if num == LINUX-SYS-LISTEN {
+    return sock-listen(a0, a1)
+  }
+  if num == LINUX-SYS-ACCEPT {
+    return sock-accept(a0)
+  }
+  if num == LINUX-SYS-CONNECT {
+    return sock-connect(a0, a1, a2)
   }
   let port = com1()
   serial-write-cstr(port, "posix: unknown syscall ")

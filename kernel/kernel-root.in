@@ -6,6 +6,8 @@ import "../components/pci.in"
 import "../components/channel.in"
 // Intel e1000 NIC driver.
 import "../components/net.in"
+// Minimal socket table over e1000/UDP.
+import "../components/netstack.in"
 // Memory domain subsystem (Phase 0).
 import "../components/domain.in"
 // NVMe storage driver (PCIe-based, MMIO).

@@ -153,7 +153,7 @@ fn shell(port: Int) -> void {
     serial-write-cstr(port, "space> ")
     let n = read-line(port)
     if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan cap pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan cap pci net netstat udpsend snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -192,6 +192,21 @@ fn shell(port: Int) -> void {
       pci-scan(port)
     } else if line-eq("net") != 0 {
       run-net(port)
+    } else if line-eq("netstat") != 0 {
+      sock-netstat(port)
+    } else if line-eq("udpsend") != 0 {
+      let sfd = sock-socket(2, 2, 17)
+      if sfd < 0 {
+        serial-write-cstr(port, "  udpsend: socket failed")
+        serial-nl(port)
+      } else {
+        sock-bind(sfd, 0x0A00020F, 9999)
+        let n = sock-sendto(sfd, "hello from spaceOS", 18, 0x0A000202, 9999)
+        serial-write-cstr(port, "  udpsend: sent ")
+        serial-write-dec-wide(port, n)
+        serial-nl(port)
+        sock-close(sfd)
+      }
     } else if line-eq("det") != 0 {
       run-determinism(port)
     } else if line-eq("domain") != 0 {
