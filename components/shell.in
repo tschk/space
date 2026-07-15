@@ -153,7 +153,7 @@ fn shell(port: Int) -> void {
     serial-write-cstr(port, "space> ")
     let n = read-line(port)
     if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps test det domain chan cap pci net snapshot spawn restore map sci load_sci fault divzero echo peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -231,6 +231,19 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  chan: domain creation failed")
         serial-nl(port)
       }
+    } else if line-eq("cap") != 0 {
+      let o = obj-alloc(4)
+      let idx = sys-cap-mint(o, 7)
+      let ok1 = sys-cap-check(idx, 3)
+      let ok2 = sys-cap-check(idx, 8)
+      let rev = sys-cap-revoke(idx)
+      let ok3 = sys-cap-check(idx, 1)
+      if ok1 == 1 && ok2 == 0 && rev == 0 && ok3 == 0 {
+        serial-write-cstr(port, "  cap OK")
+      } else {
+        serial-write-cstr(port, "  cap FAIL")
+      }
+      serial-nl(port)
     } else if line-eq("sci") != 0 {
       sci-load(port, 0x180000)
 

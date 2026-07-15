@@ -93,6 +93,18 @@ fn sys-chan-close(ch: Int) -> Int {
   return 0
 }
 
+fn sys-cap-mint(target-obj: Int, rights: Int) -> Int {
+  return cap-mint(target-obj, rights)
+}
+
+fn sys-cap-revoke(idx: Int) -> Int {
+  return cap-revoke(idx)
+}
+
+fn sys-cap-check(idx: Int, rights: Int) -> Int {
+  return cap-check(idx, rights)
+}
+
 // Dispatch a syscall based on the number in the saved RAX slot of the frame.
 // Writes the return value back into the RAX slot (frame offset 112).
 fn syscall-dispatch(frame: Int) -> void {
@@ -128,6 +140,17 @@ fn syscall-dispatch(frame: Int) -> void {
   } else if num == 8 {
     let ch = load64(frame + 72)
     store64(frame + 112, sys-chan-close(ch))
+  } else if num == 9 {
+    let target-obj = load64(frame + 72)
+    let rights = load64(frame + 80)
+    store64(frame + 112, sys-cap-mint(target-obj, rights))
+  } else if num == 10 {
+    let idx = load64(frame + 72)
+    store64(frame + 112, sys-cap-revoke(idx))
+  } else if num == 11 {
+    let idx = load64(frame + 72)
+    let rights = load64(frame + 80)
+    store64(frame + 112, sys-cap-check(idx, rights))
   } else {
     let port = com1()
     serial-write-cstr(port, "space: unknown syscall 0x")

@@ -95,6 +95,32 @@ fn cap-mint(target-obj: Int, rights: Int) -> Int {
   return idx
 }
 
+fn cap-check(idx: Int, rights: Int) -> Int {
+  if idx < 0 || idx >= cap-count {
+    return 0
+  }
+  let slot = cap-table-base + idx * 16
+  let target = load64(slot + 0)
+  if target == 0 {
+    return 0
+  }
+  let have = load64(slot + 8)
+  if (rights & have) == rights {
+    return 1
+  }
+  return 0
+}
+
+fn cap-revoke(idx: Int) -> Int {
+  if idx < 0 || idx >= cap-count {
+    return -1
+  }
+  let slot = cap-table-base + idx * 16
+  store64(slot + 0, 0)
+  store64(slot + 8, 0)
+  return 0
+}
+
 // Capability bits a realm can grant to a component.
 fn cap-serial() -> Int { return 1 }
 fn cap-timer() -> Int { return 2 }
