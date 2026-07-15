@@ -13,12 +13,12 @@ import "nvme.in"
 // USB xHCI host controller and HID keyboard driver.
 import "usb.in"
 // SparkFS block-structured filesystem.
-import "fs2-layout.in"
-import "fs2-block.in"
-import "fs2-inode.in"
-import "fs2-dir.in"
-import "fs2-path.in"
-import "fs2-file.in"
+import "../components/fs2-layout.in"
+import "../components/fs2-block.in"
+import "../components/fs2-inode.in"
+import "../components/fs2-dir.in"
+import "../components/fs2-path.in"
+import "../components/fs2-file.in"
 import "../components/filesystem.in"
 // Full libc (string, memory, ctype, stdio, stdlib, math, time).
 import "libc.in"
@@ -46,13 +46,14 @@ import "object.in"
 import "interrupts.in"
 import "syscall.in"
 import "libc-test.in"
-import "font.in"
 import "vfs.in"
 import "vfs-test.in"
 import "../services/time.in"
 import "../components/editor.in"
 import "../components/diagnostics.in"
 import "../components/determinism.in"
+import "../components/supervisor.in"
+import "../components/selftest.in"
 
 
 // The nanokernel root component.
@@ -148,92 +149,6 @@ var volume-cap-info: Int = 0
 var volume-heap-frames: Int = 0
 var volume-shared: Int = 0
 var volume-via-marker: Int = 0
-
-// --- component supervisor ---------------------------------------------------
-fn component-register(name: Int, entry: Int, required: Int) -> Int {
-  let c = obj-bump(56)
-  obj-counter = obj-counter + 1
-  store64(c + 0, obj-counter)
-  store64(c + 8, 5)
-  store64(c + 16, entry)
-  store64(c + 24, required)
-  store64(c + 32, name)
-  store64(c + 40, 0)
-  store64(c + 48, 0)
-  return c
-}
-
-fn supervisor-activate(port: Int, c: Int) -> void {
-  let name = load64(c + 32)
-  let entry = load64(c + 16)
-  let required = load64(c + 24)
-  let missing = required & (-1 ^ realm-grants)
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: supervisor evaluating ")
-    serial-write-cstr(port, name)
-  }
-  if missing != 0 {
-    serial-write-cstr(port, " -> DENIED undeclared cap 0x")
-    serial-write-hex(port, missing)
-    serial-nl(port)
-    return
-  }
-  cap-mint(c, required)
-  if boot-quiet == 0 {
-    serial-write-cstr(port, " -> ACTIVATING")
-    serial-nl(port)
-  }
-  let status = invoke(entry)
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space:   ")
-    serial-write-cstr(port, name)
-    serial-write-cstr(port, " returned status 0x")
-    serial-write-hex(port, status)
-    serial-nl(port)
-  }
-  return
-}
-
-fn svc-heartbeat() -> Int {
-  let port = com1()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space:   [heartbeat] observed ticks 0x")
-    serial-write-hex(port, ticks)
-    serial-nl(port)
-  }
-  return 0
-}
-
-fn svc-logger() -> Int {
-  let port = com1()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space:   [logger] objects 0x")
-    serial-write-hex(port, obj-counter)
-    serial-write-cstr(port, " caps 0x")
-    serial-write-hex(port, cap-count)
-    serial-nl(port)
-  }
-  return 0
-}
-
-fn svc-pager() -> Int {
-  return 0xDEAD
-}
-
-fn run-supervisor(port: Int) -> void {
-  realm-grants = cap-serial() | cap-timer() | cap-graph() | cap-memory() | cap-display() | cap-storage() | cap-input() | cap-network() | cap-volume()
-  let c1 = component-register("heartbeat", svc-heartbeat, cap-serial())
-  let c2 = component-register("logger", svc-logger, cap-serial() | cap-graph())
-  let c3 = component-register("pager", svc-pager, cap-memory())
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: supervisor activating component graph")
-    serial-nl(port)
-  }
-  supervisor-activate(port, c1)
-  supervisor-activate(port, c2)
-  supervisor-activate(port, c3)
-  return
-}
 
 // --- preemptive scheduler ---------------------------------------------------
 fn build-preempt-task(entry: Int, stack-top: Int, arg: Int) -> Int {

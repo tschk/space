@@ -298,6 +298,9 @@ kernel/
   guest-service.in      SCI guest component example
 components/
   pci.in                PCI bus enumeration
+  supervisor.in         component register/activate graph
+  selftest.in           bundled boot diagnostics
+  fs2-*.in              SparkFS implementation modules
   volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up

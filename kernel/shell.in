@@ -166,12 +166,7 @@ fn shell(port: Int) -> void {
     } else if line-eq("selftest") != 0 {
       serial-write-cstr(port, "  running boot diagnostics...")
       serial-nl(port)
-      run-supervisor(port)
-      run-scheduler(port)
-      run-channels(port)
-      run-preemptive(port)
-      proc-selftest()
-      test-sci-loader(port)
+      run-boot-selftest(port)
       serial-write-cstr(port, "  diagnostics complete")
       serial-nl(port)
 

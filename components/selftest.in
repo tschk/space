@@ -1,0 +1,13 @@
+package space.kernel
+
+// Boot-time and shell `selftest` diagnostics bundle.
+
+fn run-boot-selftest(port: Int) -> void {
+  run-supervisor(port)
+  run-scheduler(port)
+  run-channels(port)
+  run-preemptive(port)
+  proc-selftest()
+  test-sci-loader(port)
+  return
+}
