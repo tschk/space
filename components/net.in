@@ -160,11 +160,33 @@ fn build-tcp-syn(rip: Int, rport: Int) -> Int {
   return net-chan-recv(net-resp-ch)
 }
 
+fn build-tcp-ack(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
+  if net-component-started == 0 {
+    return build-tcp-ack-impl(rip, rport, seq, ack)
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-TCP-ACK)
+  net-chan-send(net-req-ch, rip)
+  net-chan-send(net-req-ch, rport)
+  net-chan-send(net-req-ch, seq)
+  net-chan-send(net-req-ch, ack)
+  return net-chan-recv(net-resp-ch)
+}
+
 fn build-dhcp-discover() -> Int {
   if net-component-started == 0 {
     return build-dhcp-discover-impl()
   }
   net-chan-send(net-req-ch, NET-OP-BUILD-DHCP)
+  return net-chan-recv(net-resp-ch)
+}
+
+fn build-dhcp-request(yiaddr: Int, server: Int) -> Int {
+  if net-component-started == 0 {
+    return build-dhcp-request-impl(yiaddr, server)
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-DHCP-REQ)
+  net-chan-send(net-req-ch, yiaddr)
+  net-chan-send(net-req-ch, server)
   return net-chan-recv(net-resp-ch)
 }
 

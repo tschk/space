@@ -264,7 +264,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend dhcp dns snapshot spawn restore map sci hello load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -316,6 +316,29 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  udpsend: sent ")
         serial-write-dec-wide(port, n)
         serial-nl(port)
+        sock-close(sfd)
+      }
+    } else if line-eq("tcp") != 0 {
+      let sfd = sock-socket(2, 1, 6)
+      if sfd < 0 {
+        serial-write-cstr(port, "  tcp: socket failed")
+        serial-nl(port)
+      } else {
+        let rc = sock-connect(sfd, 0x0A000202, 80)
+        if rc != 0 {
+          serial-write-cstr(port, "  tcp: connect 10.0.2.2:80 failed, try 443")
+          serial-nl(port)
+          rc = sock-connect(sfd, 0x0A000202, 443)
+        }
+        if rc == 0 {
+          serial-write-cstr(port, "  tcp: connect ok fd=")
+          serial-write-dec-wide(port, sfd)
+          serial-nl(port)
+        } else {
+          serial-write-cstr(port, "  tcp: connect failed")
+          serial-nl(port)
+        }
+        sock-netstat(port)
         sock-close(sfd)
       }
     } else if line-eq("dhcp") != 0 {
@@ -378,6 +401,8 @@ fn shell(port: Int) -> void {
       sci-load(port, 0x180000)
     } else if line-eq("hello") != 0 {
       sci-load(port, 0x190000)
+    } else if line-eq("uecho") != 0 {
+      sci-load(port, 0x1b0000)
     } else if line-eq("map") != 0 {
       let frame = frame-alloc()
       map-page(0x40000000, frame, 3)

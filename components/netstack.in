@@ -1,7 +1,7 @@
 package space.kernel
 
 // Minimal socket table surface over existing e1000/UDP helpers in net.in.
-// TCP is stub-only (ENOSYS-style). No full stack yet.
+// TCP: SYN -> wait SYN+ACK -> ACK (active open only).
 
 const SOCK-MAX = 16
 const SOCK-SIZE = 40
@@ -177,6 +177,21 @@ fn sock-accept(fd: Int) -> Int {
   return -38
 }
 
+fn sock-connect-poll-synack(ip: Int, port: Int) -> Int {
+  let tries = 0
+  while tries < 100000 {
+    let pkt = e1000-rx-poll()
+    if pkt != 0 {
+      if tcp-parse-synack(pkt, nic-rx-len, ip, port & 0xFFFF) != 0 {
+        return 1
+      }
+    }
+    pause()
+    tries = tries + 1
+  }
+  return 0
+}
+
 fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
   if sock-valid(fd) == 0 {
     return -1
@@ -188,9 +203,26 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
   store32(base + SOCK-OFF-RIP, ip)
   store32(base + SOCK-OFF-RPORT, port & 0xFFFF)
   store64(base + SOCK-OFF-STATE, SOCK-STATE-SYN-SENT)
-  // ponytail: SYN-only, no handshake wait / ACK path yet
-  let flen = build-tcp-syn(ip, port & 0xFFFF)
+  let rport = port & 0xFFFF
+  let flen = build-tcp-syn(ip, rport)
   e1000-tx(flen)
+  let got = sock-connect-poll-synack(ip, rport)
+  if got == 0 {
+    flen = build-tcp-syn(ip, rport)
+    e1000-tx(flen)
+    got = sock-connect-poll-synack(ip, rport)
+  }
+  if got == 0 {
+    serial-write-cstr(0x3F8, "tcp: syn timeout")
+    serial-nl(0x3F8)
+    return -1
+  }
+  let ack-num = tcp-last-seq + 1
+  flen = build-tcp-ack(ip, rport, 1, ack-num)
+  e1000-tx(flen)
+  store64(base + SOCK-OFF-STATE, SOCK-STATE-ESTABLISHED)
+  serial-write-cstr(0x3F8, "tcp: established")
+  serial-nl(0x3F8)
   return 0
 }
 

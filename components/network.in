@@ -34,6 +34,11 @@ const NET-OP-SHUTDOWN = 9
 const NET-OP-BUILD-TCP-SYN = 10
 const NET-OP-BUILD-DHCP = 11
 const NET-OP-BUILD-DNS = 12
+const NET-OP-BUILD-DHCP-REQ = 13
+const NET-OP-BUILD-TCP-ACK = 13
+
+var tcp-last-seq: Int = 0
+var tcp-last-ack: Int = 0
 
 fn mmio-r32-impl(off: Int) -> Int {
   return load32(nic-mmio + off)
@@ -271,6 +276,91 @@ fn build-tcp-syn-impl(rip: Int, rport: Int) -> Int {
   return 54
 }
 
+// Ethernet+IPv4+TCP ACK (no options/payload). seq/ack are host Ints.
+fn build-tcp-ack-impl(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let ip = p + 14
+  let iplen = 40
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x06)
+  store8(ip + 12, 10); store8(ip + 13, 0)
+  store8(ip + 14, 2); store8(ip + 15, 15)
+  store8(ip + 16, (rip >> 24) & 0xFF)
+  store8(ip + 17, (rip >> 16) & 0xFF)
+  store8(ip + 18, (rip >> 8) & 0xFF)
+  store8(ip + 19, rip & 0xFF)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let tcp = ip + 20
+  store8(tcp + 0, 0x30); store8(tcp + 1, 0x39)
+  store8(tcp + 2, (rport >> 8) & 0xFF); store8(tcp + 3, rport & 0xFF)
+  store8(tcp + 4, (seq >> 24) & 0xFF)
+  store8(tcp + 5, (seq >> 16) & 0xFF)
+  store8(tcp + 6, (seq >> 8) & 0xFF)
+  store8(tcp + 7, seq & 0xFF)
+  store8(tcp + 8, (ack >> 24) & 0xFF)
+  store8(tcp + 9, (ack >> 16) & 0xFF)
+  store8(tcp + 10, (ack >> 8) & 0xFF)
+  store8(tcp + 11, ack & 0xFF)
+  store8(tcp + 12, 0x50)
+  store8(tcp + 13, 0x10)
+  store8(tcp + 14, 0xFF); store8(tcp + 15, 0xFF)
+  store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
+  store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
+  return 54
+}
+
+// Return 1 if eth/ip/tcp SYN+ACK matches remote; fill tcp-last-seq/ack.
+fn tcp-parse-synack(pkt: Int, len: Int, expect-rip: Int, expect-rport: Int) -> Int {
+  if len < 54 {
+    return 0
+  }
+  if load8(pkt + 12) != 0x08 {
+    return 0
+  }
+  if load8(pkt + 13) != 0x00 {
+    return 0
+  }
+  let ip = pkt + 14
+  let verihl = load8(ip + 0)
+  if (verihl >> 4) != 4 {
+    return 0
+  }
+  let ihl = (verihl & 0x0F) * 4
+  if ihl < 20 {
+    return 0
+  }
+  if 14 + ihl + 20 > len {
+    return 0
+  }
+  if load8(ip + 9) != 6 {
+    return 0
+  }
+  let sip = (load8(ip + 12) << 24) | (load8(ip + 13) << 16) | (load8(ip + 14) << 8) | load8(ip + 15)
+  if sip != expect-rip {
+    return 0
+  }
+  let tcp = ip + ihl
+  let sport = (load8(tcp + 0) << 8) | load8(tcp + 1)
+  if sport != (expect-rport & 0xFFFF) {
+    return 0
+  }
+  let flags = load8(tcp + 13)
+  if (flags & 0x12) != 0x12 {
+    return 0
+  }
+  tcp-last-seq = (load8(tcp + 4) << 24) | (load8(tcp + 5) << 16) | (load8(tcp + 6) << 8) | load8(tcp + 7)
+  tcp-last-ack = (load8(tcp + 8) << 24) | (load8(tcp + 9) << 16) | (load8(tcp + 10) << 8) | load8(tcp + 11)
+  return 1
+}
+
 // UDP broadcast DHCP DISCOVER (68->67) with msg-type=1 + end.
 fn build-dhcp-discover-impl() -> Int {
   let p = nic-tx-buf
@@ -311,6 +401,60 @@ fn build-dhcp-discover-impl() -> Int {
   store8(bootp + 238, 83); store8(bootp + 239, 99)
   store8(bootp + 240, 53); store8(bootp + 241, 1); store8(bootp + 242, 1)
   store8(bootp + 243, 255)
+  return 14 + iplen
+}
+
+// UDP broadcast DHCP REQUEST (msg-type=3) with requested-ip + server-id.
+// yiaddr/server packed as 0xAABBCCDD.
+fn build-dhcp-request-impl(yiaddr: Int, server: Int) -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, 0xFF) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let ip = p + 14
+  let bootp-len = 240 + 16
+  let iplen = 28 + bootp-len
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x11)
+  store8(ip + 12, 0); store8(ip + 13, 0)
+  store8(ip + 14, 0); store8(ip + 15, 0)
+  store8(ip + 16, 255); store8(ip + 17, 255)
+  store8(ip + 18, 255); store8(ip + 19, 255)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let udp = ip + 20
+  let ulen = 8 + bootp-len
+  store8(udp + 0, 0x00); store8(udp + 1, 68)
+  store8(udp + 2, 0x00); store8(udp + 3, 67)
+  store8(udp + 4, (ulen >> 8) & 0xFF); store8(udp + 5, ulen & 0xFF)
+  store8(udp + 6, 0x00); store8(udp + 7, 0x00)
+  let bootp = udp + 8
+  for i in 0..bootp-len { store8(bootp + i, 0) }
+  store8(bootp + 0, 1)
+  store8(bootp + 1, 1)
+  store8(bootp + 2, 6)
+  store8(bootp + 4, 0x12); store8(bootp + 5, 0x34)
+  store8(bootp + 6, 0x56); store8(bootp + 7, 0x78)
+  store8(bootp + 10, 0x80)
+  net-store-mac-impl(bootp + 28)
+  store8(bootp + 236, 99); store8(bootp + 237, 130)
+  store8(bootp + 238, 83); store8(bootp + 239, 99)
+  store8(bootp + 240, 53); store8(bootp + 241, 1); store8(bootp + 242, 3)
+  store8(bootp + 243, 50); store8(bootp + 244, 4)
+  store8(bootp + 245, (yiaddr >> 24) & 0xFF)
+  store8(bootp + 246, (yiaddr >> 16) & 0xFF)
+  store8(bootp + 247, (yiaddr >> 8) & 0xFF)
+  store8(bootp + 248, yiaddr & 0xFF)
+  store8(bootp + 249, 54); store8(bootp + 250, 4)
+  store8(bootp + 251, (server >> 24) & 0xFF)
+  store8(bootp + 252, (server >> 16) & 0xFF)
+  store8(bootp + 253, (server >> 8) & 0xFF)
+  store8(bootp + 254, server & 0xFF)
+  store8(bootp + 255, 255)
   return 14 + iplen
 }
 
@@ -478,8 +622,20 @@ fn network-component-entry(cap-info: Int) -> Int {
       let rport = chan-cross-recv-impl(req-page)
       let len = build-tcp-syn-impl(rip, rport)
       chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-TCP-ACK {
+      let rip = chan-cross-recv-impl(req-page)
+      let rport = chan-cross-recv-impl(req-page)
+      let seq = chan-cross-recv-impl(req-page)
+      let ack = chan-cross-recv-impl(req-page)
+      let len = build-tcp-ack-impl(rip, rport, seq, ack)
+      chan-cross-send-impl(resp-page, len)
     } else if op == NET-OP-BUILD-DHCP {
       let len = build-dhcp-discover-impl()
+      chan-cross-send-impl(resp-page, len)
+    } else if op == NET-OP-BUILD-DHCP-REQ {
+      let yiaddr = chan-cross-recv-impl(req-page)
+      let server = chan-cross-recv-impl(req-page)
+      let len = build-dhcp-request-impl(yiaddr, server)
       chan-cross-send-impl(resp-page, len)
     } else if op == NET-OP-BUILD-DNS {
       let len = build-dns-query-impl()
