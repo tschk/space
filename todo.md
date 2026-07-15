@@ -52,8 +52,8 @@ Still not full TCP window/congestion. Darwin/Windows are translator subsets
   - [x] Misc syscalls: getcwd, chdir
   - [x] Socket syscalls: socket, bind, listen, accept, connect, send, recv (UDP path; TCP active open handshake)
   - [x] Signal handling (minimal: SIGTERM, SIGKILL)
-- [x] Darwin compat layer (BSD subset: open/read/write/close/unlink/getpid/kill + Mach stubs)
-- [x] Windows compat layer (CreateFile/Read/Write/Close/Delete + process ids; NT-shaped, not PE)
+- [x] Darwin compat layer (BSD subset: open/read/write/close/unlink/mkdir/chdir/getcwd/lseek/fstat/getpid/kill + Mach stubs)
+- [x] Windows compat layer (CreateFile/Read/Write/Close/Delete/SetFilePointer/MoveFile/GetStdHandle + process ids; NT-shaped, not PE)
 
 ## Phase 6: Interactive Usability
 
