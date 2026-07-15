@@ -29,6 +29,12 @@ package space.kernel
 //  22  WIN-WaitForSingleObject → proc-wait if process handle
 //  23  WIN-GetCommandLineA → static "space-windows" cstr ptr
 //  24  WIN-WriteConsoleA → WriteFile on stdout/stderr
+//  25  WIN-GetModuleFileNameA → copy "space.exe" into buf; return len
+//  26  WIN-HeapAlloc → alloc(size) zeroed; a0/a1 heap+flags ignored except size=a2
+//  27  WIN-HeapFree → return 1 (bump heap: no real free)
+//  28  WIN-CopyFileA → fs-read-file src + fs-write-file dst; return 1/0
+//  29  WIN-GetEnvironmentVariableA → PATH→"/", else empty; return len
+//  30  WIN-OutputDebugStringA → serial-write-cstr
 //
 // Honest: not full Win32, not PE loader, not CSRSS, not real NT objects.
 
@@ -56,6 +62,12 @@ const WIN-CALL-CREATEPROCESSA = 21
 const WIN-CALL-WAITFORSINGLEOBJECT = 22
 const WIN-CALL-GETCOMMANDLINEA = 23
 const WIN-CALL-WRITECONSOLEA = 24
+const WIN-CALL-GETMODULEFILENAMEA = 25
+const WIN-CALL-HEAPALLOC = 26
+const WIN-CALL-HEAPFREE = 27
+const WIN-CALL-COPYFILEA = 28
+const WIN-CALL-GETENVIRONMENTVARIABLEA = 29
+const WIN-CALL-OUTPUTDEBUGSTRINGA = 30
 
 const WIN-MAX-HANDLES = 16
 const WIN-INVALID-HANDLE = 0
@@ -463,6 +475,130 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     return win-dispatch(port, WIN-CALL-WRITEFILE, handle, buf, len, 0)
   }
+  if num == WIN-CALL-GETMODULEFILENAMEA {
+    // a0 hModule ignored; a1 buf a2 size. Static module name only.
+    let buf = a1
+    let size = a2
+    if buf == 0 || size < 2 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let name = "space.exe"
+    let nlen = 0
+    while load8(name + nlen) != 0 {
+      nlen = nlen + 1
+    }
+    if size <= nlen {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let i = 0
+    while i < nlen {
+      store8(buf + i, load8(name + i))
+      i = i + 1
+    }
+    store8(buf + nlen, 0)
+    win-last-error = 0
+    return nlen
+  }
+  if num == WIN-CALL-HEAPALLOC {
+    // a0 heap ignored; a1 flags ignored; a2 size. Bump alloc + zero.
+    let size = a2
+    if size < 1 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let p = alloc(size)
+    if p == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let i = 0
+    while i < size {
+      store8(p + i, 0)
+      i = i + 1
+    }
+    win-last-error = 0
+    return p
+  }
+  if num == WIN-CALL-HEAPFREE {
+    // a0 heap a1 flags a2 ptr. Bump heap has no free — success only.
+    if a2 == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    win-last-error = 0
+    return 1
+  }
+  if num == WIN-CALL-COPYFILEA {
+    // a0 src a1 dst. Whole-file copy via VFS helpers.
+    let src = a0
+    let dst = a1
+    if src == 0 || dst == 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    let cbuf = alloc(4096)
+    let n = fs-read-file(src, cbuf)
+    if n < 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    let wrc = fs-write-file(dst, cbuf, n)
+    if wrc != 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    win-last-error = 0
+    return 1
+  }
+  if num == WIN-CALL-GETENVIRONMENTVARIABLEA {
+    // a0 name a1 buf a2 size. PATH → "/"; else empty.
+    let name = a0
+    let buf = a1
+    let size = a2
+    if buf == 0 || size < 1 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let is-path = 0
+    if name != 0 {
+      if load8(name + 0) == 80 {
+        if load8(name + 1) == 65 {
+          if load8(name + 2) == 84 {
+            if load8(name + 3) == 72 {
+              if load8(name + 4) == 0 {
+                is-path = 1
+              }
+            }
+          }
+        }
+      }
+    }
+    if is-path != 0 {
+      if size < 2 {
+        win-last-error = WIN-ERROR-INVALID-HANDLE
+        return 0
+      }
+      store8(buf + 0, 47)
+      store8(buf + 1, 0)
+      win-last-error = 0
+      return 1
+    }
+    store8(buf + 0, 0)
+    win-last-error = 0
+    return 0
+  }
+  if num == WIN-CALL-OUTPUTDEBUGSTRINGA {
+    let s = a0
+    if s == 0 {
+      win-last-error = 0
+      return 0
+    }
+    serial-write-cstr(port, s)
+    win-last-error = 0
+    return 0
+  }
   return 0
 }
 
@@ -679,6 +815,63 @@ fn win-demo(port: Int) -> void {
   let perr = win-dispatch(port, WIN-CALL-GETLASTERROR, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: GetLastError() after CreateProcessA = ")
   serial-write-dec-wide(port, perr)
+  serial-nl(port)
+
+  // HeapAlloc / HeapFree.
+  let hp = win-dispatch(port, WIN-CALL-HEAPALLOC, 0, 0, 32, 0)
+  serial-write-cstr(port, "windows: HeapAlloc(0, 0, 32) = ")
+  serial-write-hex(port, hp)
+  serial-nl(port)
+  if hp != 0 {
+    store8(hp + 0, 90)
+    let hfrc = win-dispatch(port, WIN-CALL-HEAPFREE, 0, 0, hp, 0)
+    serial-write-cstr(port, "windows: HeapFree(ptr) = ")
+    serial-write-dec-wide(port, hfrc)
+    serial-nl(port)
+  }
+
+  // GetModuleFileNameA → "space.exe".
+  let mbuf = alloc(64)
+  let mlen = win-dispatch(port, WIN-CALL-GETMODULEFILENAMEA, 0, mbuf, 64, 0)
+  serial-write-cstr(port, "windows: GetModuleFileNameA() = ")
+  serial-write-dec-wide(port, mlen)
+  serial-write-cstr(port, " '" )
+  if mlen > 0 {
+    serial-write-cstr(port, mbuf)
+  }
+  serial-write-cstr(port, "'")
+  serial-nl(port)
+
+  // Rebuild win-hello2 for CopyFileA, then copy + delete both.
+  let src2 = "win-hello2.txt"
+  let dst2 = "win-copy.txt"
+  let sh = win-dispatch(port, WIN-CALL-CREATEFILEA, src2, WIN-ACCESS-WRITE, 0, 0)
+  if sh != WIN-INVALID-HANDLE {
+    let sc = "copy-src"
+    win-dispatch(port, WIN-CALL-WRITEFILE, sh, sc, 8, 0)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, sh, 0, 0, 0)
+  }
+  let cprc2 = win-dispatch(port, WIN-CALL-COPYFILEA, src2, dst2, 0, 0)
+  serial-write-cstr(port, "windows: CopyFileA(win-hello2.txt, win-copy.txt) = ")
+  serial-write-dec-wide(port, cprc2)
+  serial-nl(port)
+  win-dispatch(port, WIN-CALL-DELETEFILEA, src2, 0, 0, 0)
+  win-dispatch(port, WIN-CALL-DELETEFILEA, dst2, 0, 0, 0)
+
+  // OutputDebugStringA.
+  let dmsg = "windows: OutputDebugStringA ok\n"
+  win-dispatch(port, WIN-CALL-OUTPUTDEBUGSTRINGA, dmsg, 0, 0, 0)
+
+  // GetEnvironmentVariableA PATH → "/".
+  let ebuf = alloc(16)
+  let elen = win-dispatch(port, WIN-CALL-GETENVIRONMENTVARIABLEA, "PATH", ebuf, 16, 0)
+  serial-write-cstr(port, "windows: GetEnvironmentVariableA(PATH) = ")
+  serial-write-dec-wide(port, elen)
+  serial-write-cstr(port, " '" )
+  if elen > 0 {
+    serial-write-cstr(port, ebuf)
+  }
+  serial-write-cstr(port, "'")
   serial-nl(port)
 
   let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)

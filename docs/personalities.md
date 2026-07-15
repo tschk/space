@@ -49,6 +49,12 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 22. `WaitForSingleObject` — process-like handles only → `proc-wait`
 23. `GetCommandLineA` — static cstr `"space-windows"`
 24. `WriteConsoleA` — alias `WriteFile` on handles 1/2
+25. `GetModuleFileNameA` — copy `"space.exe"` into buf; return len
+26. `HeapAlloc` — `alloc(size)` zeroed; heap handle/flags ignored
+27. `HeapFree` — return 1 (bump heap: no real free)
+28. `CopyFileA` — `fs-read-file` src + `fs-write-file` dst; return 1/0
+29. `GetEnvironmentVariableA` — `PATH` → `"/"`, else empty; return len
+30. `OutputDebugStringA` — `serial-write-cstr`
 
 Handle table: max 16 slots; 1/2 reserved as stdout/stderr; 3..15 hold VFS fds.
 Process handles are fake (`100+pid`), not full typed object table.

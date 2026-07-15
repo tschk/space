@@ -54,6 +54,7 @@ rm -f "$SERIAL_IN" "$SERIAL_OUT"
 grep -qE "CreateFile|WriteFile" "$SERIAL_LOG"
 grep -qE "SetFilePointer|MoveFile" "$SERIAL_LOG"
 grep -qE "CreateDirectory|GetLastError|VirtualAlloc" "$SERIAL_LOG"
+grep -qE "HeapAlloc|CopyFile|GetModuleFileName" "$SERIAL_LOG"
 # GetStdHandle optional deeper marker
 grep -qF "windows: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Windows personality demo (CreateFile/CreateDirectory/GetLastError path)"
+echo "PASS: Windows personality demo (CreateFile/HeapAlloc/CopyFile path)"
