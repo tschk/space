@@ -54,34 +54,57 @@ fn dns-print-ip(port: Int, ip: Int) -> void {
 }
 
 fn dns-query(port: Int, name-cstr: Int) -> Int {
-  // Fixed QNAME space.test in builder; name-cstr reserved for later.
-  let flen = build-dns-query()
+  if e1000-init(port) == 0 {
+    serial-write-cstr(port, "dns: no nic")
+    serial-nl(port)
+    return -1
+  }
+  if gw-mac == 0 {
+    serial-write-cstr(port, "dns: no gw-mac")
+    serial-nl(port)
+    return -1
+  }
+  // QEMU SLIRP gateway MAC if ARP never ran (dhcp path skips ARP).
+  store8(gw-mac + 0, 0x52)
+  store8(gw-mac + 1, 0x55)
+  store8(gw-mac + 2, 0x0A)
+  store8(gw-mac + 3, 0x00)
+  store8(gw-mac + 4, 0x02)
+  store8(gw-mac + 5, 0x02)
+  let qname = name-cstr
+  if qname == 0 {
+    qname = "space.test"
+  }
+  let flen = build-dns-query(qname)
   e1000-tx(flen)
   let tries = 0
-  while tries < 3000000 {
-    let pkt = e1000-rx-poll()
-    if pkt != 0 {
-      let et = (load8(pkt + 12) << 8) | load8(pkt + 13)
-      if et == 0x0800 {
-        let ihl = (load8(pkt + 14) & 0x0F) * 4
-        if load8(pkt + 14 + 9) == 17 {
-          let udp = 14 + ihl
-          let dport = (load8(pkt + udp + 2) << 8) | load8(pkt + udp + 3)
-          if dport == 0x3039 {
-            let ulen = (load8(pkt + udp + 4) << 8) | load8(pkt + udp + 5)
-            if ulen >= 20 {
-              let ip = dns-parse-a(pkt, udp + 8, ulen - 8)
-              if ip != 0 {
-                dns-last-ip = ip
-                serial-write-cstr(port, "dns: a ")
-                dns-print-ip(port, ip)
-                serial-nl(port)
-                return 0
-              }
-              serial-write-cstr(port, "dns: no answer")
+  while tries < 8 {
+    let pkt = e1000-rx-wait()
+    if pkt == 0 {
+      serial-write-cstr(port, "dns: timeout")
+      serial-nl(port)
+      return -1
+    }
+    let et = (load8(pkt + 12) << 8) | load8(pkt + 13)
+    if et == 0x0800 {
+      let ihl = (load8(pkt + 14) & 0x0F) * 4
+      if load8(pkt + 14 + 9) == 17 {
+        let udp = 14 + ihl
+        let dport = (load8(pkt + udp + 2) << 8) | load8(pkt + udp + 3)
+        if dport == 0x3039 {
+          let ulen = (load8(pkt + udp + 4) << 8) | load8(pkt + udp + 5)
+          if ulen >= 20 {
+            let ip = dns-parse-a(pkt, udp + 8, ulen - 8)
+            if ip != 0 {
+              dns-last-ip = ip
+              serial-write-cstr(port, "dns: a ")
+              dns-print-ip(port, ip)
               serial-nl(port)
               return 0
             }
+            serial-write-cstr(port, "dns: no answer")
+            serial-nl(port)
+            return 0
           }
         }
       }
