@@ -172,6 +172,20 @@ fn build-tcp-ack(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
   return net-chan-recv(net-resp-ch)
 }
 
+fn build-tcp-data(rip: Int, rport: Int, seq: Int, ack: Int, payload: Int, plen: Int) -> Int {
+  if net-component-started == 0 {
+    return build-tcp-data-impl(rip, rport, seq, ack, payload, plen)
+  }
+  net-chan-send(net-req-ch, NET-OP-BUILD-TCP-DATA)
+  net-chan-send(net-req-ch, rip)
+  net-chan-send(net-req-ch, rport)
+  net-chan-send(net-req-ch, seq)
+  net-chan-send(net-req-ch, ack)
+  net-chan-send(net-req-ch, payload)
+  net-chan-send(net-req-ch, plen)
+  return net-chan-recv(net-resp-ch)
+}
+
 fn build-dhcp-discover() -> Int {
   if net-component-started == 0 {
     return build-dhcp-discover-impl()
@@ -190,12 +204,10 @@ fn build-dhcp-request(yiaddr: Int, server: Int) -> Int {
   return net-chan-recv(net-resp-ch)
 }
 
-fn build-dns-query() -> Int {
-  if net-component-started == 0 {
-    return build-dns-query-impl()
-  }
-  net-chan-send(net-req-ch, NET-OP-BUILD-DNS)
-  return net-chan-recv(net-resp-ch)
+fn build-dns-query(name-cstr: Int) -> Int {
+  // Always encode in kernel domain: name-cstr may point at shell heap
+  // not safely shared via the net component channel.
+  return build-dns-query-name-impl(name-cstr)
 }
 
 fn net-store-mac(p: Int) -> void {

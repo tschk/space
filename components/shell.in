@@ -326,7 +326,12 @@ fn shell(port: Int) -> void {
       } else {
         let rc = sock-connect(sfd, 0x0A000202, 80)
         if rc != 0 {
-          serial-write-cstr(port, "  tcp: connect 10.0.2.2:80 failed, try 443")
+          serial-write-cstr(port, "  tcp: connect 10.0.2.2:80 failed, try 8080")
+          serial-nl(port)
+          rc = sock-connect(sfd, 0x0A000202, 8080)
+        }
+        if rc != 0 {
+          serial-write-cstr(port, "  tcp: connect 8080 failed, try 443")
           serial-nl(port)
           rc = sock-connect(sfd, 0x0A000202, 443)
         }

@@ -10,8 +10,9 @@ NVMe format/write path passes under QEMU (`check-qemu-boot-nvme`). Volume SCI
 on NVMe passes RPC + multi-file shell soak across reboot (`check-qemu-volume-nvme`,
 `check-volume-soak`) on the volume-ready FS path. Second user SCI (`uecho` @
 0x1b0000) loads under QEMU. Netstack: UDP sockets work; TCP active open does
-SYN→SYN+ACK→ACK (no window/retransmit/data path yet); DHCP full DORA + lease;
-DNS A query TX+RX parse (dns-last-ip).
+SYN→SYN+ACK→ACK plus best-effort PSH+ACK data path (sock-send/recv, one
+retransmit, no window/congestion); DHCP full DORA + lease; DNS A query TX+RX
+parse (dns-last-ip). HTTP to 10.0.2.2 may RST under QEMU user net.
 
 ## Phase 1: Storage
 
@@ -70,7 +71,7 @@ DNS A query TX+RX parse (dns-last-ip).
 
 ## Phase 7: Networking Stack
 
-- [x] TCP/IP stack (active open handshake; no window/retransmit/data path yet)
-- [x] Socket API for user programs (UDP over e1000; TCP handshake/LISTEN)
+- [x] TCP/IP stack (active open + best-effort data path; no window/congestion)
+- [x] Socket API for user programs (UDP over e1000; TCP handshake + send/recv)
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)

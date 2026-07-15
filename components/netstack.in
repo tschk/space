@@ -31,6 +31,39 @@ const IPPROTO-TCP = 6
 const IPPROTO-IP = 0
 
 var sock-table: Int = 0
+var sock-link-ready: Int = 0
+
+// Socket path talks to NIC via *-impl (bypass component channel; needs INIT first).
+fn sock-ensure-link() -> Int {
+  if sock-link-ready != 0 {
+    return 1
+  }
+  if nic-tx-buf == 0 {
+    if e1000-init-impl(0x3F8) == 0 {
+      return 0
+    }
+  }
+  if gw-mac == 0 {
+    gw-mac = frame-alloc()
+  }
+  // Resolve gateway MAC once (SLIRP 10.0.2.2) for eth dest.
+  e1000-tx-impl(build-arp-impl())
+  let f = e1000-rx-wait-impl()
+  if (f != 0) && (((load8(f + 12) << 8) | load8(f + 13)) == 0x0806) {
+    for i in 0..6 {
+      store8(gw-mac + i, load8(f + 22 + i))
+    }
+  } else {
+    store8(gw-mac + 0, 0x52)
+    store8(gw-mac + 1, 0x55)
+    store8(gw-mac + 2, 0x0A)
+    store8(gw-mac + 3, 0x00)
+    store8(gw-mac + 4, 0x02)
+    store8(gw-mac + 5, 0x02)
+  }
+  sock-link-ready = 1
+  return 1
+}
 
 fn sock-table-init() -> void {
   if sock-table != 0 {
@@ -68,14 +101,29 @@ fn sock-socket(domain: Int, stype: Int, protocol: Int) -> Int {
   if domain != AF-INET {
     return -1
   }
-  let kind = 0
-  if (stype == SOCK-DGRAM) && ((protocol == IPPROTO-UDP) || (protocol == IPPROTO-IP)) {
-    kind = SOCK-TYPE-UDP
-  } else if (stype == SOCK-STREAM) && ((protocol == IPPROTO-TCP) || (protocol == IPPROTO-IP)) {
-    kind = SOCK-TYPE-TCP
-  } else {
+  // Avoid reassigned locals for type (seen flaky); branch per call shape.
+  if stype == SOCK-DGRAM {
+    if protocol == IPPROTO-UDP {
+      return sock-socket-alloc(SOCK-TYPE-UDP)
+    }
+    if protocol == IPPROTO-IP {
+      return sock-socket-alloc(SOCK-TYPE-UDP)
+    }
     return -1
   }
+  if stype == SOCK-STREAM {
+    if protocol == IPPROTO-TCP {
+      return sock-socket-alloc(SOCK-TYPE-TCP)
+    }
+    if protocol == IPPROTO-IP {
+      return sock-socket-alloc(SOCK-TYPE-TCP)
+    }
+    return -1
+  }
+  return -1
+}
+
+fn sock-socket-alloc(kind: Int) -> Int {
   for i in 0..SOCK-MAX {
     let base = sock-table + i * SOCK-SIZE
     if load64(base + SOCK-OFF-USED) == 0 {
@@ -103,12 +151,130 @@ fn sock-bind(fd: Int, ip: Int, port: Int) -> Int {
   return 0
 }
 
+fn sock-send(fd: Int, buf: Int, len: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-TCP {
+    return -1
+  }
+  if load64(base + SOCK-OFF-STATE) != SOCK-STATE-ESTABLISHED {
+    return -1
+  }
+  if len <= 0 {
+    return 0
+  }
+  if sock-ensure-link() == 0 {
+    return -1
+  }
+  let rip = load32(base + SOCK-OFF-RIP)
+  let rport = load32(base + SOCK-OFF-RPORT) & 0xFFFF
+  let seq = tcp-local-seq
+  let ack = tcp-remote-ack
+  let flen = build-tcp-data-impl(rip, rport, seq, ack, buf, len)
+  e1000-tx-impl(flen)
+  // Best-effort: one retransmit if no covering ACK after poll.
+  // Data seen while waiting stays in tcp-rx-buf for sock-recv.
+  let tries = 0
+  let acked = 0
+  let need = seq + len
+  while tries < 100000 {
+    let pkt = e1000-rx-poll-impl()
+    if pkt != 0 {
+      let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+      if n > 0 {
+        tcp-remote-ack = tcp-last-seq + n
+      }
+      if tcp-last-ack >= need {
+        acked = 1
+        break
+      }
+    }
+    pause()
+    tries = tries + 1
+  }
+  if acked == 0 {
+    flen = build-tcp-data-impl(rip, rport, seq, ack, buf, len)
+    e1000-tx-impl(flen)
+  }
+  tcp-local-seq = seq + len
+  return len
+}
+
+fn sock-recv(fd: Int, buf: Int, len: Int) -> Int {
+  if sock-valid(fd) == 0 {
+    return -1
+  }
+  let base = sock-table + fd * SOCK-SIZE
+  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-TCP {
+    return -1
+  }
+  if load64(base + SOCK-OFF-STATE) != SOCK-STATE-ESTABLISHED {
+    return -1
+  }
+  if len <= 0 {
+    return 0
+  }
+  if sock-ensure-link() == 0 {
+    return -1
+  }
+  let rip = load32(base + SOCK-OFF-RIP)
+  let rport = load32(base + SOCK-OFF-RPORT) & 0xFFFF
+  // Payload may already be in tcp-rx-buf from send-side ACK wait.
+  if tcp-rx-len > 0 {
+    let copy = tcp-rx-len
+    if copy > len {
+      copy = len
+    }
+    for i in 0..copy {
+      store8(buf + i, load8(tcp-rx-buf + i))
+    }
+    tcp-remote-ack = tcp-last-seq + tcp-rx-len
+    tcp-rx-len = 0
+    let flen = build-tcp-ack-impl(rip, rport, tcp-local-seq, tcp-remote-ack)
+    e1000-tx-impl(flen)
+    return copy
+  }
+  let tries = 0
+  while tries < 100000 {
+    let pkt = e1000-rx-poll-impl()
+    if pkt != 0 {
+      let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+      if n > 0 {
+        let copy = n
+        if copy > len {
+          copy = len
+        }
+        for i in 0..copy {
+          store8(buf + i, load8(tcp-rx-buf + i))
+        }
+        tcp-remote-ack = tcp-last-seq + n
+        tcp-rx-len = 0
+        let flen = build-tcp-ack-impl(rip, rport, tcp-local-seq, tcp-remote-ack)
+        e1000-tx-impl(flen)
+        return copy
+      }
+    }
+    pause()
+    tries = tries + 1
+  }
+  return 0
+}
+
 fn sock-sendto(fd: Int, buf: Int, len: Int, rip: Int, rport: Int) -> Int {
   if sock-valid(fd) == 0 {
     return -1
   }
   let base = sock-table + fd * SOCK-SIZE
-  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-UDP {
+  let kind = load64(base + SOCK-OFF-TYPE)
+  if kind == SOCK-TYPE-TCP {
+    return sock-send(fd, buf, len)
+  }
+  if kind != SOCK-TYPE-UDP {
+    return -1
+  }
+  if sock-ensure-link() == 0 {
     return -1
   }
   store32(base + SOCK-OFF-RIP, rip)
@@ -118,8 +284,8 @@ fn sock-sendto(fd: Int, buf: Int, len: Int, rip: Int, rport: Int) -> Int {
   if len <= 0 {
     payload = "space-udp"
   }
-  let flen = build-udp(payload)
-  e1000-tx(flen)
+  let flen = build-udp-impl(payload)
+  e1000-tx-impl(flen)
   if len > 0 {
     return len
   }
@@ -131,10 +297,17 @@ fn sock-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
     return -1
   }
   let base = sock-table + fd * SOCK-SIZE
-  if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-UDP {
+  let kind = load64(base + SOCK-OFF-TYPE)
+  if kind == SOCK-TYPE-TCP {
+    return sock-recv(fd, buf, len)
+  }
+  if kind != SOCK-TYPE-UDP {
     return -1
   }
-  let pkt = e1000-rx-poll()
+  if sock-ensure-link() == 0 {
+    return -1
+  }
+  let pkt = e1000-rx-poll-impl()
   if pkt == 0 {
     return 0
   }
@@ -180,7 +353,7 @@ fn sock-accept(fd: Int) -> Int {
 fn sock-connect-poll-synack(ip: Int, port: Int) -> Int {
   let tries = 0
   while tries < 100000 {
-    let pkt = e1000-rx-poll()
+    let pkt = e1000-rx-poll-impl()
     if pkt != 0 {
       if tcp-parse-synack(pkt, nic-rx-len, ip, port & 0xFFFF) != 0 {
         return 1
@@ -200,16 +373,19 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
   if load64(base + SOCK-OFF-TYPE) != SOCK-TYPE-TCP {
     return -1
   }
+  if sock-ensure-link() == 0 {
+    return -1
+  }
   store32(base + SOCK-OFF-RIP, ip)
   store32(base + SOCK-OFF-RPORT, port & 0xFFFF)
   store64(base + SOCK-OFF-STATE, SOCK-STATE-SYN-SENT)
   let rport = port & 0xFFFF
-  let flen = build-tcp-syn(ip, rport)
-  e1000-tx(flen)
+  let flen = build-tcp-syn-impl(ip, rport)
+  e1000-tx-impl(flen)
   let got = sock-connect-poll-synack(ip, rport)
   if got == 0 {
-    flen = build-tcp-syn(ip, rport)
-    e1000-tx(flen)
+    flen = build-tcp-syn-impl(ip, rport)
+    e1000-tx-impl(flen)
     got = sock-connect-poll-synack(ip, rport)
   }
   if got == 0 {
@@ -218,8 +394,11 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
     return -1
   }
   let ack-num = tcp-last-seq + 1
-  flen = build-tcp-ack(ip, rport, 1, ack-num)
-  e1000-tx(flen)
+  flen = build-tcp-ack-impl(ip, rport, 1, ack-num)
+  e1000-tx-impl(flen)
+  // ISN was 1; after handshake local next-seq is 2, remote ack is SYN+ACK seq+1.
+  tcp-local-seq = 2
+  tcp-remote-ack = ack-num
   store64(base + SOCK-OFF-STATE, SOCK-STATE-ESTABLISHED)
   serial-write-cstr(0x3F8, "tcp: established")
   serial-nl(0x3F8)
