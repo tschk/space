@@ -6,6 +6,7 @@ package space.kernel
 // Imported by kernel-root.in; available via the `shell(port)` function.
 
 var line: Int = 0
+var shell-cwd: Int = 0
 
 // --- serial I/O helpers -----------------------------------------------------
 fn serial-has-byte(port: Int) -> Int {
@@ -44,6 +45,12 @@ fn read-line(port: Int) -> Int {
     }
   }
   return len
+}
+
+// Resolve `p` against the shell cwd into a fresh canonical absolute path.
+fn shell-path(p: Int) -> Int {
+  let out = alloc(1024)
+  return sf-normalize-path(shell-cwd, p, out)
 }
 
 // Parse a hex string at addr into an integer.
@@ -238,7 +245,7 @@ fn shell-try-redir(port: Int) -> Int {
       }
       let text = line + er
       let tlen = strlen(text)
-      if fs-write-file(line + path, text, tlen) == 0 {
+      if fs-write-file(shell-path(line + path), text, tlen) == 0 {
         serial-write-cstr(port, "  written")
       } else {
         serial-write-cstr(port, "  failed")
@@ -254,6 +261,9 @@ fn shell-try-redir(port: Int) -> Int {
 // --- interactive serial shell ------------------------------------------------
 fn shell(port: Int) -> void {
   line = alloc(256)
+  shell-cwd = alloc(1024)
+  store8(shell-cwd, 47)
+  store8(shell-cwd + 1, 0)
   serial-nl(port)
   serial-write-cstr(port, "space interactive shell -- type 'help'")
   serial-nl(port)
@@ -264,7 +274,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo > | & peek poke proc format ls mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo > | & peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -523,19 +533,47 @@ fn shell(port: Int) -> void {
       nvme-shell(port)
     } else if line-eq("format") != 0 {
       if fs-format() == 0 {
+        store8(shell-cwd, 47)
+        store8(shell-cwd + 1, 0)
         serial-write-cstr(port, "  disk formatted")
+      } else {
+        serial-write-cstr(port, "  failed")
+      }
+      serial-nl(port)
+    } else if line-eq("pwd") != 0 {
+      serial-write-cstr(port, "  ")
+      serial-write-cstr(port, shell-cwd)
+      serial-nl(port)
+    } else if line-eq("cd") != 0 {
+      store8(shell-cwd, 47)
+      store8(shell-cwd + 1, 0)
+      serial-write-cstr(port, "  /")
+      serial-nl(port)
+    } else if line-prefix("cd ") >= 0 {
+      let arg = line-prefix("cd ")
+      let p = shell-path(line + arg)
+      let stat-buf = alloc(64)
+      if fs-stat(p, stat-buf) == 0 && load32(stat-buf + SF-ST-TYPE) == SF-TYPE-DIR {
+        let i = 0
+        while load8(p + i) != 0 && i < 1023 {
+          store8(shell-cwd + i, load8(p + i))
+          i = i + 1
+        }
+        store8(shell-cwd + i, 0)
+        serial-write-cstr(port, "  ")
+        serial-write-cstr(port, shell-cwd)
       } else {
         serial-write-cstr(port, "  failed")
       }
       serial-nl(port)
     } else if line-prefix("ls ") >= 0 {
       let ls-arg = line-prefix("ls ")
-      fs-list-path(line + ls-arg, port)
+      fs-list-path(shell-path(line + ls-arg), port)
     } else if line-eq("ls") != 0 {
-      fs-list(port)
+      fs-list-path(shell-cwd, port)
     } else if line-prefix("mkdir ") >= 0 {
       let arg = line-prefix("mkdir ")
-      if fs-mkdir(line + arg) >= 0 {
+      if fs-mkdir(shell-path(line + arg)) >= 0 {
         serial-write-cstr(port, "  created")
       } else {
         serial-write-cstr(port, "  failed")
@@ -543,7 +581,7 @@ fn shell(port: Int) -> void {
       serial-nl(port)
     } else if line-prefix("rmdir ") >= 0 {
       let arg = line-prefix("rmdir ")
-      if fs-rmdir(line + arg) == 0 {
+      if fs-rmdir(shell-path(line + arg)) == 0 {
         serial-write-cstr(port, "  removed")
       } else {
         serial-write-cstr(port, "  failed")
@@ -551,7 +589,7 @@ fn shell(port: Int) -> void {
       serial-nl(port)
     } else if line-prefix("rm ") >= 0 {
       let arg = line-prefix("rm ")
-      if fs-delete(line + arg) == 0 {
+      if fs-delete(shell-path(line + arg)) == 0 {
         serial-write-cstr(port, "  deleted")
       } else {
         serial-write-cstr(port, "  failed")
@@ -560,7 +598,7 @@ fn shell(port: Int) -> void {
     } else if line-prefix("read ") >= 0 {
       let arg = line-prefix("read ")
       let buf = alloc(4096)
-      let n = fs-read-file(line + arg, buf)
+      let n = fs-read-file(shell-path(line + arg), buf)
       if n < 0 {
         serial-write-cstr(port, "  failed")
       } else {
@@ -574,7 +612,7 @@ fn shell(port: Int) -> void {
     } else if line-prefix("cat ") >= 0 {
       let arg = line-prefix("cat ")
       let buf = alloc(4096)
-      let n = fs-read-file(line + arg, buf)
+      let n = fs-read-file(shell-path(line + arg), buf)
       if n < 0 {
         serial-write-cstr(port, "  failed")
       } else {
@@ -591,7 +629,7 @@ fn shell(port: Int) -> void {
       if arg2 != 0 {
         store8(line + arg2 - 1, 0)
         let len = strlen(line + arg2)
-        if fs-write-file(line + arg1, line + arg2, len) == 0 {
+        if fs-write-file(shell-path(line + arg1), line + arg2, len) == 0 {
           serial-write-cstr(port, "  written")
         } else {
           serial-write-cstr(port, "  failed")
@@ -604,7 +642,8 @@ fn shell(port: Int) -> void {
       let arg1 = line-prefix("mv ")
       let arg2 = next-arg(arg1)
       if arg2 != 0 {
-        if fs-rename(line + arg1, line + arg2) == 0 {
+        store8(line + arg2 - 1, 0)
+        if fs-rename(shell-path(line + arg1), shell-path(line + arg2)) == 0 {
           serial-write-cstr(port, "  renamed")
         } else {
           serial-write-cstr(port, "  failed")
@@ -616,14 +655,14 @@ fn shell(port: Int) -> void {
     } else if line-prefix("stat ") >= 0 {
       let arg = line-prefix("stat ")
       let stat-buf = alloc(64)
-      if fs-stat(line + arg, stat-buf) == 0 {
+      if fs-stat(shell-path(line + arg), stat-buf) == 0 {
         print-stat(port, stat-buf)
       } else {
         serial-write-cstr(port, "  failed")
         serial-nl(port)
       }
     } else if line-prefix("edit ") >= 0 {
-      editor-run(port, line + line-prefix("edit "))
+      editor-run(port, shell-path(line + line-prefix("edit ")))
     } else if line-eq("libc") != 0 {
       let rc = libc-selftest()
       if rc == 0 {

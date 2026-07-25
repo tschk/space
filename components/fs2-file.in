@@ -128,7 +128,7 @@ fn sf-do-format(total: Int, ino-count: Int) -> Int {
   }
   let root = sf-inode-addr(0)
   store32(root + SF-IN-TYPE, SF-TYPE-DIR)
-  store32(root + SF-IN-MODE, 0o755)
+  store32(root + SF-IN-MODE, 493)
   store64(root + SF-IN-SIZE, 0)
   store64(root + SF-IN-CTIME, 0)
   store64(root + SF-IN-MTIME, 0)
@@ -177,9 +177,9 @@ fn sparkfs-create(path: Int, is-dir: Int) -> Int {
         j = j + 1
       }
       store32(addr + SF-IN-TYPE, is-dir)
-      store32(addr + SF-IN-MODE, 0o644)
+      store32(addr + SF-IN-MODE, 420)
       if is-dir == SF-TYPE-DIR {
-        store32(addr + SF-IN-MODE, 0o755)
+        store32(addr + SF-IN-MODE, 493)
       }
       store64(addr + SF-IN-SIZE, 0)
       store32(addr + SF-IN-NLINK, 1)
@@ -502,7 +502,7 @@ fn sparkfs-delete(path: Int) -> Int {
   }
   let addr = sf-inode-addr(ino)
   if load32(addr + SF-IN-TYPE) == SF-TYPE-DIR {
-    if load64(addr + SF-IN-SIZE) != 0 {
+    if sf-dir-is-empty(ino) == 0 {
       return -1
     }
   }
