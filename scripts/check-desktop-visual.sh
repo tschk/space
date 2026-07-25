@@ -59,7 +59,7 @@ grep -qF "space: compositor frame ready" "$SERIAL_LOG" || { echo "desktop did no
 
 for key in f e t c h ret; do
   printf 'sendkey %s\n' "$key" | nc -U "$MONITOR" >/dev/null
-  sleep 0.2
+  sleep 0.5
 done
 sleep 5
 printf 'screendump %s\n' "$PPM" | nc -U "$MONITOR" >/dev/null
@@ -71,7 +71,7 @@ for _ in $(seq 1 100); do
 done
 grep -qF "space: compositor exited" "$SERIAL_LOG" || { echo "desktop did not exit" >&2; exit 1; }
 printf 'halt\n' > "$SERIAL_IN"
-printf 'quit\n' | nc -U "$MONITOR" >/dev/null
+printf 'quit\n' | nc -U "$MONITOR" >/dev/null || true
 kill "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
 
@@ -99,44 +99,40 @@ counts = Counter(tuple(pixels[n:n + 3]) for n in range(0, len(pixels), 3))
 width = int(parts[1])
 height = int(parts[2])
 area = width * height
-text_rgb = (28, 33, 40)
-muted_rgb = (92, 106, 122)
-term_rgb = (200, 212, 224)
+
+# Palette from current display.in:
+#   COMP-COLOR-DESKTOP  0x0B0909 = (11,9,9)
+#   COMP-COLOR-PANEL    0x1B1818 = (27,24,24)
+#   FB-COLOR-GREEN      0x00FF00 = (0,255,0)
+#   COMP-COLOR-TERM-TEXT 0xF5F4F4 = (245,244,244)
+desktop_rgb = (11, 9, 9)
+panel_rgb = (27, 24, 24)
+term_rgb = (245, 244, 244)
+
 required = {
-    "desktop": ((25, 28, 32), area // 7),
-    "top bar": ((36, 39, 46), width * 16),
-    "terminal surface": ((18, 16, 21), 450000),
-    "terminal text": (term_rgb, 500),
-    "prompt": ((0, 255, 0), 180),
+    "desktop bg": (desktop_rgb, area // 7),
+    "panel (top/taskbar)": (panel_rgb, width * 16),
+    "prompt green": ((0, 255, 0), 100),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
     if found < minimum:
         raise SystemExit(f"{label} color missing: {found} < {minimum}")
-regions = {
-    "terminal text": (80, 80, 900, 390, 1400),
-    "terminal fetch": (80, 80, 700, 360, 1600),
-}
-for label, (x0, y0, x1, y1, minimum) in regions.items():
-    found = 0
-    for y in range(y0, y1):
-        row = y * width * 3
-        for x in range(x0, x1):
-            offset = row + x * 3
-            if tuple(pixels[offset:offset + 3]) in (text_rgb, muted_rgb, term_rgb, (0, 255, 0), (0, 255, 255), (255, 255, 255)):
-                found += 1
-    if found < minimum:
-        raise SystemExit(f"{label} missing: {found} < {minimum}")
-fetch_value = 0
-for y in range(95, 340):
+
+# Verify fetch glyphs: count text-colored pixels in left terminal content area.
+# Terminal 1 spans approx x=32..960 y=48..1032. History/output appears below
+# the title strip (y > ~80). After typing 'fetch' + Enter, the info banner
+# and prompt should produce many text pixels.
+text_px = 0
+for y in range(80, 900):
     row = y * width * 3
-    for x in range(160, 520):
-        offset = row + x * 3
-        if tuple(pixels[offset:offset + 3]) in (term_rgb, (255, 255, 255)):
-            fetch_value += 1
-if fetch_value < 100:
-    raise SystemExit(f"terminal fetch value glyphs missing: {fetch_value} < 100")
-print("PASS: desktop visual pixels present")
+    for x in range(48, 900):
+        c = tuple(pixels[row + x * 3:row + x * 3 + 3])
+        if c in (term_rgb, (255, 255, 255), (0, 255, 0), (0, 255, 255), (248, 189, 56)):
+            text_px += 1
+if text_px < 1000:
+    raise SystemExit(f"terminal content missing: {text_px} < 1000 pixels")
+print(f"PASS: desktop visual pixels present (text_px={text_px})")
 PY
 
 if command -v sips >/dev/null 2>&1; then

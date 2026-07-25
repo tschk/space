@@ -25,8 +25,6 @@ const COMP-GNOME-ACCENT = 0x003584E4
 const COMP-GNOME-TERM-BG = 0x00121015
 const COMP-GNOME-TERM-TEXT = 0x00C8D4E0
 const COMP-GNOME-BTN-CLOSE = 0x00C01C28
-const COMP-CURSOR-H = 16
-const COMP-CURSOR-W = 16
 
 // Runtime-loaded components get an isolated heap and a cross-domain shared
 // page mapped at the same virtual address in both domains.

@@ -39,14 +39,11 @@ import "../components/linux.in"
 import "../components/darwin.in"
 // Windows personality translator (Win32/NT-shaped subset, not full ABI).
 import "../components/windows.in"
-// VBE framebuffer driver (drawing primitives + bitmap font).
-import "../components/fb.in"
+// VBE framebuffer driver (drawing primitives + bitmap font), Wayland-style
+// compositor (window manager + desktop rendering), and SPDP display server.
+import "../components/display.in"
 // PS/2 mouse driver (polling).
 import "../components/mouse.in"
-// Wayland-style compositor (window manager + desktop rendering).
-import "../components/compositor.in"
-// SPDP display server.
-import "../services/display.in"
 // Cooperative scheduler (must immediately precede shell.in).
 import "../components/sched.in"
 // Interactive serial shell.

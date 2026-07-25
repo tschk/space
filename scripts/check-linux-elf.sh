@@ -27,7 +27,7 @@ python3 - "$BUILD_DIR" <<'PY'
 from pathlib import Path
 import struct
 build = Path(__import__("sys").argv[1])
-base = 0x140000
+base = 0x200000
 load_off = base - 0x100000
 code = bytes([0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3])
 entry = base + 64 + 56
@@ -60,6 +60,6 @@ done
 kill "$CATPID" 2>/dev/null || true
 wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
-grep -qF "linux: execve loading ELF from space-minimal-elf" "$SERIAL_LOG"
+grep -qF "posix: execve loading ELF from space-minimal-elf" "$SERIAL_LOG"
 grep -qF "linux: ELF exec returned 42" "$SERIAL_LOG"
 echo "PASS: Linux personality executed minimal ELF"

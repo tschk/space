@@ -35,7 +35,6 @@ fn chan-cross-bind(shared-page: Int, local-domain: Int, capacity: Int) -> Int {
 // the counterparty wakes it when space/data becomes available. This replaces
 // the old poll-with-yield approach for zero-CPU-waste IPC.
 var chan0: Int = 0
-var comp-backbuf: Int = 0  // double-buffer for tear-free compositor
 
 fn chan-new(cap: Int) -> Int {
   // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
