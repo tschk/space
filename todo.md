@@ -10,8 +10,12 @@ lives on full runtime images (`check-runtime-components`, volume soak `image: fu
 Volume multi-file soak across reboot; user SCI `hello`/`uecho`; `exec` loads SCI
 from sparkfs (`check-execve-sci`). Net: UDP; TCP handshake + PSH+ACK data path;
 DHCP DORA lease; DNS dotted QNAME A parse (`check-dns`, e.g. example.com).
-Still not full TCP window/congestion. Darwin/Windows are translator subsets
-(VFS/process/serial), not full XNU/NT ABIs — see docs/personalities.md.
+TCP window/congestion: MSS negotiation, slow-start, Go-Back-N retransmit.
+Darwin/Windows translators expanded to M4 (dup2, fcntl, errno, NTSTATUS,
+DuplicateHandle, GetFileType, SetEndOfFile). Desktop compositor wired into
+kernel with real PS/2 keyboard. Shell has cd/pwd, nested fs paths, peek hex
+fix. ELF load addr moved above kernel global-data area. 17/17 checks green.
+See docs/personalities.md for full personality status.
 
 ## Phase 1: Storage
 
@@ -73,7 +77,7 @@ Branch for translator work: `feat/personalities`.
 
 ## Phase 7: Networking Stack
 
-- [x] TCP/IP stack (active open + best-effort data path; no window/congestion)
+- [x] TCP/IP stack (MSS negotiation, window-aware segmented send, slow-start, Go-Back-N retransmit)
 - [x] Socket API for user programs (UDP over e1000; TCP handshake + send/recv)
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)
