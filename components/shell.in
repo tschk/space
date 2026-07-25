@@ -57,6 +57,9 @@ fn shell-path(p: Int) -> Int {
 fn str-to-hex(addr: Int) -> Int {
   let result = 0
   let i = 0
+  if load8(addr) == 48 && (load8(addr + 1) == 120 || load8(addr + 1) == 88) {
+    i = 2
+  }
   while i < 16 {
     let c = load8(addr + i)
     if (c >= 48) && (c <= 57) {
@@ -274,7 +277,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo > | & peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo > | & peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0

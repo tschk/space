@@ -27,7 +27,7 @@ python3 - "$BUILD_DIR" <<'PY'
 from pathlib import Path
 import struct
 build = Path(__import__("sys").argv[1])
-base = 0x200000
+base = 0x280000
 load_off = base - 0x100000
 code = bytes([0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3])
 entry = base + 64 + 56
