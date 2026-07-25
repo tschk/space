@@ -115,6 +115,7 @@ required = {
     "desktop bg": (desktop_rgb, area // 12),
     "panel (top/taskbar)": (panel_rgb, width * 16),
     "prompt green": ((0, 255, 0), 100),
+    "term bg": (term_bg_rgb, width * 40),
 }
 for label, (rgb, minimum) in required.items():
     found = counts[rgb]
