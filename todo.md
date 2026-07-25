@@ -10,12 +10,11 @@ lives on full runtime images (`check-runtime-components`, volume soak `image: fu
 Volume multi-file soak across reboot; user SCI `hello`/`uecho`; `exec` loads SCI
 from sparkfs (`check-execve-sci`). Net: UDP; TCP handshake + PSH+ACK data path;
 DHCP DORA lease; DNS dotted QNAME A parse (`check-dns`, e.g. example.com).
-TCP window/congestion: MSS negotiation, slow-start, Go-Back-N retransmit.
-Darwin/Windows translators expanded to M4 (dup2, fcntl, errno, NTSTATUS,
-DuplicateHandle, GetFileType, SetEndOfFile). Desktop compositor wired into
-kernel with real PS/2 keyboard. Shell has cd/pwd, nested fs paths, peek hex
-fix. ELF load addr moved above kernel global-data area. 17/17 checks green.
-See docs/personalities.md for full personality status.
+TCP window/congestion: MSS negotiation, slow-start, Go-Back-N retransmit
+(`check-tcp`). Darwin/Windows M4 surface. Desktop via kernel `display.in` +
+PS/2; kernel xHCI HID enum works (`usb.in`). Shell: cd/pwd, history up/down,
+`>`/`|` redirect, nested paths. ELF load above global-data zero region.
+18+ maintained checks green on `feat/personalities`. See personalities docs.
 
 ## Phase 1: Storage
 
