@@ -1,8 +1,9 @@
 package space.kernel
 
-// USB xHCI and HID keyboard driver stub.
-// The full driver logic has moved to components/input.in. This file preserves
-// the public symbols so kernel-root.in and compositor.in continue to compile.
+// USB xHCI and HID keyboard driver stub (kernel-linked).
+// Full xHCI + HID logic lives in components/input.in for the SCI input
+// component. Kernel keeps these symbols so boot and compositor compile;
+// desktop keyboard path uses PS/2 (components/mouse.in) until USB is wired.
 
 fn xhci-init() -> Int {
   return -1
