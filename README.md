@@ -80,6 +80,7 @@ bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path
 bash scripts/check-linux-elf.sh       # Linux ELF personality
 bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
+bash scripts/check-fs-dirs.sh         # mkdir/rmdir/mv/rm full coverage
 bash scripts/check-personalities.sh   # Linux/Windows/Darwin personalities
 ```
 
@@ -107,6 +108,7 @@ scripts/
   check-desktop-visual.sh   desktop / display visual path
   check-linux-elf.sh        Linux ELF personality
   check-volume-deep-soak.sh NVMe volume deep soak
+  check-fs-dirs.sh          mkdir/rmdir/mv/rm full coverage
   check-personalities.sh    Linux/Windows/Darwin personalities
   bench-boot.sh             boot timing (median/min/max)
 ```
