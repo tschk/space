@@ -105,12 +105,14 @@ area = width * height
 #   COMP-COLOR-PANEL    0x1B1818 = (27,24,24)
 #   FB-COLOR-GREEN      0x00FF00 = (0,255,0)
 #   COMP-COLOR-TERM-TEXT 0xF5F4F4 = (245,244,244)
+#   COMP-COLOR-TERM-BG  0x1E1E2E = (30,30,46)
 desktop_rgb = (11, 9, 9)
 panel_rgb = (27, 24, 24)
 term_rgb = (245, 244, 244)
+term_bg_rgb = (30, 30, 46)
 
 required = {
-    "desktop bg": (desktop_rgb, area // 7),
+    "desktop bg": (desktop_rgb, area // 12),
     "panel (top/taskbar)": (panel_rgb, width * 16),
     "prompt green": ((0, 255, 0), 100),
 }

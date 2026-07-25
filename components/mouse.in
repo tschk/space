@@ -207,10 +207,13 @@ fn mouse-right-pressed() -> Int {
   return mouse-buttons & 0x02
 }
 
+var ps2-kbd-shift: Int = 0
+
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
+  ps2-kbd-shift = 0
   return 0
 }
 
@@ -225,8 +228,17 @@ fn ps2-kbd-has-data() -> Int {
 fn ps2-scancode-ascii(sc: Int) -> Int {
   if sc == 0x01 { return 27 }
   if sc == 0x0E { return 8 }
+  if sc == 0x0F { return 9 }
   if sc == 0x1C { return 10 }
   if sc == 0x39 { return 32 }
+  if sc == 0x48 { return 128 }
+  if sc == 0x4B { return 129 }
+  if sc == 0x4D { return 130 }
+  if sc == 0x50 { return 131 }
+  if sc == 0x47 { return 132 }
+  if sc == 0x4F { return 133 }
+  if sc == 0x49 { return 128 }
+  if sc == 0x51 { return 129 }
   if sc == 0x02 { return 49 }
   if sc == 0x03 { return 50 }
   if sc == 0x04 { return 51 }
@@ -282,12 +294,46 @@ fn ps2-kbd-getchar() -> Int {
     return -1
   }
   let sc = inb(PS2-DATA)
-  if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
+  if sc == 0x2A || sc == 0x36 {
+    ps2-kbd-shift = 1
+    return -1
+  }
+  if sc == 0xAA || sc == 0xB6 {
+    ps2-kbd-shift = 0
     return -1
   }
   if (sc & 0x80) != 0 {
     return -1
   }
   let ch = ps2-scancode-ascii(sc)
+  if ch < 0 {
+    return -1
+  }
+  if ps2-kbd-shift != 0 {
+    if ch >= 97 && ch <= 122 {
+      return ch - 32
+    }
+    if ch == 49 { return 33 }
+    if ch == 50 { return 64 }
+    if ch == 51 { return 35 }
+    if ch == 52 { return 36 }
+    if ch == 53 { return 37 }
+    if ch == 54 { return 94 }
+    if ch == 55 { return 38 }
+    if ch == 56 { return 42 }
+    if ch == 57 { return 40 }
+    if ch == 48 { return 41 }
+    if ch == 45 { return 95 }
+    if ch == 61 { return 43 }
+    if ch == 91 { return 123 }
+    if ch == 93 { return 125 }
+    if ch == 59 { return 58 }
+    if ch == 39 { return 34 }
+    if ch == 96 { return 126 }
+    if ch == 92 { return 124 }
+    if ch == 44 { return 60 }
+    if ch == 46 { return 62 }
+    if ch == 47 { return 63 }
+  }
   return ch
 }
