@@ -23,37 +23,36 @@ into Space primitives.
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
-under QEMU. Maintained checks: shell + full runtime display/input (preempt-stop),
-SCI loader (`hello`/`uecho`), execve SCI from FS, Linux demo, VFS, NVMe volume
-multi-file soak, UDP/TCP data path, DHCP lease, DNS A for dotted names.
+under QEMU. Desktop works via shell `desktop` (kernel-linked `components/display.in`
++ PS/2 `components/mouse.in`). Maintained checks: shell + full runtime
+display/input (preempt-stop), SCI loader (`hello`/`uecho`), execve SCI from FS,
+Linux demo / ELF personality, VFS, NVMe volume multi-file + deep soak, UDP/TCP
+data path, DHCP lease, DNS A for dotted names, personalities (Linux/Windows/Darwin).
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 Linux/Windows/Darwin personality progress: [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
 
 ## Benchmarks
 
-Measured on macOS ARM64 (M3), Inauguration v0.7.1.
+Measured on macOS ARM64 (M3 TCG), Inauguration v0.9.3 via `scripts/bench-boot.sh`
+(5 iterations, median / min / max).
 
-| Metric | Value |
-|--------|-------|
-| Metric | x86_64 KVM | Apple Silicon TCG |
-|--------|-----------|-------------------|
-| Boot image size | 230,662 B | 230,662 B |
-| Kernel compile (warm, cached) | ~27 ms | ~27 ms |
-| Boot to interactive shell | ~2,000 ms | ~1,900 ms |
-| SeaBIOS + boot | ~200 ms | ~200 ms |
-| Kernel init to shell | ~1,800 ms | ~1,700 ms |
+| Metric | Median | Min | Max |
+|--------|--------|-----|-----|
+| Boot image size | 542,332 B | — | — |
+| Kernel compile (warm) | 132 ms | 103 ms | 187 ms |
+| Boot to interactive shell | 676 ms | 611 ms | 769 ms |
+| Boot to halt | 1,095 ms | 955 ms | 1,326 ms |
 
-Measured via serial output polling.  KVM on Intel i9-7960X (Fedora 43, WSL2).
-TCG on Apple M3 (macOS 15).  Boot time is dominated by SeaBIOS firmware init
-and serial output through the emulated 16550 UART.
+Measured via serial output polling on Apple M3 (macOS, QEMU TCG).
 
 ### Performance notes
 
-- Most kernel init time is waiting for PIT ticks for timer calibration.
+- Boot-to-shell is ~700 ms class on M3 TCG; dominated by firmware + serial path.
 - The warm compile path is cached by source hash; repeated edits rebuild fast.
-- `scripts/boot.sh` drops into an interactive shell.  Type `halt` to exit.
+- `scripts/boot.sh` drops into an interactive shell. Type `halt` to exit.
 - `scripts/bench-boot.sh` runs 5 iterations and reports median/min/max.
+- Shell `desktop` starts the kernel-linked display + PS/2 mouse path.
 
 ## Target architectures
 
@@ -73,11 +72,15 @@ git submodule update --init --recursive
 ```
 
 ```sh
-bash scripts/check-qemu-boot.sh      # full boot verification
-bash scripts/build-multicomponent.sh # SCI component loading demo
-bash scripts/check-sci-contract.sh   # metadata validation
-bash scripts/check-network.sh        # e1000 ARP/UDP test
+bash scripts/check-qemu-boot.sh       # full boot verification
+bash scripts/build-multicomponent.sh  # SCI component loading demo
+bash scripts/check-sci-contract.sh    # metadata validation
+bash scripts/check-network.sh         # e1000 ARP/UDP test
 bash scripts/check-terminal-editor.sh # serial editor save test
+bash scripts/check-desktop-visual.sh  # desktop / display visual path
+bash scripts/check-linux-elf.sh       # Linux ELF personality
+bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
+bash scripts/check-personalities.sh   # Linux/Windows/Darwin personalities
 ```
 
 Browser demo (Alpenglow-style v86 shell): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
@@ -86,22 +89,26 @@ Browser demo (Alpenglow-style v86 shell): see [`docs/v86-website.md`](docs/v86-w
 
 ```
 kernel/
-  kernel-root.in          nanokernel root component
-  domain.in               memory domain subsystem
-  channel.in              cross-domain channel fabric
-  net.in                  e1000 NIC driver
-  guest-service.in        SCI guest component example
+  kernel-root.in            nanokernel root component
+  guest-service.in          SCI guest component example
+  v86-kernel.in             browser/v86 kernel variant
 components/
-  pci.in                  PCI bus enumeration
-  volume-mem.in           standalone memory-backed Volume SCI component
+  display.in                kernel-linked display (shell `desktop`)
+  display-standalone.in     standalone display SCI component
+  mouse.in                  PS/2 mouse input
+  shell.in                  interactive serial shell
+  pci.in                    PCI bus enumeration
+  volume-mem.in             memory-backed Volume SCI component
+  linux.in / windows.in / darwin.in   OS personality surfaces
 boot/
-  multiboot.asm           x86_64 CPU bring-up (32-bit → long mode)
+  multiboot.asm             x86_64 CPU bring-up (32-bit → long mode)
 scripts/
-  check-qemu-boot.sh      full boot verification
-  build-multicomponent.sh SCI loading demo
-  check-sci-contract.sh   metadata validation
-  check-network.sh        network driver test
-  check-terminal-editor.sh serial editor save test
+  check-qemu-boot.sh        full boot verification
+  check-desktop-visual.sh   desktop / display visual path
+  check-linux-elf.sh        Linux ELF personality
+  check-volume-deep-soak.sh NVMe volume deep soak
+  check-personalities.sh    Linux/Windows/Darwin personalities
+  bench-boot.sh             boot timing (median/min/max)
 ```
 
 ## Relationship to Inauguration
