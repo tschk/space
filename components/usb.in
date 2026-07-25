@@ -1,40 +1,522 @@
 package space.kernel
 
-// USB xHCI and HID keyboard driver stub (kernel-linked).
-// Full xHCI + HID logic lives in components/input.in for the SCI input
-// component. Kernel keeps these symbols so boot and compositor compile;
-// desktop keyboard path uses PS/2 (components/mouse.in) until USB is wired.
+// USB xHCI host controller and HID keyboard driver (kernel-linked).
+// Ported from components/input.in; uses kernel pci-*, frame-alloc, serial-*.
+// Standalone SCI input component keeps its own copy in components/input.in.
 
-fn xhci-init() -> Int {
-  return -1
+// --- xHCI driver ------------------------------------------------------------
+var xhci-mmio: Int = 0
+var xhci-op: Int = 0
+var xhci-rts: Int = 0
+var xhci-dboff: Int = 0
+var xhci-max-slots: Int = 0
+var xhci-max-ports: Int = 0
+var xhci-cr: Int = 0
+var xhci-cr-ctrl: Int = 1
+var xhci-cr-index: Int = 0
+var xhci-er: Int = 0
+var xhci-erst: Int = 0
+var xhci-er-index: Int = 0
+var xhci-er-ccs: Int = 1
+var xhci-dcbaa: Int = 0
+var xhci-slot: Int = 0
+var xhci-kbd-ep: Int = 0
+var xhci-kbd-buf: Int = 0
+var xhci-kbd-ready: Int = 0
+var xhci-kbd-prev: Int = 0
+
+const XHCI-NCR = 256
+const XHCI-NER = 256
+
+fn xhci-cap-r32(off: Int) -> Int {
+  return load32(xhci-mmio + off)
 }
 
-fn usb-kbd-init() -> Int {
-  return -1
-}
-
-fn usb-kbd-ready() -> Int {
-  return 0
-}
-
-fn usb-kbd-getchar() -> Int {
-  return -1
-}
-
-fn usb-kbd-wait-key() -> Int {
-  return -1
-}
-
-fn usb-kbd-cmd(port: Int) -> void {
-  serial-write-cstr(port, "  no keyboard")
-  serial-nl(port)
+fn xhci-op-w32(off: Int, val: Int) -> void {
+  store32(xhci-op + off, val)
   return
 }
 
+fn xhci-op-r32(off: Int) -> Int {
+  return load32(xhci-op + off)
+}
+
+fn xhci-op-w64(off: Int, val: Int) -> void {
+  store32(xhci-op + off, val & 0xFFFFFFFF)
+  store32(xhci-op + off + 4, (val >> 32) & 0xFFFFFFFF)
+  return
+}
+
+fn xhci-rt-w32(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci-rts + 0x20 + intx * 0x20 + off, val)
+  return
+}
+
+fn xhci-rt-r32(intx: Int, off: Int) -> Int {
+  return load32(xhci-rts + 0x20 + intx * 0x20 + off)
+}
+
+fn xhci-rt-w64(intx: Int, off: Int, val: Int) -> void {
+  store32(xhci-rts + 0x20 + intx * 0x20 + off, val & 0xFFFFFFFF)
+  store32(xhci-rts + 0x20 + intx * 0x20 + off + 4, (val >> 32) & 0xFFFFFFFF)
+  return
+}
+
+fn xhci-doorbell(slot: Int, target: Int) -> void {
+  store32(xhci-mmio + xhci-dboff + slot * 8, target)
+  return
+}
+
+fn xhci-find-pci() -> Int {
+  for dev in 0..32 {
+    let f = pci-read32(0, dev, 0, 0x08)
+    let classcode = (f >> 8) & 0xFFFFFF
+    if classcode == 0x0C0330 {
+      return (0 << 16) | (dev << 8) | 0
+    }
+  }
+  return 0
+}
+
+fn xhci-read-bar64(bus: Int, dev: Int, func: Int) -> Int {
+  let lo = pci-read32(bus, dev, func, 0x10)
+  let hi = pci-read32(bus, dev, func, 0x14)
+  return (lo & 0xFFFFFFF0) | ((hi & 0xFFFFFFFF) << 32)
+}
+
+fn trb-set(addr: Int, param: Int, status: Int, control: Int) -> void {
+  store64(addr + 0, param)
+  store32(addr + 8, status)
+  store32(addr + 12, control)
+  return
+}
+
+fn xhci-reset() -> void {
+  let cmd = xhci-op-r32(0)
+  xhci-op-w32(0, cmd & -2)
+  let tries = 0
+  while (xhci-op-r32(4) & 1) == 0 {
+    tries = tries + 1
+    if tries > 100000 {
+      return
+    }
+  }
+  xhci-op-w32(0, 0x2)
+  let tries2 = 0
+  while (xhci-op-r32(4) & 1) != 0 {
+    tries2 = tries2 + 1
+    if tries2 > 1000000 {
+      return
+    }
+  }
+  return
+}
+
+fn xhci-init-rings() -> void {
+  xhci-cr = frame-alloc()
+  for i in 0..XHCI-NCR {
+    trb-set(xhci-cr + i * 16, 0, 0, 0)
+  }
+  trb-set(xhci-cr + XHCI-NCR * 16, xhci-cr, 0, 0x2 | (1 << 1) | (6 << 10))
+  xhci-cr-index = 0
+  xhci-cr-ctrl = 1
+  xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
+
+  xhci-er = frame-alloc()
+  for i in 0..XHCI-NER {
+    trb-set(xhci-er + i * 16, 0, 0, 0)
+  }
+  xhci-er-index = 0
+  xhci-er-ccs = 1
+  xhci-erst = frame-alloc()
+  store64(xhci-erst + 0, xhci-er)
+  store32(xhci-erst + 8, XHCI-NER)
+  store32(xhci-erst + 12, 0)
+  xhci-rt-w32(0, 8, 1)
+  xhci-rt-w64(0, 16, xhci-erst)
+  xhci-rt-w64(0, 24, xhci-er)
+  xhci-rt-w32(0, 0, xhci-rt-r32(0, 0) | 0x2)
+  xhci-rt-w32(0, 0, xhci-rt-r32(0, 0) | 0x8)
+  return
+}
+
+fn xhci-cmd(param: Int, status: Int, typecode: Int) -> Int {
+  let idx = xhci-cr-index
+  let addr = xhci-cr + idx * 16
+  let control = (typecode << 10) | (xhci-cr-ctrl & 1)
+  trb-set(addr, param, status, control)
+  xhci-cr-index = xhci-cr-index + 1
+  if xhci-cr-index >= XHCI-NCR {
+    xhci-cr-index = 0
+    xhci-cr-ctrl = xhci-cr-ctrl ^ 1
+    xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
+  }
+  xhci-doorbell(0, 0)
+  return xhci-wait-event()
+}
+
+fn xhci-wait-event() -> Int {
+  let tries = 0
+  while tries < 2000000 {
+    let erdp = xhci-rt-r32(0, 24) | ((xhci-rt-r32(0, 28) & 0xFFFFFFFF) << 32)
+    let head = erdp & -16
+    let tail-off = xhci-er-index * 16
+    if head != (xhci-er + tail-off) {
+      let trb = xhci-er + tail-off
+      let ctrl = load32(trb + 12)
+      let cycle = ctrl & 1
+      if cycle == (xhci-er-ccs & 1) {
+        let code = (load32(trb + 8) >> 24) & 0xFF
+        xhci-er-index = xhci-er-index + 1
+        if xhci-er-index >= XHCI-NER {
+          xhci-er-index = 0
+          xhci-er-ccs = xhci-er-ccs ^ 1
+        }
+        xhci-rt-w64(0, 24, xhci-er + xhci-er-index * 16)
+        return code
+      }
+    }
+    tries = tries + 1
+  }
+  return -1
+}
+
+fn xhci-init-dcbaa() -> void {
+  let n = xhci-max-slots + 1
+  xhci-dcbaa = frame-alloc()
+  for i in 0..n {
+    store64(xhci-dcbaa + i * 8, 0)
+  }
+  xhci-op-w64(24, xhci-dcbaa)
+  return
+}
+
+fn xhci-alloc-ctx() -> Int {
+  return frame-alloc()
+}
+
+fn xhci-portsc(port: Int) -> Int {
+  return xhci-op + 0x400 + port * 0x10
+}
+
+fn xhci-port-wait-connected(port: Int) -> Int {
+  let tries = 0
+  while tries < 2000000 {
+    if (load32(xhci-portsc(port)) & 1) != 0 {
+      return 1
+    }
+    tries = tries + 1
+  }
+  return 0
+}
+
+fn xhci-port-reset(port: Int) -> void {
+  let p = xhci-portsc(port)
+  store32(p, load32(p) | 0x10)
+  let tries = 0
+  while (load32(p) & 0x10) != 0 {
+    tries = tries + 1
+    if tries > 2000000 {
+      return
+    }
+  }
+  return
+}
+
+fn xhci-port-speed(port: Int) -> Int {
+  return (load32(xhci-portsc(port)) >> 10) & 0xF
+}
+
+fn xhci-address-device(port: Int) -> Int {
+  let code = xhci-cmd(0, 0, 9)
+  if code != 1 {
+    return -1
+  }
+  let ev = xhci-er + ((xhci-er-index + XHCI-NER - 1) % XHCI-NER) * 16
+  let slot = load64(ev) & 0xFF
+  if slot == 0 {
+    return -1
+  }
+  xhci-slot = slot
+
+  let icc = xhci-alloc-ctx()
+  let slot-ctx = xhci-alloc-ctx()
+  let ep-ctx = xhci-alloc-ctx()
+  let dctx = xhci-alloc-ctx()
+  store64(xhci-dcbaa + slot * 8, dctx)
+
+  store32(icc + 0, 0x3)
+  store32(icc + 4, 0x0)
+  let speed = xhci-port-speed(port)
+  store32(icc + 32 + 0, speed & 0xF)
+  store32(icc + 32 + 4, 0)
+  store32(icc + 32 + 8, (port + 1) << 16)
+  store32(dctx + 0, speed & 0xF)
+  store32(dctx + 8, (port + 1) << 16)
+
+  let addr-code = xhci-cmd(icc, 0, 11)
+  if addr-code != 1 {
+    return -1
+  }
+
+  let icc2 = xhci-alloc-ctx()
+  store32(icc2 + 0, 0x2)
+  store32(icc2 + 4, 0x0)
+  store32(icc2 + 32 + 0, speed & 0xF)
+  store32(icc2 + 32 + 8, (port + 1) << 16)
+  let ep0 = 7 | (4 << 3) | (8 << 16)
+  store32(icc2 + 96 + 0, ep0)
+  store32(icc2 + 96 + 4, 8 << 16)
+  let ep-ring = frame-alloc()
+  store64(icc2 + 96 + 8, ep-ring | 1)
+  store32(icc2 + 96 + 16, 8)
+  xhci-kbd-ep = ep-ring
+  xhci-kbd-buf = frame-alloc()
+
+  let cfg-code = xhci-cmd(icc2, 0, 12)
+  if cfg-code != 1 {
+    return -1
+  }
+  store64(dctx + 64 + 8, ep-ring | 1)
+  return 0
+}
+
+fn xhci-init() -> Int {
+  let port = com1()
+  let pci = xhci-find-pci()
+  if pci == 0 {
+    serial-write-cstr(port, "usb: no xHCI controller on PCI")
+    serial-nl(port)
+    return -1
+  }
+  let bus = (pci >> 16) & 0xFF
+  let dev = (pci >> 8) & 0xFF
+  let func = pci & 0xFF
+  let cmd = pci-read32(bus, dev, func, 0x04)
+  pci-write32(bus, dev, func, 0x04, cmd | 0x6)
+  let bar = xhci-read-bar64(bus, dev, func)
+  if bar == 0 {
+    serial-write-cstr(port, "usb: xHCI BAR0 is zero")
+    return -1
+  }
+  serial-write-cstr(port, "usb: xHCI at PCI 00:")
+  serial-write-hex(port, dev)
+  serial-write-cstr(port, ".0 BAR0 0x")
+  serial-write-hex(port, bar)
+  serial-put(port, 10)
+  xhci-mmio = bar
+  let hccparams = load32(bar)
+  if hccparams == 0 {
+    serial-write-cstr(port, "usb: xHCI MMIO not accessible")
+    serial-nl(port)
+    xhci-mmio = 0
+    return -1
+  }
+  let caplen = hccparams & 0xFF
+  let version = (hccparams >> 16) & 0xFFFF
+  let hcs1 = xhci-cap-r32(4)
+  xhci-max-slots = hcs1 & 0xFF
+  xhci-max-ports = (hcs1 >> 24) & 0xFF
+  xhci-dboff = xhci-cap-r32(20) & 0xFFFFFFFF
+  xhci-rts = bar + (xhci-cap-r32(24) & 0xFFFFFFFF)
+  xhci-op = bar + caplen
+  serial-write-cstr(port, "usb: xHCI version 0x")
+  serial-write-hex(port, version)
+  serial-write-cstr(port, " slots 0x")
+  serial-write-hex(port, xhci-max-slots)
+  serial-write-cstr(port, " ports 0x")
+  serial-write-hex(port, xhci-max-ports)
+  serial-put(port, 10)
+  xhci-reset()
+  xhci-init-dcbaa()
+  xhci-init-rings()
+  xhci-op-w32(0x2C, xhci-max-slots)
+  xhci-op-w32(0, 0x1 | 0x4 | 0x8)
+  serial-write-cstr(port, "usb: xHCI started, USBSTS 0x")
+  serial-write-hex(port, xhci-op-r32(4))
+  serial-put(port, 10)
+  return 0
+}
+
+fn usb-kbd-init() -> Int {
+  if xhci-mmio == 0 {
+    return -1
+  }
+  let port = com1()
+  let p = 0
+  let found = 0
+  while p < xhci-max-ports && found == 0 {
+    if (load32(xhci-portsc(p)) & 1) != 0 {
+      serial-write-cstr(port, "usb: USB device connected on port 0x")
+      serial-write-hex(port, p)
+      serial-put(port, 10)
+      xhci-port-reset(p)
+      if xhci-address-device(p) == 0 {
+        found = 1
+      }
+    }
+    p = p + 1
+  }
+  if found == 0 {
+    serial-write-cstr(port, "usb: no HID keyboard found")
+    serial-nl(port)
+    return -1
+  }
+  xhci-kbd-ready = 1
+  xhci-kbd-prev = 0
+  serial-write-cstr(port, "usb: HID keyboard configured on slot 0x")
+  serial-write-hex(port, xhci-slot)
+  serial-put(port, 10)
+  return 0
+}
+
+fn usb-kbd-ready() -> Int {
+  return xhci-kbd-ready
+}
+
 fn xhci-kbd-poll() -> Int {
+  if xhci-kbd-ready == 0 {
+    return 0
+  }
+  let trb = xhci-kbd-ep
+  trb-set(trb, xhci-kbd-buf, 8, (1 << 10) | (1 << 5) | 1)
+  xhci-doorbell(xhci-slot, 1)
+  let code = xhci-wait-event()
+  if code == 1 {
+    return 1
+  }
   return 0
 }
 
 fn hid-to-ascii(usage: Int) -> Int {
+  if usage == 0x04 { return 97 }
+  if usage == 0x05 { return 98 }
+  if usage == 0x06 { return 99 }
+  if usage == 0x07 { return 100 }
+  if usage == 0x08 { return 101 }
+  if usage == 0x09 { return 102 }
+  if usage == 0x0A { return 103 }
+  if usage == 0x0B { return 104 }
+  if usage == 0x0C { return 105 }
+  if usage == 0x0D { return 106 }
+  if usage == 0x0E { return 107 }
+  if usage == 0x0F { return 108 }
+  if usage == 0x10 { return 109 }
+  if usage == 0x11 { return 110 }
+  if usage == 0x12 { return 111 }
+  if usage == 0x13 { return 112 }
+  if usage == 0x14 { return 113 }
+  if usage == 0x15 { return 114 }
+  if usage == 0x16 { return 115 }
+  if usage == 0x17 { return 116 }
+  if usage == 0x18 { return 117 }
+  if usage == 0x19 { return 118 }
+  if usage == 0x1A { return 119 }
+  if usage == 0x1B { return 120 }
+  if usage == 0x1C { return 121 }
+  if usage == 0x1D { return 122 }
+  if usage == 0x1E { return 49 }
+  if usage == 0x1F { return 50 }
+  if usage == 0x20 { return 51 }
+  if usage == 0x21 { return 52 }
+  if usage == 0x22 { return 53 }
+  if usage == 0x23 { return 54 }
+  if usage == 0x24 { return 55 }
+  if usage == 0x25 { return 56 }
+  if usage == 0x26 { return 57 }
+  if usage == 0x27 { return 48 }
+  if usage == 0x28 { return 10 }
+  if usage == 0x2A { return 32 }
+  if usage == 0x2B { return 9 }
+  if usage == 0x2C { return 45 }
+  if usage == 0x2D { return 61 }
+  if usage == 0x2E { return 91 }
+  if usage == 0x2F { return 93 }
+  if usage == 0x30 { return 92 }
+  if usage == 0x33 { return 59 }
+  if usage == 0x34 { return 39 }
+  if usage == 0x35 { return 96 }
+  if usage == 0x36 { return 44 }
+  if usage == 0x37 { return 46 }
+  if usage == 0x38 { return 47 }
+  if usage == 0x4C { return 10 }
+  if usage == 0x4B { return 128 } // PageUp
+  if usage == 0x4E { return 129 } // PageDown
   return 0
+}
+
+fn xhci-kbd-report-ascii() -> Int {
+  let mod = load8(xhci-kbd-buf + 0)
+  let k0 = load8(xhci-kbd-buf + 2)
+  let k1 = load8(xhci-kbd-buf + 3)
+  let k2 = load8(xhci-kbd-buf + 4)
+  let k3 = load8(xhci-kbd-buf + 5)
+  let k4 = load8(xhci-kbd-buf + 6)
+  let k5 = load8(xhci-kbd-buf + 7)
+  let prev = xhci-kbd-prev
+  let ch = -1
+  if k0 != 0 && k0 != ((prev >> 0) & 0xFF) {
+    ch = hid-to-ascii(k0)
+  }
+  if ch < 0 && k1 != 0 && k1 != ((prev >> 8) & 0xFF) {
+    ch = hid-to-ascii(k1)
+  }
+  if ch < 0 && k2 != 0 && k2 != ((prev >> 16) & 0xFF) {
+    ch = hid-to-ascii(k2)
+  }
+  if ch < 0 && k3 != 0 && k3 != ((prev >> 24) & 0xFF) {
+    ch = hid-to-ascii(k3)
+  }
+  if ch < 0 && k4 != 0 && k4 != ((prev >> 32) & 0xFF) {
+    ch = hid-to-ascii(k4)
+  }
+  if ch < 0 && k5 != 0 && k5 != ((prev >> 40) & 0xFF) {
+    ch = hid-to-ascii(k5)
+  }
+  xhci-kbd-prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
+  if ch >= 97 && ch <= 122 {
+    if (mod & 0x22) != 0 {
+      ch = ch - 32
+    }
+  }
+  return ch
+}
+
+fn usb-kbd-getchar() -> Int {
+  if xhci-kbd-ready == 0 {
+    return -1
+  }
+  if xhci-kbd-poll() == 0 {
+    return -1
+  }
+  return xhci-kbd-report-ascii()
+}
+
+fn usb-kbd-wait-key() -> Int {
+  let spins = 0
+  while spins < 10000000 {
+    let ch = usb-kbd-getchar()
+    if ch >= 0 {
+      return ch
+    }
+    spins = spins + 1
+  }
+  return -1
+}
+
+fn usb-kbd-cmd(port: Int) -> void {
+  if xhci-mmio == 0 {
+    serial-write-cstr(port, "  no xHCI controller")
+    serial-nl(port)
+    return
+  }
+  if xhci-kbd-ready == 0 {
+    serial-write-cstr(port, "  no keyboard")
+    serial-nl(port)
+    return
+  }
+  serial-write-cstr(port, "  USB HID keyboard ready slot 0x")
+  serial-write-hex(port, xhci-slot)
+  serial-nl(port)
+  return
 }
