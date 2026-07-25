@@ -138,6 +138,9 @@ var ticks: Int = 0
 var idt-base: Int = 0
 var realm-grants: Int = 0
 var boot-quiet: Int = 1
+var redir-buf: Int = 0
+var redir-pos: Int = 0
+var redir-max: Int = 0
 
 // --- kernel entry -----------------------------------------------------------
 fn kernel-entry(mb-info: Int) -> Int {

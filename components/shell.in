@@ -260,6 +260,11 @@ fn shell-try-pipe(port: Int) -> Int {
         serial-nl(port)
       }
       store8(redir-buf + redir-pos, 0)
+      let pipe-pos = redir-pos
+      let pipe-buf = redir-buf
+      redir-buf = 0
+      redir-pos = 0
+      redir-max = 0
       let out-path = 0
       let after-cat = line + right + 3
       if load8(after-cat) == 32 {
@@ -268,20 +273,17 @@ fn shell-try-pipe(port: Int) -> Int {
         if load8(fp) != 0 { out-path = fp }
       }
       if out-path != 0 && load8(out-path) != 0 {
-        fs-write-file(shell-path(out-path), redir-buf, redir-pos)
+        fs-write-file(shell-path(out-path), pipe-buf, pipe-pos)
         serial-write-cstr(port, "  piped to ")
         serial-write-cstr(port, out-path)
         serial-nl(port)
       } else {
         let k = 0
-        while k < redir-pos {
-          serial-put-real(port, load8(redir-buf + k))
+        while k < pipe-pos {
+          serial-put-real(port, load8(pipe-buf + k))
           k = k + 1
         }
       }
-      redir-buf = 0
-      redir-pos = 0
-      redir-max = 0
       return 1
     }
     i = i + 1
