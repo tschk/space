@@ -170,35 +170,72 @@ fn sock-send(fd: Int, buf: Int, len: Int) -> Int {
   }
   let rip = load32(base + SOCK-OFF-RIP)
   let rport = load32(base + SOCK-OFF-RPORT) & 0xFFFF
-  let seq = tcp-local-seq
-  let ack = tcp-remote-ack
-  let flen = build-tcp-data-impl(rip, rport, seq, ack, buf, len)
-  e1000-tx-impl(flen)
-  // Best-effort: one retransmit if no covering ACK after poll.
-  // Data seen while waiting stays in tcp-rx-buf for sock-recv.
-  let tries = 0
-  let acked = 0
-  let need = seq + len
-  while tries < 100000 {
-    let pkt = e1000-rx-poll-impl()
-    if pkt != 0 {
-      let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
-      if n > 0 {
-        tcp-remote-ack = tcp-last-seq + n
+  let sent = 0
+  while sent < len {
+    let chunk = len - sent
+    let eff = tcp-send-wnd
+    if eff > tcp-peer-wnd {
+      eff = tcp-peer-wnd
+    }
+    if chunk > eff {
+      chunk = eff
+    }
+    if chunk > tcp-peer-mss {
+      chunk = tcp-peer-mss
+    }
+    if chunk <= 0 {
+      chunk = 1
+    }
+    let seq = tcp-local-seq
+    let ack = tcp-remote-ack
+    let flen = build-tcp-data-impl(rip, rport, seq, ack, buf + sent, chunk)
+    e1000-tx-impl(flen)
+    let tries = 0
+    let acked = 0
+    let need = seq + chunk
+    while tries < 100000 {
+      let pkt = e1000-rx-poll-impl()
+      if pkt != 0 {
+        let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+        if n > 0 {
+          tcp-remote-ack = tcp-last-seq + n
+        }
+        if tcp-last-ack >= need {
+          acked = 1
+          tcp-send-wnd = tcp-send-wnd * 2
+          if tcp-send-wnd > tcp-peer-wnd {
+            tcp-send-wnd = tcp-peer-wnd
+          }
+          break
+        }
       }
-      if tcp-last-ack >= need {
-        acked = 1
-        break
+      pause()
+      tries = tries + 1
+    }
+    if acked == 0 {
+      flen = build-tcp-data-impl(rip, rport, seq, ack, buf + sent, chunk)
+      e1000-tx-impl(flen)
+      tcp-send-wnd = tcp-peer-mss
+      tries = 0
+      while tries < 100000 {
+        let pkt = e1000-rx-poll-impl()
+        if pkt != 0 {
+          let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+          if n > 0 {
+            tcp-remote-ack = tcp-last-seq + n
+          }
+          if tcp-last-ack >= need {
+            acked = 1
+            break
+          }
+        }
+        pause()
+        tries = tries + 1
       }
     }
-    pause()
-    tries = tries + 1
+    tcp-local-seq = seq + chunk
+    sent = sent + chunk
   }
-  if acked == 0 {
-    flen = build-tcp-data-impl(rip, rport, seq, ack, buf, len)
-    e1000-tx-impl(flen)
-  }
-  tcp-local-seq = seq + len
   return len
 }
 
@@ -399,6 +436,7 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
   // ISN was 1; after handshake local next-seq is 2, remote ack is SYN+ACK seq+1.
   tcp-local-seq = 2
   tcp-remote-ack = ack-num
+  tcp-send-wnd = tcp-peer-mss
   store64(base + SOCK-OFF-STATE, SOCK-STATE-ESTABLISHED)
   serial-write-cstr(0x3F8, "tcp: established")
   serial-nl(0x3F8)
