@@ -31,6 +31,9 @@ const DARWIN-SYS-ACCESS = 33
 const DARWIN-SYS-KILL = 37
 const DARWIN-SYS-DUP = 41
 const DARWIN-SYS-PIPE = 42
+const DARWIN-SYS-DUP2 = 90
+const DARWIN-SYS-FCNTL = 92
+const DARWIN-SYS-GETPAGESIZE = 276
 const DARWIN-SYS-EXECVE = 59
 const DARWIN-SYS-MUNMAP = 73
 const DARWIN-SYS-SOCKET = 97
@@ -69,6 +72,18 @@ const DARWIN-EBADF = -9
 const DARWIN-ENOENT = -2
 const DARWIN-ENOSYS = -38
 const DARWIN-ENOMEM = -12
+const DARWIN-EACCES = -13
+const DARWIN-EEXIST = -17
+const DARWIN-EINVAL = -22
+const DARWIN-ENOSPC = -28
+const DARWIN-EIO = -5
+
+// fcntl commands (minimal).
+const DARWIN-F-GETFD = 1
+const DARWIN-F-SETFD = 2
+
+// close-on-exec tracking: 1 bit per fd (max 16 fds → 16 bits).
+var darwin-fd-cloexec: Int = 0
 
 // Pipe side-table: slot = used|buf|head|count|r_open|w_open (48 bytes).
 const DARWIN-PIPE-MAX = 4
@@ -116,6 +131,35 @@ fn darwin-init() -> void {
   darwin-pipe-table-init()
   darwin-ready = 1
   return
+}
+
+// Map VFS return codes to Darwin errno values.
+fn darwin-errno(vfs-rc: Int) -> Int {
+  if vfs-rc == 0 {
+    return 0
+  }
+  if vfs-rc == -2 {
+    return DARWIN-ENOENT
+  }
+  if vfs-rc == -5 {
+    return DARWIN-EIO
+  }
+  if vfs-rc == -9 {
+    return DARWIN-EBADF
+  }
+  if vfs-rc == -13 {
+    return DARWIN-EACCES
+  }
+  if vfs-rc == -17 {
+    return DARWIN-EEXIST
+  }
+  if vfs-rc == -22 {
+    return DARWIN-EINVAL
+  }
+  if vfs-rc == -28 {
+    return DARWIN-ENOSPC
+  }
+  return DARWIN-ENOSYS
 }
 
 // Map BSD/Darwin open flags onto Space VFS flags (Linux-shaped bits under the hood).
@@ -343,6 +387,68 @@ fn darwin-sys-mkdir(path: Int, mode: Int) -> Int {
     return DARWIN-ENOENT
   }
   return 0
+}
+
+// dup2: duplicate oldfd onto newfd. If newfd already open, close it first.
+fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
+  if vfs-fd-valid(oldfd) == 0 {
+    return DARWIN-EBADF
+  }
+  if oldfd == newfd {
+    return newfd
+  }
+  if newfd < 0 || newfd >= VFS-MAX-FDS {
+    return DARWIN-EBADF
+  }
+  // Close target if already open (ignore close errors per POSIX).
+  if vfs-fd-valid(newfd) != 0 {
+    if darwin-fd-is-pipe(newfd) != 0 {
+      let idx = darwin-pipe-slot(newfd)
+      let end = darwin-pipe-end(newfd)
+      darwin-pipe-release(idx, end)
+    }
+    vfs-fd-clear(newfd)
+  }
+  let obase = vfs-fd-table + oldfd * 32
+  let nbase = vfs-fd-table + newfd * 32
+  store64(nbase + 0, load64(obase + 0))
+  store64(nbase + 8, load64(obase + 8))
+  store64(nbase + 16, load64(obase + 16))
+  store64(nbase + 24, load64(obase + 24))
+  // Clear close-on-exec for the new fd.
+  if (darwin-fd-cloexec & (1 << newfd)) != 0 {
+    darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << newfd)
+  }
+  return newfd
+}
+
+// fcntl minimal: F_GETFD returns close-on-exec flag, F_SETFD sets it.
+fn darwin-sys-fcntl(fd: Int, cmd: Int, arg: Int) -> Int {
+  if fd < 0 || fd >= VFS-MAX-FDS {
+    return DARWIN-EBADF
+  }
+  if cmd == DARWIN-F-GETFD {
+    if (darwin-fd-cloexec & (1 << fd)) != 0 {
+      return 1
+    }
+    return 0
+  }
+  if cmd == DARWIN-F-SETFD {
+    if arg != 0 {
+      darwin-fd-cloexec = darwin-fd-cloexec | (1 << fd)
+    } else {
+      darwin-fd-cloexec = darwin-fd-cloexec & (1 << fd)
+      if (darwin-fd-cloexec & (1 << fd)) != 0 {
+        darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << fd)
+      }
+    }
+    return 0
+  }
+  return DARWIN-ENOSYS
+}
+
+fn darwin-sys-getpagesize() -> Int {
+  return 4096
 }
 
 fn darwin-sys-fstat(fd: Int, buf: Int) -> Int {
@@ -645,6 +751,15 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   if num == DARWIN-MACH-MSG {
     return -1
   }
+  if num == DARWIN-SYS-DUP2 {
+    return darwin-sys-dup2(a0, a1)
+  }
+  if num == DARWIN-SYS-FCNTL {
+    return darwin-sys-fcntl(a0, a1, a2)
+  }
+  if num == DARWIN-SYS-GETPAGESIZE {
+    return darwin-sys-getpagesize()
+  }
   return DARWIN-ENOSYS
 }
 
@@ -880,6 +995,70 @@ fn darwin-demo(port: Int) -> void {
     darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
     darwin-dispatch(port, DARWIN-SYS-CLOSE, wfd, 0, 0, 0)
   }
+
+  // dup2: clone fd onto a specific slot.
+  let dup2src = darwin-dispatch(port, DARWIN-SYS-OPEN, fname2, DARWIN-O-CREAT | DARWIN-O-RDWR, 0, 0)
+  if dup2src >= 0 {
+    let dup2msg = "dup2 content"
+    let dup2len = 0
+    while load8(dup2msg + dup2len) != 0 {
+      dup2len = dup2len + 1
+    }
+    darwin-dispatch(port, DARWIN-SYS-WRITE, dup2src, dup2msg, dup2len, 0)
+    // dup2 onto fd 14 (high slot, should be free).
+    let d2rc = darwin-dispatch(port, DARWIN-SYS-DUP2, dup2src, 14, 0, 0)
+    serial-write-cstr(port, "darwin: dup2(src, 14) = ")
+    serial-write-dec-wide(port, d2rc)
+    serial-nl(port)
+    if d2rc == 14 {
+      let d2buf = alloc(32)
+      darwin-dispatch(port, DARWIN-SYS-LSEEK, 14, 0, DARWIN-SEEK-SET, 0)
+      let d2rd = darwin-dispatch(port, DARWIN-SYS-READ, 14, d2buf, 31, 0)
+      serial-write-cstr(port, "darwin: read(dup2fd) = ")
+      serial-write-dec-wide(port, d2rd)
+      serial-nl(port)
+      darwin-dispatch(port, DARWIN-SYS-CLOSE, 14, 0, 0, 0)
+    }
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, dup2src, 0, 0, 0)
+    darwin-dispatch(port, DARWIN-SYS-UNLINK, fname2, 0, 0, 0)
+  }
+
+  // fcntl: get/set close-on-exec.
+  let fcntlname = "darwin-fcntl.txt"
+  let fctmpfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fcntlname, DARWIN-O-CREAT | DARWIN-O-RDWR, 0, 0)
+  if fctmpfd >= 0 {
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, fctmpfd, 0, 0, 0)
+  }
+  let fcntlfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fcntlname, DARWIN-O-RDONLY, 0, 0)
+  if fcntlfd >= 0 {
+    let getfd = darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-GETFD, 0, 0)
+    serial-write-cstr(port, "darwin: fcntl(fd, F_GETFD) = ")
+    serial-write-dec-wide(port, getfd)
+    serial-nl(port)
+    darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-SETFD, 1, 0)
+    let getfd2 = darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-GETFD, 0, 0)
+    serial-write-cstr(port, "darwin: fcntl(fd, F_GETFD) after F_SETFD(1) = ")
+    serial-write-dec-wide(port, getfd2)
+    serial-nl(port)
+    darwin-dispatch(port, DARWIN-SYS-CLOSE, fcntlfd, 0, 0, 0)
+  }
+  darwin-dispatch(port, DARWIN-SYS-UNLINK, fcntlname, 0, 0, 0)
+
+  // getpagesize.
+  let pgsz = darwin-dispatch(port, DARWIN-SYS-GETPAGESIZE, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: getpagesize() = ")
+  serial-write-dec-wide(port, pgsz)
+  serial-nl(port)
+
+  // errno mapping demo: access a missing file.
+  let epath = "darwin-nosuch-file"
+  let erc = darwin-dispatch(port, DARWIN-SYS-ACCESS, epath, 0, 0, 0)
+  serial-write-cstr(port, "darwin: access(missing) errno = ")
+  serial-write-dec-wide(port, erc)
+  if erc == DARWIN-ENOENT {
+    serial-write-cstr(port, " (ENOENT)")
+  }
+  serial-nl(port)
 
   // fork/execve wired in dispatch; shell demo skips (proc-wait yields; execve replaces image).
 

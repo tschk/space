@@ -68,6 +68,9 @@ const WIN-CALL-HEAPFREE = 27
 const WIN-CALL-COPYFILEA = 28
 const WIN-CALL-GETENVIRONMENTVARIABLEA = 29
 const WIN-CALL-OUTPUTDEBUGSTRINGA = 30
+const WIN-CALL-DUPLICATEHANDLE = 31
+const WIN-CALL-GETFILETYPE = 32
+const WIN-CALL-SETENDOFFILE = 33
 
 const WIN-MAX-HANDLES = 16
 const WIN-HANDLE-STRIDE = 16
@@ -80,6 +83,19 @@ const WIN-HANDLE-TYPE-FREE = 0
 const WIN-HANDLE-TYPE-CONSOLE = 1
 const WIN-HANDLE-TYPE-FILE = 2
 const WIN-HANDLE-TYPE-PROCESS = 3
+
+// GetFileType return values.
+const WIN-FILE-TYPE-DISK = 1
+const WIN-FILE-TYPE-CHAR = 2
+const WIN-FILE-TYPE-UNKNOWN = 0
+
+// NTSTATUS mapping.
+const WIN-STATUS-SUCCESS = 0
+const WIN-STATUS-END-OF-FILE = -1073741805
+const WIN-STATUS-FILE-IS-A-DIRECTORY = -1073741810
+const WIN-STATUS-NO-MEDIA = -1073741768
+const WIN-STATUS-INVALID-HANDLE = -1073741816
+const WIN-STATUS-OBJECT-NAME-NOT-FOUND = -1073741772
 
 // Typed handle table: 16-byte records, slots 0..15.
 // offset 0: type (0=free, 1=console, 2=file, 3=process)
@@ -125,6 +141,26 @@ fn win-handle-value(h: Int) -> Int {
     return 0
   }
   return load64(win-handle-base(h) + 8)
+}
+
+// Map VFS return codes to NTSTATUS values.
+fn win-ntstatus(vfs-rc: Int) -> Int {
+  if vfs-rc == 0 {
+    return WIN-STATUS-SUCCESS
+  }
+  if vfs-rc == -2 {
+    return WIN-STATUS-OBJECT-NAME-NOT-FOUND
+  }
+  if vfs-rc == -5 {
+    return WIN-STATUS-NO-MEDIA
+  }
+  if vfs-rc == -9 {
+    return WIN-STATUS-INVALID-HANDLE
+  }
+  if vfs-rc == -28 {
+    return WIN-STATUS-END-OF-FILE
+  }
+  return WIN-STATUS-INVALID-HANDLE
 }
 
 fn win-init() -> void {
@@ -652,6 +688,103 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     win-last-error = 0
     return 0
   }
+  if num == WIN-CALL-DUPLICATEHANDLE {
+    // a0 = source handle. Return new handle with same type+value.
+    let src = a0
+    let stype = win-handle-type(src)
+    if stype == WIN-HANDLE-TYPE-FREE {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return WIN-INVALID-HANDLE
+    }
+    let sval = win-handle-value(src)
+    let nh = -1
+    if stype == WIN-HANDLE-TYPE-PROCESS {
+      nh = win-handle-alloc-process(sval)
+    } else {
+      // Console + file: use generic file alloc for files, or manual for console.
+      if stype == WIN-HANDLE-TYPE-CONSOLE {
+        // Allocate a free slot and set console type manually.
+        let i = 3
+        while i < WIN-MAX-HANDLES {
+          if win-handle-type(i) == WIN-HANDLE-TYPE-FREE {
+            win-handle-set(i, WIN-HANDLE-TYPE-CONSOLE, sval)
+            nh = i
+            break
+          }
+          i = i + 1
+        }
+      } else {
+        nh = win-handle-alloc(sval)
+      }
+    }
+    if nh < 0 || nh >= WIN-MAX-HANDLES {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return WIN-INVALID-HANDLE
+    }
+    win-last-error = 0
+    return nh
+  }
+  if num == WIN-CALL-GETFILETYPE {
+    let handle = a0
+    let htype = win-handle-type(handle)
+    if htype == WIN-HANDLE-TYPE-CONSOLE {
+      win-last-error = 0
+      return WIN-FILE-TYPE-CHAR
+    }
+    if htype == WIN-HANDLE-TYPE-FILE {
+      win-last-error = 0
+      return WIN-FILE-TYPE-DISK
+    }
+    if handle == 1 || handle == 2 {
+      win-last-error = 0
+      return WIN-FILE-TYPE-CHAR
+    }
+    win-last-error = WIN-ERROR-INVALID-HANDLE
+    return WIN-FILE-TYPE-UNKNOWN
+  }
+  if num == WIN-CALL-SETENDOFFILE {
+    // a0 = file handle. Truncate at current VFS position.
+    let handle = a0
+    if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    let vfd = win-handle-value(handle)
+    if vfs-fd-valid(vfd) == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    // Get current position from VFS fd table (offset 8 = pos).
+    let pos = load64(vfs-fd-table + vfd * 32 + 8)
+    let fpath = load64(vfs-fd-table + vfd * 32 + 0)
+    if fpath == -1 || fpath == 0 {
+      win-last-error = WIN-ERROR-INVALID-HANDLE
+      return 0
+    }
+    // Read existing file content, truncate to pos, write back.
+    let fullsz = vfs-sparkfs-file-size(fpath)
+    if fullsz < 0 {
+      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      return 0
+    }
+    if pos >= fullsz {
+      // Nothing to truncate.
+      win-last-error = 0
+      return 1
+    }
+    let truncbuf = alloc(pos)
+    if pos > 0 {
+      // Reopen to read from start.
+      let rfd = vfs-open(fpath, VFS-O-RDONLY)
+      if rfd >= 0 {
+        vfs-read(rfd, truncbuf, pos)
+        vfs-close(rfd)
+      }
+    }
+    fs-write-file(fpath, truncbuf, pos)
+    win-last-error = 0
+    return 1
+  }
   return 0
 }
 
@@ -944,6 +1077,99 @@ fn win-demo(port: Int) -> void {
     serial-write-cstr(port, ebuf)
   }
   serial-write-cstr(port, "'")
+  serial-nl(port)
+
+  // DuplicateHandle: clone a file handle.
+  let dups = "win-dup.txt"
+  let dh = win-dispatch(port, WIN-CALL-CREATEFILEA, dups, WIN-ACCESS-WRITE, 0, 0)
+  if dh != WIN-INVALID-HANDLE {
+    let dmsg = "dup-handle-test"
+    let dlen = 0
+    while load8(dmsg + dlen) != 0 {
+      dlen = dlen + 1
+    }
+    win-dispatch(port, WIN-CALL-WRITEFILE, dh, dmsg, dlen, 0)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, dh, 0, 0, 0)
+  }
+  // Reopen read-only and duplicate.
+  let dh2 = win-dispatch(port, WIN-CALL-CREATEFILEA, dups, WIN-ACCESS-READ, 0, 0)
+  if dh2 != WIN-INVALID-HANDLE {
+    let ddh = win-dispatch(port, WIN-CALL-DUPLICATEHANDLE, dh2, 0, 0, 0)
+    serial-write-cstr(port, "windows: DuplicateHandle(file) = ")
+    serial-write-dec-wide(port, ddh)
+    serial-nl(port)
+    if ddh != WIN-INVALID-HANDLE {
+      let dtyp = win-handle-type(ddh)
+      serial-write-cstr(port, "windows: dup handle type = ")
+      serial-write-dec-wide(port, dtyp)
+      serial-nl(port)
+      win-dispatch(port, WIN-CALL-CLOSEHANDLE, ddh, 0, 0, 0)
+    }
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, dh2, 0, 0, 0)
+  }
+  win-dispatch(port, WIN-CALL-DELETEFILEA, dups, 0, 0, 0)
+
+  // GetFileType: console = CHAR, file = DISK.
+  let gt1 = win-dispatch(port, WIN-CALL-GETFILETYPE, 1, 0, 0, 0)
+  serial-write-cstr(port, "windows: GetFileType(stdout) = ")
+  serial-write-dec-wide(port, gt1)
+  if gt1 == WIN-FILE-TYPE-CHAR {
+    serial-write-cstr(port, " (FILE_TYPE_CHAR)")
+  }
+  serial-nl(port)
+  let gtfd = win-dispatch(port, WIN-CALL-CREATEFILEA, "win-gt.txt", WIN-ACCESS-WRITE, 0, 0)
+  if gtfd != WIN-INVALID-HANDLE {
+    let gt2 = win-dispatch(port, WIN-CALL-GETFILETYPE, gtfd, 0, 0, 0)
+    serial-write-cstr(port, "windows: GetFileType(file) = ")
+    serial-write-dec-wide(port, gt2)
+    if gt2 == WIN-FILE-TYPE-DISK {
+      serial-write-cstr(port, " (FILE_TYPE_DISK)")
+    }
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, gtfd, 0, 0, 0)
+  }
+  win-dispatch(port, WIN-CALL-DELETEFILEA, "win-gt.txt", 0, 0, 0)
+
+  // SetEndOfFile: write 20 bytes, seek to 10, truncate, verify size.
+  let truncf = "win-trunc.txt"
+  let trh = win-dispatch(port, WIN-CALL-CREATEFILEA, truncf, WIN-ACCESS-WRITE, 0, 0)
+  if trh != WIN-INVALID-HANDLE {
+    let tdata = "0123456789ABCDEFGHIJ"
+    win-dispatch(port, WIN-CALL-WRITEFILE, trh, tdata, 20, 0)
+    let tsz1 = win-dispatch(port, WIN-CALL-GETFILESIZE, trh, 0, 0, 0)
+    serial-write-cstr(port, "windows: GetFileSize(before truncate) = ")
+    serial-write-dec-wide(port, tsz1)
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-SETFILEPOINTER, trh, 10, 0, 0)
+    let serrc = win-dispatch(port, WIN-CALL-SETENDOFFILE, trh, 0, 0, 0)
+    serial-write-cstr(port, "windows: SetEndOfFile(at pos 10) = ")
+    serial-write-dec-wide(port, serrc)
+    serial-nl(port)
+    win-dispatch(port, WIN-CALL-CLOSEHANDLE, trh, 0, 0, 0)
+    // Reopen to check size.
+    let trh2 = win-dispatch(port, WIN-CALL-CREATEFILEA, truncf, WIN-ACCESS-READ, 0, 0)
+    if trh2 != WIN-INVALID-HANDLE {
+      let tsz2 = win-dispatch(port, WIN-CALL-GETFILESIZE, trh2, 0, 0, 0)
+      serial-write-cstr(port, "windows: GetFileSize(after truncate) = ")
+      serial-write-dec-wide(port, tsz2)
+      serial-nl(port)
+      win-dispatch(port, WIN-CALL-CLOSEHANDLE, trh2, 0, 0, 0)
+    }
+  }
+  win-dispatch(port, WIN-CALL-DELETEFILEA, truncf, 0, 0, 0)
+
+  // NTSTATUS mapping demo: missing file → error code.
+  let ntpath = "win-ntstatus-nosuch.txt"
+  let nth = win-dispatch(port, WIN-CALL-CREATEFILEA, ntpath, WIN-ACCESS-READ, 0, 0)
+  serial-write-cstr(port, "windows: CreateFileA(missing) for NTSTATUS = ")
+  serial-write-dec-wide(port, nth)
+  serial-nl(port)
+  let nst = win-ntstatus(-2)
+  serial-write-cstr(port, "windows: win-ntstatus(-2 ENOENT) = ")
+  serial-write-dec-wide(port, nst)
+  if nst == WIN-STATUS-OBJECT-NAME-NOT-FOUND {
+    serial-write-cstr(port, " (STATUS_OBJECT_NAME_NOT_FOUND)")
+  }
   serial-nl(port)
 
   let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)
