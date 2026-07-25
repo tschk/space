@@ -7,6 +7,17 @@ package space.kernel
 
 var line: Int = 0
 var shell-cwd: Int = 0
+var shell-pushback: Int = 0
+var shell-hist: Int = 0
+var shell-draft: Int = 0
+var shell-hist-len: Int = 0
+var shell-hist-head: Int = 0
+var shell-hist-view: Int = 0
+
+const SHELL-HIST-N = 16
+const SHELL-HIST-LEN = 256
+const SHELL-KEY-UP = 1002
+const SHELL-KEY-DOWN = 1003
 
 // --- serial I/O helpers -----------------------------------------------------
 fn serial-has-byte(port: Int) -> Int {
@@ -19,17 +30,121 @@ fn serial-read(port: Int) -> Int {
   return inb(port + 0)
 }
 
+fn shell-read-byte(port: Int) -> Int {
+  if shell-pushback != 0 {
+    let c = shell-pushback
+    shell-pushback = 0
+    return c
+  }
+  return serial-read(port)
+}
+
+// ESC [ A/B (ANSI) or mouse.in codes 128/131 (PS/2 arrows).
+fn shell-read-key(port: Int) -> Int {
+  let c = shell-read-byte(port)
+  if c == 128 { return SHELL-KEY-UP }
+  if c == 131 { return SHELL-KEY-DOWN }
+  if c != 27 { return c }
+  let n = shell-read-byte(port)
+  if n != 91 {
+    shell-pushback = n
+    return 27
+  }
+  let f = shell-read-byte(port)
+  if f == 65 { return SHELL-KEY-UP }
+  if f == 66 { return SHELL-KEY-DOWN }
+  return 0
+}
+
+fn shell-clear-input(port: Int, len: Int) -> void {
+  let i = 0
+  while i < len {
+    serial-put(port, 8)
+    serial-put(port, 32)
+    serial-put(port, 8)
+    i = i + 1
+  }
+  return
+}
+
+fn shell-copy-cstr(dst: Int, src: Int, max: Int) -> Int {
+  let i = 0
+  while i < max - 1 && load8(src + i) != 0 {
+    store8(dst + i, load8(src + i))
+    i = i + 1
+  }
+  store8(dst + i, 0)
+  return i
+}
+
+fn shell-hist-slot(idx: Int) -> Int {
+  return shell-hist + idx * SHELL-HIST-LEN
+}
+
+fn shell-hist-entry(view: Int) -> Int {
+  let idx = (shell-hist-head + SHELL-HIST-N - view) % SHELL-HIST-N
+  return shell-hist-slot(idx)
+}
+
+fn shell-hist-push() -> void {
+  if load8(line) == 0 { return }
+  if shell-hist-len > 0 {
+    let last = (shell-hist-head + SHELL-HIST-N - 1) % SHELL-HIST-N
+    let same = 1
+    let i = 0
+    while i < SHELL-HIST-LEN {
+      let a = load8(line + i)
+      let b = load8(shell-hist-slot(last) + i)
+      if a != b { same = 0 }
+      if a == 0 { i = SHELL-HIST-LEN } else { i = i + 1 }
+    }
+    if same != 0 { return }
+  }
+  shell-copy-cstr(shell-hist-slot(shell-hist-head), line, SHELL-HIST-LEN)
+  shell-hist-head = (shell-hist-head + 1) % SHELL-HIST-N
+  if shell-hist-len < SHELL-HIST-N {
+    shell-hist-len = shell-hist-len + 1
+  }
+  return
+}
+
 // Read one line into the `line` buffer, echoing input. Returns its length.
 fn read-line(port: Int) -> Int {
   let len = 0
+  shell-hist-view = 0
   while true {
-    let c = serial-read(port)
+    let c = shell-read-key(port)
+    if c == 0 { continue }
     if (c == 13) || (c == 10) {
       serial-nl(port)
       store8(line + len, 0)
+      shell-hist-push()
+      shell-hist-view = 0
       return len
     }
-    if (c == 8) || (c == 127) {
+    if c == SHELL-KEY-UP {
+      if shell-hist-view < shell-hist-len {
+        if shell-hist-view == 0 {
+          store8(line + len, 0)
+          shell-copy-cstr(shell-draft, line, SHELL-HIST-LEN)
+        }
+        shell-hist-view = shell-hist-view + 1
+        shell-clear-input(port, len)
+        len = shell-copy-cstr(line, shell-hist-entry(shell-hist-view), SHELL-HIST-LEN)
+        serial-write-cstr(port, line)
+      }
+    } else if c == SHELL-KEY-DOWN {
+      if shell-hist-view > 0 {
+        shell-hist-view = shell-hist-view - 1
+        shell-clear-input(port, len)
+        if shell-hist-view == 0 {
+          len = shell-copy-cstr(line, shell-draft, SHELL-HIST-LEN)
+        } else {
+          len = shell-copy-cstr(line, shell-hist-entry(shell-hist-view), SHELL-HIST-LEN)
+        }
+        serial-write-cstr(port, line)
+      }
+    } else if (c == 8) || (c == 127) {
       if len > 0 {
         len = len - 1
         serial-put(port, 8)
@@ -37,7 +152,7 @@ fn read-line(port: Int) -> Int {
         serial-put(port, 8)
       }
     } else {
-      if len < 254 {
+      if c >= 32 && c < 127 && len < 254 {
         serial-put(port, c)
         store8(line + len, c)
         len = len + 1
@@ -414,6 +529,12 @@ fn shell-try-redir(port: Int) -> Int {
 fn shell(port: Int) -> void {
   line = alloc(256)
   shell-cwd = alloc(1024)
+  shell-hist = alloc(SHELL-HIST-N * SHELL-HIST-LEN)
+  shell-draft = alloc(SHELL-HIST-LEN)
+  shell-hist-len = 0
+  shell-hist-head = 0
+  shell-hist-view = 0
+  shell-pushback = 0
   store8(shell-cwd, 47)
   store8(shell-cwd + 1, 0)
   serial-nl(port)
@@ -426,7 +547,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
