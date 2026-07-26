@@ -10,7 +10,7 @@ package space.kernel
 
 const COM1-PORT = 0x3F8
 
-const SPACE-VERSION = "0.0.265"
+const SPACE-VERSION = "0.0.266"
 
 const FILE-README = "README.md"
 const DATA-README = "Space 32-bit v86 kernel\n\nThis kernel is written in .in, the native language of the Inauguration compiler, and lowered to bare i386 machine code. It boots inside the browser via the v86 emulator with a serial console.\n\nTry: help, ls, cat ABOUT.md, cat README.md, echo hello\n"
