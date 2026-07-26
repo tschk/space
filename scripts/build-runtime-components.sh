@@ -39,7 +39,7 @@ NASM="${NASM:-nasm}"
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
 
-"$IN" compile --path "$SPACE_DIR/components/display.in" --entry display-entry \
+"$IN" compile --path "$SPACE_DIR/components/display-standalone.in" --entry display-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$DISPLAY_ENTRY" --out "$BUILD_DIR/display.sci"
 

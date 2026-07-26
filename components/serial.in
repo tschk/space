@@ -4,7 +4,7 @@ package space.kernel
 const COM1-PORT = 0x3F8
 const SPACE-VERSION-MAJOR = 0
 const SPACE-VERSION-MINOR = 2
-const SPACE-VERSION-PATCH = 75
+const SPACE-VERSION-PATCH = 76
 
 fn com1() -> Int {
   return COM1-PORT
@@ -28,6 +28,19 @@ fn serial-wait-tx(port: Int) -> void {
 }
 
 fn serial-put(port: Int, ch: Int) -> void {
+  if redir-buf != 0 {
+    if redir-pos < redir-max {
+      store8(redir-buf + redir-pos, ch)
+      redir-pos = redir-pos + 1
+    }
+    return
+  }
+  serial-wait-tx(port)
+  outb(port, ch)
+  return
+}
+
+fn serial-put-real(port: Int, ch: Int) -> void {
   serial-wait-tx(port)
   outb(port, ch)
   return

@@ -10,8 +10,11 @@ lives on full runtime images (`check-runtime-components`, volume soak `image: fu
 Volume multi-file soak across reboot; user SCI `hello`/`uecho`; `exec` loads SCI
 from sparkfs (`check-execve-sci`). Net: UDP; TCP handshake + PSH+ACK data path;
 DHCP DORA lease; DNS dotted QNAME A parse (`check-dns`, e.g. example.com).
-Still not full TCP window/congestion. Darwin/Windows are translator subsets
-(VFS/process/serial), not full XNU/NT ABIs — see docs/personalities.md.
+TCP window/congestion: MSS negotiation, slow-start, Go-Back-N retransmit
+(`check-tcp`). Darwin/Windows M4 surface. Desktop via kernel `display.in` +
+PS/2; kernel xHCI HID enum works (`usb.in`). Shell: cd/pwd, history up/down,
+`>`/`|` redirect, nested paths. ELF load above global-data zero region.
+18+ maintained checks green on `feat/personalities`. See personalities docs.
 
 ## Phase 1: Storage
 
@@ -45,6 +48,9 @@ Still not full TCP window/congestion. Darwin/Windows are translator subsets
 
 ## Phase 5: OS Personalities
 
+Roadmap (done vs M4–M6 gaps): [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
+Branch for translator work: `feat/personalities`.
+
 - [x] Linux compat layer (.in component translating POSIX syscalls)
   - [x] File syscalls: open, read, write, close, stat, lseek, fstat
   - [x] Process syscalls: fork, exec, wait, exit, getpid, kill
@@ -70,7 +76,7 @@ Still not full TCP window/congestion. Darwin/Windows are translator subsets
 
 ## Phase 7: Networking Stack
 
-- [x] TCP/IP stack (active open + best-effort data path; no window/congestion)
+- [x] TCP/IP stack (MSS negotiation, window-aware segmented send, slow-start, Go-Back-N retransmit)
 - [x] Socket API for user programs (UDP over e1000; TCP handshake + send/recv)
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)

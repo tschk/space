@@ -55,6 +55,7 @@ grep -qE "CreateFile|WriteFile" "$SERIAL_LOG"
 grep -qE "SetFilePointer|MoveFile" "$SERIAL_LOG"
 grep -qE "CreateDirectory|GetLastError|VirtualAlloc" "$SERIAL_LOG"
 grep -qE "HeapAlloc|CopyFile|GetModuleFileName" "$SERIAL_LOG"
+grep -qF "windows: typed handles active" "$SERIAL_LOG"
 # GetStdHandle optional deeper marker
 grep -qF "windows: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Windows personality demo (CreateFile/HeapAlloc/CopyFile path)"
+echo "PASS: Windows personality demo (CreateFile/HeapAlloc/typed handles path)"

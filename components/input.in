@@ -322,7 +322,7 @@ fn xhci-init-rings() -> void {
   trb-set(xhci-cr + XHCI-NCR * 16, xhci-cr, 0, 0x2 | (1 << 1) | (6 << 10))
   xhci-cr-index = 0
   xhci-cr-ctrl = 1
-  xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
+  xhci-op-w64(0x18, xhci-cr | (xhci-cr-ctrl & 1))
 
   xhci-er = input-frame-alloc()
   for i in 0..XHCI-NER {
@@ -342,16 +342,16 @@ fn xhci-init-rings() -> void {
   return
 }
 
-fn xhci-cmd(param: Int, status: Int, typecode: Int) -> Int {
+fn xhci-cmd(param: Int, status: Int, typecode: Int, slot: Int) -> Int {
   let idx = xhci-cr-index
   let addr = xhci-cr + idx * 16
-  let control = (typecode << 10) | (xhci-cr-ctrl & 1)
+  let control = (typecode << 10) | (xhci-cr-ctrl & 1) | ((slot & 0xFF) << 24)
   trb-set(addr, param, status, control)
   xhci-cr-index = xhci-cr-index + 1
   if xhci-cr-index >= XHCI-NCR {
     xhci-cr-index = 0
     xhci-cr-ctrl = xhci-cr-ctrl ^ 1
-    xhci-op-w64(16, xhci-cr | (xhci-cr-ctrl & 1))
+    xhci-op-w64(0x18, xhci-cr | (xhci-cr-ctrl & 1))
   }
   xhci-doorbell(0, 0)
   return xhci-wait-event()
@@ -360,21 +360,18 @@ fn xhci-cmd(param: Int, status: Int, typecode: Int) -> Int {
 fn xhci-wait-event() -> Int {
   let tries = 0
   while tries < 2000000 {
-    let erdp = xhci-rt-r32(0, 24) | ((xhci-rt-r32(0, 28) & 0xFFFFFFFF) << 32)
-    let head = erdp & -16
-    let tail-off = xhci-er-index * 16
-    if head != (xhci-er + tail-off) {
-      let trb = xhci-er + tail-off
-      let ctrl = load32(trb + 12)
-      let cycle = ctrl & 1
-      if cycle == (xhci-er-ccs & 1) {
-        let code = (load32(trb + 8) >> 24) & 0xFF
-        xhci-er-index = xhci-er-index + 1
-        if xhci-er-index >= XHCI-NER {
-          xhci-er-index = 0
-          xhci-er-ccs = xhci-er-ccs ^ 1
-        }
-        xhci-rt-w64(0, 24, xhci-er + xhci-er-index * 16)
+    let trb = xhci-er + xhci-er-index * 16
+    let ctrl = load32(trb + 12)
+    if (ctrl & 1) == (xhci-er-ccs & 1) {
+      let code = (load32(trb + 8) >> 24) & 0xFF
+      let trb-type = (ctrl >> 10) & 0x3F
+      xhci-er-index = xhci-er-index + 1
+      if xhci-er-index >= XHCI-NER {
+        xhci-er-index = 0
+        xhci-er-ccs = xhci-er-ccs ^ 1
+      }
+      xhci-rt-w64(0, 24, xhci-er + xhci-er-index * 16)
+      if trb-type == 33 {
         return code
       }
     }
@@ -389,7 +386,7 @@ fn xhci-init-dcbaa() -> void {
   for i in 0..n {
     store64(xhci-dcbaa + i * 8, 0)
   }
-  xhci-op-w64(24, xhci-dcbaa)
+  xhci-op-w64(0x30, xhci-dcbaa)
   return
 }
 
@@ -430,56 +427,56 @@ fn xhci-port-speed(port: Int) -> Int {
 }
 
 fn xhci-address-device(port: Int) -> Int {
-  let code = xhci-cmd(0, 0, 9)
+  let code = xhci-cmd(0, 0, 9, 0)
   if code != 1 {
     return -1
   }
   let ev = xhci-er + ((xhci-er-index + XHCI-NER - 1) % XHCI-NER) * 16
-  let slot = load64(ev) & 0xFF
+  let slot = (load32(ev + 12) >> 24) & 0xFF
   if slot == 0 {
     return -1
   }
   xhci-slot = slot
 
   let icc = xhci-alloc-ctx()
-  let slot-ctx = xhci-alloc-ctx()
-  let ep-ctx = xhci-alloc-ctx()
   let dctx = xhci-alloc-ctx()
   store64(xhci-dcbaa + slot * 8, dctx)
 
-  store32(icc + 0, 0x3)
-  store32(icc + 4, 0x0)
   let speed = xhci-port-speed(port)
-  store32(icc + 32 + 0, speed & 0xF)
-  store32(icc + 32 + 4, 0)
-  store32(icc + 32 + 8, (port + 1) << 16)
-  store32(dctx + 0, speed & 0xF)
-  store32(dctx + 8, (port + 1) << 16)
+  if speed == 0 {
+    speed = 4
+  }
+  store32(icc + 0, 0)
+  store32(icc + 4, 0x3)
+  store32(icc + 32 + 0, ((speed & 0xF) << 20) | (1 << 27))
+  store32(icc + 32 + 4, ((port + 1) & 0xFF) << 16)
+  store32(icc + 64 + 0, 0)
+  store32(icc + 64 + 4, (3 << 1) | (4 << 3) | (8 << 16))
+  let ep0-ring = input-frame-alloc()
+  store64(icc + 64 + 8, ep0-ring | 1)
 
-  let addr-code = xhci-cmd(icc, 0, 11)
+  let addr-code = xhci-cmd(icc, 0, 11, slot)
   if addr-code != 1 {
     return -1
   }
 
   let icc2 = xhci-alloc-ctx()
-  store32(icc2 + 0, 0x2)
-  store32(icc2 + 4, 0x0)
-  store32(icc2 + 32 + 0, speed & 0xF)
-  store32(icc2 + 32 + 8, (port + 1) << 16)
-  let ep0 = 7 | (4 << 3) | (8 << 16)
-  store32(icc2 + 96 + 0, ep0)
-  store32(icc2 + 96 + 4, 8 << 16)
+  store32(icc2 + 0, 0)
+  store32(icc2 + 4, 0x9)
+  store32(icc2 + 32 + 0, ((speed & 0xF) << 20) | (3 << 27))
+  store32(icc2 + 32 + 4, ((port + 1) & 0xFF) << 16)
   let ep-ring = input-frame-alloc()
-  store64(icc2 + 96 + 8, ep-ring | 1)
-  store32(icc2 + 96 + 16, 8)
+  store32(icc2 + 128 + 0, 8 << 16)
+  store32(icc2 + 128 + 4, (3 << 1) | (7 << 3) | (8 << 16))
+  store64(icc2 + 128 + 8, ep-ring | 1)
+  store32(icc2 + 128 + 16, 8)
   xhci-kbd-ep = ep-ring
   xhci-kbd-buf = input-frame-alloc()
 
-  let cfg-code = xhci-cmd(icc2, 0, 12)
+  let cfg-code = xhci-cmd(icc2, 0, 12, slot)
   if cfg-code != 1 {
     return -1
   }
-  store64(dctx + 64 + 8, ep-ring | 1)
   return 0
 }
 
@@ -532,7 +529,7 @@ fn xhci-init() -> Int {
   xhci-reset()
   xhci-init-dcbaa()
   xhci-init-rings()
-  xhci-op-w32(0x2C, xhci-max-slots)
+  xhci-op-w32(0x38, xhci-max-slots)
   xhci-op-w32(0, 0x1 | 0x4 | 0x8)
   input-serial-cstr(port, "input: xHCI started, USBSTS 0x")
   input-serial-hex(port, xhci-op-r32(4))
@@ -957,11 +954,6 @@ fn input-entry(cap-info: Int) -> Int {
     input-serial-cstr(port, "input: channel bound at 0x")
     input-serial-hex(port, shared)
     input-serial-nl(port)
-  }
-
-  let usb-rc = xhci-init()
-  if usb-rc == 0 {
-    usb-kbd-init()
   }
 
   ps2-kbd-init()

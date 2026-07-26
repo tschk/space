@@ -225,32 +225,29 @@ files on the Space filesystem.
 
 ## Framebuffer
 
-The VBE framebuffer driver (`kernel/fb.in`) uses Bochs VBE I/O ports
-(0x1CE/0x1CF) to set a 1024x768x32 graphics mode with linear framebuffer.
-The framebuffer address is discovered by scanning PCI for a VGA display
-device (class 0x030000) and reading BAR0. The boot trampoline identity-maps
-the first 4 GiB so the framebuffer MMIO region (typically 0xFD000000) is
-accessible.
+The VBE framebuffer driver lives in `components/display.in` (linked into the
+kernel). It uses Bochs VBE I/O ports (0x1CE/0x1CF) for a 1920×1080×32 linear
+framebuffer. BAR0 is discovered via PCI class 0x030000. The boot trampoline
+identity-maps the first 4 GiB so MMIO (typically 0xFD000000) is reachable.
 
-Drawing primitives: pixels, rectangles, lines (Bresenham), and bitmap text
-(8x8 font with ASCII subset). The compositor uses these to render windows,
-title bars, taskbar, and mouse cursor.
+Drawing primitives: pixels, rectangles, lines, and scaled bitmap text
+(`components/font.in`). The compositor uses these for windows, bars, and cursor.
 
 ---
 
 ## Compositor
 
-The compositor (`kernel/compositor.in`) is a Wayland-style display server
-that manages windows and renders them to the framebuffer. It provides:
+The compositor is also in `components/display.in` (not a separate stub file).
+It manages windows and paints the framebuffer:
 
-- **Window management** — create, focus, drag, and render windows
-- **Title bars** — clickable, draggable window decorations
-- **Taskbar** — bottom bar with system info and mouse state
-- **Mouse cursor** — arrow cursor rendered on top of all windows
-- **Input handling** — PS/2 mouse polling, keyboard via serial
+- **Window management** — create, focus, drag, resize, z-order
+- **Dual terminals** — role TERMINAL with scrollback ring + fetch mode
+- **Title bars / taskbar / top bar** — decorations and focus chrome
+- **Mouse cursor** — arrow with backbuffer restore
+- **Input** — real PS/2 keyboard+mouse (`components/mouse.in`); USB HID still
+  stubbed in-kernel (`components/usb.in`), full xHCI lives in SCI `input.in`
 
-The `desktop` shell command launches the compositor. Three default windows
-are created: Terminal, File Browser, and System Info. Press ESC to exit.
+Shell command `desktop` runs `comp-run` until ESC (serial or PS/2).
 
 ---
 
@@ -272,8 +269,9 @@ are created: Terminal, File Browser, and System Info. Press ESC to exit.
   times out; the successful Linux demo uses the memory-backed SparkFS fallback.
 - Network has a passing component RPC/pcap check. POSIX dispatch runs through a
   component service thread.
-- Display and input are optional boot-image SCI components. The memory-backed
-  Volume SCI component completes init, write, and read RPCs under QEMU.
+- Display/compositor/fb are kernel-linked via `components/display.in`.
+  Optional SCI display/input still load on full runtime images.
+  Volume SCI completes init/write/read RPCs under QEMU.
 - SCI allow and deny paths are proven with per-image grants.
 - The full SparkFS Volume source remains separate from the memory-backed SCI
   component and is not yet routed through POSIX.
@@ -290,11 +288,12 @@ components/
   domain.in             memory domain subsystem
   serial.in memory.in object.in interrupts.in syscall.in
   sched.in process.in shell.in libc.in linux.in vfs.in
-  net.in nvme.in usb.in fb.in mouse.in compositor.in
+  net.in nvme.in usb.in mouse.in display.in font.in
   pci.in filesystem.in fs2-*.in storage.in network.in posix.in
   supervisor.in preempt.in sci-loader.in selftest.in
   diagnostics.in determinism.in editor.in time.in
-  display.in input.in volume.in font.in
+  input.in volume.in display-standalone.in
+  windows.in darwin.in linux.in
   volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up

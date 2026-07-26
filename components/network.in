@@ -44,6 +44,10 @@ var tcp-local-seq: Int = 0
 var tcp-remote-ack: Int = 0
 var tcp-rx-buf: Int = 0
 var tcp-rx-len: Int = 0
+var tcp-peer-mss: Int = 1460
+var tcp-peer-wnd: Int = 65535
+var tcp-recv-wnd: Int = 65535
+var tcp-send-wnd: Int = 1460
 
 fn mmio-r32-impl(off: Int) -> Int {
   return load32(nic-mmio + off)
@@ -277,7 +281,7 @@ fn build-tcp-syn-impl(rip: Int, rport: Int) -> Int {
   net-store-mac-impl(p + 6)
   store8(p + 12, 0x08); store8(p + 13, 0x00)
   let ip = p + 14
-  let iplen = 40
+  let iplen = 44
   store8(ip + 0, 0x45); store8(ip + 1, 0x00)
   store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
   store8(ip + 4, 0x00); store8(ip + 5, 0x00)
@@ -299,14 +303,16 @@ fn build-tcp-syn-impl(rip: Int, rport: Int) -> Int {
   store8(tcp + 6, 0x00); store8(tcp + 7, 0x01)
   store8(tcp + 8, 0x00); store8(tcp + 9, 0x00)
   store8(tcp + 10, 0x00); store8(tcp + 11, 0x00)
-  store8(tcp + 12, 0x50)
+  store8(tcp + 12, 0x60)
   store8(tcp + 13, 0x02)
   store8(tcp + 14, 0xFF); store8(tcp + 15, 0xFF)
   store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
   store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
-  let tcsum = tcp-checksum-impl(ip, 20)
+  store8(tcp + 20, 0x02); store8(tcp + 21, 0x04)
+  store8(tcp + 22, 0x05); store8(tcp + 23, 0xB4)
+  let tcsum = tcp-checksum-impl(ip, 24)
   store8(tcp + 16, (tcsum >> 8) & 0xFF); store8(tcp + 17, tcsum & 0xFF)
-  return 54
+  return 58
 }
 
 // Ethernet+IPv4+TCP ACK (no options/payload). seq/ack are host Ints.
@@ -344,7 +350,7 @@ fn build-tcp-ack-impl(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
   store8(tcp + 11, ack & 0xFF)
   store8(tcp + 12, 0x50)
   store8(tcp + 13, 0x10)
-  store8(tcp + 14, 0xFF); store8(tcp + 15, 0xFF)
+  store8(tcp + 14, (tcp-recv-wnd >> 8) & 0xFF); store8(tcp + 15, tcp-recv-wnd & 0xFF)
   store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
   store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
   let tcsum = tcp-checksum-impl(ip, 20)
@@ -393,7 +399,7 @@ fn build-tcp-data-impl(rip: Int, rport: Int, seq: Int, ack: Int, payload: Int, p
   store8(tcp + 11, ack & 0xFF)
   store8(tcp + 12, 0x50)
   store8(tcp + 13, 0x18)
-  store8(tcp + 14, 0xFF); store8(tcp + 15, 0xFF)
+  store8(tcp + 14, (tcp-recv-wnd >> 8) & 0xFF); store8(tcp + 15, tcp-recv-wnd & 0xFF)
   store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
   store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
   for i in 0..plen {
@@ -479,6 +485,7 @@ fn tcp-parse-data(pkt: Int, len: Int, expect-rip: Int, expect-rport: Int) -> Int
   }
   tcp-last-seq = (load8(tcp + 4) << 24) | (load8(tcp + 5) << 16) | (load8(tcp + 6) << 8) | load8(tcp + 7)
   tcp-last-ack = (load8(tcp + 8) << 24) | (load8(tcp + 9) << 16) | (load8(tcp + 10) << 8) | load8(tcp + 11)
+  tcp-peer-wnd = (load8(tcp + 14) << 8) | load8(tcp + 15)
   return plen
 }
 
@@ -523,6 +530,26 @@ fn tcp-parse-synack(pkt: Int, len: Int, expect-rip: Int, expect-rport: Int) -> I
   }
   tcp-last-seq = (load8(tcp + 4) << 24) | (load8(tcp + 5) << 16) | (load8(tcp + 6) << 8) | load8(tcp + 7)
   tcp-last-ack = (load8(tcp + 8) << 24) | (load8(tcp + 9) << 16) | (load8(tcp + 10) << 8) | load8(tcp + 11)
+  tcp-peer-wnd = (load8(tcp + 14) << 8) | load8(tcp + 15)
+  let doff = ((load8(tcp + 12) >> 4) & 0x0F) * 4
+  let opt = 20
+  while opt + 1 < doff {
+    let okind = load8(tcp + opt)
+    if okind == 0 {
+      break
+    } else if okind == 1 {
+      opt = opt + 1
+    } else {
+      let olen = load8(tcp + opt + 1)
+      if olen < 2 {
+        break
+      }
+      if okind == 2 && olen == 4 {
+        tcp-peer-mss = (load8(tcp + opt + 2) << 8) | load8(tcp + opt + 3)
+      }
+      opt = opt + olen
+    }
+  }
   return 1
 }
 

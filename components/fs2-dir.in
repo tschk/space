@@ -118,6 +118,28 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
   return -1
 }
 
+// Return 1 if directory `dir_ino` has no live entries, else 0.
+fn sf-dir-is-empty(dir-ino: Int) -> Int {
+  let addr = sf-inode-addr(dir-ino)
+  let size = load64(addr + SF-IN-SIZE)
+  let fbn = 0
+  while fbn * SF-BLOCK-SIZE < size {
+    let bno = sf-inode-block(dir-ino, fbn)
+    if bno > 0 {
+      sf-read-block(bno, sf-block-buf)
+      let off = 0
+      while off < SF-BLOCK-SIZE {
+        if load32(sf-block-buf + off) != 0 {
+          return 0
+        }
+        off = off + SF-DIR-ENTRY-SIZE
+      }
+    }
+    fbn = fbn + 1
+  }
+  return 1
+}
+
 // Remove an entry from directory `dir_ino`. Returns 0 on success.
 fn sf-dir-remove(dir-ino: Int, name: Int) -> Int {
   let tmp = alloc(4)

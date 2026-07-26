@@ -85,6 +85,88 @@ fn sf-lookup-path(path: Int) -> Int {
   return -1
 }
 
+// Join `cwd` and `path`, then resolve `.`/`..` segments into a canonical
+// absolute path written to `out` (at least 1024 bytes). Absolute `path`
+// ignores `cwd`. Returns `out`.
+fn sf-normalize-path(cwd: Int, path: Int, out: Int) -> Int {
+  let tmp = alloc(1024)
+  let t = 0
+  if load8(path) == 47 {
+    while load8(path + t) != 0 && t < 1023 {
+      store8(tmp + t, load8(path + t))
+      t = t + 1
+    }
+  } else {
+    let c = 0
+    while load8(cwd + c) != 0 && t < 1023 {
+      store8(tmp + t, load8(cwd + c))
+      t = t + 1
+      c = c + 1
+    }
+    if t > 1 && load8(tmp + t - 1) != 47 && t < 1023 {
+      store8(tmp + t, 47)
+      t = t + 1
+    }
+    if t == 0 {
+      store8(tmp + t, 47)
+      t = t + 1
+    }
+    let p = 0
+    while load8(path + p) != 0 && t < 1023 {
+      store8(tmp + t, load8(path + p))
+      t = t + 1
+      p = p + 1
+    }
+  }
+  store8(tmp + t, 0)
+  let o = 0
+  let i = 0
+  while load8(tmp + i) != 0 {
+    while load8(tmp + i) == 47 {
+      i = i + 1
+    }
+    if load8(tmp + i) != 0 {
+      let j = i
+      while load8(tmp + j) != 0 && load8(tmp + j) != 47 {
+        j = j + 1
+      }
+      let seg-len = j - i
+      let skip = 0
+      if seg-len == 1 && load8(tmp + i) == 46 {
+        skip = 1
+      }
+      if seg-len == 2 && load8(tmp + i) == 46 && load8(tmp + i + 1) == 46 {
+        skip = 2
+      }
+      if skip == 2 {
+        if o > 0 {
+          o = o - 1
+          while o > 0 && load8(out + o) != 47 {
+            o = o - 1
+          }
+        }
+      }
+      if skip == 0 && o + seg-len + 1 < 1023 {
+        store8(out + o, 47)
+        o = o + 1
+        let k = 0
+        while k < seg-len {
+          store8(out + o, load8(tmp + i + k))
+          o = o + 1
+          k = k + 1
+        }
+      }
+      i = j
+    }
+  }
+  if o == 0 {
+    store8(out, 47)
+    o = 1
+  }
+  store8(out + o, 0)
+  return out
+}
+
 // Resolve parent directory and final name. Returns parent inode, or -1.
 fn sf-lookup-parent(path: Int, name-out: Int) -> Int {
   let slash = sf-last-slash(path)

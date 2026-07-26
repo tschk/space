@@ -35,6 +35,25 @@ fn diagnostics-fetch(port: Int) -> void {
   serial-nl(port)
   serial-write-cstr(port, "  linux abi   syscall personality")
   serial-nl(port)
+  serial-write-cstr(port, "  uptime      ")
+  let secs = ticks / 100
+  let umins = secs / 60
+  let uhrs = umins / 60
+  serial-write-dec-wide(port, uhrs)
+  serial-write-cstr(port, "h ")
+  serial-write-dec-wide(port, umins % 60)
+  serial-write-cstr(port, "m ")
+  serial-write-dec-wide(port, secs % 60)
+  serial-write-cstr(port, "s")
+  serial-nl(port)
+  serial-write-cstr(port, "  heap used   ")
+  let hused = heap-next - 0x200000
+  let htotal = heap-end - 0x200000
+  serial-write-dec-wide(port, hused / 1048576)
+  serial-write-cstr(port, " MiB / ")
+  serial-write-dec-wide(port, htotal / 1048576)
+  serial-write-cstr(port, " MiB")
+  serial-nl(port)
   serial-write-cstr(port, "  processes   ")
   serial-write-dec-wide(port, proc-count)
   serial-nl(port)
