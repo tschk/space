@@ -11,7 +11,7 @@ import "display.in"
 const COM1-PORT = 0x3F8
 const SPACE-VERSION-MAJOR = 0
 const SPACE-VERSION-MINOR = 2
-const SPACE-VERSION-PATCH = 75
+const SPACE-VERSION-PATCH = 76
 
 fn com1() -> Int {
   return COM1-PORT
