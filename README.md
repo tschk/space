@@ -84,7 +84,7 @@ bash scripts/check-fs-dirs.sh         # mkdir/rmdir/mv/rm full coverage
 bash scripts/check-personalities.sh   # Linux/Windows/Darwin personalities
 ```
 
-Browser demo (Alpenglow-style v86 shell): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
+Browser demo (Alpenglow-style v86 shell, built with moonshine): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
 
 ## Repository layout
 
