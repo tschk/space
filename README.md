@@ -78,6 +78,9 @@ bash scripts/check-sci-contract.sh    # metadata validation
 bash scripts/check-network.sh         # e1000 ARP/UDP test
 bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path
+bash scripts/check-desktop-damage.sh  # moving-window compositor bench
+bash scripts/check-spdp-composite.sh  # SPDP surface-pipeline proof
+bash scripts/check-audit-fixes.sh     # kernel-audit hardening assertions
 bash scripts/check-linux-elf.sh       # Linux ELF personality
 bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
 bash scripts/check-fs-dirs.sh         # mkdir/rmdir/mv/rm full coverage
