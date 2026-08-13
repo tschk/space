@@ -67,7 +67,9 @@ fn create-domain-pml4() -> Int {
 }
 
 fn domain-create() -> Int {
-  if domain-count >= MAX-DOMAINS { return 0 }
+  if domain-count >= MAX-DOMAINS {
+    return -1
+  }
   let id = domain-count
   let pml4 = create-domain-pml4()
   store64(domain-table + id * 24 + 0, pml4)

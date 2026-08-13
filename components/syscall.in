@@ -16,6 +16,9 @@ fn sys-write(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 1 {
     return -1
   }
+  if len <= 0 || len > 4096 || buf == 0 {
+    return -1
+  }
   let port = com1()
   let i = 0
   while i < len {
@@ -29,6 +32,9 @@ fn sys-write(fd: Int, buf: Int, len: Int) -> Int {
 // Reads up to len bytes, stopping at a newline, and returns the byte count.
 fn sys-read(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 0 {
+    return -1
+  }
+  if len <= 0 || len > 4096 || buf == 0 {
     return -1
   }
   let port = com1()
@@ -45,7 +51,7 @@ fn sys-read(fd: Int, buf: Int, len: Int) -> Int {
 }
 
 // Syscall 2: sys_exit(code) — exit the current process/component.
-// In kernel context (thread 0) this halts the nanokernel.
+// Guest tasks are reaped via the process table instead of halting the OS.
 fn sys-exit(code: Int) -> Int {
   let port = com1()
   serial-write-cstr(port, "space: sys_exit(code=0x")
@@ -53,9 +59,8 @@ fn sys-exit(code: Int) -> Int {
   serial-write-cstr(port, ") from thread 0x")
   serial-write-hex(port, current-task)
   serial-nl(port)
-  cli()
-  while true {
-    hlt()
+  if current-task != 0 {
+    proc-exit(code)
   }
   return 0
 }

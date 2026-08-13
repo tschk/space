@@ -208,9 +208,8 @@ fn posix-sys-exit(code: Int) -> Int {
   serial-write-cstr(port, ") from pid ")
   serial-write-dec-wide(port, current-task)
   serial-nl(port)
-  cli()
-  while true {
-    hlt()
+  if current-task != 0 {
+    proc-exit(code)
   }
   return 0
 }

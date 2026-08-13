@@ -372,7 +372,10 @@ fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
         let rx2 = px + comp-render-dx
         let bit = (bits >> (7 - col)) & 1
         if bit != 0 {
-          let inside = rx2 >= 0 && ry2 >= 0 && rx2 + 1 < fb-width && ry2 + 1 < fb-height
+          let inside = 1
+          if rx2 < 0 || ry2 < 0 || rx2 + 1 >= fb-width || ry2 + 1 >= fb-height {
+            inside = 0
+          }
           if comp-clip-valid != 0 {
             if rx2 < comp-clip-x0 || rx2 + 1 >= comp-clip-x1 || ry2 < comp-clip-y0 || ry2 + 1 >= comp-clip-y1 {
               inside = 0
@@ -777,7 +780,10 @@ fn comp-win-close(idx: Int) -> void {
   let rem-y = load32(comp-win-base(idx) + 8)
   let rem-w = load32(comp-win-base(idx) + 12)
   let rem-h = load32(comp-win-base(idx) + 16)
-  let was-focused = comp-focused == idx
+  let was-focused = 0
+  if comp-focused == idx {
+    was-focused = 1
+  }
   // Shift remaining windows down
   let i = idx
   while i < comp-count - 1 {
@@ -954,14 +960,14 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
       while col < 8 {
         let cov = load8(fb-font-aa + ch * 64 + row * 8 + col)
         if cov > 0 {
+          let in-clip = 1
           if comp-clip-valid != 0 {
             if px < comp-clip-x0 || px + 1 >= comp-clip-x1 || py < comp-clip-y0 || py + 1 >= comp-clip-y1 {
-              px = px + 2
-              col = col + 1
-              continue
+              in-clip = 0
             }
           }
-          if px >= 0 && px + 1 < fb-width {
+          if in-clip != 0 {
+            if px >= 0 && px + 1 < fb-width {
             let ia = 255 - cov
             let off00 = py * fb-pitch + px * 4
             let off01 = off00 + 4
@@ -987,6 +993,7 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
             let dg = (d11 >> 8) & 0xFF
             let db = d11 & 0xFF
             store32(fb-addr + off11, (((cr * cov + dr * ia) / 255) << 16) | (((cg * cov + dg * ia) / 255) << 8) | ((cb * cov + db * ia) / 255))
+          }
           }
         }
         px = px + 2
@@ -1719,12 +1726,14 @@ fn comp-cur-restore-except(dx0: Int, dy0: Int, dx1: Int, dy1: Int) -> void {
         if px >= 0 && px < fb-width {
           if px >= dx0 && px < dx1 && py >= dy0 && py < dy1 {
             i = i + 1
-            continue
+          } else {
+            let pix = load32(comp-cur-back + j * 24 * 4 + i * 4)
+            store32(fb-addr + py * fb-pitch + px * 4, pix)
+            i = i + 1
           }
-          let pix = load32(comp-cur-back + j * 24 * 4 + i * 4)
-          store32(fb-addr + py * fb-pitch + px * 4, pix)
+        } else {
+          i = i + 1
         }
-        i = i + 1
       }
     }
     j = j + 1
@@ -1885,7 +1894,10 @@ fn comp-render-taskbar() -> void {
     let flags3 = load32(base + 20)
     if title != 0 {
       let btn-x = comp-taskbar-btn-x(i2)
-      let focused = i2 == comp-focused
+      let focused = 0
+      if i2 == comp-focused {
+        focused = 1
+      }
       let btn-bg = COMP-COLOR-PANEL-LINE
       if focused != 0 {
         btn-bg = 0x00333336

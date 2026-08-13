@@ -80,13 +80,19 @@ fn checkpoint-restore() -> void {
 // --- capability table v0 ----------------------------------------------------
 // Capability slot (16 bytes): [target_object_ptr][rights].
 
+var cap-table-cap: Int = 0
+
 fn cap-table-init(capacity: Int) -> void {
   cap-table-base = alloc(capacity * 16)
+  cap-table-cap = capacity
   cap-count = 0
   return
 }
 
 fn cap-mint(target-obj: Int, rights: Int) -> Int {
+  if cap-count >= cap-table-cap {
+    return -1
+  }
   let idx = cap-count
   let slot = cap-table-base + idx * 16
   store64(slot + 0, target-obj)

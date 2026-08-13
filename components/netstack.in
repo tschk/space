@@ -197,6 +197,9 @@ fn sock-send(fd: Int, buf: Int, len: Int) -> Int {
       let pkt = e1000-rx-poll-impl()
       if pkt != 0 {
         let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+        if n < 0 {
+          return -1  // RST from peer
+        }
         if n > 0 {
           tcp-remote-ack = tcp-last-seq + n
         }
@@ -221,6 +224,9 @@ fn sock-send(fd: Int, buf: Int, len: Int) -> Int {
         let pkt = e1000-rx-poll-impl()
         if pkt != 0 {
           let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+          if n < 0 {
+            return -1  // RST from peer
+          }
           if n > 0 {
             tcp-remote-ack = tcp-last-seq + n
           }
@@ -232,6 +238,11 @@ fn sock-send(fd: Int, buf: Int, len: Int) -> Int {
         pause()
         tries = tries + 1
       }
+    }
+    if acked == 0 {
+      // The chunk was never acknowledged: stop and report only the bytes that
+      // were actually sent, instead of silently dropping and returning len.
+      return sent
     }
     tcp-local-seq = seq + chunk
     sent = sent + chunk
@@ -278,6 +289,9 @@ fn sock-recv(fd: Int, buf: Int, len: Int) -> Int {
     let pkt = e1000-rx-poll-impl()
     if pkt != 0 {
       let n = tcp-parse-data(pkt, nic-rx-len, rip, rport)
+      if n < 0 {
+        return -1  // RST from peer
+      }
       if n > 0 {
         let copy = n
         if copy > len {

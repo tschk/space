@@ -4,9 +4,15 @@ package space.kernel
 
 var dns-last-ip: Int = 0
 
-fn dns-skip-name(pkt: Int, start: Int) -> Int {
+// Skip a DNS name (labels or compression pointer). Returns the new offset, or
+// -1 if the name walks past `end` (bounded parse; never OOB).
+fn dns-skip-name(pkt: Int, start: Int, end: Int) -> Int {
   let off = start
+  let jumps = 0
   while true {
+    if off >= end {
+      return -1
+    }
     let lab = load8(pkt + off)
     if lab == 0 {
       return off + 1
@@ -15,24 +21,42 @@ fn dns-skip-name(pkt: Int, start: Int) -> Int {
       return off + 2
     }
     off = off + 1 + lab
+    jumps = jumps + 1
+    if jumps > 128 {
+      return -1
+    }
   }
 }
 
-// Return packed IPv4 or 0. dns-off is start of DNS message; dlen is UDP payload len.
+// Return packed IPv4 or 0. dns-off is start of DNS message; dlen is the DNS
+// payload length. All reads are bounded against dns-off + dlen.
 fn dns-parse-a(pkt: Int, dns-off: Int, dlen: Int) -> Int {
   if dlen < 12 {
     return 0
   }
+  let end = dns-off + dlen
   let ancount = (load8(pkt + dns-off + 6) << 8) | load8(pkt + dns-off + 7)
-  let off = dns-skip-name(pkt, dns-off + 12)
+  let off = dns-skip-name(pkt, dns-off + 12, end)
+  if off < 0 {
+    return 0
+  }
   off = off + 4
   let i = 0
   while i < ancount {
-    off = dns-skip-name(pkt, off)
+    if off + 10 > end {
+      return 0
+    }
+    off = dns-skip-name(pkt, off, end)
+    if off < 0 || off + 10 > end {
+      return 0
+    }
     let typ = (load8(pkt + off) << 8) | load8(pkt + off + 1)
     let cls = (load8(pkt + off + 2) << 8) | load8(pkt + off + 3)
     let rdlen = (load8(pkt + off + 8) << 8) | load8(pkt + off + 9)
     off = off + 10
+    if off + rdlen > end {
+      return 0
+    }
     if (typ == 1) && (cls == 1) && (rdlen == 4) {
       return (load8(pkt + off) << 24) | (load8(pkt + off + 1) << 16) | (load8(pkt + off + 2) << 8) | load8(pkt + off + 3)
     }
@@ -91,7 +115,13 @@ fn dns-query(port: Int, name-cstr: Int) -> Int {
       if load8(pkt + 14 + 9) == 17 {
         let udp = 14 + ihl
         let dport = (load8(pkt + udp + 2) << 8) | load8(pkt + udp + 3)
-        if dport == 0x3039 {
+        // Accept only replies from the DNS server (10.0.2.3) with our query id.
+        let src0 = load8(pkt + 14 + 12)
+        let src1 = load8(pkt + 14 + 13)
+        let src2 = load8(pkt + 14 + 14)
+        let src3 = load8(pkt + 14 + 15)
+        let rid = (load8(pkt + udp + 8) << 8) | load8(pkt + udp + 9)
+        if dport == 0x3039 && src0 == 10 && src1 == 0 && src2 == 2 && src3 == 3 && rid == 0x1234 {
           let ulen = (load8(pkt + udp + 4) << 8) | load8(pkt + udp + 5)
           if ulen >= 20 {
             let ip = dns-parse-a(pkt, udp + 8, ulen - 8)

@@ -37,6 +37,9 @@ fn chan-cross-bind(shared-page: Int, local-domain: Int, capacity: Int) -> Int {
 var chan0: Int = 0
 
 fn chan-new(cap: Int) -> Int {
+  if cap <= 0 {
+    return 0
+  }
   // layout: [cap(8)][count(8)][rpos(8)][wpos(8)][wait_send(8)][wait_recv(8)] + slots
   let c = chan-alloc(48 + cap * 8)
   store64(c + 0, cap)
@@ -48,7 +51,32 @@ fn chan-new(cap: Int) -> Int {
   return c
 }
 
+// Sanity-check a channel handle before dereferencing it: a garbage or
+// attacker-supplied pointer must not turn into an arbitrary kernel read/write.
+fn chan-valid(c: Int) -> Int {
+  if c == 0 {
+    return 0
+  }
+  let cap = load64(c + 0)
+  if cap < 1 || cap > 4096 {
+    return 0
+  }
+  let count = load64(c + 8)
+  if count < 0 || count > cap {
+    return 0
+  }
+  let rpos = load64(c + 16)
+  let wpos = load64(c + 24)
+  if rpos < 0 || rpos >= cap || wpos < 0 || wpos >= cap {
+    return 0
+  }
+  return 1
+}
+
 fn chan-count(c: Int) -> Int {
+  if chan-valid(c) == 0 {
+    return -1
+  }
   return load64(c + 8)
 }
 
@@ -60,6 +88,9 @@ fn chan-count(c: Int) -> Int {
 
 // Send to channel: block until room, then write. Wake a waiting receiver.
 fn chan-send(c: Int, msg: Int) -> void {
+  if chan-valid(c) == 0 {
+    return
+  }
   let cap = load64(c + 0)
   while load64(c + 8) >= cap {
     store64(c + 32, current-task)  // register as blocked sender
@@ -82,6 +113,9 @@ fn chan-send(c: Int, msg: Int) -> void {
 
 // Recv from channel: block until data, then read. Wake a waiting sender.
 fn chan-recv(c: Int) -> Int {
+  if chan-valid(c) == 0 {
+    return -1
+  }
   while load64(c + 8) == 0 {
     store64(c + 40, current-task)  // register as blocked receiver
     thr-block()

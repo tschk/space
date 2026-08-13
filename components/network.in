@@ -447,7 +447,7 @@ fn tcp-parse-data(pkt: Int, len: Int, expect-rip: Int, expect-rport: Int) -> Int
   }
   let flags = load8(tcp + 13)
   if (flags & 0x04) != 0 {
-    return 0
+    return -1  // RST: connection reset by peer — callers fail the socket.
   }
   let doff = ((load8(tcp + 12) >> 4) & 0x0F) * 4
   if doff < 20 {

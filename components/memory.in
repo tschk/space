@@ -62,7 +62,11 @@ var free-list: Int = 0  // head of LIFO free list, 0 = empty
 
 fn frame-alloc() -> Int {
   let p = (heap-next + 4095) & -4096
-  heap-next = p + 4096
+  let next = p + 4096
+  if next > heap-end {
+    panic("frame heap exhausted")
+  }
+  heap-next = next
   let i = 0
   while i < 512 {
     store64(p + i * 8, 0)

@@ -12,6 +12,7 @@ var kernel-slot: Int = 0
 var thread-sp: Int = 0
 var thread-state: Int = 0
 var thread-count: Int = 0
+var thread-max: Int = 0
 var current-task: Int = 0
 var thr-last: Int = 0
 var chan-free-list: Int = 0
@@ -58,6 +59,7 @@ fn thr-init(max: Int) -> void {
   thread-sp = alloc(max * 8)
   thread-state = alloc(max * 8)
   thread-count = 1
+  thread-max = max
   for i in 0..max {
     store64(thread-state + i * 8, THR-DONE)
     store64(thread-sp + i * 8, 0)
@@ -67,6 +69,9 @@ fn thr-init(max: Int) -> void {
 }
 
 fn thr-create(entry: Int) -> Int {
+  if thread-count >= thread-max {
+    return -1
+  }
   let t = thread-count
   let stack = alloc(16384)
   let sp = stack + 16384 - 64

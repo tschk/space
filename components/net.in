@@ -63,7 +63,7 @@ fn net-component-start(port: Int) -> Int {
     return 1
   }
   let domain = domain-create()
-  if domain == 0 {
+  if domain <= 0 {
     return 0
   }
   let req-page = domain-create-shared-page(0, domain, 0xFFFF8000, 0xFFFF8000)

@@ -72,7 +72,7 @@ fn proc-create(name: Int, entry: Int, caps: Int) -> Int {
   let pid = proc-count
   let base = proc-table + pid * PROC-SIZE
   let domain = domain-create()
-  if domain == 0 { return -1 }
+  if domain <= 0 { return -1 }
   component-register(name, entry, caps)
   proc-entry-arg = pid
   let tid = thr-create(entry)
@@ -304,7 +304,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   }
 
   let domain = domain-create()
-  if domain == 0 {
+  if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
     return -1

@@ -72,7 +72,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
     return -1
   }
   let domain = domain-create()
-  if domain == 0 {
+  if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
     return -1
@@ -189,7 +189,7 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     return -1
   }
   let domain = domain-create()
-  if domain == 0 { return -1 }
+  if domain <= 0 { return -1 }
   let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
@@ -536,7 +536,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     return -1
   }
   let domain = domain-create()
-  if domain == 0 {
+  if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
     return -1

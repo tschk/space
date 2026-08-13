@@ -174,6 +174,18 @@ fn nvme-admin-submit(opcode: Int, nsid: Int, prp1: Int, prp2: Int, cdw10: Int, c
 // Submit an NVM I/O command to SQ1, ring the doorbell, and poll CQ1.
 // Returns 0 on success, the NVMe status code on completion, or -1 on timeout.
 fn nvme-io-submit(opcode: Int, lba: Int, count: Int, buf: Int) -> Int {
+  // The transfer buffer is a single 4 KiB page (PRP1), so the sector count is
+  // bounded to 8 sectors. A zero count would encode NLB=65535 and let the
+  // controller DMA ~32 MB into one page; reject it outright.
+  if count <= 0 {
+    serial-write-cstr(com1(), "  nvme: invalid sector count ")
+    serial-write-dec-wide(com1(), count)
+    serial-nl(com1())
+    return -1
+  }
+  if count > 8 {
+    count = 8
+  }
   let sqe = nvme-iosq + nvme-io-sq-tail * 64
   // Zero the 64-byte SQE
   let i = 0
