@@ -1461,6 +1461,21 @@ fn comp-render-window-frame(base: Int) -> void {
     comp-draw-content-bg(base)
     comp-draw-content-text(base)
   }
+
+  // Resize-corner affordance: a small diagonal grip at the bottom-right.
+  let grip-x = wx + ww - COMP-BORDER-W - 6
+  let grip-y = wy + wfh - COMP-BORDER-W - 6
+  let gi = 0
+  while gi < 5 {
+    let gj = 0
+    while gj < 5 {
+      if gi + gj >= 4 {
+        fb-put-pixel(grip-x + gi, grip-y + gj, COMP-COLOR-ACCENT)
+      }
+      gj = gj + 1
+    }
+    gi = gi + 1
+  }
   return
 }
 
@@ -1835,7 +1850,23 @@ fn comp-render() -> void {
   return
 }
 
-// Draw the taskbar at the bottom of the screen.
+// Taskbar window-button geometry: button index -> x offset from the start.
+fn comp-taskbar-btn-x(idx: Int) -> Int {
+  return fb-width / 2 - 80 + idx * 90
+}
+
+// Number of window buttons that fit before the right-side activity dot.
+fn comp-taskbar-max-btns() -> Int {
+  let dot-edge = fb-width - 44
+  let avail = dot-edge - (fb-width / 2 - 80)
+  if avail <= 0 {
+    return 0
+  }
+  return avail / 90
+}
+
+// Draw the taskbar at the bottom of the screen, with window buttons that
+// clamp to the available width (overflow windows just don't get a button).
 fn comp-render-taskbar() -> void {
   let bar-y = fb-height - COMP-TASKBAR-H
   fb-fill-rect(0, bar-y, fb-width, COMP-TASKBAR-H, COMP-COLOR-PANEL)
@@ -1844,6 +1875,35 @@ fn comp-render-taskbar() -> void {
   while tx2 < fb-width {
     fb-put-pixel(tx2, bar-y, COMP-COLOR-PANEL-LINE)
     tx2 = tx2 + 1
+  }
+  // Window buttons: highlight the focused one.
+  let max-btns = comp-taskbar-max-btns()
+  let i2 = 0
+  while i2 < comp-count && i2 < max-btns {
+    let base = comp-win-base(i2)
+    let title = load64(base + 24)
+    let flags3 = load32(base + 20)
+    if title != 0 {
+      let btn-x = comp-taskbar-btn-x(i2)
+      let focused = i2 == comp-focused
+      let btn-bg = COMP-COLOR-PANEL-LINE
+      if focused != 0 {
+        btn-bg = 0x00333336
+      }
+      fb-fill-rect(btn-x, bar-y + 2, 86, COMP-TASKBAR-H - 4, btn-bg)
+      comp-draw-label(btn-x + 4, bar-y + 5, title, COMP-COLOR-MUTED, btn-bg)
+    }
+    i2 = i2 + 1
+  }
+  if comp-count > max-btns {
+    // Overflow indicator: a small ellipsis at the last button slot.
+    let ox = comp-taskbar-btn-x(max-btns)
+    fb-fill-rect(ox, bar-y + 2, 86, COMP-TASKBAR-H - 4, COMP-COLOR-PANEL-LINE)
+    let oi = 0
+    while oi < 3 {
+      fb-fill-rect(ox + 8 + oi * 10, bar-y + COMP-TASKBAR-H / 2 - 2, 4, 4, FB-COLOR-WHITE)
+      oi = oi + 1
+    }
   }
   comp-render-taskbar-dot()
   return
@@ -1865,13 +1925,14 @@ fn comp-render-topbar() -> void {
 
 // Handle a taskbar click — focus/restore the window whose title button was clicked.
 fn comp-handle-taskbar-click(mx: Int) -> Int {
-  let btn-x = fb-width / 2 - 80
+  let max-btns = comp-taskbar-max-btns()
   let i2 = 0
-  while i2 < comp-count {
+  while i2 < comp-count && i2 < max-btns {
     let base = comp-win-base(i2)
     let title = load64(base + 24)
     let flags3 = load32(base + 20)
     if title != 0 {
+      let btn-x = comp-taskbar-btn-x(i2)
       if mx >= btn-x && mx < btn-x + 90 {
         if (flags3 & COMP-WIN-MINIMIZED) != 0 {
           comp-win-restore(i2)
@@ -1880,7 +1941,6 @@ fn comp-handle-taskbar-click(mx: Int) -> Int {
         }
         return 1
       }
-      btn-x = btn-x + 90
     }
     i2 = i2 + 1
   }
@@ -2048,7 +2108,7 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
 // not the alpha blend cost.
 fn comp-create-default-windows(translucent-util: Int) -> void {
   let top-y = COMP-TASKBAR-H + 20
-  let usable-h = fb-height - COMP-TASKBAR-H * 2 - 40
+  let usable-h = fb-height - COMP-TASKBAR-H * 2 - 40 - 8
   let left-w = (fb-width - 64) / 2
   let right-w = fb-width - 64 - left-w
   let right-h = (usable-h - 16) / 2
