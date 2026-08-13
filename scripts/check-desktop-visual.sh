@@ -135,7 +135,34 @@ for y in range(80, 900):
             text_px += 1
 if text_px < 1000:
     raise SystemExit(f"terminal content missing: {text_px} < 1000 pixels")
-print(f"PASS: desktop visual pixels present (text_px={text_px})")
+
+# Verify per-window translucency: the UTILITIES window (x 976..1920, y 48..~540)
+# uses alpha=180, so its white content surface blends to ~(183,182,182) over the
+# dark desktop instead of staying opaque white. Count blended pixels in the
+# content area right of the sidebar (x > 1112).
+blend_px = 0
+for y in range(80, 520):
+    row = y * width * 3
+    for x in range(1120, 1900, 2):
+        c = tuple(pixels[row + x * 3:row + x * 3 + 3])
+        if 170 <= c[0] <= 195 and abs(c[0] - c[1]) <= 4 and abs(c[1] - c[2]) <= 4:
+            blend_px += 1
+if blend_px < 500:
+    raise SystemExit(f"translucent blend missing: {blend_px} < 500 pixels")
+# Verify anti-aliased chrome text: title-bar glyphs use grayscale coverage
+# masks, so their soft edges produce mid-tone pixels (white @96 over the dark
+# title bar 0x444444 => ~138). A pure bitmap font would show only full-white
+# and the bar color.
+aa_px = 0
+for y in range(50, 72):
+    row = y * width * 3
+    for x in range(44, 960):
+        c = tuple(pixels[row + x * 3:row + x * 3 + 3])
+        if 120 <= c[0] <= 160 and abs(c[0] - c[1]) <= 6 and abs(c[1] - c[2]) <= 6:
+            aa_px += 1
+if aa_px < 200:
+    raise SystemExit(f"anti-aliased title text missing: {aa_px} < 200 pixels")
+print(f"PASS: desktop visual pixels present (text_px={text_px}, blend_px={blend_px}, aa_px={aa_px})")
 PY
 
 if command -v sips >/dev/null 2>&1; then
