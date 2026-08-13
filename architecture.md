@@ -231,7 +231,10 @@ framebuffer. BAR0 is discovered via PCI class 0x030000. The boot trampoline
 identity-maps the first 4 GiB so MMIO (typically 0xFD000000) is reachable.
 
 Drawing primitives: pixels, rectangles, lines, and scaled bitmap text
-(`components/font.in`). The compositor uses these for windows, bars, and cursor.
+(`components/font.in`). `font.in` also builds grayscale coverage masks from the
+1-bit glyphs; `fb-draw-char-aa` blends them at 2x scale for soft-edged chrome
+text (title bars, top bar). The terminal keeps the bitmap fast path. The
+compositor uses these for windows, bars, and cursor.
 
 ---
 
@@ -240,14 +243,27 @@ Drawing primitives: pixels, rectangles, lines, and scaled bitmap text
 The compositor is also in `components/display.in` (not a separate stub file).
 It manages windows and paints the framebuffer:
 
-- **Window management** — create, focus, drag, resize, z-order
+- **Damage-rect compositing** — only the pending damage rect is recomposed into
+  the backbuffer (background + intersecting windows, bottom-up) and blitted;
+  the cursor is reconciled on the real framebuffer. Event handlers accumulate
+  damage instead of forcing full-screen redraws. Measured on M3 TCG: 19 fps
+  eager full-screen → 38 fps damage-rect for a moving-window workload
+  (`scripts/check-desktop-damage.sh`).
+- **Window management** — create, focus, drag, resize, z-order; resize-corner
+  grip; taskbar window buttons with overflow clamp.
+- **Per-window translucency** — windows carry an alpha byte; translucent
+  windows render into a per-window surface and blend over the composed desktop
+  (UTILITIES uses alpha=180).
 - **Dual terminals** — role TERMINAL with scrollback ring + fetch mode
 - **Title bars / taskbar / top bar** — decorations and focus chrome
 - **Mouse cursor** — arrow with backbuffer restore
 - **Input** — real PS/2 keyboard+mouse (`components/mouse.in`); USB HID still
   stubbed in-kernel (`components/usb.in`), full xHCI lives in SCI `input.in`
 
-Shell command `desktop` runs `comp-run` until ESC (serial or PS/2).
+Shell command `desktop` runs `comp-run` until ESC (serial or PS/2). The SPDP
+surface pipeline (`dsp-*` in the same file) is exercised by the `dsp demo`
+command (`scripts/check-spdp-composite.sh`); the compositor/client split is
+designed in `docs/compositor-client-split.md`.
 
 ---
 

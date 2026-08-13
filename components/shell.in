@@ -1015,6 +1015,50 @@ fn shell(port: Int) -> void {
         serial-write-dec-wide(port, fps)
         serial-nl(port)
       }
+    } else if line-eq("hardening") != 0 {
+      // Regression assertions for the kernel-audit fixes (check-audit-fixes.sh).
+      let ok = 1
+      let c0 = chan-new(0)
+      if c0 != 0 {
+        ok = 0
+        serial-write-cstr(port, "  chan cap=0 not rejected")
+        serial-nl(port)
+      }
+      let c4 = chan-new(4)
+      if c4 == 0 {
+        ok = 0
+        serial-write-cstr(port, "  chan-new(4) failed")
+        serial-nl(port)
+      }
+      let w = sys-write(1, 0, 10)
+      if w != -1 {
+        ok = 0
+        serial-write-cstr(port, "  sys-write buf=0 not rejected")
+        serial-nl(port)
+      }
+      // DNS parser must reject a truncated message (huge ancount, short len).
+      let dbuf = alloc(64)
+      let di = 0
+      while di < 64 {
+        store8(dbuf + di, 0)
+        di = di + 1
+      }
+      store8(dbuf + 0, 0x12)
+      store8(dbuf + 6, 0xFF)
+      store8(dbuf + 7, 0xFF)
+      let dip = dns-parse-a(dbuf, 0, 12)
+      if dip != 0 {
+        ok = 0
+        serial-write-cstr(port, "  dns truncated parse returned a result")
+        serial-nl(port)
+      }
+      if ok != 0 {
+        serial-write-cstr(port, "  hardening PASS")
+        serial-nl(port)
+      } else {
+        serial-write-cstr(port, "  hardening FAIL")
+        serial-nl(port)
+      }
     } else if line-eq("dsp") != 0 {
       serial-write-cstr(port, "  usage: dsp test | display")
       serial-nl(port)
