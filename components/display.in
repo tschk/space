@@ -240,41 +240,57 @@ fn fb-init(mb-info: Int) -> Int {
 
 // --- drawing primitives -----------------------------------------------------
 
-// Set a single pixel at (x, y) to color. Clips to screen bounds.
+// Set a single pixel at (x, y) to color. Clips to screen bounds + active clip.
 fn fb-put-pixel(x: Int, y: Int, color: Int) -> void {
   if fb-ready == 0 {
     return
   }
-  if x < 0 || x >= fb-width || y < 0 || y >= fb-height {
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
+  if rx < 0 || rx >= fb-width || ry < 0 || ry >= fb-height {
     return
   }
-  let off = y * fb-pitch + x * 4
+  if comp-clip-valid != 0 {
+    if rx < comp-clip-x0 || rx >= comp-clip-x1 || ry < comp-clip-y0 || ry >= comp-clip-y1 {
+      return
+    }
+  }
+  let off = ry * fb-pitch + rx * 4
   store32(fb-addr + off, color)
   return
 }
 
-// Fill a rectangle with a solid color. Clips to screen bounds.
+// Fill a rectangle with a solid color. Clips to screen bounds + active clip.
 fn fb-fill-rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   if fb-ready == 0 {
     return
   }
 
-  let x-start = x
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
+  let x-start = rx
   if x-start < 0 {
     x-start = 0
   }
-  let x-end = x + w
+  let x-end = rx + w
   if x-end > fb-width {
     x-end = fb-width
   }
 
-  let y-start = y
+  let y-start = ry
   if y-start < 0 {
     y-start = 0
   }
-  let y-end = y + h
+  let y-end = ry + h
   if y-end > fb-height {
     y-end = fb-height
+  }
+
+  if comp-clip-valid != 0 {
+    if x-start < comp-clip-x0 { x-start = comp-clip-x0 }
+    if y-start < comp-clip-y0 { y-start = comp-clip-y0 }
+    if x-end > comp-clip-x1 { x-end = comp-clip-x1 }
+    if y-end > comp-clip-y1 { y-end = comp-clip-y1 }
   }
 
   if x-start >= x-end || y-start >= y-end {
@@ -302,49 +318,67 @@ fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
   if ch < 0 || ch >= 128 {
     ch = 63  // '?'
   }
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
 
-  // Fast path if the whole character (16x16) is within bounds
-  if x >= 0 && x + 16 <= fb-width && y >= 0 && y + 16 <= fb-height {
-    let row = 0
-    let row-addr = fb-addr + y * fb-pitch + x * 4
-    while row < 8 {
-      let bits = fb-glyph8(ch, row)
-      let col = 0
-      let pixel-addr = row-addr
-      while col < 8 {
-        let bit = (bits >> (7 - col)) & 1
-        if bit != 0 {
-          store32(pixel-addr, color)
-          store32(pixel-addr + 4, color)
-          store32(pixel-addr + fb-pitch, color)
-          store32(pixel-addr + fb-pitch + 4, color)
+  // Fast path if the whole character (16x16) is within bounds and clip.
+  if rx >= 0 && rx + 16 <= fb-width && ry >= 0 && ry + 16 <= fb-height {
+    if comp-clip-valid == 0 || (rx >= comp-clip-x0 && rx + 16 <= comp-clip-x1 && ry >= comp-clip-y0 && ry + 16 <= comp-clip-y1) {
+      let row = 0
+      let row-addr = fb-addr + ry * fb-pitch + rx * 4
+      while row < 8 {
+        let bits = fb-glyph8(ch, row)
+        let col = 0
+        let pixel-addr = row-addr
+        while col < 8 {
+          let bit = (bits >> (7 - col)) & 1
+          if bit != 0 {
+            store32(pixel-addr, color)
+            store32(pixel-addr + 4, color)
+            store32(pixel-addr + fb-pitch, color)
+            store32(pixel-addr + fb-pitch + 4, color)
+          }
+          pixel-addr = pixel-addr + 8
+          col = col + 1
         }
-        pixel-addr = pixel-addr + 8
-        col = col + 1
+        row-addr = row-addr + fb-pitch * 2
+        row = row + 1
       }
-      row-addr = row-addr + fb-pitch * 2
-      row = row + 1
+      return
     }
-    return
   }
 
   // Fully off-screen check
-  if x + 16 <= 0 || x >= fb-width || y + 16 <= 0 || y >= fb-height {
+  if rx + 16 <= 0 || rx >= fb-width || ry + 16 <= 0 || ry >= fb-height {
     return
+  }
+  // Fully outside active clip
+  if comp-clip-valid != 0 {
+    if rx + 16 <= comp-clip-x0 || rx >= comp-clip-x1 || ry + 16 <= comp-clip-y0 || ry >= comp-clip-y1 {
+      return
+    }
   }
 
   let row = 0
   let py = y
   while row < 8 {
-    if py + 1 >= 0 && py < fb-height {
+    let ry2 = py + comp-render-dy
+    if ry2 + 1 >= 0 && ry2 < fb-height {
       let bits = fb-glyph8(ch, row)
       let col = 0
       let px = x
-      let row-addr = fb-addr + py * fb-pitch + px * 4
       while col < 8 {
+        let rx2 = px + comp-render-dx
         let bit = (bits >> (7 - col)) & 1
         if bit != 0 {
-          if px >= 0 && py >= 0 && px + 1 < fb-width && py + 1 < fb-height {
+          let inside = rx2 >= 0 && ry2 >= 0 && rx2 + 1 < fb-width && ry2 + 1 < fb-height
+          if comp-clip-valid != 0 {
+            if rx2 < comp-clip-x0 || rx2 + 1 >= comp-clip-x1 || ry2 < comp-clip-y0 || ry2 + 1 >= comp-clip-y1 {
+              inside = 0
+            }
+          }
+          if inside != 0 {
+            let row-addr = fb-addr + ry2 * fb-pitch + rx2 * 4
             store32(row-addr, color)
             store32(row-addr + 4, color)
             store32(row-addr + fb-pitch, color)
@@ -356,7 +390,6 @@ fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
             fb-put-pixel(px + 1, py + 1, color)
           }
         }
-        row-addr = row-addr + 8
         px = px + 2
         col = col + 1
       }
@@ -479,6 +512,115 @@ var comp-drag-mode: Int = 0   // index of window being dragged (-1 = none)
 var comp-drag-off-x: Int = 0 // drag offset from window origin to mouse
 var comp-drag-off-y: Int = 0
 var comp-running: Int = 0    // 1 when compositor loop is active
+
+// --- damage-rect state ------------------------------------------------------
+// Pending damage is a single union rect (x0,y0,x1,y1, exclusive x1/y1).
+var comp-dmg-x0: Int = 0
+var comp-dmg-y0: Int = 0
+var comp-dmg-x1: Int = 0
+var comp-dmg-y1: Int = 0
+var comp-dmg-valid: Int = 0
+// Active clip rect applied to all fb-* primitives during recomposition.
+var comp-clip-x0: Int = 0
+var comp-clip-y0: Int = 0
+var comp-clip-x1: Int = 0
+var comp-clip-y1: Int = 0
+var comp-clip-valid: Int = 0
+// Render offset: when rendering a window into its own surface for alpha
+// compositing, the window's screen coords are translated by (-wx, -wy).
+var comp-render-dx: Int = 0
+var comp-render-dy: Int = 0
+
+// Add a rect (x0,y0)-(x1,y1) to the pending damage. Clips to screen.
+fn comp-dmg-add(x0: Int, y0: Int, x1: Int, y1: Int) -> void {
+  if x0 < 0 { x0 = 0 }
+  if y0 < 0 { y0 = 0 }
+  if x1 > fb-width { x1 = fb-width }
+  if y1 > fb-height { y1 = fb-height }
+  if x0 >= x1 || y0 >= y1 {
+    return
+  }
+  if comp-dmg-valid == 0 {
+    comp-dmg-x0 = x0
+    comp-dmg-y0 = y0
+    comp-dmg-x1 = x1
+    comp-dmg-y1 = y1
+    comp-dmg-valid = 1
+  } else {
+    if x0 < comp-dmg-x0 { comp-dmg-x0 = x0 }
+    if y0 < comp-dmg-y0 { comp-dmg-y0 = y0 }
+    if x1 > comp-dmg-x1 { comp-dmg-x1 = x1 }
+    if y1 > comp-dmg-y1 { comp-dmg-y1 = y1 }
+  }
+  return
+}
+
+fn comp-dmg-clear() -> void {
+  comp-dmg-valid = 0
+  return
+}
+
+fn comp-dmg-full() -> void {
+  comp-dmg-add(0, 0, fb-width, fb-height)
+  return
+}
+
+// Test whether a point in translated screen coords is inside the clip.
+fn comp-clip-test(px: Int, py: Int) -> Int {
+  if comp-clip-valid == 0 {
+    return 1
+  }
+  if px >= comp-clip-x0 && px < comp-clip-x1 && py >= comp-clip-y0 && py < comp-clip-y1 {
+    return 1
+  }
+  return 0
+}
+
+fn comp-clip-set(x0: Int, y0: Int, x1: Int, y1: Int) -> void {
+  comp-clip-x0 = x0
+  comp-clip-y0 = y0
+  comp-clip-x1 = x1
+  comp-clip-y1 = y1
+  comp-clip-valid = 1
+  return
+}
+
+fn comp-clip-clear() -> void {
+  comp-clip-valid = 0
+  return
+}
+
+// Window frame rect (with title bar) intersection test.
+fn comp-win-intersects(idx: Int, rx0: Int, ry0: Int, rx1: Int, ry1: Int) -> Int {
+  if idx < 0 || idx >= comp-count {
+    return 0
+  }
+  let base = comp-win-base(idx)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let wh = load32(base + 16)
+  let wfy = wy + wh + COMP-TITLE-BAR-H
+  if wx < rx1 && wx + ww > rx0 && wy < ry1 && wfy > ry0 {
+    return 1
+  }
+  return 0
+}
+
+// Add a window's full frame rect to damage.
+fn comp-win-damage(idx: Int) -> void {
+  if idx < 0 || idx >= comp-count {
+    return
+  }
+  let base = comp-win-base(idx)
+  let wx = load32(base + 4)
+  let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let wh = load32(base + 16)
+  comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
+  return
+}
+
 // --- window management ------------------------------------------------------
 
 // Initialize the compositor.
@@ -541,7 +683,7 @@ fn comp-win-create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
   store64(base + 32, 0)
   store64(base + 40, COMP-ROLE-TEXT)
   comp-count = comp-count + 1
-  comp-focused = idx
+  comp-win-focus(idx)
   return idx
 }
 
@@ -607,6 +749,12 @@ fn comp-win-close(idx: Int) -> void {
   if idx < 0 || idx >= comp-count {
     return
   }
+  // Capture the removed window's rect before shifting.
+  let rem-x = load32(comp-win-base(idx) + 4)
+  let rem-y = load32(comp-win-base(idx) + 8)
+  let rem-w = load32(comp-win-base(idx) + 12)
+  let rem-h = load32(comp-win-base(idx) + 16)
+  let was-focused = comp-focused == idx
   // Shift remaining windows down
   let i = idx
   while i < comp-count - 1 {
@@ -625,8 +773,11 @@ fn comp-win-close(idx: Int) -> void {
   if comp-focused >= comp-count {
     comp-focused = comp-count - 1
   }
-  // Mark full redraw (window removed)
-  comp-full-redraw = 1
+  // Damage the vacated area; the newly-focused window's title color too.
+  comp-dmg-add(rem-x, rem-y, rem-x + rem-w, rem-y + rem-h + COMP-TITLE-BAR-H)
+  if was-focused != 0 && comp-focused >= 0 {
+    comp-win-damage(comp-focused)
+  }
   return
 }
 
@@ -638,7 +789,7 @@ fn comp-win-minimize(idx: Int) -> void {
   let base = comp-win-base(idx)
   let flags = load32(base + 20)
   store32(base + 20, (flags | COMP-WIN-MINIMIZED | COMP-WIN-DIRTY) & -2)
-  comp-full-redraw = 1
+  comp-win-damage(idx)
   return
 }
 
@@ -651,12 +802,19 @@ fn comp-win-restore(idx: Int) -> void {
   let flags = load32(base + 20)
   store32(base + 20, (flags & -9) | COMP-WIN-VISIBLE | COMP-WIN-DIRTY)
   comp-win-focus(idx)
-  comp-full-redraw = 1
+  comp-win-damage(idx)
   return
 }
 
 // Focus a window (bring to front conceptually — we just update the focused flag).
 fn comp-win-focus(idx: Int) -> void {
+  let prev = comp-focused
+  if prev == idx && (load32(comp-win-base(idx) + 20) & COMP-WIN-FOCUSED) != 0 {
+    return
+  }
+  if prev >= 0 && prev < comp-count && prev != idx {
+    comp-win-damage(prev)
+  }
   let i = 0
   while i < comp-count {
     let base = comp-win-base(i)
@@ -669,6 +827,7 @@ fn comp-win-focus(idx: Int) -> void {
     i = i + 1
   }
   comp-focused = idx
+  comp-win-damage(idx)
   return
 }
 
@@ -1164,7 +1323,7 @@ fn comp-render-window(idx: Int) -> void {
   let wmin-bar-y = wbtn-y + wbtn-h / 2
   let wmi = 0
   while wmi < 14 {
-    store32(fb-addr + wmin-bar-y * fb-pitch + (wmin-x + 4 + wmi) * 4, FB-COLOR-WHITE)
+    fb-put-pixel(wmin-x + 4 + wmi, wmin-bar-y, FB-COLOR-WHITE)
     wmi = wmi + 1
   }
   let wbtn-x = wx + ww - 28
@@ -1173,8 +1332,8 @@ fn comp-render-window(idx: Int) -> void {
   let wcy = wbtn-y + wbtn-h / 2
   let wxi = -3
   while wxi <= 3 {
-    store32(fb-addr + (wcy + wxi) * fb-pitch + (wcx + wxi) * 4, FB-COLOR-WHITE)
-    store32(fb-addr + (wcy - wxi) * fb-pitch + (wcx + wxi) * 4, FB-COLOR-WHITE)
+    fb-put-pixel(wcx + wxi, wcy + wxi, FB-COLOR-WHITE)
+    fb-put-pixel(wcx + wxi, wcy - wxi, FB-COLOR-WHITE)
     wxi = wxi + 1
   }
 
@@ -1201,6 +1360,48 @@ var comp-prev-cy: Int = 0   // previous cursor y
 var comp-cur-back: Int = 0  // 24x24 pixel save buffer for cursor restore
 var comp-cur-drawn: Int = 0 // 1 if cursor was drawn last frame
 var comp-full-redraw: Int = 0 // 1 to force full redraw (window moved)
+var comp-bench: Int = 0    // 1 when frame benchmark is active (serial '`' toggles)
+var comp-bench-frames: Int = 0 // frames counted while bench active
+var comp-bench-last-report: Int = 0 // last reported frame count
+var comp-stress: Int = 0   // 1 when auto window-animation stress is active ('~')
+var comp-stress-dx: Int = 3 // per-frame window move delta x
+var comp-stress-dy: Int = 2 // per-frame window move delta y
+
+// Move the focused window a fixed delta each frame, bouncing within the
+// screen. Generates continuous old+new damage so the compositor is exercised
+// by a moving-window workload.
+fn comp-stress-step() -> void {
+  if comp-count <= 0 {
+    return
+  }
+  let idx = 0
+  if comp-focused >= 0 && comp-focused < comp-count {
+    idx = comp-focused
+  }
+  let base = comp-win-base(idx)
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let wh = load32(base + 16)
+  let dx = comp-stress-dx
+  let dy = comp-stress-dy
+  let nx = x + dx
+  let ny = y + dy
+  if nx + w > fb-width || nx < 0 {
+    comp-stress-dx = 0 - dx
+    nx = x + comp-stress-dx
+  }
+  let fy = wh + COMP-TITLE-BAR-H
+  if ny + fy > fb-height - COMP-TASKBAR-H || ny < COMP-TASKBAR-H {
+    comp-stress-dy = 0 - dy
+    ny = y + comp-stress-dy
+  }
+  comp-dmg-add(x, y, x + w, y + fy)
+  store32(base + 4, nx)
+  store32(base + 8, ny)
+  comp-dmg-add(nx, ny, nx + w, ny + fy)
+  return
+}
 
 // Save pixels behind cursor before drawing.
 fn comp-cur-save() -> void {
@@ -1255,83 +1456,150 @@ fn comp-cur-restore() -> void {
   return
 }
 
-// Blit entire backbuffer to real framebuffer (byte-by-byte memcpy for tear-free display).
-fn comp-blit(dst: Int) -> void {
-  let src = comp-backbuf
-  let n = fb-size / 8  // copy as 64-bit qwords
-  let bi = 0
-  while bi < n {
-    store64(dst + bi * 8, load64(src + bi * 8))
-    bi = bi + 1
+// Restore pixels behind the old cursor, skipping any area that was just
+// recomposed (dx0,dy0)-(dx1,dy1): that region was already overwritten by the
+// damage blit with fresh composition, so writing the stale saved pixels back
+// would corrupt it.
+fn comp-cur-restore-except(dx0: Int, dy0: Int, dx1: Int, dy1: Int) -> void {
+  if comp-cur-drawn == 0 || comp-cur-back == 0 {
+    return
   }
+  let x = comp-prev-cx
+  let y = comp-prev-cy
+  let j = 0
+  while j < 24 {
+    let py = y + j
+    if py >= 0 && py < fb-height {
+      let i = 0
+      while i < 24 {
+        let px = x + i
+        if px >= 0 && px < fb-width {
+          if px >= dx0 && px < dx1 && py >= dy0 && py < dy1 {
+            i = i + 1
+            continue
+          }
+          let pix = load32(comp-cur-back + j * 24 * 4 + i * 4)
+          store32(fb-addr + py * fb-pitch + px * 4, pix)
+        }
+        i = i + 1
+      }
+    }
+    j = j + 1
+  }
+  return
 }
 
-// Render the desktop with double-buffering + cursor-only fast path.
-fn comp-render() -> void {
-  // Check if any window needs to be redrawn.
-  let any-dirty = 0
-  let di = 0
-  while di < comp-count {
-    if (load32(comp-win-base(di) + 20) & (COMP-WIN-DIRTY | COMP-WIN-MINIMIZED)) == COMP-WIN-DIRTY {
-      any-dirty = 1
-      di = comp-count
+fn comp-rect-intersects(ax0: Int, ay0: Int, ax1: Int, ay1: Int, bx0: Int, by0: Int, bx1: Int, by1: Int) -> Int {
+  if ax0 < bx1 && ax1 > bx0 && ay0 < by1 && ay1 > by0 {
+    return 1
+  }
+  return 0
+}
+
+// Blit the damage region of the backbuffer to the real framebuffer.
+fn comp-blit-region(dst: Int, x0: Int, y0: Int, x1: Int, y1: Int) -> void {
+  let src = comp-backbuf
+  let py = y0
+  while py < y1 {
+    let row-src = src + py * fb-pitch + x0 * 4
+    let row-dst = dst + py * fb-pitch + x0 * 4
+    let n = (x1 - x0) * 4
+    let q = n / 8
+    let bi = 0
+    while bi < q {
+      store64(row-dst + bi * 8, load64(row-src + bi * 8))
+      bi = bi + 1
     }
-    di = di + 1
+    let rem = n - q * 8
+    let ri = 0
+    while ri < rem {
+      store8(row-dst + q * 8 + ri, load8(row-src + q * 8 + ri))
+      ri = ri + 1
+    }
+    py = py + 1
+  }
+  return
+}
+
+// Update the cursor after a damage blit. The cursor lives on the real
+// framebuffer only (never the backbuffer), so a recompose+blit may have wiped
+// it. Re-save behind the cursor and redraw wherever the old cursor overlapped
+// the recomposed region or the pointer moved.
+fn comp-cursor-after-damage() -> void {
+  let cur-x = mouse-x - 2
+  let cur-y = mouse-y - 2
+  let moved = cur-x != comp-prev-cx || cur-y != comp-prev-cy
+  let wiped = comp-rect-intersects(comp-prev-cx, comp-prev-cy, comp-prev-cx + 24, comp-prev-cy + 24, comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
+  if comp-cur-drawn != 0 {
+    if wiped == 0 {
+      // Old cursor still visible on the real fb: erase the untouched parts.
+      comp-cur-restore-except(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
+    }
+  }
+  comp-cur-save()
+  comp-render-cursor()
+  comp-cur-drawn = 1
+  return
+}
+
+// Render the desktop: recompose only the pending damage rect into the
+// backbuffer and blit just that region, then reconcile the cursor on the real
+// framebuffer. With no damage, only the cursor is refreshed.
+fn comp-render() -> void {
+  if comp-full-redraw != 0 || comp-bg-drawn == 0 {
+    comp-dmg-full()
+    comp-bg-drawn = 1
+    comp-full-redraw = 0
   }
 
-  if any-dirty != 0 || comp-full-redraw != 0 || comp-bg-drawn == 0 {
-    // Full render to backbuffer + blit
+  if comp-dmg-valid != 0 {
     let saved-addr = fb-addr
     if comp-backbuf != 0 {
       fb-addr = comp-backbuf
     }
-    if comp-bg-drawn == 0 || comp-full-redraw != 0 {
-      comp-render-background()
-      comp-bg-drawn = 1
-      comp-full-redraw = 0
-      let k = 0
-      while k < comp-count {
-        store32(comp-win-base(k) + 20, load32(comp-win-base(k) + 20) | COMP-WIN-DIRTY)
-        k = k + 1
-      }
-      comp-cur-drawn = 0
-    }
-    if comp-cur-drawn != 0 {
-      comp-cur-restore()
-    }
+    comp-render-dx = 0
+    comp-render-dy = 0
+    comp-clip-set(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
+
+    // Background within damage only.
+    fb-fill-rect(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1 - comp-dmg-x0, comp-dmg-y1 - comp-dmg-y0, COMP-COLOR-DESKTOP)
+
+    // Recompose windows intersecting the damage rect, bottom-up.
     let i = 0
     while i < comp-count {
-      if i != comp-focused {
-        let fl = load32(comp-win-base(i) + 20)
-        if (fl & COMP-WIN-DIRTY) != 0 {
-          comp-render-window(i)
-        }
+      if comp-win-intersects(i, comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1) != 0 {
+        comp-render-window(i)
       }
       i = i + 1
     }
-    if comp-focused >= 0 && comp-focused < comp-count {
-      let fl = load32(comp-win-base(comp-focused) + 20)
-      if (fl & COMP-WIN-DIRTY) != 0 {
-        comp-render-window(comp-focused)
-      }
+
+    // Top/task bars when the damage touches them.
+    if comp-dmg-y0 < COMP-TASKBAR-H {
+      comp-render-topbar()
     }
-    comp-render-topbar()
-    comp-render-taskbar()
-    comp-cur-save()
-    comp-render-cursor()
-    comp-cur-drawn = 1
-    // Blit backbuffer to real framebuffer
+    if comp-dmg-y1 > fb-height - COMP-TASKBAR-H {
+      comp-render-taskbar()
+    }
+
+    comp-clip-clear()
+
+    // Blit only the damaged region.
     if comp-backbuf != 0 {
-      comp-blit(saved-addr)
+      comp-blit-region(saved-addr, comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
       fb-addr = saved-addr
     }
-  } else if comp-cur-drawn != 0 {
-    // Fast path: no changes, just update cursor on real framebuffer
+
+    comp-cursor-after-damage()
+    comp-dmg-clear()
+    return
+  }
+
+  if comp-cur-drawn != 0 {
+    // No changes: just update cursor on real framebuffer
     comp-cur-restore()
     comp-cur-save()
     comp-render-cursor()
   } else {
-    // First frame with no windows: init cursor
     comp-cur-save()
     comp-render-cursor()
     comp-cur-drawn = 1
@@ -1346,7 +1614,7 @@ fn comp-render-taskbar() -> void {
   // Separator line at top of taskbar
   let tx2 = 0
   while tx2 < fb-width {
-    store32(fb-addr + bar-y * fb-pitch + tx2 * 4, COMP-COLOR-PANEL-LINE)
+    fb-put-pixel(tx2, bar-y, COMP-COLOR-PANEL-LINE)
     tx2 = tx2 + 1
   }
   comp-render-taskbar-dot()
@@ -1357,7 +1625,7 @@ fn comp-render-topbar() -> void {
   fb-fill-rect(0, 0, fb-width, COMP-TASKBAR-H, COMP-COLOR-PANEL)
   let tx2 = 0
   while tx2 < fb-width {
-    store32(fb-addr + (COMP-TASKBAR-H - 1) * fb-pitch + tx2 * 4, COMP-COLOR-PANEL-LINE)
+    fb-put-pixel(tx2, COMP-TASKBAR-H - 1, COMP-COLOR-PANEL-LINE)
     tx2 = tx2 + 1
   }
   let ty = (COMP-TASKBAR-H - fb-font-scale * 8) / 2
@@ -1462,6 +1730,10 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
   let new-y = my - comp-drag-off-y
   let wx = load32(base + 4)
   let wy = load32(base + 8)
+  let ww = load32(base + 12)
+  let wh = load32(base + 16)
+  // Damage the old frame rect before changing it.
+  comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
   if comp-drag-mode == 1 {
     // Move mode
     if new-x < 0 {
@@ -1487,10 +1759,14 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
     store32(base + 12, new-w)
     store32(base + 16, new-h)
   }
-  // Mark dirty and trigger full redraw
+  // Damage the new frame rect too (old + new union covers the whole path).
+  wx = load32(base + 4)
+  wy = load32(base + 8)
+  ww = load32(base + 12)
+  wh = load32(base + 16)
+  comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
   let flags = load32(base + 20)
   store32(base + 20, flags | COMP-WIN-DIRTY)
-  comp-full-redraw = 1
   return
 }
 
@@ -1531,38 +1807,15 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
     }
   }
   if comp-focused >= 0 {
-    let base = comp-win-base(comp-focused)
-    let flags = load32(base + 20)
-    store32(base + 20, flags | COMP-WIN-DIRTY)
+    comp-win-damage(comp-focused)
   }
-  let ki = 0
-  while ki < comp-count {
-    let kbase = comp-win-base(ki)
-    let kflags = load32(kbase + 20)
-    store32(kbase + 20, kflags | COMP-WIN-DIRTY)
-    ki = ki + 1
-  }
-  comp-full-redraw = 1
   return 0
 }
 
 // --- compositor main loop ---------------------------------------------------
 
-// Run the compositor. This is a blocking loop that renders the desktop and
-// handles input until the user presses Escape. The serial console is still
-// available for debugging, but the main interaction is via the framebuffer.
-fn comp-run(port: Int) -> void {
-  if fb-ready == 0 {
-    serial-write-cstr(port, "  compositor: framebuffer not ready")
-    serial-nl(port)
-    return
-  }
-  serial-write-cstr(port, "space: compositor running (press ESC to exit)")
-  serial-nl(port)
-
-  comp-bg-drawn = 0  // force initial background render
-
-  // Create default windows with a Crepuscularity-inspired workspace layout
+// Create the default desktop windows (shared by interactive and bench runs).
+fn comp-create-default-windows() -> void {
   let top-y = COMP-TASKBAR-H + 20
   let usable-h = fb-height - COMP-TASKBAR-H * 2 - 40
   let left-w = (fb-width - 64) / 2
@@ -1580,6 +1833,23 @@ fn comp-run(port: Int) -> void {
   comp-win-set-role(win-term1, COMP-ROLE-TERMINAL)
   comp-win-set-content(win-term1, 1)
   comp-win-focus(win-term0)
+  return
+}
+
+// Run the compositor. This is a blocking loop that renders the desktop and
+// handles input until the user presses Escape. The serial console is still
+// available for debugging, but the main interaction is via the framebuffer.
+fn comp-run(port: Int) -> void {
+  if fb-ready == 0 {
+    serial-write-cstr(port, "  compositor: framebuffer not ready")
+    serial-nl(port)
+    return
+  }
+  serial-write-cstr(port, "space: compositor running (press ESC to exit)")
+  serial-nl(port)
+
+  comp-bg-drawn = 0  // force initial background render
+  comp-create-default-windows()
 
   comp-running = 1
   let prev-left = 0
@@ -1605,7 +1875,34 @@ fn comp-run(port: Int) -> void {
     }
     if serial-has-byte(com1()) != 0 {
       let key = inb(com1())
-      if comp-handle-key(port, key) != 0 {
+      if key == 96 {
+        // '`' toggles the frame benchmark; prints total frames when stopped.
+        if comp-bench == 0 {
+          comp-bench = 1
+          comp-bench-frames = 0
+          comp-bench-last-report = 0
+          serial-write-cstr(port, "space: frame bench on")
+          serial-nl(port)
+        } else {
+          comp-bench = 0
+          serial-write-cstr(port, "space: frame bench total ")
+          serial-write-dec-wide(port, comp-bench-frames)
+          serial-nl(port)
+        }
+      } else if key == 126 {
+        // '~' toggles the auto window-animation stress (bench should be on).
+        if comp-stress == 0 {
+          comp-stress = 1
+          comp-stress-dx = 3
+          comp-stress-dy = 2
+          serial-write-cstr(port, "space: stress on")
+          serial-nl(port)
+        } else {
+          comp-stress = 0
+          serial-write-cstr(port, "space: stress off")
+          serial-nl(port)
+        }
+      } else if comp-handle-key(port, key) != 0 {
         comp-running = 0
       }
     }
@@ -1627,10 +1924,29 @@ fn comp-run(port: Int) -> void {
       // Mouse released
       comp-drag-mode = -1
     }
+    if cur-left != prev-left {
+      // Taskbar activity dot reflects the button state.
+      let bar-y2 = fb-height - COMP-TASKBAR-H
+      comp-dmg-add(fb-width - 30, bar-y2 + 12, fb-width - 20, bar-y2 + 22)
+    }
     prev-left = cur-left
+
+    // Deterministic moving-window stress (bench mode).
+    if comp-stress != 0 {
+      comp-stress-step()
+    }
 
     // Render the desktop
     comp-render()
+    if comp-bench != 0 {
+      comp-bench-frames = comp-bench-frames + 1
+      if comp-bench-frames - comp-bench-last-report >= 50 {
+        serial-write-cstr(port, "space: bench frames ")
+        serial-write-dec-wide(port, comp-bench-frames)
+        serial-nl(port)
+        comp-bench-last-report = comp-bench-frames
+      }
+    }
 
     // ponytail: pause briefly to avoid burning CPU. sti+pause yields to QEMU
     // event loop between frames so monitor sendkey commands get processed.
@@ -1640,6 +1956,48 @@ fn comp-run(port: Int) -> void {
 
   serial-write-cstr(port, "space: compositor exited")
   serial-nl(port)
+  return
+}
+
+var comp-bench-limit: Int = 0 // frames to run for in self-contained bench mode
+
+// Self-contained moving-window benchmark: creates the default windows, enables
+// the frame counter and the auto window-animation stress, renders exactly
+// comp-bench-limit frames, then returns. The shell command times it via the PIT
+// tick counter. Deterministic — no external input required.
+fn comp-run-bench(port: Int) -> void {
+  if fb-ready == 0 {
+    serial-write-cstr(port, "space: bench framebuffer not ready")
+    serial-nl(port)
+    return
+  }
+  comp-bg-drawn = 0
+  comp-create-default-windows()
+  comp-bench = 1
+  comp-bench-frames = 0
+  comp-bench-last-report = 0
+  comp-stress = 1
+  comp-stress-dx = 3
+  comp-stress-dy = 2
+  comp-bench-limit = 100
+  comp-running = 1
+  comp-render()
+  while comp-running != 0 {
+    comp-stress-step()
+    comp-render()
+    comp-bench-frames = comp-bench-frames + 1
+    if comp-bench-frames >= comp-bench-limit {
+      serial-write-cstr(port, "space: bench done ")
+      serial-write-dec-wide(port, comp-bench-frames)
+      serial-write-cstr(port, " frames")
+      serial-nl(port)
+      comp-running = 0
+    }
+    sti()
+    pause()
+  }
+  comp-bench = 0
+  comp-stress = 0
   return
 }
 
