@@ -23,7 +23,7 @@ SERIAL_IN="$SERIAL_BASE.in"
 SERIAL_OUT="$SERIAL_BASE.out"
 SERIAL_LOG="$BUILD_DIR/serial.log"
 MONITOR="$BUILD_DIR/qemu-monitor.sock"
-MIN_FPS="${MIN_FPS:-25}"
+MIN_FPS="${MIN_FPS:-30}"
 
 mkdir -p "$BUILD_DIR"
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG" "$MONITOR"

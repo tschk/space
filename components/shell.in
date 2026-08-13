@@ -1021,6 +1021,13 @@ fn shell(port: Int) -> void {
     } else if line-eq("dsp test") != 0 {
       let rc = dsp-selftest(port)
       serial-nl(port)
+    } else if line-eq("dsp demo") != 0 {
+      let rc = dsp-demo(port)
+      if rc == 0 {
+        serial-write-cstr(port, "  dsp: demo failed")
+        serial-nl(port)
+      }
+      serial-nl(port)
     } else if line-eq("fb") != 0 {
       fb-info(port)
     } else if line-eq("comp") != 0 {

@@ -2043,7 +2043,10 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
 // --- compositor main loop ---------------------------------------------------
 
 // Create the default desktop windows (shared by interactive and bench runs).
-fn comp-create-default-windows() -> void {
+// Translucency is enabled on the UTILITIES window only for the interactive
+// path so the moving-window bench measures the renderer (opaque damage-rect),
+// not the alpha blend cost.
+fn comp-create-default-windows(translucent-util: Int) -> void {
   let top-y = COMP-TASKBAR-H + 20
   let usable-h = fb-height - COMP-TASKBAR-H * 2 - 40
   let left-w = (fb-width - 64) / 2
@@ -2056,7 +2059,9 @@ fn comp-create-default-windows() -> void {
 
   let win-util = comp-win-create("UTILITIES", 48 + left-w + 16, top-y, right-w, right-h)
   comp-win-set-role(win-util, COMP-ROLE-UTILITIES)
-  comp-win-set-alpha(win-util, 180)
+  if translucent-util != 0 {
+    comp-win-set-alpha(win-util, 180)
+  }
 
   let win-term1 = comp-win-create("TERMINAL 2", 48 + left-w + 16, top-y + right-h + 16, right-w, right-h)
   comp-win-set-role(win-term1, COMP-ROLE-TERMINAL)
@@ -2078,7 +2083,7 @@ fn comp-run(port: Int) -> void {
   serial-nl(port)
 
   comp-bg-drawn = 0  // force initial background render
-  comp-create-default-windows()
+  comp-create-default-windows(1)
 
   comp-running = 1
   let prev-left = 0
@@ -2201,7 +2206,7 @@ fn comp-run-bench(port: Int) -> void {
     return
   }
   comp-bg-drawn = 0
-  comp-create-default-windows()
+  comp-create-default-windows(0)
   comp-bench = 1
   comp-bench-frames = 0
   comp-bench-last-report = 0
@@ -2243,6 +2248,7 @@ const DSP-MAX-POOLS = 8
 var dsp-surfaces: Int = 0
 var dsp-surface-count: Int = 0
 var dsp-pools: Int = 0
+var dsp-pool-sizes: Int = 0
 var dsp-mouse-x: Int = 0
 var dsp-mouse-y: Int = 0
 var dsp-running: Int = 0
@@ -2255,9 +2261,11 @@ fn dsp-surface-size() -> Int { return 48 }
 fn dsp-init() -> void {
   dsp-surfaces = alloc(DSP-MAX-SURFACES * dsp-surface-size())
   dsp-pools = alloc(DSP-MAX-POOLS * 8)  // array of pool addresses
+  dsp-pool-sizes = alloc(DSP-MAX-POOLS * 8) // array of pool sizes (bytes)
   let i = 0
   while i < DSP-MAX-POOLS {
     store64(dsp-pools + i * 8, 0)
+    store64(dsp-pool-sizes + i * 8, 0)
     i = i + 1
   }
   dsp-surface-count = 0
@@ -2320,6 +2328,10 @@ fn dsp-composite() -> void {
 
     if w > 0 && h > 0 && pool-id >= 0 && pool-id < DSP-MAX-POOLS {
       let pool = load64(dsp-pools + pool-id * 8)
+      // Defensive bounds: the surface's buffer slice must fit inside the pool.
+      let pool-size = load64(dsp-pool-sizes + pool-id * 8)
+      let need = buf-off + w * h * 4
+      if pool != 0 && need <= pool-size {
       let buf = pool + buf-off
       let src-pitch = w * 4
       let row = 0
@@ -2339,6 +2351,7 @@ fn dsp-composite() -> void {
           }
         }
         row = row + 1
+      }
       }
     }
     }
@@ -2406,17 +2419,17 @@ fn dsp-run(ch: Int, port: Int) -> void {
     dsp-mouse-x = mouse-x
     dsp-mouse-y = mouse-y
 
-    // Process pending 32-byte messages (non-blocking)
-    let msg = alloc(SPDP-MSG-SIZE)
+    // Process pending 32-byte messages (non-blocking). The message buffer is
+    // allocated once, outside the loop (was leaking 32 B per iteration).
     while chan-count(ch) > 0 {
-      store64(msg + 0, chan-recv(ch))
-      store64(msg + 8, chan-recv(ch))
-      store64(msg + 16, chan-recv(ch))
-      store64(msg + 24, chan-recv(ch))
-      let obj-id = load64(msg + 0)
-      let opcode = load64(msg + 8)
-      let arg0 = load64(msg + 16)
-      let arg1 = load64(msg + 24)
+      store64(dsp-msg + 0, chan-recv(ch))
+      store64(dsp-msg + 8, chan-recv(ch))
+      store64(dsp-msg + 16, chan-recv(ch))
+      store64(dsp-msg + 24, chan-recv(ch))
+      let obj-id = load64(dsp-msg + 0)
+      let opcode = load64(dsp-msg + 8)
+      let arg0 = load64(dsp-msg + 16)
+      let arg1 = load64(dsp-msg + 24)
       dsp-handle-msg(obj-id, opcode, arg0, arg1, port)
     }
 
@@ -2429,13 +2442,68 @@ fn dsp-run(ch: Int, port: Int) -> void {
   }
 }
 
+var dsp-msg: Int = 0
+
 fn dsp-shm-create-pool(pool-id: Int, size: Int) -> void {
   if pool-id < 0 || pool-id >= DSP-MAX-POOLS {
     return
   }
   let p = alloc(size)
   store64(dsp-pools + pool-id * 8, p)
+  store64(dsp-pool-sizes + pool-id * 8, size)
   return
+}
+
+// Self-contained surface-pipeline proof: creates a surface, fills a client
+// pool buffer with a red/green checker pattern, attaches and commits it, then
+// composites once. Exercises the SPDP attach/commit/composite path without a
+// blocking server loop. Gated by scripts/check-spdp-composite.sh.
+fn dsp-demo(port: Int) -> Int {
+  if fb-ready == 0 {
+    serial-write-cstr(port, "  dsp: framebuffer not ready")
+    serial-nl(port)
+    return 0
+  }
+  dsp-init()
+  let sid = dsp-create-surface()
+  if sid < 0 {
+    serial-write-cstr(port, "  dsp: no surface")
+    serial-nl(port)
+    return 0
+  }
+  // Client-owned pool buffer: 64x64 RGBA.
+  let pw = 64
+  let ph = 64
+  let pool-size = pw * ph * 4
+  dsp-shm-create-pool(0, pool-size)
+  let pool = load64(dsp-pools + 0)
+  if pool == 0 {
+    serial-write-cstr(port, "  dsp: no pool")
+    serial-nl(port)
+    return 0
+  }
+  // Red/green 8px checker pattern (client writes its surface memory).
+  let yy = 0
+  while yy < ph {
+    let xx = 0
+    while xx < pw {
+      let color = 0x00FF0000
+      if ((xx / 8) + (yy / 8)) % 2 != 0 {
+        color = 0x0000FF00
+      }
+      store32(pool + (yy * pw + xx) * 4, color)
+      xx = xx + 1
+    }
+    yy = yy + 1
+  }
+  // Attach buffer slice [pool 0, offset 0], place at (100,100), commit.
+  dsp-surface-attach(sid, (0 << 32) | 0)
+  dsp-surface-geometry(sid, (100 << 48) | (100 << 32) | (pw << 16) | ph)
+  dsp-surface-commit(sid)
+  dsp-composite()
+  serial-write-cstr(port, "  dsp: demo composited surface at 100,100")
+  serial-nl(port)
+  return 1
 }
 
 fn dsp-surface-attach(sid: Int, packed: Int) -> void {
