@@ -1,16 +1,17 @@
 // Space Display Protocol — Wayland-inspired compositor wire format.
 // Objects communicate over channels using a fixed-size message format:
-//   [obj_id(8)][opcode(8)][argc(8)][args...]
-// Each message is exactly 32 bytes (header + up to 3 x 8-byte args).
+//   [obj_id(8)][opcode(8)][arg0(8)][arg1(8)]
+// Each message is exactly 32 bytes (16-byte header + two 8-byte args).
 
 const SPDP-MSG-SIZE = 32
-const SPDP-HEADER-SIZE = 24  // obj_id + opcode + argc
+const SPDP-HEADER-SIZE = 16  // obj_id + opcode
 
 // Object IDs (well-known)
 const SPDP-OBJ-DISPLAY = 1    // global display object
 const SPDP-OBJ-COMPOSITOR = 2 // compositor interface
 const SPDP-OBJ-SHM = 3        // shared memory interface
 const SPDP-OBJ-SEAT = 4       // input seat
+const SPDP-OBJ-SURFACE = 5    // surface object
 
 // Display object opcodes (client → server)
 const SPDP-GET-REGISTRY = 0   // no args
@@ -22,8 +23,8 @@ const SPDP-REGISTRY-GLOBAL = 1  // arg0: obj_id, arg1: interface_addr
 
 // Compositor opcodes
 const SPDP-COMPOSITOR-CREATE-SURFACE = 0  // returns surface_id
-const SPDP-SURFACE-ATTACH = 1             // arg0: surface_id, arg1: buffer_id
-const SPDP-SURFACE-DAMAGE = 2             // arg0: surface_id, arg1: x/w packed
+const SPDP-SURFACE-ATTACH = 1             // arg0: surface_id, arg1: pool_id<<32 | offset
+const SPDP-SURFACE-DAMAGE = 2             // arg0: surface_id, arg1: x<<48|y<<32|w<<16|h
 const SPDP-SURFACE-COMMIT = 3             // arg0: surface_id
 const SPDP-SURFACE-DESTROY = 4            // arg0: surface_id
 
@@ -45,8 +46,8 @@ const SPDP-SEAT-KEYBOARD-KEY = 4   // arg0: time, arg1: key/state packed
 // Surface life cycle:
 //   1. Client sends COMPOSITOR_CREATE_SURFACE → receives surface_id
 //   2. Client creates an SHM pool via SHM_CREATE_POOL
-//   3. Client sends SURFACE_ATTACH(surface_id, buffer_id) to associate buffer
-//   4. Client sends SURFACE_DAMAGE(surface_id, x, y, w, h) to mark dirty region
+//   3. Client sends SURFACE_ATTACH(surface_id, pool_id<<32 | offset)
+//   4. Client sends SURFACE_DAMAGE(surface_id, x<<48|y<<32|w<<16|h) to mark dirty region
 //   5. Client sends SURFACE_COMMIT(surface_id) to present
 //   6. Compositor renders the surface, sends frame callback
 //
