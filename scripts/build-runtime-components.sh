@@ -51,40 +51,8 @@ NASM="${NASM:-nasm}"
   --base "$VOLUME_ENTRY" --out "$BUILD_DIR/volume.sci"
 
 echo "[3/3] Assembling combined boot image..."
-python3 - "$BUILD_DIR" "$DISPLAY_PHYS" "$INPUT_PHYS" "$VOLUME_PHYS" <<'PY'
-import sys, os
-bd, display_phys, input_phys, volume_phys = sys.argv[1], int(sys.argv[2], 0), int(sys.argv[3], 0), int(sys.argv[4], 0)
-kernel = open(os.path.join(bd, "kernel.bin"), "rb").read()
-display = open(os.path.join(bd, "display.sci"), "rb").read()
-input_ = open(os.path.join(bd, "input.sci"), "rb").read()
-volume = open(os.path.join(bd, "volume.sci"), "rb").read()
-
-out = bytearray(kernel)
-display_off = display_phys - 0x100000
-input_off = input_phys - 0x100000
-
-out += b"\x00" * (display_off - len(out))
-out += display
-
-if len(out) > input_off:
-    input_off = (len(out) + 4095) & -4096
-    print(f"warning: input component moved to file offset 0x{input_off:x}")
-out += b"\x00" * (input_off - len(out))
-out += input_
-
-volume_off = volume_phys - 0x100000
-if len(out) > volume_off:
-    raise SystemExit("volume SCI overlaps prior image")
-out += b"\x00" * (volume_off - len(out))
-out += volume
-
-out_path = os.path.join(bd, "combined.bin")
-open(out_path, "wb").write(out)
-print(f"  {out_path}: {len(out)} bytes")
-print(f"  display SCI at physical 0x{display_phys:x}")
-print(f"  input SCI at physical 0x{input_phys:x}")
-print(f"  volume SCI at physical 0x{volume_phys:x}")
-PY
+python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/combined.bin" \
+  "2:$BUILD_DIR/display.sci" "3:$BUILD_DIR/input.sci" "4:$BUILD_DIR/volume.sci"
 
 echo "Done. Boot with:"
 echo "  qemu-system-x86_64 -kernel $BUILD_DIR/combined.bin -m 512M -rtc base=utc -vga std -serial stdio -display none"

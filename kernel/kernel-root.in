@@ -31,6 +31,7 @@ import "../components/libc.in"
 import "../components/supervisor.in"
 import "../components/preempt.in"
 import "../components/sci-loader.in"
+import "../protocol/boot-image.in"
 // Process abstraction layer (domain + component + thread).
 import "../components/process.in"
 // Linux personality layer (POSIX syscall translation).
@@ -229,8 +230,9 @@ fn kernel-entry(mb-info: Int) -> Int {
   run-channels(port)
   run-preemptive(port)
 
-  if load64(0x180000) == SCI-MAGIC {
-    sci-load(port, 0x180000)
+  let boot-guest = boot-image-find(BOOT-IMAGE-GUEST)
+  if boot-guest != 0 {
+    sci-load(port, boot-guest)
   }
 
 
@@ -275,9 +277,9 @@ fn kernel-entry(mb-info: Int) -> Int {
     serial-nl(port)
   }
 
-  let volume-load-early = load64(0x220000)
-  if volume-load-early == SCI-MAGIC {
-    sci-volume-rpc(port, 0x220000)
+  let volume-load-early = boot-image-find(BOOT-IMAGE-VOLUME)
+  if volume-load-early != 0 {
+    sci-volume-rpc(port, volume-load-early)
   }
 
   fs-init()
@@ -378,14 +380,14 @@ fn kernel-entry(mb-info: Int) -> Int {
   // physical addresses). If present, they are started in isolated domains.
   preempt-start(port)
 
-  let display-load = load64(0x1a0000)
-  if display-load == SCI-MAGIC {
-    sci-load-runtime-component(port, 0x1a0000, "display", SCI-DISPLAY-GRANTS)
+  let display-load = boot-image-find(BOOT-IMAGE-DISPLAY)
+  if display-load != 0 {
+    sci-load-runtime-component(port, display-load, "display", SCI-DISPLAY-GRANTS)
   }
 
-  let input-load = load64(0x1e0000)
-  if input-load == SCI-MAGIC {
-    sci-load-runtime-component(port, 0x1e0000, "input", SCI-INPUT-GRANTS)
+  let input-load = boot-image-find(BOOT-IMAGE-INPUT)
+  if input-load != 0 {
+    sci-load-runtime-component(port, input-load, "input", SCI-INPUT-GRANTS)
   }
 
   // Let preemptive display/input print boot markers, then stop the timer

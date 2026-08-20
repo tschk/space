@@ -400,14 +400,7 @@ fn storage-init-controller() -> Int {
 }
 
 fn storage-validate-caps(cap-info: Int, required: Int) -> Int {
-  let cap-count = load64(cap-info + 0)
-  let cap-table = load64(cap-info + 8)
-  let granted = 0
-  let i = 0
-  while i < cap-count {
-    granted = granted | load64(cap-table + i * 16 + 8)
-    i = i + 1
-  }
+  let granted = load64(cap-info + 0)
   let missing = required & (-1 ^ granted)
   if missing != 0 {
     return -1

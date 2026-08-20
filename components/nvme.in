@@ -40,8 +40,8 @@ fn nvme-start-storage-component(port: Int) -> Int {
   }
 
   storage-cap-info = alloc(24)
-  store64(storage-cap-info + 0, cap-count)
-  store64(storage-cap-info + 8, cap-table-base)
+  store64(storage-cap-info + 0, cap-storage() | cap-memory() | cap-serial())
+  store64(storage-cap-info + 8, 0)
   store64(storage-cap-info + 16, storage-mailbox)
 
   let comp = component-register("storage", storage-entry, cap-storage() | cap-memory() | cap-serial())

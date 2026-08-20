@@ -101,20 +101,14 @@ if [ "$USE_SCI" = "1" ]; then
   "$OBJCOPY" --change-section-address ".text=$(printf 0x%x "$GUEST_BASE")" \
     -O binary "$BUILD_DIR/guest.o" "$BUILD_DIR/guest.bin"
 
-  python3 - "$BUILD_DIR" "$GUEST_LOAD" "$GUEST_BASE" "$SCI_MAGIC" "$GUEST_CAPS" <<'PY'
+  python3 - "$BUILD_DIR" "$GUEST_BASE" "$SCI_MAGIC" "$GUEST_CAPS" <<'PY'
 import sys, struct, os
-build, gload, gbase, magic, caps = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
-kernel = open(os.path.join(build, "kernel.bin"), "rb").read()
+build, gbase, magic, caps = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 guest  = open(os.path.join(build, "guest.bin"), "rb").read()
-img_base = 0x100000
-manifest_off = gload - img_base
-out = bytearray(kernel)
-out += b"\x00" * (manifest_off - len(out))
-out += struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest))
-out += guest
-open(os.path.join(build, "combined.bin"), "wb").write(out)
-print(f"  combined image: {len(out)} bytes, SCI manifest at 0x{gload:x}")
+out = struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest)) + guest
+open(os.path.join(build, "guest.sci"), "wb").write(out)
 PY
+  python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/combined.bin" "1:$BUILD_DIR/guest.sci"
   KERNEL_IMAGE="$BUILD_DIR/combined.bin"
 fi
 

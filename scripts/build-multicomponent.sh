@@ -62,21 +62,14 @@ if target != "x86_64-unknown-none":
 PY
 
 assemble_image() {
-  python3 - "$BUILD_DIR" "$GUEST_LOAD" "$GUEST_BASE" "$SCI_MAGIC" "$1" "$2" <<'PY'
+  python3 - "$BUILD_DIR" "$GUEST_BASE" "$SCI_MAGIC" "$1" "$2" <<'PY'
 import sys, struct, os
-build, gload, gbase, magic, caps, out_name = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
-kernel = open(os.path.join(build, "kernel.bin"), "rb").read()
+build, gbase, magic, caps, out_name = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
 guest  = open(os.path.join(build, "guest.bin"), "rb").read()
-img_base = 0x100000
-manifest_off = gload - img_base       # file offset of the manifest
-assert len(kernel) <= manifest_off, "kernel image overlaps the guest load address"
-out = bytearray(kernel)
-out += b"\x00" * (manifest_off - len(out))          # pad to the manifest offset
-out += struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest))  # 32-byte SCI manifest
-out += guest                                        # component code at gbase
-open(os.path.join(build, out_name), "wb").write(out)
-print(f"  {out_name}: {len(out)} bytes, manifest at 0x{gload:x}, guest at 0x{gbase:x}")
+out = struct.pack("<QQQQ", magic, caps, gbase, 32 + len(guest)) + guest
+open(os.path.join(build, out_name + ".sci"), "wb").write(out)
 PY
+  python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/$2" "1:$BUILD_DIR/$2.sci"
 }
 
 echo "[4/5] Assembling the combined image with the SCI manifest..."

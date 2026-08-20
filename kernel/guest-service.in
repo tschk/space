@@ -26,16 +26,8 @@ fn sci-validate-manifest(sci-ptr: Int, realm-cap-info: Int) -> Int {
   if magic != 0x5343490000000001 {
     return 0
   }
-  let cap-count = load64(realm-cap-info + 0)
-  let cap-table = load64(realm-cap-info + 8)
   let required = load64(sci-ptr + 8)
-  let granted = 0
-  let i = 0
-  while i < cap-count {
-    let rights = load64(cap-table + i * 16 + 8)
-    granted = granted | rights
-    i = i + 1
-  }
+  let granted = load64(realm-cap-info + 0)
   let missing = required & (-1 ^ granted)
   if missing != 0 {
     return 0

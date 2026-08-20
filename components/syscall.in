@@ -99,11 +99,11 @@ fn sys-chan-close(ch: Int) -> Int {
 }
 
 fn sys-cap-mint(target-obj: Int, rights: Int) -> Int {
-  return cap-mint(target-obj, rights)
+  return -1
 }
 
 fn sys-cap-revoke(idx: Int) -> Int {
-  return cap-revoke(idx)
+  return -1
 }
 
 fn sys-cap-check(idx: Int, rights: Int) -> Int {

@@ -41,34 +41,8 @@ echo "[2/3] Compiling kernel and user SCIs..."
   --base "$ECHO_ENTRY" --out "$BUILD_DIR/user-echo.sci"
 
 echo "[3/3] Assembling combined boot image..."
-python3 - "$BUILD_DIR" "$HELLO_PHYS" "$ECHO_PHYS" <<'PY'
-import sys, os, struct
-bd, hello_phys, echo_phys = sys.argv[1], int(sys.argv[2], 0), int(sys.argv[3], 0)
-kernel = open(os.path.join(bd, "kernel.bin"), "rb").read()
-hello = open(os.path.join(bd, "user-hello.sci"), "rb").read()
-echo = open(os.path.join(bd, "user-echo.sci"), "rb").read()
-for name, blob in (("user-hello.sci", hello), ("user-echo.sci", echo)):
-    if len(blob) < 32:
-        raise SystemExit(f"{name} too small")
-    magic = struct.unpack_from("<Q", blob, 0)[0]
-    if magic != 0x5343490000000001:
-        raise SystemExit(f"bad SCI magic in {name}: 0x{magic:x}")
-out = bytearray(kernel)
-for phys, blob, label in (
-    (hello_phys, hello, "user-hello"),
-    (echo_phys, echo, "user-echo"),
-):
-    off = phys - 0x100000
-    if len(out) > off:
-        raise SystemExit(f"overlap before {label} slot (len={len(out)} off={off})")
-    out += b"\x00" * (off - len(out))
-    out += blob
-    print(f"  {label} SCI at physical 0x{phys:x} ({len(blob)} bytes)")
-out_path = os.path.join(bd, "combined.bin")
-open(out_path, "wb").write(out)
-print(f"  {out_path}: {len(out)} bytes")
-print(f"  shell: hello / uecho")
-PY
+python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/combined.bin" \
+  "5:$BUILD_DIR/user-hello.sci" "6:$BUILD_DIR/user-echo.sci"
 
 echo "Done. Boot with:"
 echo "  qemu-system-x86_64 -kernel $BUILD_DIR/combined.bin -m 256M -nographic -no-reboot -serial stdio"

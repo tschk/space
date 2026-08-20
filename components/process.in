@@ -326,8 +326,8 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   obj-link(root-realm, component)
 
   let cap-info = alloc(16)
-  store64(cap-info + 0, cap-count)
-  store64(cap-info + 8, cap-table-base)
+  store64(cap-info + 0, required)
+  store64(cap-info + 8, 0)
 
   domain-switch(domain)
   let status = invoke1(entry, cap-info)

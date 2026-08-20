@@ -34,8 +34,8 @@ fn linux-init() -> void {
     i = i + 1
   }
   posix-cap-info = alloc(24)
-  store64(posix-cap-info + 0, cap-count)
-  store64(posix-cap-info + 8, cap-table-base)
+  store64(posix-cap-info + 0, cap-serial() | cap-memory())
+  store64(posix-cap-info + 8, 0)
   store64(posix-cap-info + 16, posix-shared-page)
   component-register("posix", posix-entry, cap-serial() | cap-memory())
   domain-switch(posix-domain)

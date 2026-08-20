@@ -177,6 +177,9 @@ long_mode:
     mov rbx, 0x4080
     mov rax, comp_invoke_stub
     mov [rbx], rax
+    mov rbx, 0x40D0
+    mov rax, [boot_image_table]
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -423,4 +426,6 @@ gdt_desc:
     dw gdt_end - gdt - 1
     dd gdt
 
+times 0xF00 - ($ - $$) db 0
+boot_image_table: dq 0
 times 0x1000 - ($ - $$) db 0        ; pad to TRAMPOLINE_RESERVE
