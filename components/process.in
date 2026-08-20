@@ -318,7 +318,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   let image-pages = (image-size + 4095) / 4096
   let i = 0
   while i < image-pages {
-    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
+    domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
   }
 

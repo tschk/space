@@ -85,7 +85,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
   while i < image-pages {
-    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
+    domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: image mapped")
@@ -96,7 +96,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   let j = 0
   while j < heap-pages {
     let p = frame-alloc()
-    domain-map(domain, COMP-HEAP-VIRT + j * 4096, p, 0x7)
+    domain-map-user-data(domain, COMP-HEAP-VIRT + j * 4096, p)
     j = j + 1
   }
   serial-write-cstr(port, "  SCI: heap mapped")
@@ -193,7 +193,7 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
-    domain-map(domain, entry - 32 + i * 4096, load-addr + i * 4096, 0x7)
+    domain-map-user-code(domain, entry - 32 + i * 4096, load-addr + i * 4096)
     i = i + 1
   }
   let heap = COMP-HEAP-VIRT
@@ -202,7 +202,7 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   while j < COMP-HEAP-SIZE / 4096 {
     let frame = frame-alloc()
     store64(heap-frames + j * 8, frame)
-    domain-map(domain, heap + j * 4096, frame, 0x7)
+    domain-map-user-data(domain, heap + j * 4096, frame)
     j = j + 1
   }
   let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
@@ -546,7 +546,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   let image-pages = (image-size + 4095) / 4096
   let i = 0
   while i < image-pages {
-    domain-map(domain, virt-load + i * 4096, load-addr + i * 4096, 0x7)
+    domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: domain 0x")

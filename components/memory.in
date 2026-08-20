@@ -59,14 +59,21 @@ fn discover-memory(mb: Int) -> void {
 // helpers allocate fresh 4 KiB-aligned frames and install new 4 KiB mappings by
 // walking and growing the page tables, the foundation for realm memory domains.
 var free-list: Int = 0  // head of LIFO free list, 0 = empty
+const PAGE-ADDRESS-MASK = 0x000FFFFFFFFFF000
+const PAGE-NX = 1 << 63
 
 fn frame-alloc() -> Int {
-  let p = (heap-next + 4095) & -4096
-  let next = p + 4096
-  if next > heap-end {
-    panic("frame heap exhausted")
+  let p = free-list
+  if p != 0 {
+    free-list = load64(p)
+  } else {
+    p = (heap-next + 4095) & -4096
+    let next = p + 4096
+    if next > heap-end {
+      panic("frame heap exhausted")
+    }
+    heap-next = next
   }
-  heap-next = next
   let i = 0
   while i < 512 {
     store64(p + i * 8, 0)
@@ -88,7 +95,7 @@ fn frame-free(p: Int) -> void {
 // Walk x86-64 page tables: PML4 -> PDPT -> PD -> PT.
 // Creates intermediate tables and splits huge pages as needed.
 // Returns the address of the PTE slot for the given virtual address.
-fn pt-ensure-pte(pml4: Int, virt: Int) -> Int {
+fn pt-ensure-pte-flags(pml4: Int, virt: Int, flags: Int) -> Int {
   let i4 = (virt >> 39) & 0x1FF
   let i3 = (virt >> 30) & 0x1FF
   let i2 = (virt >> 21) & 0x1FF
@@ -96,53 +103,66 @@ fn pt-ensure-pte(pml4: Int, virt: Int) -> Int {
   let e4 = load64(pml4 + i4 * 8)
   if (e4 & 1) == 0 {
     let np = frame-alloc()
-    store64(pml4 + i4 * 8, np | 3)
-    e4 = np | 3
+    store64(pml4 + i4 * 8, np | 3 | (flags & 4))
+    e4 = np | 3 | (flags & 4)
+  } else if (flags & 4) != 0 && (e4 & 4) == 0 {
+    e4 = e4 | 4
+    store64(pml4 + i4 * 8, e4)
   }
-  let pdpt = e4 & -4096
+  let pdpt = e4 & PAGE-ADDRESS-MASK
   let e3 = load64(pdpt + i3 * 8)
   if (e3 & 1) == 0 {
     let np = frame-alloc()
-    store64(pdpt + i3 * 8, np | 3)
-    e3 = np | 3
+    store64(pdpt + i3 * 8, np | 3 | (flags & 4))
+    e3 = np | 3 | (flags & 4)
   }
   if (e3 & 0x80) != 0 {
     let np = frame-alloc()
     let base = e3 & -0x40000000
-    store64(pdpt + i3 * 8, np | 3)
-    e3 = np | 3
-    let pt-new = np & -4096
+    store64(pdpt + i3 * 8, np | 3 | (flags & 4))
+    e3 = np | 3 | (flags & 4)
+    let pt-new = np & PAGE-ADDRESS-MASK
     let j = 0
     while j < 512 {
       store64(pt-new + j * 8, (base + j * 0x200000) | 0x83)
       j = j + 1
     }
+  } else if (flags & 4) != 0 && (e3 & 4) == 0 {
+    e3 = e3 | 4
+    store64(pdpt + i3 * 8, e3)
   }
-  let pd = e3 & -4096
+  let pd = e3 & PAGE-ADDRESS-MASK
   let e2 = load64(pd + i2 * 8)
   if (e2 & 1) == 0 {
     let np = frame-alloc()
-    store64(pd + i2 * 8, np | 3)
-    e2 = np | 3
+    store64(pd + i2 * 8, np | 3 | (flags & 4))
+    e2 = np | 3 | (flags & 4)
   }
   if (e2 & 0x80) != 0 {
     let np = frame-alloc()
     let base = e2 & -0x200000
-    store64(pd + i2 * 8, np | 3)
-    e2 = np | 3
-    let pt-new = np & -4096
+    store64(pd + i2 * 8, np | 3 | (flags & 4))
+    e2 = np | 3 | (flags & 4)
+    let pt-new = np & PAGE-ADDRESS-MASK
     let j = 0
     while j < 512 {
       store64(pt-new + j * 8, (base + j * 0x1000) | 0x23)
       j = j + 1
     }
+  } else if (flags & 4) != 0 && (e2 & 4) == 0 {
+    e2 = e2 | 4
+    store64(pd + i2 * 8, e2)
   }
-  return (e2 & -4096) + i1 * 8
+  return (e2 & PAGE-ADDRESS-MASK) + i1 * 8
+}
+
+fn pt-ensure-pte(pml4: Int, virt: Int) -> Int {
+  return pt-ensure-pte-flags(pml4, virt, 0)
 }
 
 fn map-page(virt: Int, phys: Int, flags: Int) -> void {
   let pml4 = invoke1(load64(0x4058), 0)
-  let pte = pt-ensure-pte(pml4, virt)
+  let pte = pt-ensure-pte-flags(pml4, virt, flags)
   store64(pte, phys | flags)
   invlpg(virt)
   return

@@ -112,6 +112,7 @@ entry32:
     mov ecx, 0xC0000080              ; IA32_EFER
     rdmsr
     or eax, 1 << 8                    ; EFER.LME
+    or eax, 1 << 11
     wrmsr
 
     mov eax, cr0

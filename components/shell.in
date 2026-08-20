@@ -1030,6 +1030,31 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  chan-new(4) failed")
         serial-nl(port)
       }
+      let reused-frame = frame-alloc()
+      frame-free(reused-frame)
+      let reused-frame-next = frame-alloc()
+      if reused-frame-next != reused-frame || load64(reused-frame-next) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  freed frame not reused and cleared")
+        serial-nl(port)
+      }
+      let permission-domain = domain-create()
+      let permission-code = frame-alloc()
+      let permission-data = frame-alloc()
+      domain-map-user-code(permission-domain, 0x40000000, permission-code)
+      domain-map-user-data(permission-domain, 0x80000000, permission-data)
+      let code-flags = domain-page-flags(permission-domain, 0x40000000)
+      let data-flags = domain-page-flags(permission-domain, 0x80000000)
+      if (code-flags & 4) == 0 || (code-flags & 2) != 0 || (code-flags & PAGE-NX) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  component code mapping is not user RX")
+        serial-nl(port)
+      }
+      if (data-flags & 7) != 7 || data-flags >= 0 {
+        ok = 0
+        serial-write-cstr(port, "  component data mapping is not user RW NX")
+        serial-nl(port)
+      }
       let w = sys-write(1, 0, 10)
       if w != -1 {
         ok = 0

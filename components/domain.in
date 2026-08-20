@@ -98,9 +98,48 @@ fn domain-map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
   if domain >= domain-count { return }
   let pml4 = load64(domain-table + domain * 24 + 0)
   if pml4 == 0 { return }
-  let pte = pt-ensure-pte(pml4, virt)
+  let pte = pt-ensure-pte-flags(pml4, virt, flags)
   store64(pte, phys | flags | 1)
   return
+}
+
+fn domain-map-user-code(domain: Int, virt: Int, phys: Int) -> void {
+  domain-map(domain, virt, phys, 0x5)
+  return
+}
+
+fn domain-map-user-data(domain: Int, virt: Int, phys: Int) -> void {
+  domain-map(domain, virt, phys, PAGE-NX | 0x7)
+  return
+}
+
+fn domain-map-user-readonly(domain: Int, virt: Int, phys: Int) -> void {
+  domain-map(domain, virt, phys, PAGE-NX | 0x5)
+  return
+}
+
+fn domain-page-flags(domain: Int, virt: Int) -> Int {
+  if domain < 0 || domain >= domain-count { return 0 }
+  let pml4 = load64(domain-table + domain * 24 + 0)
+  if pml4 == 0 { return 0 }
+  let e4 = load64(pml4 + ((virt >> 39) & 0x1FF) * 8)
+  if (e4 & 1) == 0 { return 0 }
+  let pdpt = e4 & PAGE-ADDRESS-MASK
+  let e3 = load64(pdpt + ((virt >> 30) & 0x1FF) * 8)
+  if (e3 & 1) == 0 { return 0 }
+  if (e3 & 0x80) != 0 { return e3 & 0xFFF }
+  let pd = e3 & PAGE-ADDRESS-MASK
+  let e2 = load64(pd + ((virt >> 21) & 0x1FF) * 8)
+  if (e2 & 1) == 0 { return 0 }
+  if (e2 & 0x80) != 0 { return e2 & 0xFFF }
+  let pt = e2 & PAGE-ADDRESS-MASK
+  let e1 = load64(pt + ((virt >> 12) & 0x1FF) * 8)
+  if (e1 & 1) == 0 { return 0 }
+  let effective = (e1 & 0xFFF) | (e1 & PAGE-NX)
+  if (e4 & 4) == 0 || (e3 & 4) == 0 || (e2 & 4) == 0 {
+    effective = effective & (-1 ^ 4)
+  }
+  return effective
 }
 
 fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -> Int {
@@ -111,7 +150,7 @@ fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -
     store64(page + i * 8, 0)
     i = i + 1
   }
-  domain-map(dom-a, virt-a, page, 0x3)
-  domain-map(dom-b, virt-b, page, 0x3)
+  domain-map-user-data(dom-a, virt-a, page)
+  domain-map-user-data(dom-b, virt-b, page)
   return page
 }
