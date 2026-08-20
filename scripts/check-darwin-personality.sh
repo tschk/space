@@ -60,5 +60,15 @@ if ! grep -qE 'darwin: (pipe\(\)|mmap\(|socket\(|stat\()' "$SERIAL_LOG"; then
   echo "FAIL: missing pipe/mmap/socket/stat serial line" >&2
   exit 1
 fi
+# errno slot must be populated end-to-end, not left at zero.
+grep -qE 'darwin: errno after open\(missing\) = 2 \(ENOENT\)' "$SERIAL_LOG"
+grep -qE 'darwin: errno after read\(bad fd\) = 9 \(EBADF\)' "$SERIAL_LOG"
+grep -qE 'darwin: errno after kill\(invalid\) = 3 \(ESRCH\)' "$SERIAL_LOG"
+grep -qE 'darwin: errno after unknown syscall = 38 \(ENOSYS\)' "$SERIAL_LOG"
+if grep -qF "darwin: errno consistency FAILED" "$SERIAL_LOG"; then
+  echo "FAIL: darwin errno consistency check failed" >&2
+  exit 1
+fi
+grep -qF "darwin: errno consistency OK" "$SERIAL_LOG"
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat)"
+echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat + errno map)"

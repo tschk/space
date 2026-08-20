@@ -12,6 +12,7 @@ package space.kernel
 //   mkdir=136, rmdir=137, stat=188, fstat=189, getcwd=192, mmap=197, lseek=199, munmap=73
 // Open flags: BSD/Darwin O_CREAT=0x200, O_TRUNC=0x400 (mapped onto VFS-O-*).
 // Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
+// errno: negative dispatch results land in darwin-errno-last; read via 0x2000 (__error()).
 // Pipe lite: max 4 pipes, 4KB ring; vfs fd type field (+24) = 2, pipe idx at +8.
 
 const DARWIN-SYS-EXIT = 1
@@ -66,6 +67,12 @@ const DARWIN-AF-INET = 2
 // Optional Mach trap stubs (not real MIG/IPC).
 const DARWIN-MACH-TASK-SELF = 0x1000
 const DARWIN-MACH-MSG = 0x1001
+
+// Space-local errno shims (not BSD syscall numbers): __error() read/write.
+const DARWIN-SYS-ERRNO = 0x2000
+const DARWIN-SYS-SETERRNO = 0x2001
+
+var darwin-errno-last: Int = 0
 
 const DARWIN-ESRCH = -3
 const DARWIN-EBADF = -9
@@ -141,6 +148,9 @@ fn darwin-errno(vfs-rc: Int) -> Int {
   if vfs-rc == -2 {
     return DARWIN-ENOENT
   }
+  if vfs-rc == -3 {
+    return DARWIN-ESRCH
+  }
   if vfs-rc == -5 {
     return DARWIN-EIO
   }
@@ -159,7 +169,13 @@ fn darwin-errno(vfs-rc: Int) -> Int {
   if vfs-rc == -28 {
     return DARWIN-ENOSPC
   }
-  return DARWIN-ENOSYS
+  if vfs-rc == -12 {
+    return DARWIN-ENOMEM
+  }
+  if vfs-rc == -38 {
+    return DARWIN-ENOSYS
+  }
+  return DARWIN-EINVAL
 }
 
 // Map BSD/Darwin open flags onto Space VFS flags (Linux-shaped bits under the hood).
@@ -651,7 +667,7 @@ fn darwin-sys-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
 }
 
 // BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
-fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
+fn darwin-dispatch-call(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
   if darwin-ready == 0 {
     darwin-init()
   }
@@ -761,6 +777,158 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
     return darwin-sys-getpagesize()
   }
   return DARWIN-ENOSYS
+}
+
+// BSD errno discipline: every negative dispatch result lands in the per-personality
+// errno slot, readable through the __error() shim. Success never clears it.
+fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
+  if darwin-ready == 0 {
+    darwin-init()
+  }
+  if num == DARWIN-SYS-ERRNO {
+    return darwin-errno-last
+  }
+  if num == DARWIN-SYS-SETERRNO {
+    darwin-errno-last = a0
+    return 0
+  }
+  let rc = darwin-dispatch-call(port, num, a0, a1, a2, a3)
+  if rc < 0 {
+    darwin-errno-last = 0 - darwin-errno(rc)
+  }
+  return rc
+}
+
+// errno number → short name, so serial logs are readable without a lookup table.
+fn darwin-errno-name(err: Int) -> Int {
+  if err == 0 {
+    return "0"
+  }
+  if err == 0 - DARWIN-ENOENT {
+    return "ENOENT"
+  }
+  if err == 0 - DARWIN-ESRCH {
+    return "ESRCH"
+  }
+  if err == 0 - DARWIN-EIO {
+    return "EIO"
+  }
+  if err == 0 - DARWIN-EBADF {
+    return "EBADF"
+  }
+  if err == 0 - DARWIN-ENOMEM {
+    return "ENOMEM"
+  }
+  if err == 0 - DARWIN-EACCES {
+    return "EACCES"
+  }
+  if err == 0 - DARWIN-EEXIST {
+    return "EEXIST"
+  }
+  if err == 0 - DARWIN-EINVAL {
+    return "EINVAL"
+  }
+  if err == 0 - DARWIN-ENOSPC {
+    return "ENOSPC"
+  }
+  if err == 0 - DARWIN-ENOSYS {
+    return "ENOSYS"
+  }
+  return "EUNKNOWN"
+}
+
+fn darwin-errno-demo(port: Int) -> void {
+  let checks = 0
+  let ok = 0
+
+  // open(missing, O_RDONLY) → ENOENT.
+  darwin-dispatch(port, DARWIN-SYS-OPEN, "darwin-err-nosuch.txt", DARWIN-O-RDONLY, 0, 0)
+  let e1 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: errno after open(missing) = ")
+  serial-write-dec-wide(port, e1)
+  serial-write-cstr(port, " (")
+  serial-write-cstr(port, darwin-errno-name(e1))
+  serial-write-cstr(port, ")")
+  serial-nl(port)
+  checks = checks + 1
+  if e1 == 0 - DARWIN-ENOENT {
+    ok = ok + 1
+  }
+
+  // read on an unopened fd → EBADF.
+  let rbuf = alloc(16)
+  darwin-dispatch(port, DARWIN-SYS-READ, 15, rbuf, 8, 0)
+  let e2 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: errno after read(bad fd) = ")
+  serial-write-dec-wide(port, e2)
+  serial-write-cstr(port, " (")
+  serial-write-cstr(port, darwin-errno-name(e2))
+  serial-write-cstr(port, ")")
+  serial-nl(port)
+  checks = checks + 1
+  if e2 == 0 - DARWIN-EBADF {
+    ok = ok + 1
+  }
+
+  // kill on a pid that does not exist → ESRCH.
+  darwin-dispatch(port, DARWIN-SYS-KILL, 99999, SIGKILL, 0, 0)
+  let e3 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: errno after kill(invalid) = ")
+  serial-write-dec-wide(port, e3)
+  serial-write-cstr(port, " (")
+  serial-write-cstr(port, darwin-errno-name(e3))
+  serial-write-cstr(port, ")")
+  serial-nl(port)
+  checks = checks + 1
+  if e3 == 0 - DARWIN-ESRCH {
+    ok = ok + 1
+  }
+
+  // Unknown syscall number → ENOSYS.
+  darwin-dispatch(port, 60000, 0, 0, 0, 0)
+  let e4 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: errno after unknown syscall = ")
+  serial-write-dec-wide(port, e4)
+  serial-write-cstr(port, " (")
+  serial-write-cstr(port, darwin-errno-name(e4))
+  serial-write-cstr(port, ")")
+  serial-nl(port)
+  checks = checks + 1
+  if e4 == 0 - DARWIN-ENOSYS {
+    ok = ok + 1
+  }
+
+  // A successful call must leave errno untouched (BSD semantics).
+  darwin-dispatch(port, DARWIN-SYS-GETPID, 0, 0, 0, 0)
+  let e5 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  serial-write-cstr(port, "darwin: errno after getpid() = ")
+  serial-write-dec-wide(port, e5)
+  serial-nl(port)
+  checks = checks + 1
+  if e5 == e4 {
+    ok = ok + 1
+  }
+
+  // Explicit reset through the shim.
+  darwin-dispatch(port, DARWIN-SYS-SETERRNO, 0, 0, 0, 0)
+  let e6 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
+  checks = checks + 1
+  if e6 == 0 {
+    ok = ok + 1
+  }
+
+  serial-write-cstr(port, "darwin: errno scenarios ")
+  serial-write-dec-wide(port, ok)
+  serial-write-cstr(port, "/")
+  serial-write-dec-wide(port, checks)
+  serial-nl(port)
+  if ok == checks {
+    serial-write-cstr(port, "darwin: errno consistency OK")
+  } else {
+    serial-write-cstr(port, "darwin: errno consistency FAILED")
+  }
+  serial-nl(port)
+  return
 }
 
 fn darwin-demo(port: Int) -> void {
@@ -1069,6 +1237,8 @@ fn darwin-demo(port: Int) -> void {
     serial-write-cstr(port, " (ESRCH expected)")
   }
   serial-nl(port)
+
+  darwin-errno-demo(port)
 
   let task = darwin-dispatch(port, DARWIN-MACH-TASK-SELF, 0, 0, 0, 0)
   serial-write-cstr(port, "darwin: mach_task_self stub = ")

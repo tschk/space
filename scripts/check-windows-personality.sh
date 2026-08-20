@@ -57,5 +57,16 @@ grep -qE "CreateDirectory|GetLastError|VirtualAlloc" "$SERIAL_LOG"
 grep -qE "HeapAlloc|CopyFile|GetModuleFileName" "$SERIAL_LOG"
 grep -qF "windows: typed handles active" "$SERIAL_LOG"
 # GetStdHandle optional deeper marker
+# LastError / NTSTATUS must be real codes, paired, and not leftover zeros.
+grep -qE 'windows: DeleteFileA\(missing\) GetLastError = 2 NTSTATUS = -1073741772' "$SERIAL_LOG"
+grep -qE 'windows: ReadFile\(unopened handle\) GetLastError = 6 NTSTATUS = -1073741816' "$SERIAL_LOG"
+grep -qE 'windows: CreateDirectoryA\(existing\) GetLastError = 183 NTSTATUS = -1073741771' "$SERIAL_LOG"
+grep -qE 'windows: SetLastError\(ERROR_DISK_FULL\) GetLastError = 112 NTSTATUS = -1073741697' "$SERIAL_LOG"
+grep -qF "windows: errno/NTSTATUS pairs consistent 10/10" "$SERIAL_LOG"
+if grep -qF "windows: LastError/NTSTATUS consistency FAILED" "$SERIAL_LOG"; then
+  echo "FAIL: windows LastError/NTSTATUS consistency check failed" >&2
+  exit 1
+fi
+grep -qF "windows: LastError/NTSTATUS consistency OK" "$SERIAL_LOG"
 grep -qF "windows: personality demo complete" "$SERIAL_LOG"
-echo "PASS: Windows personality demo (CreateFile/HeapAlloc/typed handles path)"
+echo "PASS: Windows personality demo (CreateFile/HeapAlloc/typed handles + LastError/NTSTATUS maps)"
