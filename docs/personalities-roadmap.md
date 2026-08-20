@@ -75,9 +75,44 @@ Typed handle table: 16-byte records; 1/2 console; 3–15 file/process; types fre
 - Netstack (UDP/TCP)
 - Caps + shell demos (`linux` / `windows` / `darwin`)
 
+### Status / errno maps (M4 slice)
+
+**Windows** (`windows.in`)
+
+- Win32 error table (`winerror.h` subset) + NTSTATUS table, wired to two paired
+  slots: `win-last-error` and `win-last-status`.
+- `win-ntstatus(rc)` maps VFS/errno-shaped return codes (`-2 -5 -6 -9 -12 -13
+  -16 -17 -21 -22 -28 -38 -39`) onto NTSTATUS; `win-dos-error(status)` is an
+  `RtlNtStatusToDosError` subset; `win-status-from-error(err)` is its inverse
+  for the `SetLastError` path.
+- Every failure exit in `win-dispatch` goes through `win-set-error` /
+  `win-set-status` / `win-set-error-rc`, so the two slots can never disagree.
+  VFS return codes are no longer flattened to `ERROR_FILE_NOT_FOUND`.
+- 0/-1-only filesystem failures are refined by an existence probe:
+  mkdir → `ERROR_ALREADY_EXISTS` vs `ERROR_PATH_NOT_FOUND`, unlink/rmdir →
+  `ERROR_FILE_NOT_FOUND` vs `ERROR_DIR_NOT_EMPTY`, rename → missing source vs
+  occupied destination.
+- New calls: 34 `RtlGetLastNtStatus`, 35 `RtlNtStatusToDosError`,
+  36 `RtlGetLastWin32Error`.
+
+**Darwin** (`darwin.in`)
+
+- `darwin-dispatch` now wraps `darwin-dispatch-call` and records every negative
+  result in `darwin-errno-last`; successful calls leave errno untouched (BSD
+  semantics).
+- Read/write it through the Space-local `__error()` shims: `0x2000` get,
+  `0x2001` set. `darwin-errno-name` renders the number in serial logs.
+- `darwin-errno` covers every `DARWIN-E*` the surface returns (ESRCH, ENOMEM,
+  ENOSYS added); unknown codes fall back to `EINVAL` instead of `ENOSYS`.
+
+Both are asserted in QEMU by golden greps, not by inspection:
+`windows: LastError/NTSTATUS consistency OK` (5/5 scenarios + 10/10 rc pairs
+satisfying `GetLastError() == RtlNtStatusToDosError(RtlGetLastNtStatus())`) and
+`darwin: errno consistency OK` (6/6 scenarios).
+
 ### Automation
-- `scripts/check-windows-personality.sh` — QEMU boot, `windows`, greps CreateFile/Heap/Copy path
-- `scripts/check-darwin-personality.sh` — QEMU boot, `darwin`, greps file + pipe|mmap|socket|stat
+- `scripts/check-windows-personality.sh` — QEMU boot, `windows`, greps CreateFile/Heap/Copy path + LastError/NTSTATUS pairs
+- `scripts/check-darwin-personality.sh` — QEMU boot, `darwin`, greps file + pipe|mmap|socket|stat + errno map
 - `scripts/check-personalities.sh` — runs both + `check-sci-contract` (this branch)
 
 ---
@@ -105,7 +140,7 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 - [partial] Windows typed handle table (file/console/process; 16-byte records) — done on `feat/personalities`
 - Windows/Darwin optional domain + shared-page RPC like `posix-service` (next)
 - Event/sync object types still missing
-- LastError / errno consistency end-to-end (next)
+- [x] LastError / NTSTATUS + errno consistency end-to-end (see below)
 
 ### M5 — Binary loaders (far)
 - Windows: PE/COFF load into domain + ntdll-shaped entry (not full kernel32)
@@ -129,7 +164,7 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 | Real pipe / socketpair | Shell pipelines under Darwin | channel fabric |
 | Safe fork+wait demo | Process model proof | non-halting child exit |
 | Personality RPC threads | Isolation like posix | domain + preempt policy |
-| NTSTATUS / errno maps | Debuggable failures | tables only |
+| NTSTATUS / errno maps | Debuggable failures | **done** — see “Status / errno maps” below |
 | Conformance harness | Measure “fuller” | QEMU + golden logs |
 
 ---

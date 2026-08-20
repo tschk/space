@@ -9,7 +9,7 @@ package space.kernel
 //   2  WIN-GetCurrentProcessId
 //   3  WIN-ExitProcess
 //   4  WIN-CreateFileA   (path, access: 0=read 1=write/create)
-//   5  WIN-ReadFile
+//   5  WIN-ReadFile      (0 bytes at EOF → STATUS_END_OF_FILE / ERROR_HANDLE_EOF)
 //   6  WIN-CloseHandle
 //   7  WIN-GetFileSize
 //   8  WIN-Sleep         → short pause loop (no thr-yield from shell)
@@ -35,6 +35,9 @@ package space.kernel
 //  28  WIN-CopyFileA → fs-read-file src + fs-write-file dst; return 1/0
 //  29  WIN-GetEnvironmentVariableA → PATH→"/", else empty; return len
 //  30  WIN-OutputDebugStringA → serial-write-cstr
+//  34  WIN-RtlGetLastNtStatus → win-last-status
+//  35  WIN-RtlNtStatusToDosError → a0 NTSTATUS → Win32 error
+//  36  WIN-RtlGetLastWin32Error → win-last-error (alias of GetLastError)
 //
 // Honest: not full Win32, not PE loader, not CSRSS, not real NT objects.
 
@@ -71,14 +74,32 @@ const WIN-CALL-OUTPUTDEBUGSTRINGA = 30
 const WIN-CALL-DUPLICATEHANDLE = 31
 const WIN-CALL-GETFILETYPE = 32
 const WIN-CALL-SETENDOFFILE = 33
+const WIN-CALL-RTLGETLASTNTSTATUS = 34
+const WIN-CALL-RTLNTSTATUSTODOSERROR = 35
+const WIN-CALL-RTLGETLASTWIN32ERROR = 36
 
 const WIN-MAX-HANDLES = 16
 const WIN-HANDLE-STRIDE = 16
 const WIN-INVALID-HANDLE = 0
 const WIN-ACCESS-READ = 0
 const WIN-ACCESS-WRITE = 1
+// Win32 error codes (winerror.h subset).
+const WIN-ERROR-SUCCESS = 0
 const WIN-ERROR-FILE-NOT-FOUND = 2
+const WIN-ERROR-PATH-NOT-FOUND = 3
+const WIN-ERROR-TOO-MANY-OPEN-FILES = 4
+const WIN-ERROR-ACCESS-DENIED = 5
 const WIN-ERROR-INVALID-HANDLE = 6
+const WIN-ERROR-NOT-ENOUGH-MEMORY = 8
+const WIN-ERROR-GEN-FAILURE = 31
+const WIN-ERROR-HANDLE-EOF = 38
+const WIN-ERROR-NOT-SUPPORTED = 50
+const WIN-ERROR-FILE-EXISTS = 80
+const WIN-ERROR-INVALID-PARAMETER = 87
+const WIN-ERROR-INSUFFICIENT-BUFFER = 122
+const WIN-ERROR-DISK-FULL = 112
+const WIN-ERROR-DIR-NOT-EMPTY = 145
+const WIN-ERROR-ALREADY-EXISTS = 183
 const WIN-HANDLE-TYPE-FREE = 0
 const WIN-HANDLE-TYPE-CONSOLE = 1
 const WIN-HANDLE-TYPE-FILE = 2
@@ -96,6 +117,19 @@ const WIN-STATUS-FILE-IS-A-DIRECTORY = -1073741810
 const WIN-STATUS-NO-MEDIA = -1073741768
 const WIN-STATUS-INVALID-HANDLE = -1073741816
 const WIN-STATUS-OBJECT-NAME-NOT-FOUND = -1073741772
+const WIN-STATUS-UNSUCCESSFUL = -1073741823
+const WIN-STATUS-NOT-IMPLEMENTED = -1073741822
+const WIN-STATUS-INVALID-PARAMETER = -1073741811
+const WIN-STATUS-ACCESS-DENIED = -1073741790
+const WIN-STATUS-NO-MEMORY = -1073741801
+const WIN-STATUS-OBJECT-NAME-COLLISION = -1073741771
+const WIN-STATUS-OBJECT-PATH-NOT-FOUND = -1073741766
+const WIN-STATUS-DISK-FULL = -1073741697
+const WIN-STATUS-INSUFFICIENT-RESOURCES = -1073741670
+const WIN-STATUS-DIRECTORY-NOT-EMPTY = -1073741567
+const WIN-STATUS-TOO-MANY-OPENED-FILES = -1073741537
+const WIN-STATUS-BUFFER-TOO-SMALL = -1073741789
+const WIN-STATUS-IO-DEVICE-ERROR = -1073741435
 
 // Typed handle table: 16-byte records, slots 0..15.
 // offset 0: type (0=free, 1=console, 2=file, 3=process)
@@ -104,6 +138,7 @@ const WIN-STATUS-OBJECT-NAME-NOT-FOUND = -1073741772
 var win-ready: Int = 0
 var win-handles: Int = 0
 var win-last-error: Int = 0
+var win-last-status: Int = 0
 var win-cmdline: Int = 0
 
 fn win-handle-base(handle: Int) -> Int {
@@ -143,24 +178,232 @@ fn win-handle-value(h: Int) -> Int {
   return load64(win-handle-base(h) + 8)
 }
 
-// Map VFS return codes to NTSTATUS values.
+// Map VFS/errno-shaped return codes to NTSTATUS values.
 fn win-ntstatus(vfs-rc: Int) -> Int {
-  if vfs-rc == 0 {
+  if vfs-rc >= 0 {
     return WIN-STATUS-SUCCESS
   }
   if vfs-rc == -2 {
     return WIN-STATUS-OBJECT-NAME-NOT-FOUND
   }
   if vfs-rc == -5 {
+    return WIN-STATUS-IO-DEVICE-ERROR
+  }
+  if vfs-rc == -6 {
     return WIN-STATUS-NO-MEDIA
   }
   if vfs-rc == -9 {
     return WIN-STATUS-INVALID-HANDLE
   }
+  if vfs-rc == -12 {
+    return WIN-STATUS-NO-MEMORY
+  }
+  if vfs-rc == -13 {
+    return WIN-STATUS-ACCESS-DENIED
+  }
+  if vfs-rc == -16 {
+    return WIN-STATUS-TOO-MANY-OPENED-FILES
+  }
+  if vfs-rc == -17 {
+    return WIN-STATUS-OBJECT-NAME-COLLISION
+  }
+  if vfs-rc == -21 {
+    return WIN-STATUS-FILE-IS-A-DIRECTORY
+  }
+  if vfs-rc == -22 {
+    return WIN-STATUS-INVALID-PARAMETER
+  }
   if vfs-rc == -28 {
+    return WIN-STATUS-DISK-FULL
+  }
+  if vfs-rc == -38 {
+    return WIN-STATUS-NOT-IMPLEMENTED
+  }
+  if vfs-rc == -39 {
+    return WIN-STATUS-DIRECTORY-NOT-EMPTY
+  }
+  return WIN-STATUS-UNSUCCESSFUL
+}
+
+// RtlNtStatusToDosError subset: NTSTATUS → Win32 error code.
+fn win-dos-error(status: Int) -> Int {
+  if status == WIN-STATUS-SUCCESS {
+    return WIN-ERROR-SUCCESS
+  }
+  if status == WIN-STATUS-OBJECT-NAME-NOT-FOUND {
+    return WIN-ERROR-FILE-NOT-FOUND
+  }
+  if status == WIN-STATUS-OBJECT-PATH-NOT-FOUND {
+    return WIN-ERROR-PATH-NOT-FOUND
+  }
+  if status == WIN-STATUS-OBJECT-NAME-COLLISION {
+    return WIN-ERROR-ALREADY-EXISTS
+  }
+  if status == WIN-STATUS-INVALID-HANDLE {
+    return WIN-ERROR-INVALID-HANDLE
+  }
+  if status == WIN-STATUS-ACCESS-DENIED {
+    return WIN-ERROR-ACCESS-DENIED
+  }
+  if status == WIN-STATUS-NO-MEMORY {
+    return WIN-ERROR-NOT-ENOUGH-MEMORY
+  }
+  if status == WIN-STATUS-INSUFFICIENT-RESOURCES {
+    return WIN-ERROR-NOT-ENOUGH-MEMORY
+  }
+  if status == WIN-STATUS-TOO-MANY-OPENED-FILES {
+    return WIN-ERROR-TOO-MANY-OPEN-FILES
+  }
+  if status == WIN-STATUS-DISK-FULL {
+    return WIN-ERROR-DISK-FULL
+  }
+  if status == WIN-STATUS-DIRECTORY-NOT-EMPTY {
+    return WIN-ERROR-DIR-NOT-EMPTY
+  }
+  if status == WIN-STATUS-END-OF-FILE {
+    return WIN-ERROR-HANDLE-EOF
+  }
+  if status == WIN-STATUS-FILE-IS-A-DIRECTORY {
+    return WIN-ERROR-ACCESS-DENIED
+  }
+  if status == WIN-STATUS-INVALID-PARAMETER {
+    return WIN-ERROR-INVALID-PARAMETER
+  }
+  if status == WIN-STATUS-BUFFER-TOO-SMALL {
+    return WIN-ERROR-INSUFFICIENT-BUFFER
+  }
+  if status == WIN-STATUS-NOT-IMPLEMENTED {
+    return WIN-ERROR-NOT-SUPPORTED
+  }
+  if status == WIN-STATUS-NO-MEDIA {
+    return WIN-ERROR-GEN-FAILURE
+  }
+  if status == WIN-STATUS-IO-DEVICE-ERROR {
+    return WIN-ERROR-GEN-FAILURE
+  }
+  return WIN-ERROR-GEN-FAILURE
+}
+
+// Inverse of win-dos-error for the SetLastError path, so GetLastError and
+// RtlGetLastNtStatus never disagree.
+fn win-status-from-error(err: Int) -> Int {
+  if err == WIN-ERROR-SUCCESS {
+    return WIN-STATUS-SUCCESS
+  }
+  if err == WIN-ERROR-FILE-NOT-FOUND {
+    return WIN-STATUS-OBJECT-NAME-NOT-FOUND
+  }
+  if err == WIN-ERROR-PATH-NOT-FOUND {
+    return WIN-STATUS-OBJECT-PATH-NOT-FOUND
+  }
+  if err == WIN-ERROR-ALREADY-EXISTS {
+    return WIN-STATUS-OBJECT-NAME-COLLISION
+  }
+  if err == WIN-ERROR-FILE-EXISTS {
+    return WIN-STATUS-OBJECT-NAME-COLLISION
+  }
+  if err == WIN-ERROR-INVALID-HANDLE {
+    return WIN-STATUS-INVALID-HANDLE
+  }
+  if err == WIN-ERROR-ACCESS-DENIED {
+    return WIN-STATUS-ACCESS-DENIED
+  }
+  if err == WIN-ERROR-NOT-ENOUGH-MEMORY {
+    return WIN-STATUS-NO-MEMORY
+  }
+  if err == WIN-ERROR-TOO-MANY-OPEN-FILES {
+    return WIN-STATUS-TOO-MANY-OPENED-FILES
+  }
+  if err == WIN-ERROR-DISK-FULL {
+    return WIN-STATUS-DISK-FULL
+  }
+  if err == WIN-ERROR-DIR-NOT-EMPTY {
+    return WIN-STATUS-DIRECTORY-NOT-EMPTY
+  }
+  if err == WIN-ERROR-HANDLE-EOF {
     return WIN-STATUS-END-OF-FILE
   }
-  return WIN-STATUS-INVALID-HANDLE
+  if err == WIN-ERROR-INVALID-PARAMETER {
+    return WIN-STATUS-INVALID-PARAMETER
+  }
+  if err == WIN-ERROR-INSUFFICIENT-BUFFER {
+    return WIN-STATUS-BUFFER-TOO-SMALL
+  }
+  if err == WIN-ERROR-NOT-SUPPORTED {
+    return WIN-STATUS-NOT-IMPLEMENTED
+  }
+  return WIN-STATUS-UNSUCCESSFUL
+}
+
+// Single writer for both last-error slots: keeps LastError and NTSTATUS paired.
+fn win-set-error(err: Int) -> void {
+  win-last-error = err
+  win-last-status = win-status-from-error(err)
+  return
+}
+
+fn win-set-status(status: Int) -> void {
+  win-last-status = status
+  win-last-error = win-dos-error(status)
+  return
+}
+
+// Record a VFS/errno-shaped failure code as both NTSTATUS and Win32 error.
+fn win-set-error-rc(rc: Int) -> void {
+  win-set-status(win-ntstatus(rc))
+  return
+}
+
+fn win-clear-error() -> void {
+  win-last-error = WIN-ERROR-SUCCESS
+  win-last-status = WIN-STATUS-SUCCESS
+  return
+}
+
+// Existence probe used to refine 0/-1 filesystem failures into real codes.
+fn win-path-exists(path: Int) -> Int {
+  if path == 0 {
+    return 0
+  }
+  let sbuf = alloc(256)
+  if fs-stat(path, sbuf) == 0 {
+    return 1
+  }
+  return 0
+}
+
+// mkdir failed: collision if the name is taken, otherwise a bad parent path.
+fn win-set-error-mkdir(path: Int) -> void {
+  if win-path-exists(path) != 0 {
+    win-set-status(WIN-STATUS-OBJECT-NAME-COLLISION)
+    return
+  }
+  win-set-status(WIN-STATUS-OBJECT-PATH-NOT-FOUND)
+  return
+}
+
+// unlink/rmdir failed: missing name vs a directory that still has entries.
+fn win-set-error-unlink(path: Int) -> void {
+  if win-path-exists(path) == 0 {
+    win-set-status(WIN-STATUS-OBJECT-NAME-NOT-FOUND)
+    return
+  }
+  win-set-status(WIN-STATUS-DIRECTORY-NOT-EMPTY)
+  return
+}
+
+// rename failed: missing source vs occupied destination.
+fn win-set-error-rename(oldp: Int, newp: Int) -> void {
+  if win-path-exists(oldp) == 0 {
+    win-set-status(WIN-STATUS-OBJECT-NAME-NOT-FOUND)
+    return
+  }
+  if win-path-exists(newp) != 0 {
+    win-set-status(WIN-STATUS-OBJECT-NAME-COLLISION)
+    return
+  }
+  win-set-status(WIN-STATUS-OBJECT-PATH-NOT-FOUND)
+  return
 }
 
 fn win-init() -> void {
@@ -192,7 +435,7 @@ fn win-init() -> void {
   store8(win-cmdline + 11, 119)
   store8(win-cmdline + 12, 115)
   store8(win-cmdline + 13, 0)
-  win-last-error = 0
+  win-clear-error()
   win-ready = 1
   return
 }
@@ -257,20 +500,20 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
         serial-put(port, load8(buf + i))
         i = i + 1
       }
-      win-last-error = 0
+      win-clear-error()
       return len
     }
     if htype != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let vfd = win-handle-value(handle)
     let n = vfs-write(vfd, buf, len)
     if n < 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error-rc(n)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return n
   }
   if num == WIN-CALL-GETCURRENTPROCESSID {
@@ -289,16 +532,16 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     let vfd = vfs-open(path, flags)
     if vfd < 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-rc(vfd)
       return WIN-INVALID-HANDLE
     }
     let h = win-handle-alloc(vfd)
     if h == WIN-INVALID-HANDLE {
       vfs-close(vfd)
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-TOO-MANY-OPEN-FILES)
       return WIN-INVALID-HANDLE
     }
-    win-last-error = 0
+    win-clear-error()
     return h
   }
   if num == WIN-CALL-READFILE {
@@ -306,59 +549,63 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let buf = a1
     let len = a2
     if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let vfd = win-handle-value(handle)
     let n = vfs-read(vfd, buf, len)
     if n < 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error-rc(n)
       return 0
     }
-    win-last-error = 0
+    if n == 0 && len > 0 {
+      win-set-status(WIN-STATUS-END-OF-FILE)
+      return 0
+    }
+    win-clear-error()
     return n
   }
   if num == WIN-CALL-CLOSEHANDLE {
     let handle = a0
     let htype = win-handle-type(handle)
     if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     if htype == WIN-HANDLE-TYPE-PROCESS {
       win-handle-free(handle)
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     if htype != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let vfd = win-handle-value(handle)
     vfs-close(vfd)
     win-handle-free(handle)
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-GETFILESIZE {
     let handle = a0
     if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let vfd = win-handle-value(handle)
     if vfs-fd-valid(vfd) == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let base = vfs-fd-table + vfd * 32
     let path = load64(base + 0)
     let sz = vfs-sparkfs-file-size(path)
     if sz < 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return sz
   }
   if num == WIN-CALL-SLEEP {
@@ -384,10 +631,10 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let path = a0
     let rc = fs-delete(path)
     if rc != 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-unlink(path)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-SETFILEPOINTER {
@@ -395,28 +642,28 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let offset = a1
     let whence = a2
     if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return -1
     }
     let vfd = win-handle-value(handle)
-    win-last-error = 0
+    win-clear-error()
     return vfs-lseek(vfd, offset, whence)
   }
   if num == WIN-CALL-GETSTDHANDLE {
     // Space-local: -10 stdin→0, -11 stdout→1, -12 stderr→2
     if a0 == -10 {
-      win-last-error = 0
+      win-clear-error()
       return 0
     }
     if a0 == -11 {
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     if a0 == -12 {
-      win-last-error = 0
+      win-clear-error()
       return 2
     }
-    win-last-error = WIN-ERROR-INVALID-HANDLE
+    win-set-error(WIN-ERROR-INVALID-HANDLE)
     return WIN-INVALID-HANDLE
   }
   if num == WIN-CALL-MOVEFILEA {
@@ -424,67 +671,76 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let newp = a1
     let rc = fs-rename(oldp, newp)
     if rc != 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-rename(oldp, newp)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-FLUSHFILEBUFFERS {
     let handle = a0
     let htype = win-handle-type(handle)
     if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     if htype != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     // No-op success: VFS writes are already durable enough for this subset.
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-CREATEDIRECTORYA {
     let path = a0
     let rc = fs-mkdir(path)
     if rc != 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-mkdir(path)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-REMOVEDIRECTORYA {
     let path = a0
     let rc = fs-rmdir(path)
     if rc != 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-unlink(path)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-GETLASTERROR {
     return win-last-error
   }
+  if num == WIN-CALL-RTLGETLASTWIN32ERROR {
+    return win-last-error
+  }
+  if num == WIN-CALL-RTLGETLASTNTSTATUS {
+    return win-last-status
+  }
+  if num == WIN-CALL-RTLNTSTATUSTODOSERROR {
+    return win-dos-error(a0)
+  }
   if num == WIN-CALL-SETLASTERROR {
-    win-last-error = a0
+    win-set-error(a0)
     return 0
   }
   if num == WIN-CALL-VIRTUALALLOC {
     // a0 preferred addr ignored; a1 size. Not real VirtualAlloc/MEM_*.
     let size = a1
     if size < 1 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
     let p = posix-sys-mmap(0, size, 0, 0, -1, 0)
     if p == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-NOT-ENOUGH-MEMORY)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return p
   }
   if num == WIN-CALL-VIRTUALFREE {
@@ -492,30 +748,30 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let addr = a0
     let size = a1
     if addr == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
     if size < 1 {
       size = 4096
     }
     posix-sys-munmap(addr, size)
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-CREATEPROCESSA {
     // a0 app path only. Not real CreateProcessA / PE spawn.
     let path = a0
     if path == 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
     if load8(path) == 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
     let status = proc-spawn-sci(port, path)
     if status < 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
     let pid = proc-count - 1
@@ -524,33 +780,33 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     let h = win-handle-alloc-process(pid)
     if h == WIN-INVALID-HANDLE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return h
   }
   if num == WIN-CALL-WAITFORSINGLEOBJECT {
     // Demo: process handles only. Not real wait objects / timeouts.
     let handle = a0
     if win-handle-type(handle) != WIN-HANDLE-TYPE-PROCESS {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let pid = win-handle-value(handle)
     let code = proc-wait(pid)
     if code < 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 0
   }
   if num == WIN-CALL-GETCOMMANDLINEA {
     if win-cmdline == 0 {
       win-init()
     }
-    win-last-error = 0
+    win-clear-error()
     return win-cmdline
   }
   if num == WIN-CALL-WRITECONSOLEA {
@@ -559,7 +815,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let buf = a1
     let len = a2
     if win-handle-type(handle) != WIN-HANDLE-TYPE-CONSOLE && handle != 1 && handle != 2 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     return win-dispatch(port, WIN-CALL-WRITEFILE, handle, buf, len, 0)
@@ -569,7 +825,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let buf = a1
     let size = a2
     if buf == 0 || size < 2 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
     let name = "space.exe"
@@ -578,7 +834,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       nlen = nlen + 1
     }
     if size <= nlen {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INSUFFICIENT-BUFFER)
       return 0
     }
     let i = 0
@@ -587,19 +843,19 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       i = i + 1
     }
     store8(buf + nlen, 0)
-    win-last-error = 0
+    win-clear-error()
     return nlen
   }
   if num == WIN-CALL-HEAPALLOC {
     // a0 heap ignored; a1 flags ignored; a2 size. Bump alloc + zero.
     let size = a2
     if size < 1 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
     let p = alloc(size)
     if p == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-NOT-ENOUGH-MEMORY)
       return 0
     }
     let i = 0
@@ -607,16 +863,16 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       store8(p + i, 0)
       i = i + 1
     }
-    win-last-error = 0
+    win-clear-error()
     return p
   }
   if num == WIN-CALL-HEAPFREE {
     // a0 heap a1 flags a2 ptr. Bump heap has no free — success only.
     if a2 == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-COPYFILEA {
@@ -624,21 +880,21 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let src = a0
     let dst = a1
     if src == 0 || dst == 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
     let cbuf = alloc(4096)
     let n = fs-read-file(src, cbuf)
     if n < 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error-unlink(src)
       return 0
     }
     let wrc = fs-write-file(dst, cbuf, n)
     if wrc != 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-status(WIN-STATUS-DISK-FULL)
       return 0
     }
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   if num == WIN-CALL-GETENVIRONMENTVARIABLEA {
@@ -647,7 +903,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let buf = a1
     let size = a2
     if buf == 0 || size < 1 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
     let is-path = 0
@@ -666,26 +922,26 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     }
     if is-path != 0 {
       if size < 2 {
-        win-last-error = WIN-ERROR-INVALID-HANDLE
+        win-set-error(WIN-ERROR-INSUFFICIENT-BUFFER)
         return 0
       }
       store8(buf + 0, 47)
       store8(buf + 1, 0)
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     store8(buf + 0, 0)
-    win-last-error = 0
+    win-clear-error()
     return 0
   }
   if num == WIN-CALL-OUTPUTDEBUGSTRINGA {
     let s = a0
     if s == 0 {
-      win-last-error = 0
+      win-clear-error()
       return 0
     }
     serial-write-cstr(port, s)
-    win-last-error = 0
+    win-clear-error()
     return 0
   }
   if num == WIN-CALL-DUPLICATEHANDLE {
@@ -693,7 +949,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let src = a0
     let stype = win-handle-type(src)
     if stype == WIN-HANDLE-TYPE-FREE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return WIN-INVALID-HANDLE
     }
     let sval = win-handle-value(src)
@@ -718,58 +974,58 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       }
     }
     if nh < 0 || nh >= WIN-MAX-HANDLES {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return WIN-INVALID-HANDLE
     }
-    win-last-error = 0
+    win-clear-error()
     return nh
   }
   if num == WIN-CALL-GETFILETYPE {
     let handle = a0
     let htype = win-handle-type(handle)
     if htype == WIN-HANDLE-TYPE-CONSOLE {
-      win-last-error = 0
+      win-clear-error()
       return WIN-FILE-TYPE-CHAR
     }
     if htype == WIN-HANDLE-TYPE-FILE {
-      win-last-error = 0
+      win-clear-error()
       return WIN-FILE-TYPE-DISK
     }
     if handle == 1 || handle == 2 {
-      win-last-error = 0
+      win-clear-error()
       return WIN-FILE-TYPE-CHAR
     }
-    win-last-error = WIN-ERROR-INVALID-HANDLE
+    win-set-error(WIN-ERROR-INVALID-HANDLE)
     return WIN-FILE-TYPE-UNKNOWN
   }
   if num == WIN-CALL-SETENDOFFILE {
     // a0 = file handle. Truncate at current VFS position.
     let handle = a0
     if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     let vfd = win-handle-value(handle)
     if vfs-fd-valid(vfd) == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     // Get current position from VFS fd table (offset 8 = pos).
     let pos = load64(vfs-fd-table + vfd * 32 + 8)
     let fpath = load64(vfs-fd-table + vfd * 32 + 0)
     if fpath == -1 || fpath == 0 {
-      win-last-error = WIN-ERROR-INVALID-HANDLE
+      win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
     // Read existing file content, truncate to pos, write back.
     let fullsz = vfs-sparkfs-file-size(fpath)
     if fullsz < 0 {
-      win-last-error = WIN-ERROR-FILE-NOT-FOUND
+      win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
     if pos >= fullsz {
       // Nothing to truncate.
-      win-last-error = 0
+      win-clear-error()
       return 1
     }
     let truncbuf = alloc(pos)
@@ -782,10 +1038,132 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       }
     }
     fs-write-file(fpath, truncbuf, pos)
-    win-last-error = 0
+    win-clear-error()
     return 1
   }
   return 0
+}
+
+// Print "<label> = <err> / <status>" for the current last-error pair.
+fn win-report-error(port: Int, label: Int) -> void {
+  serial-write-cstr(port, label)
+  serial-write-cstr(port, " GetLastError = ")
+  serial-write-dec-wide(port, win-last-error)
+  serial-write-cstr(port, " NTSTATUS = ")
+  serial-write-dec-wide(port, win-last-status)
+  serial-nl(port)
+  return
+}
+
+// Invariant: GetLastError() == RtlNtStatusToDosError(RtlGetLastNtStatus()).
+fn win-error-pair-consistent(port: Int) -> Int {
+  let err = win-dispatch(port, WIN-CALL-GETLASTERROR, 0, 0, 0, 0)
+  let status = win-dispatch(port, WIN-CALL-RTLGETLASTNTSTATUS, 0, 0, 0, 0)
+  let mapped = win-dispatch(port, WIN-CALL-RTLNTSTATUSTODOSERROR, status, 0, 0, 0)
+  if mapped == err {
+    return 1
+  }
+  return 0
+}
+
+fn win-status-demo(port: Int) -> void {
+  let checks = 0
+  let ok = 0
+
+  // Missing file: STATUS_OBJECT_NAME_NOT_FOUND / ERROR_FILE_NOT_FOUND.
+  win-dispatch(port, WIN-CALL-DELETEFILEA, "win-err-nosuch.txt", 0, 0, 0)
+  win-report-error(port, "windows: DeleteFileA(missing)")
+  checks = checks + 1
+  if win-last-error == WIN-ERROR-FILE-NOT-FOUND && win-last-status == WIN-STATUS-OBJECT-NAME-NOT-FOUND {
+    ok = ok + 1
+  }
+
+  // Bad handle: STATUS_INVALID_HANDLE / ERROR_INVALID_HANDLE.
+  let rbuf = alloc(16)
+  win-dispatch(port, WIN-CALL-READFILE, WIN-MAX-HANDLES - 1, rbuf, 8, 0)
+  win-report-error(port, "windows: ReadFile(unopened handle)")
+  checks = checks + 1
+  if win-last-error == WIN-ERROR-INVALID-HANDLE && win-last-status == WIN-STATUS-INVALID-HANDLE {
+    ok = ok + 1
+  }
+
+  // Existing name: STATUS_OBJECT_NAME_COLLISION / ERROR_ALREADY_EXISTS.
+  let edir = "win-err-dir"
+  win-dispatch(port, WIN-CALL-CREATEDIRECTORYA, edir, 0, 0, 0)
+  let again = win-dispatch(port, WIN-CALL-CREATEDIRECTORYA, edir, 0, 0, 0)
+  serial-write-cstr(port, "windows: CreateDirectoryA(existing) = ")
+  serial-write-dec-wide(port, again)
+  serial-nl(port)
+  win-report-error(port, "windows: CreateDirectoryA(existing)")
+  checks = checks + 1
+  if win-last-error == WIN-ERROR-ALREADY-EXISTS && win-last-status == WIN-STATUS-OBJECT-NAME-COLLISION {
+    ok = ok + 1
+  }
+  win-dispatch(port, WIN-CALL-REMOVEDIRECTORYA, edir, 0, 0, 0)
+
+  // SetLastError feeds the NTSTATUS slot too.
+  win-dispatch(port, WIN-CALL-SETLASTERROR, WIN-ERROR-DISK-FULL, 0, 0, 0)
+  win-report-error(port, "windows: SetLastError(ERROR_DISK_FULL)")
+  checks = checks + 1
+  if win-last-status == WIN-STATUS-DISK-FULL {
+    ok = ok + 1
+  }
+
+  // Success path clears both slots.
+  win-dispatch(port, WIN-CALL-GETSTDHANDLE, -11, 0, 0, 0)
+  win-report-error(port, "windows: GetStdHandle(stdout)")
+  checks = checks + 1
+  if win-last-error == WIN-ERROR-SUCCESS && win-last-status == WIN-STATUS-SUCCESS {
+    ok = ok + 1
+  }
+
+  serial-write-cstr(port, "windows: LastError/NTSTATUS scenarios ")
+  serial-write-dec-wide(port, ok)
+  serial-write-cstr(port, "/")
+  serial-write-dec-wide(port, checks)
+  serial-nl(port)
+
+  // Every VFS/errno-shaped code must round-trip status → dos error.
+  let rcs = alloc(8 * 10)
+  store64(rcs + 0, -2)
+  store64(rcs + 8, -5)
+  store64(rcs + 16, -9)
+  store64(rcs + 24, -12)
+  store64(rcs + 32, -13)
+  store64(rcs + 40, -16)
+  store64(rcs + 48, -17)
+  store64(rcs + 56, -22)
+  store64(rcs + 64, -28)
+  store64(rcs + 72, -39)
+  let i = 0
+  let pairs = 0
+  while i < 10 {
+    let rc = load64(rcs + i * 8)
+    win-set-error-rc(rc)
+    serial-write-cstr(port, "windows: rc ")
+    serial-write-dec-wide(port, rc)
+    serial-write-cstr(port, " -> NTSTATUS ")
+    serial-write-dec-wide(port, win-last-status)
+    serial-write-cstr(port, " -> Win32 ")
+    serial-write-dec-wide(port, win-last-error)
+    serial-nl(port)
+    if win-error-pair-consistent(port) != 0 {
+      pairs = pairs + 1
+    }
+    i = i + 1
+  }
+  serial-write-cstr(port, "windows: errno/NTSTATUS pairs consistent ")
+  serial-write-dec-wide(port, pairs)
+  serial-write-cstr(port, "/10")
+  serial-nl(port)
+  if pairs == 10 && ok == checks {
+    serial-write-cstr(port, "windows: LastError/NTSTATUS consistency OK")
+  } else {
+    serial-write-cstr(port, "windows: LastError/NTSTATUS consistency FAILED")
+  }
+  serial-nl(port)
+  win-clear-error()
+  return
 }
 
 fn win-demo(port: Int) -> void {
@@ -1164,13 +1542,15 @@ fn win-demo(port: Int) -> void {
   serial-write-cstr(port, "windows: CreateFileA(missing) for NTSTATUS = ")
   serial-write-dec-wide(port, nth)
   serial-nl(port)
-  let nst = win-ntstatus(-2)
-  serial-write-cstr(port, "windows: win-ntstatus(-2 ENOENT) = ")
+  let nst = win-dispatch(port, WIN-CALL-RTLGETLASTNTSTATUS, 0, 0, 0, 0)
+  serial-write-cstr(port, "windows: RtlGetLastNtStatus() = ")
   serial-write-dec-wide(port, nst)
   if nst == WIN-STATUS-OBJECT-NAME-NOT-FOUND {
     serial-write-cstr(port, " (STATUS_OBJECT_NAME_NOT_FOUND)")
   }
   serial-nl(port)
+
+  win-status-demo(port)
 
   let erc = win-dispatch(port, WIN-CALL-EXITPROCESS, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: ExitProcess(0) mapped (demo status ")
