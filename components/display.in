@@ -3,8 +3,6 @@ package space.display
 import "../protocol/display.in"
 import "font.in"
 
-const SPDP-OBJ-SURFACE = 5
-
 interface DisplayDevice {
   fn map(phys: Int, size: Int) -> void
   fn present() -> void
@@ -2334,6 +2332,7 @@ fn dsp-init() -> void {
   dsp-surfaces = alloc(DSP-MAX-SURFACES * dsp-surface-size())
   dsp-pools = alloc(DSP-MAX-POOLS * 8)  // array of pool addresses
   dsp-pool-sizes = alloc(DSP-MAX-POOLS * 8) // array of pool sizes (bytes)
+  dsp-msg = alloc(SPDP-MSG-SIZE)
   let i = 0
   while i < DSP-MAX-POOLS {
     store64(dsp-pools + i * 8, 0)

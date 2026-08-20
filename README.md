@@ -80,6 +80,7 @@ bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path
 bash scripts/check-desktop-damage.sh  # moving-window compositor bench
 bash scripts/check-spdp-composite.sh  # SPDP surface-pipeline proof
+bash scripts/check-spdp-protocol.sh    # SPDP wire-format / parser contract
 bash scripts/check-audit-fixes.sh     # kernel-audit hardening assertions
 bash scripts/check-linux-elf.sh       # Linux ELF personality
 bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
