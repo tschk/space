@@ -22,6 +22,7 @@ jobs:
         echo "Boot image: $(wc -c < /tmp/space-boot/kernel.bin) bytes"
         bash scripts/check-spdp-protocol.sh
         bash scripts/check-sci-contract.sh
+        bash scripts/check-architecture-boundaries.sh
 
   website:
     name: Website gates
