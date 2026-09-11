@@ -39,7 +39,10 @@ fn schedule-tick(ctx: Int) -> Int {
   if preempt-pml4 != 0 {
     let pml4 = load64(preempt-pml4 + pcurrent * 8)
     if pml4 != 0 {
-      invoke1(load64(0x4060), pml4)
+      cr3-write(pml4)
+      let d = load64(preempt-domain + pcurrent * 8)
+      domain-current = d
+      current-cap = load64(domain-table + d * 24 + 16)
     }
   }
   return load64(ptasks + pcurrent * 8)

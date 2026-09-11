@@ -20,7 +20,7 @@ fn linux-init() -> void {
   }
   posix-domain = domain-create()
   if posix-domain <= 0 {
-    posix-domain = 1
+    return
   }
   let shared-phys = domain-create-shared-page(0, posix-domain, LINUX-POSIX-VIRT, LINUX-POSIX-VIRT)
   if shared-phys == 0 {

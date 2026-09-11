@@ -16,7 +16,13 @@ fn sys-write(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 1 {
     return -1
   }
+  if cap-require(cap-serial()) == 0 {
+    return -1
+  }
   if len <= 0 || len > 4096 || buf == 0 {
+    return -1
+  }
+  if domain-current != 0 && buf < COMP-SHARED-VIRT {
     return -1
   }
   let port = com1()
@@ -34,7 +40,13 @@ fn sys-read(fd: Int, buf: Int, len: Int) -> Int {
   if fd != 0 {
     return -1
   }
+  if cap-require(cap-serial()) == 0 {
+    return -1
+  }
   if len <= 0 || len > 4096 || buf == 0 {
+    return -1
+  }
+  if domain-current != 0 && buf < COMP-SHARED-VIRT {
     return -1
   }
   let port = com1()
@@ -78,22 +90,34 @@ fn sys-getpid() -> Int {
 
 // Syscall 5: sys_chan_create(cap) — create a channel with capacity.
 fn sys-chan-create(cap: Int) -> Int {
+  if cap-require(cap-graph()) == 0 {
+    return 0
+  }
   return chan-new(cap)
 }
 
 // Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
 fn sys-chan-send(ch: Int, msg: Int) -> void {
+  if cap-require(cap-graph()) == 0 {
+    return
+  }
   chan-send(ch, msg)
   return
 }
 
 // Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
 fn sys-chan-recv(ch: Int) -> Int {
+  if cap-require(cap-graph()) == 0 {
+    return -1
+  }
   return chan-recv(ch)
 }
 
 // Syscall 8: sys_chan_close(ch) — close/free a channel.
 fn sys-chan-close(ch: Int) -> Int {
+  if cap-require(cap-graph()) == 0 {
+    return -1
+  }
   chan-heap-free(ch)
   return 0
 }
@@ -107,6 +131,9 @@ fn sys-cap-revoke(idx: Int) -> Int {
 }
 
 fn sys-cap-check(idx: Int, rights: Int) -> Int {
+  if idx != current-cap {
+    return 0
+  }
   return cap-check(idx, rights)
 }
 

@@ -20,7 +20,7 @@ Fixed on 2026-08-13 (commit `c57702e`, plus the compiler fix `ea23033` in `../in
 - **Compiler bug found while fixing**: `in` DCE dropped unused `let` bindings whose initializer was a call, silently eliding side-effecting code (`dsp demo` never ran). Fixed in Inauguration `ea23033` (core_opt: `expr_has_call`).
 - New gates: `scripts/check-audit-fixes.sh` (hardening assertions), `scripts/check-spdp-composite.sh` (SPDP surface path), `scripts/check-desktop-damage.sh` (moving-window renderer bench).
 
-Open items (not yet fixed): real per-domain page tables (#1), CPL3 execution (#2), capability enforcement at the syscall boundary (#3), TCP FIN/close + ISN randomness, USB HID unification, PCI BAR validation, SparkFS disk-field trust.
+Open items (not yet fixed): real per-domain page tables (#1), CPL3 execution (#2), TCP FIN/close + ISN randomness, USB HID unification, PCI BAR validation, SparkFS disk-field trust. Syscall `cap-check` is wired for serial and channel paths; mint/revoke stay `-1`. Domains still clone the 4 GiB identity map.
 
 Read files: `kernel-root.in`, `multiboot.asm`, `sci-loader.in`, `supervisor.in`, `process.in`, `domain.in`, `memory.in`, `object.in`, `syscall.in`, `channel.in`, `sched.in`, `preempt.in`, `interrupts.in`, `time.in`, `pci.in`, `nvme.in`, `storage.in`, `net.in`, `netstack.in`, `network.in`, `dhcp.in`, `dns.in`, `usb.in`, `input.in`, `mouse.in`, `display.in` (+`display-standalone.in`), `fs2-{block,file}.in`, `vfs.in`, `posix.in` (execve), `shell.in` (input path), `protocol/display.in`, and 24 check scripts.
 

@@ -26,13 +26,13 @@
     "ghostty-web": "^0.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "v86": "latest"
+    "v86": "0.5.445"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "typescript": "^7.0.2",
-    "wrangler": "latest"
+    "wrangler": "4.127.0"
   }
 }

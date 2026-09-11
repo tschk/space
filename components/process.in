@@ -276,7 +276,13 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   serial-write-hex(port, image-size)
   serial-nl(port)
 
-  let missing = required & (-1 ^ realm-grants)
+  if sci-image-acceptable(entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
+
+  let missing = required & (-1 ^ SCI-GUEST-GRANTS)
   if missing != 0 {
     serial-write-cstr(port, "  SCI: DENIED undeclared cap 0x")
     serial-write-hex(port, missing)
@@ -314,6 +320,11 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   sci-last-caps = required
 
   let component = component-register(pathname, entry, required)
+  if sci-bind-domain-cap(domain, component, required) < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    return -1
+  }
   let virt-load = entry - 32
   let image-pages = (image-size + 4095) / 4096
   let i = 0

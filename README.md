@@ -15,9 +15,12 @@ Space is a component-based operating system built on a five-layer architecture:
 ```
 
 The native model is **component + capability + object + execution graph** — not
-process + file + syscall + user. There is no POSIX in the kernel. Linux, Darwin,
-and Windows compatibility are `.in` microservices that translate legacy concepts
-into Space primitives.
+process + file + syscall + user. Linux, Darwin, and Windows personalities are
+kernel-linked `.in` translators in the same boot image (`components/linux.in`,
+`darwin.in`, `windows.in`, `posix.in`). They are not isolated processes.
+
+Domains currently clone the 4 GiB identity map and run at CPL0. That is not
+isolation. See [`architecture.md`](architecture.md).
 
 ## Status
 
@@ -64,14 +67,17 @@ Measured via serial output polling on Apple M3 (macOS, QEMU TCG).
 
 ## Build and run
 
-Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration (git
-submodule under `vendor/inauguration`, or a sibling checkout at `../inauguration`).
+Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration. The
+`vendor/inauguration` submodule is the compiler pin (CI uses the same git
+ref). `INAUGURATION_DIR` overrides it; otherwise the pin, then a sibling
+checkout at `../inauguration`.
 
 ```sh
 git submodule update --init --recursive
 ```
 
 ```sh
+bash scripts/check-all.sh             # static gates + QEMU boot + audit hardening
 bash scripts/check-qemu-boot.sh       # full boot verification
 bash scripts/build-multicomponent.sh  # SCI component loading demo
 bash scripts/check-sci-contract.sh    # metadata validation

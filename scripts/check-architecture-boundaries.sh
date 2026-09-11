@@ -24,4 +24,34 @@ if ! rg -Uq 'fn sys-cap-mint\([^)]*\) -> Int \{\n  return -1\n\}' components/sys
   exit 1
 fi
 
+if rg -n 'invoke1\(load64\(0x4060\)' components kernel --glob '*.in'; then
+  echo "kernel still invokes published cr3_write at 0x4060" >&2
+  exit 1
+fi
+
+if ! rg -q 'cap-require\(cap-serial\(\)\)' components/syscall.in; then
+  echo "sys-write/sys-read do not consult cap-check" >&2
+  exit 1
+fi
+
+if ! rg -q 'cap-require\(cap-graph\(\)\)' components/syscall.in; then
+  echo "channel syscalls do not consult cap-check" >&2
+  exit 1
+fi
+
+if rg -n 'required & \(-1 \^ realm-grants\)' components/process.in; then
+  echo "sci-load-file uses realm-grants instead of SCI-GUEST-GRANTS" >&2
+  exit 1
+fi
+
+if ! rg -q 'clone the 4 GiB identity map' architecture.md; then
+  echo "architecture.md no longer states that domains clone the identity map" >&2
+  exit 1
+fi
+
+if ! rg -q 'ref: 2e3bf260c9624d5c6127c56febcd0e1938e8d475' .github/workflows/ci.yml; then
+  echo "CI compiler ref is not pinned to vendor/inauguration" >&2
+  exit 1
+fi
+
 echo "PASS: architecture boundaries"

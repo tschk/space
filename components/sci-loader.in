@@ -36,6 +36,25 @@ var comp-entry-arg: Int = 0
 var comp-cap-info-arg: Int = 0
 var comp-domain-arg: Int = 0
 
+fn sci-image-acceptable(entry: Int, image-size: Int) -> Int {
+  if image-size < 32 || image-size > 0x200000 {
+    return 0
+  }
+  if entry < 32 {
+    return 0
+  }
+  return 1
+}
+
+fn sci-bind-domain-cap(domain: Int, component: Int, required: Int) -> Int {
+  let cap-idx = cap-mint(component, required)
+  if cap-idx < 0 {
+    return -1
+  }
+  domain-set-cap(domain, cap-idx)
+  return cap-idx
+}
+
 fn boot-image-find(kind: Int) -> Int {
   let table = load64(0x40D0)
   if table == 0 || load64(table) != BOOT-IMAGE-TABLE-MAGIC {
@@ -85,6 +104,11 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
   let image-size = load64(load-addr + 24)
+  if sci-image-acceptable(entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
   serial-write-cstr(port, "  SCI: manifest ok entry 0x")
   serial-write-hex(port, entry)
   serial-nl(port)
@@ -106,6 +130,11 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   serial-nl(port)
 
   let component = component-register(name, entry, required)
+  if sci-bind-domain-cap(domain, component, required) < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    return -1
+  }
   let virt-load = entry - 32
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
@@ -548,6 +577,11 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
   let image-size = load64(load-addr + 24)
+  if sci-image-acceptable(entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
   serial-write-cstr(port, "  SCI: manifest ok, caps 0x")
   serial-write-hex(port, required)
   serial-write-cstr(port, " entry 0x")
@@ -567,6 +601,11 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     return -1
   }
   let component = component-register("sci-guest", entry, required)
+  if sci-bind-domain-cap(domain, component, required) < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    return -1
+  }
   let virt-load = entry - 32
   let image-pages = (image-size + 4095) / 4096
   let i = 0
