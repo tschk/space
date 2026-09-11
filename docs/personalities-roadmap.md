@@ -1,6 +1,6 @@
 # OS Personalities Roadmap
 
-Branch: `feat/personalities` (forked from `main` after translator depth 1–30 Windows + Darwin BSD surface).
+Branch: `main` (personalities merged; translator depth 1–30 Windows + Darwin BSD surface).
 
 Space does **not** put POSIX / Win32 / XNU in the nanokernel. Personalities are
 `.in` **translator microservices**: foreign-shaped call numbers map onto Space

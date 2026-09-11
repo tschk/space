@@ -13,9 +13,8 @@ files, and crash-safe metadata updates.
 - Long filenames (up to 255 bytes) stored in directory entries.
 - Block allocation bitmap with free-space tracking.
 - Metadata journaling for format, create, write, delete, and rename.
-- Compatible with the existing NVMe/ATA sector wrappers (`ata_read_sector`,
-  `ata_write_sector`). The disk is still accessed as 512-byte sectors, but
-  all on-disk structures are aligned to 4 KiB block boundaries.
+- Compatible with the NVMe and memdisk block path. The disk is accessed as
+  512-byte sectors; on-disk structures are aligned to 4 KiB block boundaries.
 
 ## Non-goals
 

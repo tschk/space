@@ -57,5 +57,3 @@ bun run deploy
 - Website build: `bun run build` (kernel image + static `dist/`)
 - Browser test: `bun run dev`, then open the local URL and wait for the serial banner
 - Live site: `https://space.tsc.hk`
-
-See [`next-agent-32bit-v86.md`](next-agent-32bit-v86.md) for the original task breakdown and file references.

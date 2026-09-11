@@ -8,3 +8,7 @@ kernel/target/
 build/
 .pi-subagents/
 serial.log
+.wrangler/
+mon.sock
+s.in
+s.out

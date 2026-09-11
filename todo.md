@@ -14,7 +14,7 @@ TCP window/congestion: MSS negotiation, slow-start, Go-Back-N retransmit
 (`check-tcp`). Darwin/Windows M4 surface. Desktop via kernel `display.in` +
 PS/2; kernel xHCI HID enum works (`usb.in`). Shell: cd/pwd, history up/down,
 `>`/`|` redirect, nested paths. ELF load above global-data zero region.
-18+ maintained checks green on `feat/personalities`. See personalities docs.
+18+ maintained checks green on `main`. See personalities docs.
 
 ## Phase 1: Storage
 

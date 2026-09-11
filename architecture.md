@@ -77,9 +77,11 @@ SCI is the native binary contract — not ELF. An SCI artifact contains:
 - Import/export table
 - Provenance (compiler version, source hash)
 
-The loader validates declared capabilities against the realm's grants
-before transferring control. A component requesting undeclared
-capabilities is denied before its entry point runs.
+The loader compares a component's self-declared capability bitmask to a
+kernel grant constant (packed SCI) or `SCI-GUEST-GRANTS` (file SCI) and
+denies a superset. That is not hardware isolation. Syscalls consult
+`cap-check` against the current domain's minted cap index; mint/revoke
+from userspace return `-1`.
 
 ---
 
@@ -100,7 +102,7 @@ x86_64. It provides:
 - **Preemptive scheduler** — timer-driven context switching
 - **Typed channels** — CSP-style ring buffers with blocking send/recv
 - **Cross-domain channels** — shared-page IPC between memory domains
-- **Memory domains** — isolated page table trees (Phase 0)
+- **Memory domains** — per-component page tables that currently clone the 4 GiB identity map (not a security boundary)
 - **SCI loader** — loads and validates external component images
 - **e1000 NIC driver** — MMIO register access, TX/RX rings, ARP, UDP
 - **Deterministic execution** — xorshift64 PRNG with seeded workloads
@@ -118,11 +120,24 @@ x86_64. It provides:
 
 ## Memory Domains
 
-Domains are isolated page table trees. Domain 0 is the kernel domain
-(shared PML4 at physical 0x1000). `domain_create()` allocates a new
-PML4, copies the kernel's low mappings, and returns an ID.
-`domain_switch()` changes CR3. `domain_map()` installs a mapping in
-a domain's page table. Shared pages enable cross-domain IPC.
+Domains are separate page-table trees, not a security boundary today.
+
+- Domain 0 is the kernel domain. After boot the live kernel PML4 is relocated
+  off physical `0x1000` onto a heap frame.
+- `domain_create()` allocates a new PML4 and **copies the kernel's four page
+  directories** — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
+  Extra SCI image/heap/shared mappings are additive. A guest can still
+  `load64(0x200000)` (kernel globals) and reach MMIO.
+- All component entry is CPL0 (`CS=0x08`). The GDT has no DPL3 segments.
+  `cr3_write` is bound into a kernel global at `domain-init` and the
+  published pointer at `0x4060` is cleared; guests still run at ring 0, so
+  they can execute privileged instructions until CPL3+`iret` exists.
+- `domain_switch()` changes CR3. `domain_map()` installs a mapping.
+  Shared pages are for IPC, not isolation.
+
+Exclusive maps plus CPL3 are required before domains can be advertised as
+isolation. Do not land exclusive maps without a CPL3 trampoline: `invoke1`
+under guest CR3 still needs kernel text mapped.
 
 ---
 
@@ -141,7 +156,10 @@ the component image, and transfers control.
 ## Capabilities
 
 Capability slots are 16 bytes: `[target_object_ptr][rights]`. The
-kernel mints capabilities into a root table. Capability bits:
+kernel mints capabilities into a root table. Each domain records a cap
+index; `sys-write` / `sys-read` require `cap-serial`, channel syscalls
+require `cap-graph`. `sys-cap-mint` / `sys-cap-revoke` always return `-1`.
+`sys-cap-check` may only query the caller's current cap.
 
 | Bit | Capability |
 |-----|-----------|
@@ -151,7 +169,8 @@ kernel mints capabilities into a root table. Capability bits:
 | 8   | graph     |
 
 The loader rule: a component may only activate if its declared
-authority is a subset of what its realm grants.
+authority is a subset of the grant mask for that load path. Bits are
+metadata plus syscall gates; they do not stop CPL0 `inb`/`outb`.
 
 ---
 
@@ -187,12 +206,11 @@ Native Space syscalls (0-4): write, read, exit, yield, getpid.
 
 ## Linux Personality
 
-The Linux personality (`kernel/linux.in`) translates Linux x86_64
-syscall numbers into Space kernel primitives, providing a POSIX-compatible
-interface on top of the native component model. This is the first OS
-personality (Phase 5), demonstrating that Space can host foreign ABIs
-by mapping their conventions onto the underlying capability/domain/channel
-substrate.
+The Linux personality (`components/linux.in`) is **kernel-linked**. It
+translates Linux x86_64 syscall numbers into Space kernel primitives.
+`linux-init` may `domain-switch` into a POSIX helper domain, but the
+translator is the same boot image as the nanokernel, not an isolated
+microservice.
 
 Implemented POSIX syscalls:
 
@@ -275,8 +293,8 @@ designed in `docs/compositor-client-split.md`.
   self-test, Linux-personality demo, VFS, time service, network traffic,
   component deny policy, and external display/input SCI components.
 - SCI metadata-sidecar validation passes.
-- Display and input SCI components boot in isolated domains under an automated
-  QEMU check.
+- Display and input SCI components boot in separate (still identity-mapped,
+  CPL0) domains under an automated QEMU check.
 
 ### Component Transition
 - Storage, network, and POSIX source has moved into `components/`, with
