@@ -55,7 +55,7 @@ fn discover-memory(mb: Int) -> void {
 }
 
 // --- virtual memory management ----------------------------------------------
-// The boot trampoline identity-maps the first 1 GiB with 2 MiB pages. These
+// The boot trampoline identity-maps the first 4 GiB with 2 MiB pages. These
 // helpers allocate fresh 4 KiB-aligned frames and install new 4 KiB mappings by
 // walking and growing the page tables, the foundation for realm memory domains.
 var free-list: Int = 0  // head of LIFO free list, 0 = empty
@@ -161,7 +161,7 @@ fn pt-ensure-pte(pml4: Int, virt: Int) -> Int {
 }
 
 fn map-page(virt: Int, phys: Int, flags: Int) -> void {
-  let pml4 = invoke1(load64(0x4058), 0)
+  let pml4 = cr3-read()
   let pte = pt-ensure-pte-flags(pml4, virt, flags)
   store64(pte, phys | flags)
   invlpg(virt)

@@ -10,6 +10,29 @@ const DOMAIN-ACTIVE = 1
 var domain-table: Int = 0
 var domain-count: Int = 0
 var domain-current: Int = 0
+var current-cap: Int = -1
+var cr3-read-stub: Int = 0
+var cr3-write-stub: Int = 0
+
+fn cr3-read() -> Int {
+  return invoke1(cr3-read-stub, 0)
+}
+
+fn cr3-write(pml4: Int) -> void {
+  invoke1(cr3-write-stub, pml4)
+  return
+}
+
+fn domain-set-cap(id: Int, cap-idx: Int) -> void {
+  if id < 0 || id >= domain-count {
+    return
+  }
+  store64(domain-table + id * 24 + 16, cap-idx)
+  if domain-current == id {
+    current-cap = cap-idx
+  }
+  return
+}
 
 fn domain-init() -> void {
   domain-table = alloc(MAX-DOMAINS * 24)
@@ -17,7 +40,7 @@ fn domain-init() -> void {
   while i < MAX-DOMAINS {
     store64(domain-table + i * 24 + 0, 0)
     store64(domain-table + i * 24 + 8, DOMAIN-FREE)
-    store64(domain-table + i * 24 + 16, 0)
+    store64(domain-table + i * 24 + 16, -1)
     i = i + 1
   }
   // The bootloader left the kernel PML4 at 0x1000, but the compiler may place
@@ -29,11 +52,15 @@ fn domain-init() -> void {
     store64(kernel-pml4 + k * 8, load64(0x1000 + k * 8))
     k = k + 1
   }
-  invoke1(load64(0x4060), kernel-pml4)
+  cr3-read-stub = load64(0x4058)
+  cr3-write-stub = load64(0x4060)
+  store64(0x4058, 0)
+  store64(0x4060, 0)
+  cr3-write(kernel-pml4)
   store64(0x40B8, kernel-pml4)
   store64(domain-table + 0, kernel-pml4)
   store64(domain-table + 8, DOMAIN-ACTIVE)
-  store64(domain-table + 16, 0)
+  store64(domain-table + 16, -1)
   domain-count = 1
   domain-current = 0
   return
@@ -74,7 +101,7 @@ fn domain-create() -> Int {
   let pml4 = create-domain-pml4()
   store64(domain-table + id * 24 + 0, pml4)
   store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
-  store64(domain-table + id * 24 + 16, 0)
+  store64(domain-table + id * 24 + 16, -1)
   domain-count = domain-count + 1
   return id
 }
@@ -84,8 +111,9 @@ fn domain-switch(id: Int) -> void {
   if load64(domain-table + id * 24 + 8) != DOMAIN-ACTIVE { return }
   let pml4 = load64(domain-table + id * 24 + 0)
   if pml4 == 0 { return }
-  invoke1(load64(0x4060), pml4)
+  cr3-write(pml4)
   domain-current = id
+  current-cap = load64(domain-table + id * 24 + 16)
   return
 }
 

@@ -2,7 +2,7 @@
 // This file contains the actual Intel 82540EM driver implementation and a
 // component entry point that services packet send/receive requests from the
 // kernel over cross-domain channels.  The kernel-side stubs live in
-// kernel/net.in.
+// components/net.in.
 
 var nic-mmio: Int = 0
 var nic-tx-ring: Int = 0

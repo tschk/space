@@ -1066,6 +1066,42 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  sys-write buf=0 not rejected")
         serial-nl(port)
       }
+      if load64(0x4058) != 0 || load64(0x4060) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  cr3 stubs still published")
+        serial-nl(port)
+      }
+      let saved-cap = current-cap
+      let weak = cap-mint(root-realm, cap-timer())
+      current-cap = weak
+      let probe = "x"
+      if sys-write(1, probe, 1) != -1 {
+        ok = 0
+        serial-write-cstr(port, "  sys-write without serial cap not rejected")
+        serial-nl(port)
+      }
+      if sys-chan-create(4) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  sys-chan-create without graph cap not rejected")
+        serial-nl(port)
+      }
+      current-cap = saved-cap
+      let guest-dom = domain-create()
+      let guest-comp = component-register("hard-guest", 0, cap-serial())
+      if sci-bind-domain-cap(guest-dom, guest-comp, cap-serial()) >= 0 {
+        domain-switch(guest-dom)
+        let kg = sys-write(1, 0x200000, 16)
+        domain-switch(0)
+        if kg != -1 {
+          ok = 0
+          serial-write-cstr(port, "  guest sys-write of kernel globals not rejected")
+          serial-nl(port)
+        }
+      } else {
+        ok = 0
+        serial-write-cstr(port, "  guest cap mint failed")
+        serial-nl(port)
+      }
       // DNS parser must reject a truncated message (huge ancount, short len).
       let dbuf = alloc(64)
       let di = 0

@@ -10,22 +10,28 @@ IN="$INAUG_DIR/in-cli/target/release/in"
 SERIAL="$BUILD_DIR/serial.log"
 FIFO="$BUILD_DIR/serial_in"
 mkdir -p "$BUILD_DIR"
-echo "[1/3] Building compiler..."
-[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
-echo "[2/3] Assembling trampoline and compiling kernel..."
-NASM="${NASM:-nasm}"
-"$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
-[ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 4096 ] || { echo "trampoline size error" >&2; exit 1; }
-"$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
-  --trampoline "$BUILD_DIR/trampoline.bin" \
-  --target native --target-triple x86_64-unknown-none --linkage static-lib \
-  --out "$BUILD_DIR/kernel.bin"
+if [ -n "${KERNEL_BIN:-}" ]; then
+  echo "[1/3] Using KERNEL_BIN=$KERNEL_BIN"
+  KERNEL="$KERNEL_BIN"
+else
+  echo "[1/3] Building compiler..."
+  [ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+  echo "[2/3] Assembling trampoline and compiling kernel..."
+  NASM="${NASM:-nasm}"
+  "$NASM" -f bin "$SPACE_DIR/boot/multiboot.asm" -o "$BUILD_DIR/trampoline.bin"
+  [ $(wc -c < "$BUILD_DIR/trampoline.bin") -eq 4096 ] || { echo "trampoline size error" >&2; exit 1; }
+  "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
+    --trampoline "$BUILD_DIR/trampoline.bin" \
+    --target native --target-triple x86_64-unknown-none --linkage static-lib \
+    --out "$BUILD_DIR/kernel.bin"
+  KERNEL="$BUILD_DIR/kernel.bin"
+fi
 echo "[3/3] Booting and checking output..."
 rm -f "$SERIAL" "$FIFO"
 mkfifo "$FIFO"
 # Start QEMU with serial input from the FIFO and output to the log file.
 # Keep fd 3 open for writing to the FIFO so QEMU's stdin does not see EOF.
-qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M \
+qemu-system-x86_64 -kernel "$KERNEL" -m 512M \
   -rtc base=utc \
   -device isa-debug-exit,iobase=0xf4 \
   -vga std -serial stdio -display none -no-reboot <"$FIFO" >"$SERIAL" 2>/dev/null &

@@ -196,6 +196,8 @@ fn kernel-entry(mb-info: Int) -> Int {
   }
 
   domain-init()
+  store64(domain-table + 16, kernel-cap)
+  current-cap = kernel-cap
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: domain subsystem init, ")
     serial-write-dec-wide(port, domain-count)

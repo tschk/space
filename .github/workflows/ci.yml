@@ -6,23 +6,48 @@ on:
   pull_request:
 
 jobs:
-  ci:
-    uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
-    with:
-      inauguration-path: vendor/inauguration
-      install-deps: "nasm"
-      build-command: |
-        mkdir -p /tmp/space-boot
-        command nasm -f bin boot/multiboot.asm -o /tmp/space-boot/trampoline.bin
-        command in compile --path kernel/kernel-root.in --entry kernel-entry --emit boot \
-          --trampoline /tmp/space-boot/trampoline.bin \
-          --target native --target-triple x86_64-unknown-none --linkage static-lib \
-          --out /tmp/space-boot/kernel.bin
-      test-command: |
-        echo "Boot image: $(wc -c < /tmp/space-boot/kernel.bin) bytes"
-        bash scripts/check-spdp-protocol.sh
-        bash scripts/check-sci-contract.sh
-        bash scripts/check-architecture-boundaries.sh
+  kernel:
+    name: Kernel compile and QEMU smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      INAUGURATION_DIR: ${{ github.workspace }}/vendor/inauguration
+      BUILD_DIR: /tmp/space-boot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: tschk/inauguration
+          ref: 2e3bf260c9624d5c6127c56febcd0e1938e8d475
+          path: vendor/inauguration
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Build in compiler
+        run: cargo build --release --bin in --features extended
+        working-directory: vendor/inauguration/in-cli
+      - name: Add in to PATH
+        run: echo "${{ github.workspace }}/vendor/inauguration/in-cli/target/release" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y nasm qemu-system-x86
+      - name: Build boot image
+        run: |
+          mkdir -p "$BUILD_DIR"
+          nasm -f bin boot/multiboot.asm -o "$BUILD_DIR/trampoline.bin"
+          command in compile --path kernel/kernel-root.in --entry kernel-entry --emit boot \
+            --trampoline "$BUILD_DIR/trampoline.bin" \
+            --target native --target-triple x86_64-unknown-none --linkage static-lib \
+            --out "$BUILD_DIR/kernel.bin"
+      - name: Host gates and QEMU smoke
+        run: |
+          echo "Boot image: $(wc -c < "$BUILD_DIR/kernel.bin") bytes"
+          bash scripts/check-spdp-protocol.sh
+          bash scripts/check-sci-contract.sh
+          bash scripts/check-architecture-boundaries.sh
+          KERNEL_BIN="$BUILD_DIR/kernel.bin" bash scripts/check-qemu-smoke.sh
 
   website:
     name: Website gates
@@ -36,7 +61,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
