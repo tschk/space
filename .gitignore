@@ -8,3 +8,4 @@ kernel/target/
 build/
 .pi-subagents/
 serial.log
+.amp/portals/
