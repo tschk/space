@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Fast wake-up: PATH repair only. No installs.
+set -euo pipefail
+
+if [[ -f "${HOME}/.cargo/env" ]]; then
+  # shellcheck disable=SC1091
+  source "${HOME}/.cargo/env"
+fi
+
+need() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+missing=0
+for bin in nasm qemu-system-x86_64 python3 bun; do
+  if ! need "$bin"; then
+    printf 'resume: missing %s (run .agents/setup)\n' "$bin" >&2
+    missing=1
+  fi
+done
+if ! need rustc || ! need cargo; then
+  printf 'resume: rustc/cargo not on PATH\n' >&2
+  missing=1
+fi
+exit "$missing"

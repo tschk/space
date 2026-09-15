@@ -10,6 +10,7 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: vendor/inauguration
+      inauguration-ref: 2e3bf260c9624d5c6127c56febcd0e1938e8d475
       install-deps: "nasm"
       build-command: |
         mkdir -p /tmp/space-boot
@@ -36,7 +37,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.3.10"
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
