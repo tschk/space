@@ -22,6 +22,44 @@ fn pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
   return
 }
 
+// Decode a memory BAR at `off` (typically 0x10). Rejects I/O BARs, type-reserved
+// encodings, and a zero base. `need` is the minimum MMIO size in bytes; size is
+// probed by writing all-ones and restoring the original register(s).
+fn pci-bar-mmio(bus: Int, dev: Int, func: Int, off: Int, need: Int) -> Int {
+  let raw = pci-read32(bus, dev, func, off)
+  if (raw & 1) != 0 {
+    return 0
+  }
+  let kind = raw & 0x6
+  if kind == 0x6 {
+    return 0
+  }
+  pci-write32(bus, dev, func, off, -1)
+  let mask-lo = pci-read32(bus, dev, func, off)
+  pci-write32(bus, dev, func, off, raw)
+  let size = 0
+  let phys = raw & 0xFFFFFFF0
+  if kind == 0x4 {
+    let hi = pci-read32(bus, dev, func, off + 4)
+    pci-write32(bus, dev, func, off + 4, -1)
+    let mask-hi = pci-read32(bus, dev, func, off + 4)
+    pci-write32(bus, dev, func, off + 4, hi)
+    phys = phys | (hi << 32)
+    let dec = (mask-lo & 0xFFFFFFF0) | (mask-hi << 32)
+    size = (-dec) & dec
+  } else {
+    let dec = mask-lo & 0xFFFFFFF0
+    size = (-dec) & dec
+  }
+  if phys == 0 {
+    return 0
+  }
+  if need > 0 && (size == 0 || size < need) {
+    return 0
+  }
+  return phys
+}
+
 // Find and enable the Intel 82540EM (e1000) NIC in a single scan.
 // Returns BAR0 MMIO base, or 0 if absent. Enables memory space, I/O space, and bus mastering.
 fn pci-find-and-enable-e1000() -> Int {
@@ -32,7 +70,7 @@ fn pci-find-and-enable-e1000() -> Int {
     if (vendor == 0x8086) && (device == 0x100E) {
       let cmd = pci-read32(0, dev, 0, 0x04)
       pci-write32(0, dev, 0, 0x04, cmd | 0x7)
-      return pci-read32(0, dev, 0, 0x10) & 0xFFFFFFF0
+      return pci-bar-mmio(0, dev, 0, 0x10, 0x10000)
     }
   }
   return 0

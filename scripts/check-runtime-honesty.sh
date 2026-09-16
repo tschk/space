@@ -44,22 +44,39 @@ def fn_body(text: str, name: str) -> str | None:
     return text[start : i - 1]
 
 
-def dns_skip_name(pkt: bytes, start: int, end: int) -> int:
-    """Mirror components/dns.in dns-skip-name (does not follow compression)."""
+def dns_skip_name(pkt: bytes, start: int, end: int, msg: int = 0) -> int:
+    """Mirror components/dns.in dns-skip-name (follows compression, earlier-only)."""
     off = start
     jumps = 0
+    result = -1
     while True:
         if off >= end:
             return -1
         lab = pkt[off]
         if lab == 0:
-            return off + 1
+            return off + 1 if result == -1 else result
         if (lab & 0xC0) == 0xC0:
-            return off + 2
-        off = off + 1 + lab
-        jumps = jumps + 1
-        if jumps > 128:
+            if off + 1 >= end:
+                return -1
+            if result == -1:
+                result = off + 2
+            ptr = ((lab & 0x3F) << 8) | pkt[off + 1]
+            dest = msg + ptr
+            if dest < msg or dest >= end or dest >= off:
+                return -1
+            off = dest
+            jumps += 1
+            if jumps > 128:
+                return -1
+        elif (lab & 0xC0) != 0:
             return -1
+        else:
+            if off + 1 + lab > end:
+                return -1
+            off = off + 1 + lab
+            jumps += 1
+            if jumps > 128:
+                return -1
 
 
 def main() -> int:
@@ -96,21 +113,19 @@ def main() -> int:
     check("sock table allows 16 sockets", "const SOCK-MAX = 16" in netstack)
     syn = fn_body(network, "build-tcp-syn-impl") or ""
     check(
-        "SYN sequence number is hard-coded 1",
-        "store8(tcp + 6, 0x00); store8(tcp + 7, 0x01)" in syn,
+        "SYN sequence number is taken from tcp-isn",
+        "(tcp-isn >> 24)" in syn and "tcp-isn & 0xFF" in syn,
     )
     connect = fn_body(netstack, "sock-connect") or ""
     check(
-        "post-handshake local seq is hard-coded 2",
-        "tcp-local-seq = 2" in connect and "ISN was 1" in connect,
+        "connect mixes ISN from ticks and advances local seq to ISN+1",
+        "tcp-isn = (ticks * 1103515245 + 12345)" in connect
+        and "tcp-local-seq = tcp-isn + 1" in connect,
     )
     close = fn_body(netstack, "sock-close") or ""
     check(
-        "sock-close frees the table slot without sending FIN/RST",
-        "SOCK-OFF-USED, 0" in close
-        and "SOCK-STATE-FREE" in close
-        and "build-tcp" not in close
-        and "e1000-tx" not in close,
+        "sock-close sends FIN+ACK on an established TCP socket",
+        "build-tcp-fin-impl" in close and "e1000-tx-impl(flen)" in close and "0x11" in (fn_body(network, "build-tcp-fin-impl") or ""),
     )
     send = fn_body(netstack, "sock-send") or ""
     check(
@@ -120,53 +135,56 @@ def main() -> int:
     accept = fn_body(netstack, "sock-accept") or ""
     check("TCP accept is unimplemented (-38)", "return -38" in accept)
 
-    print("[2/6] UDP destination is hard-coded; cstr-len is unbounded...")
-    udp = fn_body(network, "build-udp-impl") or ""
+    print("[2/6] UDP destination comes from the socket; cstr-len is capped...")
+    udp = fn_body(network, "build-udp-to-impl") or ""
     check(
-        "UDP IPv4 is 10.0.2.15 -> 10.0.2.2",
-        "store8(ip + 12, 10)" in udp
-        and "store8(ip + 15, 15)" in udp
-        and "store8(ip + 16, 10)" in udp
-        and "store8(ip + 19, 2)" in udp,
+        "build-udp-impl is a 10.0.2.2:9999 wrapper",
+        "return build-udp-to-impl(payload, -1, 0x0A000202, 9999, 9999)" in (fn_body(network, "build-udp-impl") or ""),
     )
     check(
-        "UDP ports are hard-coded 9999 (0x270F)",
-        udp.count("store8(udp + 0, 0x27)") == 1 and udp.count("0x0F") >= 2,
+        "build-udp-to-impl writes dest-ip/dest-port onto the wire",
+        "(dest-ip >> 24)" in udp and "(dest-port >> 8)" in udp and "(src-port >> 8)" in udp,
     )
     sendto = fn_body(netstack, "sock-sendto") or ""
     check(
-        "sock-sendto drives TX via build-udp-impl (ignores rip/rport on the wire)",
-        "build-udp-impl(payload)" in sendto and "10.0.2.15->10.0.2.2:9999" in sendto,
+        "sock-sendto drives TX via build-udp-to-impl with len/rip/rport/lport",
+        "build-udp-to-impl(payload, send-len, dest-ip, dest-port, src-port)" in sendto,
     )
     cstr = fn_body(network, "cstr-len-impl") or ""
     check(
-        "cstr-len-impl walks until NUL with no cap",
-        "while load8(addr + n) != 0" in cstr and "n = n + 1" in cstr,
+        "cstr-len-impl stops at 1472 bytes",
+        "while n < 1472 && load8(addr + n) != 0" in cstr,
     )
 
-    print("[3/6] PCI BARs and SparkFS disk fields are trusted...")
+    print("[3/6] PCI BARs and SparkFS disk fields are validated...")
     e1000 = fn_body(pci, "pci-find-and-enable-e1000") or ""
+    bar = fn_body(pci, "pci-bar-mmio") or ""
     check(
-        "e1000 BAR0 is masked without I/O vs memory type check",
-        "pci-read32(0, dev, 0, 0x10) & 0xFFFFFFF0" in e1000
-        and "& 0x1" not in e1000
-        and "bar0-raw" not in e1000,
+        "pci-bar-mmio rejects I/O BARs and reserved type",
+        "(raw & 1) != 0" in bar and "kind == 0x6" in bar,
+    )
+    check(
+        "pci-bar-mmio probes size by writing all-ones",
+        "pci-write32(bus, dev, func, off, -1)" in bar and "size < need" in bar,
+    )
+    check(
+        "e1000 BAR0 requires a 64 KiB memory BAR",
+        "pci-bar-mmio(0, dev, 0, 0x10, 0x10000)" in e1000,
     )
     nvme_pci = fn_body(storage, "storage-pci-init") or ""
     check(
-        "NVMe maps 32 KiB of BAR0 MMIO regardless of BAR size",
-        "while pg < mmio-phys + 0x8000" in nvme_pci,
+        "NVMe BAR0 requires a 32 KiB memory BAR before mapping 32 KiB",
+        "pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x8000)" in nvme_pci
+        and "while pg < mmio-phys + 0x8000" in nvme_pci,
     )
     e1000_init = fn_body(network, "e1000-init-impl") or ""
     check(
-        "e1000 maps 64 KiB of BAR0 MMIO regardless of BAR size",
+        "e1000 maps 64 KiB only after BAR validation",
         "while pg < bar0 + 0x10000" in e1000_init,
     )
     check(
-        "VGA BAR scan assumes 64-bit memory without type/size probe",
-        "class-code == 0x030000" in display
-        and "bar0-raw & 0x6) == 0x4" in display
-        and "fb-addr = bar0-lo | (bar0-hi << 32)" in display,
+        "VGA BAR scan uses pci-bar-mmio",
+        "class-code == 0x030000" in display and "pci-bar-mmio(0, dev, 0, 0x10, 0x1000)" in display,
     )
     init = fn_body(fs_file, "sparkfs-init") or ""
     check(
@@ -177,52 +195,56 @@ def main() -> int:
         and "sf-inodes = alloc(ino-count * SF-INODE-SIZE)" in init,
     )
     check(
-        "sparkfs-init does not cap total or ino-count before alloc",
-        "if total" not in init and "if ino-count" not in init,
+        "sparkfs-init caps total and ino-count before alloc",
+        "if total < 2 || total > SF-MAX-TOTAL-BLOCKS" in init
+        and "if ino-count < 1 || ino-count > SF-MAX-INODE-COUNT" in init,
     )
     read_blk = fn_body(fs_block, "sf-read-block") or ""
     write_blk = fn_body(fs_block, "sf-write-block") or ""
     check(
-        "sf-read-block computes mem-disk offset from bno with no bound",
-        "sf-mem-disk + bno * SF-BLOCK-SIZE" in read_blk
-        and "bno <" not in read_blk
-        and "bno >" not in read_blk,
+        "sf-read-block rejects out-of-range bno",
+        "sf-bno-in-range(bno) == 0" in read_blk,
     )
     check(
-        "sf-write-block computes mem-disk offset from bno with no bound",
-        "sf-mem-disk + bno * SF-BLOCK-SIZE" in write_blk
-        and "bno <" not in write_blk
-        and "bno >" not in write_blk,
+        "sf-write-block rejects out-of-range bno",
+        "sf-bno-in-range(bno) == 0" in write_blk,
     )
 
-    print("[4/6] ELF execve is a CPL0 jump; DNS compression is not followed...")
+    print("[4/6] ELF execve copies PT_LOAD then jumps at CPL0; DNS compression is followed...")
     elf = fn_body(posix, "posix-elf-exec-image") or ""
     check(
         "ELF magic is the 64-bit little-endian ident word",
         "const LINUX-ELF-MAGIC = 0x00010102464C457F" in posix,
     )
     check(
-        "posix-elf-exec-image jumps to PT_LOAD entry with invoke1(entry, 0)",
-        "load32(ph + 0) == 1" in elf and "return invoke1(entry, 0)" in elf,
+        "posix-elf-exec-image copies PT_LOAD filesz then zeroes BSS to memsz",
+        "store8(vaddr + k, load8(image + off + k))" in elf
+        and "store8(vaddr + k, 0)" in elf
+        and "while k < memsz" in elf,
     )
     check(
-        "posix-elf-exec-image does not copy PT_LOAD or zero .bss",
-        "filesz" in elf and "memsz" in elf and "store8" not in elf and "memcpy" not in elf,
+        "posix-elf-exec-image still jumps with invoke1(entry, 0) at CPL0",
+        "return invoke1(entry, 0)" in elf,
     )
     skip = fn_body(dns, "dns-skip-name") or ""
     check(
-        "dns-skip-name treats 0xC0 as a two-byte skip (does not follow the pointer)",
-        "(lab & 0xC0) == 0xC0" in skip and "return off + 2" in skip,
+        "dns-skip-name follows compression pointers that point earlier",
+        "(lab & 0xC0) == 0xC0" in skip and "dest >= off" in skip and "result = off + 2" in skip,
     )
     pkt = bytearray(32)
+    pkt[0] = 0
     pkt[12] = 0xC0
-    pkt[13] = 0x0C
-    check("python dns-skip-name matches: compression returns start+2", dns_skip_name(pkt, 12, 32) == 14)
+    pkt[13] = 0x00
+    check("python dns-skip-name matches: compression to earlier NUL returns start+2", dns_skip_name(pkt, 12, 32, 0) == 14)
+    pkt_fwd = bytearray(32)
+    pkt_fwd[12] = 0xC0
+    pkt_fwd[13] = 20
+    check("python dns-skip-name matches: forward pointer is rejected", dns_skip_name(pkt_fwd, 12, 32, 0) == -1)
     pkt2 = bytearray(b"\x03www\x07example\x03com\x00")
-    check("python dns-skip-name matches: uncompressed name walk", dns_skip_name(pkt2, 0, len(pkt2)) == len(pkt2))
-    check("python dns-skip-name matches: off>=end is -1", dns_skip_name(b"\x00", 1, 1) == -1)
+    check("python dns-skip-name matches: uncompressed name walk", dns_skip_name(pkt2, 0, len(pkt2), 0) == len(pkt2))
+    check("python dns-skip-name matches: off>=end is -1", dns_skip_name(b"\x00", 1, 1, 0) == -1)
     long_labels = bytearray([1, ord("a")] * 129 + [0])
-    check("python dns-skip-name matches: jumps>128 is -1", dns_skip_name(long_labels, 0, len(long_labels)) == -1)
+    check("python dns-skip-name matches: jumps>128 is -1", dns_skip_name(long_labels, 0, len(long_labels), 0) == -1)
 
     print("[5/6] Capabilities, channels, SCI grants, preempt-stop...")
     check(
@@ -270,8 +292,10 @@ def main() -> int:
         "if thread-count >= thread-max {\n    return -1\n  }" in thr,
     )
     check(
-        "int 0x80 gate is DPL3 while the GDT remains DPL0-only",
-        "store8(e + 5, 0xEE)" in syscall and "idt-set-user" in syscall,
+        "int 0x80 gate is DPL3 and GDT has user CS/DS",
+        "store8(e + 5, 0xEE)" in syscall
+        and "idt-set-user" in syscall
+        and "0x00AFFA000000FFFF" in read("boot/multiboot.asm"),
     )
 
     print("[6/6] Syscall channel handles remain raw pointers...")

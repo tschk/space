@@ -79,9 +79,7 @@ fn xhci-find-pci() -> Int {
 }
 
 fn xhci-read-bar64(bus: Int, dev: Int, func: Int) -> Int {
-  let lo = pci-read32(bus, dev, func, 0x10)
-  let hi = pci-read32(bus, dev, func, 0x14)
-  return (lo & 0xFFFFFFF0) | ((hi & 0xFFFFFFFF) << 32)
+  return pci-bar-mmio(bus, dev, func, 0x10, 0x1000)
 }
 
 fn trb-set(addr: Int, param: Int, status: Int, control: Int) -> void {

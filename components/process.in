@@ -170,7 +170,7 @@ fn proc-poll-signals(pid: Int) -> Int {
 // Block the caller until `pid` has exited or been killed, then return its exit
 // code. Uses cooperative yield-polling since .in has no atomics yet.
 fn proc-wait(pid: Int) -> Int {
-  if pid >= proc-count { return -1 }
+  if pid < 0 || pid >= proc-count { return -1 }
   let base = proc-table + pid * PROC-SIZE
   while load64(base + PROC-OFF-STATUS) != PROC-EXITED && load64(base + PROC-OFF-STATUS) != PROC-KILLED {
     proc-poll-signals(pid)
@@ -328,10 +328,9 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   let cap-info = alloc(16)
   store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
+  domain-map-user-data(domain, cap-info, cap-info)
 
-  domain-switch(domain)
-  let status = invoke1(entry, cap-info)
-  domain-switch(0)
+  let status = domain-enter-user(entry, cap-info, domain)
 
   store64(component + 48, status)
   serial-write-cstr(port, "  SCI: guest ")

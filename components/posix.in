@@ -246,6 +246,9 @@ fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if entry == 0 || phoff == 0 || phentsize < 56 || phnum == 0 {
     return LINUX-ENOEXEC
   }
+  if phnum > 16 {
+    return LINUX-ENOEXEC
+  }
   let i = 0
   while i < phnum {
     let ph = image + phoff + i * phentsize
@@ -257,19 +260,34 @@ fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
       let vaddr = load64(ph + 16)
       let filesz = load64(ph + 32)
       let memsz = load64(ph + 40)
-      if off + filesz > size {
+      if filesz < 0 || memsz < 0 || filesz > memsz {
         return LINUX-ENOEXEC
       }
-      if entry >= vaddr && entry < vaddr + memsz {
-        serial-write-cstr(port, "posix: execve loading ELF from ")
-        serial-write-cstr(port, path)
-        serial-nl(port)
-        return invoke1(entry, 0)
+      if off < 0 || off + filesz < off || off + filesz > size {
+        return LINUX-ENOEXEC
+      }
+      if vaddr == 0 || vaddr + memsz < vaddr {
+        return LINUX-ENOEXEC
+      }
+      if memsz > 0x200000 {
+        return LINUX-ENOEXEC
+      }
+      let k = 0
+      while k < filesz {
+        store8(vaddr + k, load8(image + off + k))
+        k = k + 1
+      }
+      while k < memsz {
+        store8(vaddr + k, 0)
+        k = k + 1
       }
     }
     i = i + 1
   }
-  return LINUX-ENOEXEC
+  serial-write-cstr(port, "posix: execve loading ELF from ")
+  serial-write-cstr(port, path)
+  serial-nl(port)
+  return invoke1(entry, 0)
 }
 
 fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {

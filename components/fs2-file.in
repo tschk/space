@@ -30,6 +30,12 @@ fn sparkfs-init() -> void {
   }
   let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
   let ino-count = load32(sf-super + SF-SB-INODE-COUNT)
+  if total < 2 || total > SF-MAX-TOTAL-BLOCKS {
+    return
+  }
+  if ino-count < 1 || ino-count > SF-MAX-INODE-COUNT {
+    return
+  }
   let bitmap-bytes = (total + 7) / 8
   sf-bitmap = alloc(bitmap-bytes)
   let i = 0
@@ -61,6 +67,12 @@ fn sparkfs-init() -> void {
 
 fn sf-do-format(total: Int, ino-count: Int) -> Int {
   sf-disk-ready = 0
+  if total < 2 || total > SF-MAX-TOTAL-BLOCKS {
+    return -1
+  }
+  if ino-count < 1 || ino-count > SF-MAX-INODE-COUNT {
+    return -1
+  }
   if sf-super == 0 {
     sf-super = alloc(SF-BLOCK-SIZE)
   }

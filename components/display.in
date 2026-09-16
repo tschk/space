@@ -207,17 +207,13 @@ fn fb-init(mb-info: Int) -> Int {
     if vendor != 0xFFFF {
       let class-code = (pci-read32(0, dev, 0, 0x08) >> 8) & 0xFFFFFF
       if class-code == 0x030000 {
-        // Read BAR0 (64-bit memory BAR: BAR0 at 0x10, BAR1 at 0x14).
-        let bar0-raw = pci-read32(0, dev, 0, 0x10)
-        let bar0-lo = bar0-raw & 0xFFFFFFF0
-        let bar0-hi = 0
-        if (bar0-raw & 0x6) == 0x4 {
-          bar0-hi = pci-read32(0, dev, 0, 0x14)
+        let bar = pci-bar-mmio(0, dev, 0, 0x10, 0x1000)
+        if bar != 0 {
+          fb-addr = bar
+          // Enable PCI memory space, I/O space, and bus mastering.
+          pci-write32(0, dev, 0, 0x04, 0x7)
+          break
         }
-        fb-addr = bar0-lo | (bar0-hi << 32)
-        // Enable PCI memory space, I/O space, and bus mastering.
-        pci-write32(0, dev, 0, 0x04, 0x7)
-        break
       }
     }
     dev = dev + 1

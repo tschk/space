@@ -1060,6 +1060,23 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  component data mapping is not user RW NX")
         serial-nl(port)
       }
+      let cpl3-code = frame-alloc()
+      store8(cpl3-code + 0, 0x48)
+      store8(cpl3-code + 1, 0xC7)
+      store8(cpl3-code + 2, 0xC0)
+      store8(cpl3-code + 3, 0x42)
+      store8(cpl3-code + 4, 0x00)
+      store8(cpl3-code + 5, 0x00)
+      store8(cpl3-code + 6, 0x00)
+      store8(cpl3-code + 7, 0xC3)
+      domain-map-user-code(permission-domain, 0x50000000, cpl3-code)
+      let cpl3 = domain-enter-user(0x50000000, 0, permission-domain)
+      if cpl3 != 0x42 {
+        ok = 0
+        serial-write-cstr(port, "  CPL3 enter/exit failed 0x")
+        serial-write-hex(port, cpl3)
+        serial-nl(port)
+      }
       let w = sys-write(1, 0, 10)
       if w != -1 {
         ok = 0

@@ -171,6 +171,41 @@ fn input-pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void 
   return
 }
 
+fn input-pci-bar-mmio(bus: Int, dev: Int, func: Int, off: Int, need: Int) -> Int {
+  let raw = input-pci-read32(bus, dev, func, off)
+  if (raw & 1) != 0 {
+    return 0
+  }
+  let kind = raw & 0x6
+  if kind == 0x6 {
+    return 0
+  }
+  input-pci-write32(bus, dev, func, off, -1)
+  let mask-lo = input-pci-read32(bus, dev, func, off)
+  input-pci-write32(bus, dev, func, off, raw)
+  let size = 0
+  let phys = raw & 0xFFFFFFF0
+  if kind == 0x4 {
+    let hi = input-pci-read32(bus, dev, func, off + 4)
+    input-pci-write32(bus, dev, func, off + 4, -1)
+    let mask-hi = input-pci-read32(bus, dev, func, off + 4)
+    input-pci-write32(bus, dev, func, off + 4, hi)
+    phys = phys | (hi << 32)
+    let dec = (mask-lo & 0xFFFFFFF0) | (mask-hi << 32)
+    size = (-dec) & dec
+  } else {
+    let dec = mask-lo & 0xFFFFFFF0
+    size = (-dec) & dec
+  }
+  if phys == 0 {
+    return 0
+  }
+  if need > 0 && (size == 0 || size < need) {
+    return 0
+  }
+  return phys
+}
+
 // --- cross-domain channel on shared page -----------------------------------
 // Shared page layout (4096 bytes):
 //   [0]   head
@@ -281,9 +316,7 @@ fn xhci-find-pci() -> Int {
 }
 
 fn xhci-read-bar64(bus: Int, dev: Int, func: Int) -> Int {
-  let lo = input-pci-read32(bus, dev, func, 0x10)
-  let hi = input-pci-read32(bus, dev, func, 0x14)
-  return (lo & 0xFFFFFFF0) | ((hi & 0xFFFFFFFF) << 32)
+  return input-pci-bar-mmio(bus, dev, func, 0x10, 0x1000)
 }
 
 fn trb-set(addr: Int, param: Int, status: Int, control: Int) -> void {

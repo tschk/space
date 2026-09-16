@@ -59,6 +59,12 @@ fn sys-exit(code: Int) -> Int {
   serial-write-cstr(port, ") from thread 0x")
   serial-write-hex(port, current-task)
   serial-nl(port)
+  let active-slot = load64(0x4118)
+  if active-slot != 0 {
+    if load64(active-slot) != 0 {
+      return code
+    }
+  }
   if current-task != 0 {
     proc-exit(code)
   }

@@ -78,7 +78,33 @@ fn sf-cache-install(bno: Int, buf: Int) -> void {
 // --- low-level block I/O ----------------------------------------------------
 
 // Read block `bno` into `buf`. Returns 0 on success.
+fn sf-bno-in-range(bno: Int) -> Int {
+  if bno < 0 {
+    return 0
+  }
+  if sf-mem-disk != 0 {
+    if bno >= SF-MEM-DISK-BLOCKS {
+      return 0
+    }
+    return 1
+  }
+  if sf-super == 0 {
+    return 0
+  }
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  if total < 1 || total > SF-MAX-TOTAL-BLOCKS {
+    return 0
+  }
+  if bno >= total {
+    return 0
+  }
+  return 1
+}
+
 fn sf-read-block(bno: Int, buf: Int) -> Int {
+  if sf-bno-in-range(bno) == 0 {
+    return -1
+  }
   if sf-mem-disk != 0 {
     let src = sf-mem-disk + bno * SF-BLOCK-SIZE
     let i = 0
@@ -117,6 +143,9 @@ fn sf-read-block(bno: Int, buf: Int) -> Int {
 
 // Write block `bno` from `buf`. Returns 0 on success. Write-through.
 fn sf-write-block(bno: Int, buf: Int) -> Int {
+  if sf-bno-in-range(bno) == 0 {
+    return -1
+  }
   if sf-mem-disk != 0 {
     let dst = sf-mem-disk + bno * SF-BLOCK-SIZE
     let i = 0

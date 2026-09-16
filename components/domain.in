@@ -31,12 +31,65 @@ fn domain-init() -> void {
   }
   invoke1(load64(0x4060), kernel-pml4)
   store64(0x40B8, kernel-pml4)
+  let cr3-slot = load64(0x40F8)
+  if cr3-slot != 0 {
+    store64(cr3-slot, kernel-pml4)
+  }
+  let tss = load64(0x4100)
+  if tss != 0 {
+    let kstack = alloc(8192)
+    store64(tss + 4, kstack + 8192)
+    let load-tr = load64(0x4108)
+    if load-tr != 0 {
+      invoke1(load-tr, 0)
+    }
+  }
   store64(domain-table + 0, kernel-pml4)
   store64(domain-table + 8, DOMAIN-ACTIVE)
   store64(domain-table + 16, 0)
   domain-count = 1
   domain-current = 0
   return
+}
+
+fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
+  if domain <= 0 || domain >= domain-count {
+    return -1
+  }
+  let pml4 = load64(domain-table + domain * 24 + 0)
+  if pml4 == 0 {
+    return -1
+  }
+  let enter = load64(0x40E0)
+  if enter == 0 {
+    return -1
+  }
+  let stub = frame-alloc()
+  store8(stub + 0, 0x48)
+  store8(stub + 1, 0x89)
+  store8(stub + 2, 0xC7)
+  store8(stub + 3, 0x48)
+  store8(stub + 4, 0xC7)
+  store8(stub + 5, 0xC0)
+  store8(stub + 6, 0x02)
+  store8(stub + 7, 0x00)
+  store8(stub + 8, 0x00)
+  store8(stub + 9, 0x00)
+  store8(stub + 10, 0xCD)
+  store8(stub + 11, 0x80)
+  domain-map-user-code(domain, 0x51000000, stub)
+  let stack-phys = frame-alloc()
+  domain-map-user-data(domain, 0x51100000, stack-phys)
+  store64(stack-phys + 4088, 0x51000000)
+  let args = alloc(32)
+  store64(args + 0, entry)
+  store64(args + 8, arg)
+  store64(args + 16, 0x51100FF8)
+  store64(args + 24, pml4)
+  domain-current = domain
+  let status = invoke1(enter, args)
+  domain-current = 0
+  return status
 }
 
 fn create-domain-pml4() -> Int {
@@ -100,6 +153,18 @@ fn domain-map(domain: Int, virt: Int, phys: Int, flags: Int) -> void {
   if pml4 == 0 { return }
   let pte = pt-ensure-pte-flags(pml4, virt, flags)
   store64(pte, phys | flags | 1)
+  invlpg(virt)
+  if (flags & 4) != 0 {
+    let i4 = (virt >> 39) & 0x1FF
+    let i3 = (virt >> 30) & 0x1FF
+    let i2 = (virt >> 21) & 0x1FF
+    store64(pml4 + i4 * 8, load64(pml4 + i4 * 8) | 4)
+    let pdpt = load64(pml4 + i4 * 8) & PAGE-ADDRESS-MASK
+    store64(pdpt + i3 * 8, load64(pdpt + i3 * 8) | 4)
+    let pd = load64(pdpt + i3 * 8) & PAGE-ADDRESS-MASK
+    store64(pd + i2 * 8, load64(pd + i2 * 8) | 4)
+    invoke1(load64(0x4060), load64(0x40B8))
+  }
   return
 }
 

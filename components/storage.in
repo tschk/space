@@ -273,14 +273,13 @@ fn storage-pci-init() -> Int {
   serial-write-hex(port, nvme-bdf)
   serial-write-cstr(port, ".0\n")
 
-  // Read BAR0 (64-bit memory BAR: BAR0 at offset 0x10, BAR1 at 0x14).
-  let bar0-raw = pci-read32(0, nvme-bdf, 0, 0x10)
-  let bar0-lo = bar0-raw & 0xFFFFFFF0
-  let bar0-hi = 0
-  if (bar0-raw & 0x6) == 0x4 {
-    bar0-hi = pci-read32(0, nvme-bdf, 0, 0x14)
+  // Read BAR0 as a memory BAR and require at least 32 KiB of MMIO.
+  let mmio-phys = pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x8000)
+  if mmio-phys == 0 {
+    serial-write-cstr(port, "  nvme: BAR0 is not a usable memory BAR")
+    serial-nl(port)
+    return -1
   }
-  let mmio-phys = bar0-lo | (bar0-hi << 32)
 
   serial-write-cstr(port, "  nvme: MMIO base 0x")
   serial-write-hex(port, mmio-phys)

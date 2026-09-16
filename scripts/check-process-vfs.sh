@@ -105,8 +105,8 @@ def main() -> int:
     )
     wait = fn_body(process, "proc-wait") or ""
     check(
-        "proc-wait rejects pid >= proc-count (negative pids are not rejected)",
-        "if pid >= proc-count { return -1 }" in wait and "pid < 0" not in wait,
+        "proc-wait rejects pid < 0 and pid >= proc-count",
+        "if pid < 0 || pid >= proc-count { return -1 }" in wait,
     )
     check("ps command lists processes", "fn proc-list" in process and 'line-eq("ps")' in shell)
 
@@ -183,7 +183,7 @@ def main() -> int:
     )
     wait4 = fn_body(posix, "posix-sys-wait4") or ""
     check(
-        "posix wait4 rejects pid < 0 (unlike proc-wait)",
+        "posix wait4 rejects pid < 0 like proc-wait",
         "if pid < 0 || pid >= proc-count" in wait4,
     )
 

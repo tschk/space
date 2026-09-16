@@ -74,8 +74,12 @@ def main() -> int:
         "identity-map the first 4 GiB" in boot and "0x83" in boot,
     )
     check(
-        "GDT is DPL0-only (no CPL3 user segments)",
-        "DPL0" in boot and "0x00AF9A000000FFFF" in boot,
+        "GDT has DPL0 kernel and DPL3 user segments plus enter_user",
+        "0x00AF9A000000FFFF" in boot
+        and "0x00AFFA000000FFFF" in boot
+        and "0x00CFF2000000FFFF" in boot
+        and "enter_user:" in boot
+        and "leave_user:" in boot,
     )
     check(
         "CR3 read/write stubs remain published at 0x4058/0x4060",
@@ -108,8 +112,8 @@ def main() -> int:
 
     print("[4/5] Shell hardening command + read-line bound...")
     check(
-        "shell hardening command asserts chan/syscall/dns/frame reuse",
-        "chan-new(0)" in shell and "hardening PASS" in shell and "dns-parse-a" in shell,
+        "shell hardening command asserts chan/syscall/dns/frame reuse and CPL3 enter",
+        "chan-new(0)" in shell and "hardening PASS" in shell and "dns-parse-a" in shell and "domain-enter-user" in shell,
     )
     check(
         "read-line stops before overflowing the 256-byte history slot",
@@ -118,8 +122,11 @@ def main() -> int:
 
     print("[5/5] Isolation honesty...")
     check(
-        "create-domain-pml4 still copies PDPT[0..3] (cloned identity map)",
-        "while j < 4" in domain and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain,
+        "shared domains still copy PDPT[0..3]; SCI guests enter via domain-enter-user",
+        "while j < 4" in domain
+        and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain
+        and "fn domain-enter-user" in domain
+        and "domain-enter-user(entry, cap-info, domain)" in read("components/sci-loader.in"),
     )
     check(
         "kernel domain-init still invokes the published cr3_write stub",
