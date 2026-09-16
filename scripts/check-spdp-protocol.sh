@@ -129,6 +129,7 @@ def main():
     check("ci.yml runs check-spdp-protocol.sh", "scripts/check-spdp-protocol.sh" in ci)
     check("ci.yml runs check-kernel-contracts.sh", "scripts/check-kernel-contracts.sh" in ci)
     check("ci.yml runs check-qemu-smoke.sh", "scripts/check-qemu-smoke.sh" in ci)
+    check("ci.yml runs check-image-formats.sh", "scripts/check-image-formats.sh" in ci)
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")
     if failed:
