@@ -25,6 +25,7 @@ jobs:
         bash scripts/check-sci-contract.sh
         bash scripts/check-architecture-boundaries.sh
         bash scripts/check-kernel-contracts.sh
+        bash scripts/check-image-formats.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
 
   website:
