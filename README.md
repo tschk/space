@@ -75,6 +75,9 @@ git submodule update --init --recursive
 bash scripts/check-qemu-boot.sh       # full boot verification
 bash scripts/build-multicomponent.sh  # SCI component loading demo
 bash scripts/check-sci-contract.sh    # metadata validation
+bash scripts/check-architecture-boundaries.sh  # component authority gate
+bash scripts/check-kernel-contracts.sh         # syscall/domain/net host contracts
+bash scripts/check-qemu-smoke.sh               # boot to serial shell
 bash scripts/check-network.sh         # e1000 ARP/UDP test
 bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path

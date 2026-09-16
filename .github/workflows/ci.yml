@@ -11,7 +11,7 @@ jobs:
     with:
       inauguration-path: vendor/inauguration
       inauguration-ref: 2e3bf260c9624d5c6127c56febcd0e1938e8d475
-      install-deps: "nasm"
+      install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot
         command nasm -f bin boot/multiboot.asm -o /tmp/space-boot/trampoline.bin
@@ -24,6 +24,8 @@ jobs:
         bash scripts/check-spdp-protocol.sh
         bash scripts/check-sci-contract.sh
         bash scripts/check-architecture-boundaries.sh
+        bash scripts/check-kernel-contracts.sh
+        KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
 
   website:
     name: Website gates
