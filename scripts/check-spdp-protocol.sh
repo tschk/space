@@ -127,6 +127,8 @@ def main():
     check("ci.yml uses --entry kernel-entry", "--entry kernel-entry" in ci)
     check("ci.yml does not use C-style kernel_entry", "--entry kernel_entry" not in ci)
     check("ci.yml runs check-spdp-protocol.sh", "scripts/check-spdp-protocol.sh" in ci)
+    check("ci.yml runs check-kernel-contracts.sh", "scripts/check-kernel-contracts.sh" in ci)
+    check("ci.yml runs check-qemu-smoke.sh", "scripts/check-qemu-smoke.sh" in ci)
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")
     if failed:
