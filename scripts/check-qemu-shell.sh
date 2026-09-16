@@ -61,6 +61,9 @@ send_cmd() {
 send_cmd help "halt up/down=hist" || true
 send_cmd ps "total processes:" || true
 send_cmd mem "heap used:" || true
+send_cmd status "realm object id" || true
+send_cmd ticks "timer ticks 0x" || true
+send_cmd uptime " ticks)" || true
 echo "halt" >&3
 exec 3>&-
 sleep 0.5
@@ -69,7 +72,7 @@ wait "$QPID" 2>/dev/null || true
 rm -f "$FIFO"
 
 fail=0
-for m in "kernel root entered" "space>" "halt up/down=hist" "total processes:" "heap used:"; do
+for m in "kernel root entered" "space>" "halt up/down=hist" "total processes:" "heap used:" "realm object id" "timer ticks 0x" " ticks)"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then
     echo "  ok: $m"
   else

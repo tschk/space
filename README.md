@@ -80,6 +80,7 @@ bash scripts/check-kernel-contracts.sh         # syscall/domain/net host contrac
 bash scripts/check-image-formats.sh            # SCI packer + SparkFS/SCI headers
 bash scripts/check-runtime-honesty.sh          # TCP/PCI/SparkFS/ELF honesty contracts
 bash scripts/check-process-vfs.sh              # process table / VFS / DHCP / libc
+bash scripts/check-personality-abi.sh          # Linux/Darwin/Windows syscall ABI
 bash scripts/check-qemu-smoke.sh               # boot to serial shell + hardening
 bash scripts/check-qemu-shell.sh               # help / ps / mem over serial
 bash scripts/check-network.sh         # e1000 ARP/UDP test

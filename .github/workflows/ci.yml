@@ -28,6 +28,7 @@ jobs:
         bash scripts/check-image-formats.sh
         bash scripts/check-runtime-honesty.sh
         bash scripts/check-process-vfs.sh
+        bash scripts/check-personality-abi.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-shell.sh
 
