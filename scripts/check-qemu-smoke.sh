@@ -41,7 +41,13 @@ qemu-system-x86_64 -kernel "$KERNEL" -m 256M \
 QPID=$!
 exec 3>"$FIFO"
 for _ in $(seq 1 200); do
-  grep -qF "interactive shell" "$SERIAL" 2>/dev/null && break
+  grep -qF "space>" "$SERIAL" 2>/dev/null && break
+  kill -0 "$QPID" 2>/dev/null || break
+  sleep 0.1
+done
+echo "hardening" >&3
+for _ in $(seq 1 80); do
+  grep -qE "hardening (PASS|FAIL)" "$SERIAL" 2>/dev/null && break
   kill -0 "$QPID" 2>/dev/null || break
   sleep 0.1
 done
@@ -53,7 +59,7 @@ wait "$QPID" 2>/dev/null || true
 rm -f "$FIFO"
 
 fail=0
-for m in "kernel root entered" "interactive shell" "space>"; do
+for m in "kernel root entered" "interactive shell" "space>" "hardening PASS"; do
   if grep -qF "$m" "$SERIAL" 2>/dev/null; then
     echo "  ok: $m"
   else
