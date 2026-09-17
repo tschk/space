@@ -1101,6 +1101,12 @@ fn shell(port: Int) -> void {
         serial-write-hex(port, cpl3)
         serial-nl(port)
       }
+      let tramp-flags = domain-page-flags(permission-domain, 0x100000)
+      if (tramp-flags & 1) == 0 || (tramp-flags & 4) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  trampoline is missing or user-accessible")
+        serial-nl(port)
+      }
       let w = sys-write(1, 0, 10)
       if w != -1 {
         ok = 0

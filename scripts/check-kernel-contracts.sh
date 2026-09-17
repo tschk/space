@@ -120,7 +120,8 @@ def main() -> int:
         and "kernel globals are mapped in the guest tree" in shell
         and "2-4 GiB identity window" in shell
         and "boot kernel stack" in shell
-        and "published ISR pointers" in shell,
+        and "published ISR pointers" in shell
+        and "trampoline is missing or user-accessible" in shell,
     )
     check(
         "read-line stops before overflowing the 256-byte history slot",
