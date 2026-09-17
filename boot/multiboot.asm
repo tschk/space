@@ -471,6 +471,11 @@ enter_user:
     mov rdx, [rdi + 16]
     mov rcx, [rdi + 24]
     cli
+    mov rax, [tss + 4]
+    test rax, rax
+    jz .segs
+    mov rsp, rax
+.segs:
     mov ax, 0x23
     mov ds, ax
     mov es, ax

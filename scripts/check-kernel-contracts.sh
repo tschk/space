@@ -118,7 +118,9 @@ def main() -> int:
         and "dns-parse-a" in shell
         and "domain-enter-user" in shell
         and "kernel globals are mapped in the guest tree" in shell
-        and "2-4 GiB identity window" in shell,
+        and "2-4 GiB identity window" in shell
+        and "boot kernel stack" in shell
+        and "published ISR pointers" in shell,
     )
     check(
         "read-line stops before overflowing the 256-byte history slot",
@@ -133,7 +135,7 @@ def main() -> int:
         and "fn domain-enter-user" in domain
         and "fn domain-create-user" in domain
         and "fn domain-map-trampoline" in domain
-        and "fn domain-map-boot-stack" in domain
+        and "fn domain-map-boot-stack" not in domain
         and "store64(dst-pd, 0x83)" not in domain
         and "domain-create-user()" in read("components/sci-loader.in")
         and "domain-enter-user(entry, cap-info, domain)" in read("components/sci-loader.in"),

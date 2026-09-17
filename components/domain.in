@@ -69,7 +69,6 @@ fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
   domain-map-idt(domain)
   domain-map-kernel-stack(domain)
   domain-map-trampoline(domain)
-  domain-map-boot-stack(domain)
   let stub = frame-alloc()
   store8(stub + 0, 0x48)
   store8(stub + 1, 0x89)
@@ -201,19 +200,6 @@ fn domain-map-kernel-stack(domain: Int) -> void {
 
 fn domain-map-trampoline(domain: Int) -> void {
   domain-map-supervisor-page(domain, 0x100000)
-  domain-map-supervisor-page(domain, 0x4000)
-  return
-}
-
-fn domain-map-boot-stack(domain: Int) -> void {
-  // enter_user builds the iretq frame on the boot kernel stack (0x90000
-  // growing down) and then switches CR3. Those pages must exist in the
-  // guest tree or iretq triple-faults.
-  let page = 0x80000
-  while page <= 0x90000 {
-    domain-map-supervisor-page(domain, page)
-    page = page + 4096
-  }
   return
 }
 
