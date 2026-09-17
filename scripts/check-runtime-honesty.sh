@@ -301,8 +301,8 @@ def main() -> int:
     check(
         "SCI guests get exclusive user PML4s instead of a 4 GiB clone",
         "fn create-user-domain-pml4" in domain
-        and "store64(dst-pd, 0x83)" in domain
-        and "store64(dst-pd + 8, 0x200083)" in domain
+        and "store64(dst-pd, 0x83)" not in domain
+        and "fn domain-map-trampoline" in domain
         and "domain-create-user()" in loader
         and "domain-create-user()" in read("components/process.in"),
     )

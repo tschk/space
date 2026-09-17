@@ -117,7 +117,7 @@ def main() -> int:
         and "hardening PASS" in shell
         and "dns-parse-a" in shell
         and "domain-enter-user" in shell
-        and "kernel globals are user-accessible" in shell
+        and "kernel globals are mapped in the guest tree" in shell
         and "2-4 GiB identity window" in shell,
     )
     check(
@@ -132,9 +132,9 @@ def main() -> int:
         and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain
         and "fn domain-enter-user" in domain
         and "fn domain-create-user" in domain
-        and "store64(dst-pd, 0x83)" in domain
-        and "store64(dst-pd + 8, 0x200083)" in domain
         and "fn domain-map-trampoline" in domain
+        and "fn domain-map-boot-stack" in domain
+        and "store64(dst-pd, 0x83)" not in domain
         and "domain-create-user()" in read("components/sci-loader.in")
         and "domain-enter-user(entry, cap-info, domain)" in read("components/sci-loader.in"),
     )

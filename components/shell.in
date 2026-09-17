@@ -1061,9 +1061,9 @@ fn shell(port: Int) -> void {
         serial-nl(port)
       }
       let kernel-flags = domain-page-flags(permission-domain, 0x200000)
-      if (kernel-flags & 4) != 0 {
+      if kernel-flags != 0 {
         ok = 0
-        serial-write-cstr(port, "  kernel globals are user-accessible in the guest map")
+        serial-write-cstr(port, "  kernel globals are mapped in the guest tree")
         serial-nl(port)
       }
       let clone-flags = domain-page-flags(permission-domain, 0x80000000)

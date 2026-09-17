@@ -226,9 +226,18 @@ isr_timer:
     push r9
     push r10
     push r11
+    mov rax, cr3
+    mov [timer_saved_cr3], rax
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .dispatch
+    mov cr3, rax
+.dispatch:
     mov rdi, 32
     mov rax, [0x4000]
     call rax
+    mov rax, [timer_saved_cr3]
+    mov cr3, rax
     pop r11
     pop r10
     pop r9
@@ -510,6 +519,7 @@ mb_info: dd 0
 
 align 8
 kernel_cr3: dq 0
+timer_saved_cr3: dq 0
 enter_saved_rsp: dq 0
 enter_saved_rbx: dq 0
 enter_saved_rbp: dq 0
