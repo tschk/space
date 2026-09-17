@@ -303,7 +303,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
 
-  let domain = domain-create()
+  let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
@@ -328,7 +328,6 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   let cap-info = alloc(16)
   store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
-  domain-map-user-data(domain, cap-info, cap-info)
 
   let status = domain-enter-user(entry, cap-info, domain)
 

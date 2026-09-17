@@ -259,6 +259,11 @@ exc_14:
     push 14         ; #PF: CPU already pushed an error code
     jmp exc_common
 exc_common:
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .handler
+    mov cr3, rax
+.handler:
     mov rdi, [rsp]       ; vector
     mov rsi, [rsp + 8]   ; error code
     mov rdx, [rsp + 16]  ; faulting RIP
@@ -333,6 +338,11 @@ isr_syscall:
     push r13
     push r14
     push r15
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .dispatch
+    mov cr3, rax
+.dispatch:
     mov rdi, rsp                 ; arg0 = pointer to saved register frame
     mov rax, [0x4070]            ; syscall_dispatch, published by the .in kernel
     call rax

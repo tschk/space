@@ -560,7 +560,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     serial-nl(port)
     return -1
   }
-  let domain = domain-create()
+  let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
@@ -574,6 +574,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
   }
+  // Keep the rest of the 2 MiB guest window executable after any 4 KiB split.
   serial-write-cstr(port, "  SCI: domain 0x")
   serial-write-hex(port, domain)
   serial-write-cstr(port, ", mapped 0x")
@@ -588,7 +589,6 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   let cap-info = alloc(16)
   store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
-  domain-map-user-data(domain, cap-info, cap-info)
   let status = domain-enter-user(entry, cap-info, domain)
   store64(component + 48, status)
   serial-write-cstr(port, "  SCI: component returned status 0x")

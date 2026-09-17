@@ -1043,13 +1043,13 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  freed frame not reused and cleared")
         serial-nl(port)
       }
-      let permission-domain = domain-create()
+      let permission-domain = domain-create-user()
       let permission-code = frame-alloc()
       let permission-data = frame-alloc()
       domain-map-user-code(permission-domain, 0x40000000, permission-code)
-      domain-map-user-data(permission-domain, 0x80000000, permission-data)
+      domain-map-user-data(permission-domain, 0x40003000, permission-data)
       let code-flags = domain-page-flags(permission-domain, 0x40000000)
-      let data-flags = domain-page-flags(permission-domain, 0x80000000)
+      let data-flags = domain-page-flags(permission-domain, 0x40003000)
       if (code-flags & 4) == 0 || (code-flags & 2) != 0 || (code-flags & PAGE-NX) != 0 {
         ok = 0
         serial-write-cstr(port, "  component code mapping is not user RX")
@@ -1058,6 +1058,18 @@ fn shell(port: Int) -> void {
       if (data-flags & 7) != 7 || data-flags >= 0 {
         ok = 0
         serial-write-cstr(port, "  component data mapping is not user RW NX")
+        serial-nl(port)
+      }
+      let kernel-flags = domain-page-flags(permission-domain, 0x200000)
+      if (kernel-flags & 4) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  kernel globals are user-accessible in the guest map")
+        serial-nl(port)
+      }
+      let clone-flags = domain-page-flags(permission-domain, 0x80000000)
+      if clone-flags != 0 {
+        ok = 0
+        serial-write-cstr(port, "  guest map still clones the 2-4 GiB identity window")
         serial-nl(port)
       }
       let cpl3-code = frame-alloc()
@@ -1069,8 +1081,8 @@ fn shell(port: Int) -> void {
       store8(cpl3-code + 5, 0x00)
       store8(cpl3-code + 6, 0x00)
       store8(cpl3-code + 7, 0xC3)
-      domain-map-user-code(permission-domain, 0x50000000, cpl3-code)
-      let cpl3 = domain-enter-user(0x50000000, 0, permission-domain)
+      domain-map-user-code(permission-domain, 0x40004000, cpl3-code)
+      let cpl3 = domain-enter-user(0x40004000, 0, permission-domain)
       if cpl3 != 0x42 {
         ok = 0
         serial-write-cstr(port, "  CPL3 enter/exit failed 0x")

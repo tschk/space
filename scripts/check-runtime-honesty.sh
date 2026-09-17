@@ -297,6 +297,15 @@ def main() -> int:
         and "idt-set-user" in syscall
         and "0x00AFFA000000FFFF" in read("boot/multiboot.asm"),
     )
+    domain = read("components/domain.in")
+    check(
+        "SCI guests get exclusive user PML4s instead of a 4 GiB clone",
+        "fn create-user-domain-pml4" in domain
+        and "store64(dst-pd, 0x83)" in domain
+        and "store64(dst-pd + 8, 0x200083)" in domain
+        and "domain-create-user()" in loader
+        and "domain-create-user()" in read("components/process.in"),
+    )
 
     print("[6/6] Syscall channel handles remain raw pointers...")
     check(

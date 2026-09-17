@@ -112,8 +112,13 @@ def main() -> int:
 
     print("[4/5] Shell hardening command + read-line bound...")
     check(
-        "shell hardening command asserts chan/syscall/dns/frame reuse and CPL3 enter",
-        "chan-new(0)" in shell and "hardening PASS" in shell and "dns-parse-a" in shell and "domain-enter-user" in shell,
+        "shell hardening command asserts chan/syscall/dns/frame reuse, CPL3 enter, and exclusive maps",
+        "chan-new(0)" in shell
+        and "hardening PASS" in shell
+        and "dns-parse-a" in shell
+        and "domain-enter-user" in shell
+        and "kernel globals are user-accessible" in shell
+        and "2-4 GiB identity window" in shell,
     )
     check(
         "read-line stops before overflowing the 256-byte history slot",
@@ -122,10 +127,15 @@ def main() -> int:
 
     print("[5/5] Isolation honesty...")
     check(
-        "shared domains still copy PDPT[0..3]; SCI guests enter via domain-enter-user",
+        "SCI guests use exclusive user PML4s; shared domains still copy PDPT[0..3]",
         "while j < 4" in domain
         and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain
         and "fn domain-enter-user" in domain
+        and "fn domain-create-user" in domain
+        and "store64(dst-pd, 0x83)" in domain
+        and "store64(dst-pd + 8, 0x200083)" in domain
+        and "fn domain-map-trampoline" in domain
+        and "domain-create-user()" in read("components/sci-loader.in")
         and "domain-enter-user(entry, cap-info, domain)" in read("components/sci-loader.in"),
     )
     check(

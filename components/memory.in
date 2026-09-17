@@ -141,12 +141,13 @@ fn pt-ensure-pte-flags(pml4: Int, virt: Int, flags: Int) -> Int {
   if (e2 & 0x80) != 0 {
     let np = frame-alloc()
     let base = e2 & -0x200000
+    let sibling = 3 | (e2 & 4)
     store64(pd + i2 * 8, np | 3 | (flags & 4))
     e2 = np | 3 | (flags & 4)
     let pt-new = np & PAGE-ADDRESS-MASK
     let j = 0
     while j < 512 {
-      store64(pt-new + j * 8, (base + j * 0x1000) | 0x03 | PAGE-NX)
+      store64(pt-new + j * 8, (base + j * 0x1000) | sibling)
       j = j + 1
     }
   } else if (flags & 4) != 0 && (e2 & 4) == 0 {

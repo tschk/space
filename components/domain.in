@@ -6,6 +6,8 @@
 const MAX-DOMAINS = 64
 const DOMAIN-FREE = 0
 const DOMAIN-ACTIVE = 1
+const DOMAIN-KIND-SHARED = 0
+const DOMAIN-KIND-USER = 1
 
 var domain-table: Int = 0
 var domain-count: Int = 0
@@ -64,6 +66,9 @@ fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
   if enter == 0 {
     return -1
   }
+  domain-map-idt(domain)
+  domain-map-kernel-stack(domain)
+  domain-map-trampoline(domain)
   let stub = frame-alloc()
   store8(stub + 0, 0x48)
   store8(stub + 1, 0x89)
@@ -77,14 +82,27 @@ fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
   store8(stub + 9, 0x00)
   store8(stub + 10, 0xCD)
   store8(stub + 11, 0x80)
-  domain-map-user-code(domain, 0x51000000, stub)
+  domain-map-user-code(domain, 0x40001000, stub)
   let stack-phys = frame-alloc()
-  domain-map-user-data(domain, 0x51100000, stack-phys)
-  store64(stack-phys + 4088, 0x51000000)
+  domain-map-user-data(domain, 0x40002000, stack-phys)
+  store64(stack-phys + 4088, 0x40001000)
+  let user-arg = arg
+  if arg != 0 {
+    if arg < 0x40000000 || arg >= 0x40010000 {
+      let info = frame-alloc()
+      let n = 0
+      while n < 64 {
+        store8(info + n, load8(arg + n))
+        n = n + 1
+      }
+      domain-map-user-data(domain, 0x40005000, info)
+      user-arg = 0x40005000
+    }
+  }
   let args = alloc(32)
   store64(args + 0, entry)
-  store64(args + 8, arg)
-  store64(args + 16, 0x51100FF8)
+  store64(args + 8, user-arg)
+  store64(args + 16, 0x40002FF8)
   store64(args + 24, pml4)
   domain-current = domain
   let status = invoke1(enter, args)
@@ -92,7 +110,7 @@ fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
   return status
 }
 
-fn create-domain-pml4() -> Int {
+fn create-shared-domain-pml4() -> Int {
   let dst-pml4 = frame-alloc()
   let dst-pdpt = frame-alloc()
   let i = 0
@@ -119,15 +137,102 @@ fn create-domain-pml4() -> Int {
   return dst-pml4
 }
 
+fn create-user-domain-pml4() -> Int {
+  let dst-pml4 = frame-alloc()
+  let dst-pdpt = frame-alloc()
+  let dst-pd = frame-alloc()
+  let i = 0
+  while i < 512 {
+    store64(dst-pml4 + i * 8, 0)
+    store64(dst-pdpt + i * 8, 0)
+    store64(dst-pd + i * 8, 0)
+    i = i + 1
+  }
+  store64(dst-pml4, dst-pdpt | 7)
+  store64(dst-pdpt, dst-pd | 7)
+  // First 4 MiB identity, supervisor-only. Covers trampoline, GDT, TSS,
+  // kernel image, compiler globals at 0x200000, and early heap. Guest
+  // image pages live in the empty 1 GiB PD below, not a 4 GiB clone.
+  store64(dst-pd, 0x83)
+  store64(dst-pd + 8, 0x200083)
+  // Empty PD for the 1–2 GiB window so domain-map can install 4 KiB PTEs
+  // for SCI images at 0x40000000 without cloning the rest of RAM.
+  let pd1g = frame-alloc()
+  let n = 0
+  while n < 512 {
+    store64(pd1g + n * 8, 0)
+    n = n + 1
+  }
+  store64(dst-pdpt + 8, pd1g | 7)
+  return dst-pml4
+}
+
+fn domain-map-supervisor-page(domain: Int, addr: Int) -> void {
+  if addr == 0 {
+    return
+  }
+  let page = addr & -4096
+  domain-map(domain, page, page, 0x3)
+  return
+}
+
+fn domain-map-idt(domain: Int) -> void {
+  if idt-base == 0 {
+    return
+  }
+  domain-map-supervisor-page(domain, idt-base)
+  domain-map-supervisor-page(domain, idt-base + 4095)
+  return
+}
+
+fn domain-map-kernel-stack(domain: Int) -> void {
+  let tss = load64(0x4100)
+  if tss == 0 {
+    return
+  }
+  let rsp0 = load64(tss + 4)
+  if rsp0 == 0 {
+    return
+  }
+  domain-map-supervisor-page(domain, rsp0 - 8192)
+  domain-map-supervisor-page(domain, rsp0 - 4096)
+  domain-map-supervisor-page(domain, rsp0 - 1)
+  return
+}
+
+fn domain-map-trampoline(domain: Int) -> void {
+  domain-map-supervisor-page(domain, 0x100000)
+  return
+}
+
 fn domain-create() -> Int {
   if domain-count >= MAX-DOMAINS {
     return -1
   }
   let id = domain-count
-  let pml4 = create-domain-pml4()
+  let pml4 = create-shared-domain-pml4()
+  if pml4 == 0 {
+    return -1
+  }
   store64(domain-table + id * 24 + 0, pml4)
   store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
-  store64(domain-table + id * 24 + 16, 0)
+  store64(domain-table + id * 24 + 16, DOMAIN-KIND-SHARED)
+  domain-count = domain-count + 1
+  return id
+}
+
+fn domain-create-user() -> Int {
+  if domain-count >= MAX-DOMAINS {
+    return -1
+  }
+  let id = domain-count
+  let pml4 = create-user-domain-pml4()
+  if pml4 == 0 {
+    return -1
+  }
+  store64(domain-table + id * 24 + 0, pml4)
+  store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
+  store64(domain-table + id * 24 + 16, DOMAIN-KIND-USER)
   domain-count = domain-count + 1
   return id
 }
