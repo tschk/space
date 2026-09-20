@@ -143,11 +143,23 @@ var redir-buf: Int = 0
 var redir-pos: Int = 0
 var redir-max: Int = 0
 
+// --- kernel accessors (published via the kernel export table) ---------------
+// Dynamic apps bind these to read live kernel state; the underlying values
+// are kernel-owned globals that data imports cannot reach.
+
+fn ticks-now() -> Int {
+  return ticks
+}
+
+fn mem-heap-free() -> Int {
+  return heap-end - heap-next
+}
+
 // --- kernel entry -----------------------------------------------------------
 fn kernel-entry(mb-info: Int) -> Int {
   let port = com1()
   serial-init(port)
-  serial-write-cstr(port, "space: kernel root entered")
+  serial-write-cstr(port, "space: kernel root entered (Space 0.1.0)")
   serial-nl(port)
 
   // Zero the compiler's global data area before any globals are read.
@@ -235,6 +247,18 @@ fn kernel-entry(mb-info: Int) -> Int {
     sci-load(port, boot-guest)
   }
 
+  // Register the nanokernel's own services as dynamic-link providers, then
+  // the shared libraries (libspace, appapi), before any importing component
+  // loads.
+  dyn-register-kernel-exports(port)
+  let lib-load = boot-image-find(BOOT-IMAGE-LIB)
+  if lib-load != 0 {
+    sci-register-library(port, lib-load)
+  }
+  let api-load = boot-image-find(BOOT-IMAGE-APP-API)
+  if api-load != 0 {
+    sci-register-library(port, api-load)
+  }
 
   proc-init(16)
   if boot-quiet == 0 {
@@ -382,12 +406,17 @@ fn kernel-entry(mb-info: Int) -> Int {
 
   let display-load = boot-image-find(BOOT-IMAGE-DISPLAY)
   if display-load != 0 {
-    sci-load-runtime-component(port, display-load, "display", SCI-DISPLAY-GRANTS)
+    sci-load-runtime-component(port, display-load, "display", SCI-DISPLAY-GRANTS, 0, 0)
   }
 
   let input-load = boot-image-find(BOOT-IMAGE-INPUT)
   if input-load != 0 {
-    sci-load-runtime-component(port, input-load, "input", SCI-INPUT-GRANTS)
+    sci-load-runtime-component(port, input-load, "input", SCI-INPUT-GRANTS, 0, 0)
+  }
+
+  let dyn-load = boot-image-find(BOOT-IMAGE-DYN-MOD)
+  if dyn-load != 0 {
+    sci-load-runtime-component(port, dyn-load, "dynmod", SCI-DYN-GRANTS, 0, 0)
   }
 
   // Let preemptive display/input print boot markers, then stop the timer

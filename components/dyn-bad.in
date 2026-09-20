@@ -1,0 +1,21 @@
+package space.dyn
+
+// Dynamic module deny case (boot kind 8 in the deny-variant image): imports
+// a symbol no provider offers. The loader must deny the load before entry
+// and boot must continue to the shell.
+
+component DynBad {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+}
+
+interrupt fn no-such-service(port: Int, value: Int) -> Int {
+}
+
+fn dyn-bad-entry(cap-info: Int) -> Int {
+  let rc = no-such-service(0x3F8, 1)
+  return rc
+}
