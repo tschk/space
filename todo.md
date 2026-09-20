@@ -16,6 +16,28 @@ PS/2; kernel xHCI HID enum works (`usb.in`). Shell: cd/pwd, history up/down,
 `>`/`|` redirect, nested paths. ELF load above global-data zero region.
 18+ maintained checks green on `feat/personalities`. See personalities docs.
 
+SCI v2 dynamic linking: `--emit sci` artifacts carry export/import tables;
+`components/libspace.in` (kind 7) is the first shared library; `hello`/`uecho`
+bind to it at load time (`check-user-sci.sh`). Guest user stack moved to a
+contiguous window (0x4F000000) with a param-spill page — fixes the pre-existing
+CPL3 entry fault. Dynamic nanokernel: the boot image carries a kernel export
+table (address in boot header `[40..48]`, ~676 symbols registered at boot);
+loaded modules register their own exports so later modules chain against
+libraries + kernel (kind 8 `dyn-mod`, `check-dynamic-modules.sh`); unknown
+imports deny the module and boot continues. `display-standalone` dropped its
+duplicated serial/PCI copies and binds kernel services as imports.
+
+Space 0.1.0: `kernel-root-minimal.in` (core-only image, ~3x smaller) alongside
+the full standard image (`check-image-variants.sh`). Preinstalled dynamic apps
+`app-calc` (expression REPL), `app-notes` (persistent notes via the filesystem),
+`app-hd` (file hexdump), `app-sysmon` (live uptime/heap/caps monitor), and
+`app-bench` (deterministic prime-sieve benchmark, boot kinds 9-13) run on
+demand via the shell `runapp` command in both images; `libspace` grew a shared
+stateless `lib-readline`. A component entry that returns now parks its preempt
+task instead of freezing the timer scheduler (`comp_invoke_stub` park loop).
+NVMe probe fixed: QEMU's BAR0 is 16 KiB, the driver demanded 32 KiB
+(`check-qemu-boot-nvme` green again).
+
 ## Phase 1: Storage
 
 - [x] ATA/PIO disk driver (read sectors from QEMU IDE disk)
@@ -80,3 +102,26 @@ Branch for translator work: `feat/personalities`.
 - [x] Socket API for user programs (UDP over e1000; TCP handshake + send/recv)
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)
+
+## Known Issue: minimal image app-console output loss (2026-09-20)
+
+- [ ] In the minimal image, an app's kernel-mediated `serial-write-cstr` /
+      `serial-write-hex` calls can produce no UART output, while the same
+      calls from kernel code and the app's libspace (direct `outb`) writes
+      work. Repro: `check-image-variants.sh` minimal `runapp calc` — the
+      banner prints, the `calc> ` prompt and result strings do not, the app
+      continues normally. gdb (breakpoint at the kernel export) shows the
+      call arrives with correct `rsi` and an intact string; the branch into
+      `serial-put`'s redirect-capture path is taken instead of the
+      `serial-wait-tx`/`outb` path, so chars are "captured" and dropped.
+      The redirect branch is selected by a stack slot (`-0x830(%rbp)`)
+      that should mirror the global `redir-buf` (which is 0) — a stale
+      temp under app context. Same ABI fragility class as the earlier
+      "`interrupt fn` import drops literal args" bug fixed for
+      user-hello/user-echo. Standard (full kernel) is unaffected; minimal
+      apps mostly work (notes/hd/sum/man/files/clock/bench/sysinfo print),
+      calc's REPL prompt/result strings are the visible casualty.
+      Fix direction: harden the `interrupt fn` import ABI (initialize the
+      shadow slot from the real global, or stop shadowing globals through
+      stack temps at the kernel/user boundary), then restore the full
+      minimal marker set in check-image-variants.sh.

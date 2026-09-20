@@ -81,6 +81,22 @@ The loader validates declared capabilities against the realm's grants
 before transferring control. A component requesting undeclared
 capabilities is denied before its entry point runs.
 
+Components are also dynamically linked: SCI v2 artifacts carry export and
+import symbol tables. Shared libraries (e.g. `components/libspace.in`, boot
+kind `BOOT-IMAGE-LIB`) register their symbols with the loader at boot; a
+component's imports are resolved by name and its call sites patched before
+the entry point runs, and an import with no registered provider denies the
+load. The nanokernel participates in the same registry: the boot emitter
+appends a kernel export table (its address recorded in the boot header at
+`[40..48]`) so components bind kernel services directly, and every
+successfully loaded module registers its own exports, so later modules can
+bind to earlier ones (chained dynamic modules, boot kind 8). Preinstalled
+dynamic apps (`calc`, `notes`, `hd`, `sysmon`, `bench`, boot kinds 9-11) ride in the boot
+image and load on demand via the shell's `runapp` command. Two root variants
+build from the same components: the full standard image and a minimal
+core-only image (`kernel-root-minimal.in`). Full contract
+in [`sci-schema.md`](sci-schema.md).
+
 ---
 
 ## Nanokernel
@@ -182,6 +198,53 @@ deliver to the caller. The IDT entry for vector 0x80 has DPL=3, so
 user-mode code can invoke it directly.
 
 Native Space syscalls (0-4): write, read, exit, yield, getpid.
+
+---
+
+## Application Surface
+
+Apps are SCI v2 dynamic modules compiled from `.in`, isolated in their own
+domain, and run on demand from the shell with `runapp <app> [args]`.
+Authority is declared per app and enforced by the loader before entry:
+grant bit 0 is the serial console, bit 1 adds filesystem read/write.
+Undeclared authority is a load-time denial, never a runtime surprise.
+
+Two shared libraries provide code without authority. libspace (boot-image
+kind 7, linked at `0x3F000000`) supplies C-library-style utilities. appapi
+(kind 14, linked at `0x3E000000`) is the versioned application platform
+contract, APP-API v1: `api-version`, argument access, heap discovery, and
+console formatting. Its text maps read-execute into every importing domain;
+it imports nothing and holds no grants, so it cannot escalate.
+
+Every app receives a cap-info page at entry (APP-API v1 layout):
+
+| Offset | Field |
+|--------|-------|
+| +0 | granted capability bitmask |
+| +16/+24 | component heap base / size (2 MiB) |
+| +32 | shared page |
+| +40 | domain id |
+| +48/+56 | console width / height |
+| +64 | args string pointer from `runapp <app> <args>` |
+
+Preinstalled apps (boot-image kinds 9-19, packed into both `standard.bin`
+and `minimal.bin`):
+
+| Kind | App | Purpose | Grants |
+|------|-----|---------|--------|
+| 9 | calc | arithmetic evaluator | serial |
+| 10 | notes | full-screen text editor (`notes.txt`) | serial+fs |
+| 11 | hd | hex dump a file | serial+fs |
+| 12 | sysmon | live kernel/domain/memory monitor | serial |
+| 13 | bench | deterministic prime benchmark | serial |
+| 15 | files | filesystem round trip + directory listing | serial+fs |
+| 16 | clock | CMOS RTC date/time and uptime | serial |
+| 17 | sum | CRC-32 / FNV-1a checksums | serial+fs |
+| 18 | man | the platform manual, printed as an app | serial |
+| 19 | sysinfo | shows its own capability grants | serial |
+
+`scripts/check-image-variants.sh` boots both images and drives every app,
+pinning deterministic outputs (prime count 9592, checksums, grant masks).
 
 ---
 
@@ -310,6 +373,9 @@ components/
   diagnostics.in determinism.in editor.in time.in
   input.in volume.in display-standalone.in
   windows.in darwin.in linux.in
+  libspace.in           shared library: C-library-style utilities (kind 7)
+  appapi.in             shared library: APP-API v1 platform contract (kind 14)
+  app-*.in              preinstalled apps (kinds 9-13, 15-19)
   volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up
