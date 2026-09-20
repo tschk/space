@@ -1,18 +1,25 @@
-export const description = "Space nanokernel in the browser via v86.";
+export const description =
+  "Space 0.1.0 — a dynamic nanokernel: components bind kernel services and shared libraries at load time, with ten preinstalled apps on an APP-API v1 surface. Running in the browser via v86.";
 
-export const title = "Space";
+export const title = "Space 0.1.0";
 
 export default function App() {
   return (
     <div data-moonshine-root="true">
       <header className="boot-top-bar" aria-label="Space links">
         <a
-          href="https://github.com/tschk/space"
+          href="https://github.com/tschk/space/releases"
           target="_blank"
           rel="noopener noreferrer"
         >
           tschk/space
         </a>
+        <span className="boot-top-sep" aria-hidden="true">
+          ·
+        </span>
+        <span title="dynamic nanokernel: load-time binding, dynamic modules">
+          v0.1.0
+        </span>
         <span className="boot-top-sep" aria-hidden="true">
           ·
         </span>
