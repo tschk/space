@@ -9,3 +9,4 @@ build/
 .pi-subagents/
 serial.log
 .amp/portals/
+.inauguration/
