@@ -173,9 +173,9 @@ def main() -> int:
     )
     nvme_pci = fn_body(storage, "storage-pci-init") or ""
     check(
-        "NVMe BAR0 requires a 32 KiB memory BAR before mapping 32 KiB",
-        "pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x8000)" in nvme_pci
-        and "while pg < mmio-phys + 0x8000" in nvme_pci,
+        "NVMe BAR0 requires a 16 KiB memory BAR before mapping 16 KiB",
+        "pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x4000)" in nvme_pci
+        and "while pg < mmio-phys + 0x4000" in nvme_pci,
     )
     e1000_init = fn_body(network, "e1000-init-impl") or ""
     check(

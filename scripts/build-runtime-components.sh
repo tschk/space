@@ -22,9 +22,9 @@ IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 DISPLAY_PHYS=0x1a0000
 INPUT_PHYS=0x1e0000
 VOLUME_PHYS=0x220000
-DISPLAY_ENTRY=0x40000020
-INPUT_ENTRY=0x50000020
-VOLUME_ENTRY=0x60000020
+DISPLAY_BASE=0x40000000
+INPUT_BASE=0x50000000
+VOLUME_BASE=0x60000000
 
 mkdir -p "$BUILD_DIR"
 
@@ -41,14 +41,14 @@ NASM="${NASM:-nasm}"
 
 "$IN" compile --path "$SPACE_DIR/components/display-standalone.in" --entry display-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
-  --base "$DISPLAY_ENTRY" --out "$BUILD_DIR/display.sci"
+  --base "$DISPLAY_BASE" --out "$BUILD_DIR/display.sci"
 
 "$IN" compile --path "$SPACE_DIR/components/input.in" --entry input-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
-  --base "$INPUT_ENTRY" --out "$BUILD_DIR/input.sci"
+  --base "$INPUT_BASE" --out "$BUILD_DIR/input.sci"
 "$IN" compile --path "$SPACE_DIR/components/volume.in" --entry volume-entry \
   --target native --target-triple x86_64-unknown-none --emit sci \
-  --base "$VOLUME_ENTRY" --out "$BUILD_DIR/volume.sci"
+  --base "$VOLUME_BASE" --out "$BUILD_DIR/volume.sci"
 
 echo "[3/3] Assembling combined boot image..."
 python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/combined.bin" \

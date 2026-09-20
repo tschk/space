@@ -15,6 +15,7 @@ passed = 0
 failed = 0
 
 SCI_MAGIC = 0x5343490000000001
+SCI_MAGIC_V2 = 0x5343490000000002
 BOOT_MAGIC = 0x5350414345424F4F
 SF_MAGIC = 0x53504146
 IMAGE_BASE = 0x100000
@@ -48,8 +49,9 @@ def main() -> int:
 
     print("[1/4] SCI / SparkFS constants...")
     check("sci-loader SCI-MAGIC", const_int(loader, "SCI-MAGIC") == SCI_MAGIC)
-    check("posix execve SCI magic", "0x5343490000000001" in posix)
-    check("packer SCI magic", "0x5343490000000001" in packer)
+    check("sci-loader SCI-MAGIC-V2", const_int(loader, "SCI-MAGIC-V2") == SCI_MAGIC_V2)
+    check("posix execve SCI magic", "SCI-MAGIC-V2" in posix or "0x5343490000000002" in posix)
+    check("packer SCI magic", "0x5343490000000001" in packer and "0x5343490000000002" in packer)
     check("packer boot-image MAGIC", "0x5350414345424F4F" in packer)
     check("fs2 SF-MAGIC", const_int(layout, "SF-MAGIC") == SF_MAGIC)
     check("docs sparkfs magic", "0x53504146" in sparkfs)

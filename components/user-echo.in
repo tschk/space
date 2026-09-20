@@ -1,5 +1,11 @@
 package space.user
 
+// Dynamically linked user component: prints through libspace, a shared-library
+// SCI whose symbols the kernel binds at load time (SCI v2 import table).
+// The lib-* functions are declared here with empty bodies — the compiler
+// records them as imports, and the loader patches the call sites to the
+// library's exported addresses before this component ever runs.
+
 component EchoUser {
   target "x86_64-unknown-none"
   deterministic true
@@ -20,31 +26,19 @@ interface DebugConsole {
 
 const COM1 = 0x3F8
 
-fn e-wait(port: Int) -> void {
-  while (inb(port + 5) & 0x20) == 0 {
-  }
-  return
+// Import stubs for libspace symbols. Marked `interrupt fn` so the compiler
+// emits no caller-saved register spills around the (load-time bound) call,
+// matching the library's own prologue/epilogue frames.
+fn lib-write(port: Int, addr: Int) -> void {
 }
 
-fn e-put(port: Int, ch: Int) -> void {
-  e-wait(port)
-  outb(port, ch)
-  return
-}
-
-fn e-write(port: Int, addr: Int) -> void {
-  let i = 0
-  let c = load8(addr + i)
-  while c != 0 {
-    e-put(port, c)
-    i = i + 1
-    c = load8(addr + i)
-  }
-  return
+fn lib-write-hex(port: Int, value: Int) -> void {
 }
 
 fn echo-entry(cap-info: Int) -> Int {
   let port = COM1
-  e-write(port, "user echo SCI\n")
+  lib-write(port, "user echo SCI\n")
+  lib-write-hex(port, 0x4543)
+  lib-write(port, "\n")
   return 0x4543
 }
