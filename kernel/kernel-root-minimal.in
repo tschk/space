@@ -1,0 +1,133 @@
+import "../components/serial.in"
+import "../components/memory.in"
+import "../components/object.in"
+import "../components/interrupts.in"
+import "../components/domain.in"
+import "../components/supervisor.in"
+import "../components/sci-loader.in"
+import "../protocol/boot-image.in"
+import "../components/fs2-layout.in"
+import "../components/fs2-block.in"
+import "../components/fs2-inode.in"
+import "../components/fs2-dir.in"
+import "../components/fs2-path.in"
+import "../components/fs2-file.in"
+import "../components/filesystem.in"
+import "../components/vfs.in"
+import "../components/vfs-test.in"
+import "../components/posix.in"
+import "../components/process.in"
+import "../components/editor.in"
+import "../services/time.in"
+import "../components/shell.in"
+
+// Minimal nanokernel root: the same dynamic nanokernel as kernel-root.in,
+// but without network, storage drivers, personalities, or display/input.
+// Core services (serial, VM, domains, interrupts, dynamic linking) plus the
+// filesystem-backed shell. Apps ship in the boot image and load on demand
+// via the shell's `runapp` command (see components/app-*.in).
+
+component KernelRoot {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  export boot: BootEntry
+
+  capability serial: DebugConsole(write)
+  capability memory: PhysicalMemory(discover, map)
+  capability tables: PageTables(create, activate)
+  capability traps: TrapTable(install)
+  capability caps: CapabilityTable(create_root, mint_kernel)
+}
+
+struct KernelState {
+  Int root-table-id
+  Int realm-id
+  Bool cpu-ready
+}
+
+interface BootEntry {
+  fn start(mb-info: Int) -> Int
+}
+
+// --- nanokernel state (mirrors kernel-root.in) -------------------------------
+var heap-next: Int = 0
+var heap-end: Int = 0
+var total-ram: Int = 0
+var region-count: Int = 0
+var obj-counter: Int = 0
+var cap-table-base: Int = 0
+var cap-count: Int = 0
+var root-realm: Int = 0
+var ticks: Int = 0
+var idt-base: Int = 0
+var realm-grants: Int = 0
+var boot-quiet: Int = 1
+
+// --- kernel accessors (published via the kernel export table) ---------------
+// Dynamic apps bind these to read live kernel state; the underlying values
+// are kernel-owned globals that data imports cannot reach.
+
+fn ticks-now() -> Int {
+  return ticks
+}
+
+fn mem-heap-free() -> Int {
+  return heap-end - heap-next
+}
+
+// --- kernel entry -----------------------------------------------------------
+fn kernel-entry(mb-info: Int) -> Int {
+  let port = com1()
+  serial-init(port)
+  serial-write-cstr(port, "space: kernel root entered (minimal image, Space 0.1.0)")
+  serial-nl(port)
+
+  // Zero the compiler's global data area before any globals are read.
+  let g = 0
+  while g < 0x10000 {
+    store64(0x200000 + g, 0)
+    g = g + 8
+  }
+  boot-quiet = 1
+
+  discover-memory(mb-info)
+  obj-arena-init(65536)
+  cap-table-init(64)
+  let cap-table-obj = obj-alloc(2)
+  root-realm = obj-alloc(1)
+  store64(root-realm + 16, cap-table-obj)
+  let kernel-cap = cap-mint(root-realm, 0xF)
+
+  domain-init()
+  interrupts-init()
+
+  // The nanokernel publishes its own services as dynamic-link providers,
+  // then the shared libraries (libspace, appapi), before any importing
+  // component loads.
+  dyn-register-kernel-exports(port)
+  let lib-load = boot-image-find(BOOT-IMAGE-LIB)
+  if lib-load != 0 {
+    sci-register-library(port, lib-load)
+  }
+  let api-load = boot-image-find(BOOT-IMAGE-APP-API)
+  if api-load != 0 {
+    sci-register-library(port, api-load)
+  }
+
+  load-arena-init(4 * 1024 * 1024)
+
+  fs-init()
+  time-init()
+
+  shell(port)
+
+  serial-write-cstr(port, "space: minimal nanokernel halting")
+  serial-nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return 0
+}
