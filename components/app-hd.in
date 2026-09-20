@@ -1,0 +1,142 @@
+package space.app
+
+// hd (boot kind 11): file hexdump as a dynamically linked, isolated app.
+// Classic offset/hex/ASCII layout for inspecting files on the Space volume.
+
+component AppHd {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+  capability storage: BlockStorage(read, write)
+
+  export entry: AppHdEntry
+}
+
+interface AppHdEntry {
+  fn app-hd-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+const COM1 = 0x3F8
+const HD-BUF = 65536
+const HD-SHOW = 512
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn serial-nl(port: Int) -> void {
+}
+
+interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+}
+
+// libspace shared-library imports (boot kind 7).
+interrupt fn lib-put(port: Int, ch: Int) -> void {
+}
+
+interrupt fn lib-readline(port: Int, buf: Int, max: Int) -> Int {
+}
+
+interrupt fn lib-write-dec(port: Int, value: Int) -> void {
+}
+
+// Two-digit hex for a byte value.
+fn hd-byte(port: Int, v: Int) -> void {
+  let hi = (v >> 4) & 0xF
+  let lo = v & 0xF
+  lib-put(port, hi + 87)
+  lib-put(port, lo + 87)
+  return
+}
+
+// Four-digit hex for the offset column.
+fn hd-off4(port: Int, v: Int) -> void {
+  let shift = 12
+  while shift >= 0 {
+    let nib = (v >> shift) & 0xF
+    if nib < 10 {
+      lib-put(port, 48 + nib)
+    } else {
+      lib-put(port, 87 + nib)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+fn app-hd-entry(cap-info: Int) -> Int {
+  let port = COM1
+  let heap = load64(cap-info + 16)
+  let buf = heap
+  let path = heap + HD-BUF
+
+  serial-write-cstr(port, "hd: file to dump:")
+  serial-nl(port)
+  serial-write-cstr(port, "hd> ")
+  lib-readline(port, path, 256)
+  if load8(path) == 0 {
+    serial-write-cstr(port, "hd: no file")
+    serial-nl(port)
+    return -1
+  }
+
+  let n = fs-read-file(path, buf)
+  if n < 0 {
+    serial-write-cstr(port, "hd: read failed")
+    serial-nl(port)
+    return -1
+  }
+  if n > HD-SHOW {
+    n = HD-SHOW
+  }
+
+  let off = 0
+  while off < n {
+    hd-off4(port, off)
+    serial-write-cstr(port, "  ")
+    let c = 0
+    while c < 16 {
+      if off + c < n {
+        hd-byte(port, load8(buf + off + c))
+      } else {
+        lib-put(port, 32)
+        lib-put(port, 32)
+      }
+      lib-put(port, 32)
+      if c == 7 {
+        lib-put(port, 32)
+      }
+      c = c + 1
+    }
+    serial-write-cstr(port, " |")
+    c = 0
+    while c < 16 && off + c < n {
+      let b = load8(buf + off + c)
+      if b >= 32 && b < 127 {
+        lib-put(port, b)
+      } else {
+        lib-put(port, 46)
+      }
+      c = c + 1
+    }
+    serial-write-cstr(port, "|")
+    serial-nl(port)
+    off = off + 16
+  }
+  serial-write-cstr(port, "hd: dumped ")
+  lib-write-dec(port, n)
+  serial-write-cstr(port, " bytes")
+  serial-nl(port)
+  return 0
+}

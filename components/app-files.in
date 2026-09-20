@@ -1,0 +1,163 @@
+package space.app
+
+// files (boot kind 15): filesystem toolkit as an isolated app. Writes a
+// demo file, reads it back and verifies the bytes, lists a directory, then
+// deletes the demo file — a round trip through the granted filesystem
+// capability (bit1). Run `runapp files [path]` to list `path` instead of
+// the root directory.
+
+component AppFiles {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+  capability storage: BlockStorage(read, write)
+
+  export entry: AppFilesEntry
+}
+
+interface AppFilesEntry {
+  fn app-files-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+const COM1 = 0x3F8
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+}
+
+interrupt fn fs-write-file(name: Int, buf: Int, size: Int) -> Int {
+}
+
+interrupt fn fs-delete(name: Int) -> Int {
+}
+
+interrupt fn fs-list-path(path: Int, port: Int) -> void {
+}
+
+// appapi shared-library imports (boot-image kind 14, APP-API v1).
+interrupt fn api-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn api-write-dec(port: Int, value: Int) -> void {
+}
+
+interrupt fn api-putch(port: Int, ch: Int) -> void {
+}
+
+interrupt fn api-args(cap-info: Int) -> Int {
+}
+
+interrupt fn api-heap-base(cap-info: Int) -> Int {
+}
+
+const DEMO-NAME = "files-demo.txt"
+const DEMO-TEXT = "space files demo: 3 lines\nround trip\nverified\n"
+
+fn str-len(s: Int) -> Int {
+  let i = 0
+  while load8(s + i) != 0 {
+    i += 1
+  }
+  return i
+}
+
+// Byte-for-byte compare of two NUL-terminated buffers over n bytes.
+fn bytes-eq(a: Int, b: Int, n: Int) -> Int {
+  let i = 0
+  while i < n {
+    if load8(a + i) != load8(b + i) {
+      return 0
+    }
+    i += 1
+  }
+  return 1
+}
+
+fn app-files-entry(cap-info: Int) -> Int {
+  let port = COM1
+  let buf = api-heap-base(cap-info)
+
+  // 1. Write the demo file.
+  let wlen = str-len(DEMO-TEXT)
+  let wrc = fs-write-file(DEMO-NAME, DEMO-TEXT, wlen)
+  if wrc == 0 {
+    api-write(port, "files: wrote ")
+    api-write(port, DEMO-NAME)
+    api-putch(port, 13)
+    api-putch(port, 10)
+  } else {
+    api-write(port, "files: write failed")
+    api-putch(port, 13)
+    api-putch(port, 10)
+    return 1
+  }
+
+  // 2. Read it back and verify byte-for-byte.
+  let n = fs-read-file(DEMO-NAME, buf)
+  if n < 0 {
+    api-write(port, "files: read-back failed")
+    api-putch(port, 13)
+    api-putch(port, 10)
+    return 1
+  }
+  let ok = 1
+  if n != wlen {
+    ok = 0
+  }
+  if ok == 1 {
+    if bytes-eq(buf, DEMO-TEXT, n) == 0 {
+      ok = 0
+    }
+  }
+  if ok == 1 {
+    api-write(port, "files: read-back verified ")
+    api-write-dec(port, n)
+    api-write(port, " bytes")
+    api-putch(port, 13)
+    api-putch(port, 10)
+  } else {
+    api-write(port, "files: MISMATCH")
+    api-putch(port, 13)
+    api-putch(port, 10)
+    return 1
+  }
+
+  // 3. Directory listing: the argument when present, else root.
+  let path = api-args(cap-info)
+  if load8(path) == 0 {
+    api-write(port, "files: listing /")
+    api-putch(port, 13)
+    api-putch(port, 10)
+    fs-list-path("/", port)
+  } else {
+    api-write(port, "files: listing ")
+    api-write(port, path)
+    api-putch(port, 13)
+    api-putch(port, 10)
+    fs-list-path(path, port)
+  }
+
+  // 4. Clean up.
+  let drc = fs-delete(DEMO-NAME)
+  if drc == 0 {
+    api-write(port, "files: cleaned up")
+    api-putch(port, 13)
+    api-putch(port, 10)
+  }
+
+  api-write(port, "files: ok")
+  api-putch(port, 13)
+  api-putch(port, 10)
+  return 0
+}

@@ -273,8 +273,10 @@ fn storage-pci-init() -> Int {
   serial-write-hex(port, nvme-bdf)
   serial-write-cstr(port, ".0\n")
 
-  // Read BAR0 as a memory BAR and require at least 32 KiB of MMIO.
-  let mmio-phys = pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x8000)
+  // Read BAR0 as a memory BAR and require the NVMe register space.
+  // QEMU's NVMe BAR0 is 16 KiB (0x4000); that covers CAP/VS/CC and all
+  // queue doorbells.
+  let mmio-phys = pci-bar-mmio(0, nvme-bdf, 0, 0x10, 0x4000)
   if mmio-phys == 0 {
     serial-write-cstr(port, "  nvme: BAR0 is not a usable memory BAR")
     serial-nl(port)
@@ -290,7 +292,7 @@ fn storage-pci-init() -> Int {
   pci-write32(0, nvme-bdf, 0, 0x04, cmd | 0x6)
 
   let pg = mmio-phys
-  while pg < mmio-phys + 0x8000 {
+  while pg < mmio-phys + 0x4000 {
     domain-map(storage-domain, pg, pg, 0x1B)
     pg = pg + 0x1000
   }

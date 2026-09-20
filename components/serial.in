@@ -3,8 +3,8 @@ package space.kernel
 // --- serial console (COM1) --------------------------------------------------
 const COM1-PORT = 0x3F8
 const SPACE-VERSION-MAJOR = 0
-const SPACE-VERSION-MINOR = 2
-const SPACE-VERSION-PATCH = 76
+const SPACE-VERSION-MINOR = 1
+const SPACE-VERSION-PATCH = 0
 
 fn com1() -> Int {
   return COM1-PORT

@@ -1,0 +1,177 @@
+package space.app
+
+// sum (boot kind 17): file checksum utility. Two duties:
+//
+//   1. Self-test: a fixed-size Int array drives an FNV-1a pass over its
+//      elements — this exercises the compiler's array indexing, compound
+//      assignment, and continue control flow natively on real hardware
+//      (QEMU), with a deterministic total.
+//   2. CRC-32 of a file: `runapp sum <file>` reads the file through the
+//      granted filesystem capability into the component heap and prints
+//      its size and CRC-32.
+//
+// Both paths report through APP-API v1 formatting.
+
+component AppSum {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+  capability storage: BlockStorage(read, write)
+
+  export entry: AppSumEntry
+}
+
+interface AppSumEntry {
+  fn app-sum-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+const COM1 = 0x3F8
+const BANNER = "space-app-api-v1"
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+}
+
+// appapi shared-library imports (boot-image kind 14, APP-API v1).
+interrupt fn api-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn api-write-dec(port: Int, value: Int) -> void {
+}
+
+interrupt fn api-putch(port: Int, ch: Int) -> void {
+}
+
+interrupt fn api-args(cap-info: Int) -> Int {
+}
+
+interrupt fn api-heap-base(cap-info: Int) -> Int {
+}
+
+// --- checksums ---------------------------------------------------------------
+
+// FNV-1a over the 8 little-endian bytes of each array element.
+fn fnv1a-byte(hash: Int, byte: Int) -> Int {
+  hash = hash ^ byte
+  return hash * 16777619
+}
+
+// FNV-1a over an n-byte string (the string decays at the call site).
+fn fnv1a-str(s: Int, n: Int) -> Int {
+  let h = 2166136261
+  let i = 0
+  while i < n {
+    h = fnv1a-byte(h, load8(s + i))
+    i += 1
+  }
+  return h
+}
+
+// Bitwise CRC-32 (no table): process one byte's 8 bits.
+fn crc-update(crc: Int, byte: Int) -> Int {
+  crc = crc ^ byte
+  let i = 0
+  while i < 8 {
+    if (crc & 1) == 1 {
+      crc = (crc >> 1) ^ 0xEDB88320
+    } else {
+      crc = crc >> 1
+    }
+    i += 1
+  }
+  return crc
+}
+
+fn crc32(buf: Int, len: Int) -> Int {
+  let crc = 0xFFFFFFFF
+  let i = 0
+  while i < len {
+    crc = crc-update(crc, load8(buf + i))
+    i += 1
+  }
+  return crc ^ 0xFFFFFFFF
+}
+
+fn write-hex8(port: Int, value: Int) -> void {
+  let i = 28
+  while i >= 0 {
+    let d = (value >> i) & 0xF
+    if d < 10 {
+      api-putch(port, 48 + d)
+    } else {
+      api-putch(port, 87 + d)
+    }
+    i -= 4
+  }
+  return
+}
+
+// --- entry -------------------------------------------------------------------
+
+fn app-sum-entry(cap-info: Int) -> Int {
+  let port = COM1
+
+  // 1. Self-test over a fixed vector. Negative entries are skipped with
+  //    `continue`; the expected total is 65568 (= 5 + 25 + 65536 + 2 + 0).
+  let vec = [5, 25, -7, 65536, 2, 0, -1]
+  let total = 0
+  let i = 0
+  while i < 7 {
+    let v = vec[i]
+    if v < 0 {
+      i += 1
+      continue
+    }
+    total += v
+    i += 1
+  }
+  api-write(port, "sum: self-test total ")
+  api-write-dec(port, total)
+  api-putch(port, 13)
+  api-putch(port, 10)
+
+  let bh = fnv1a-str(BANNER, 16) & 0xFFFFFFFF
+  api-write(port, "sum: self-test fnv1a 0x")
+  write-hex8(port, bh)
+  api-putch(port, 13)
+  api-putch(port, 10)
+
+  // 2. File checksum when an argument is present.
+  let args = api-args(cap-info)
+  if load8(args) != 0 {
+    let buf = api-heap-base(cap-info)
+    let n = fs-read-file(args, buf)
+    if n >= 0 {
+      api-write(port, "sum: ")
+      api-write(port, args)
+      api-write(port, " ")
+      api-write-dec(port, n)
+      api-write(port, " bytes crc32 0x")
+      write-hex8(port, crc32(buf, n))
+      api-putch(port, 13)
+      api-putch(port, 10)
+    } else {
+      api-write(port, "sum: ")
+      api-write(port, args)
+      api-write(port, " not found")
+      api-putch(port, 13)
+      api-putch(port, 10)
+    }
+  }
+
+  api-write(port, "sum: ok")
+  api-putch(port, 13)
+  api-putch(port, 10)
+  return 0
+}

@@ -249,11 +249,15 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
   let magic = load64(header-buf + 0)
-  if magic != SCI-MAGIC {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: invalid magic in ")
     serial-write-cstr(port, pathname)
     serial-nl(port)
     return -1
+  }
+  let header = 32
+  if magic == SCI-MAGIC-V2 {
+    header = SCI-V2-HEADER
   }
   let required = load64(header-buf + 8)
   let entry = load64(header-buf + 16)
@@ -314,12 +318,16 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   sci-last-caps = required
 
   let component = component-register(pathname, entry, required)
-  let virt-load = entry - 32
+  let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0
   while i < image-pages {
     domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
+  }
+  // Bind imports before the component ever runs (SCI v2 dynamic linking).
+  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+    return -1
   }
 
   store64(component + 40, domain)

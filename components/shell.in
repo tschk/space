@@ -220,6 +220,51 @@ fn line-prefix(prefix: Int) -> Int {
   return i
 }
 
+// Compare two NUL-terminated strings at arbitrary addresses.
+fn str-eq(a: Int, b: Int) -> Int {
+  let i = 0
+  while true {
+    let x = load8(a + i)
+    let y = load8(b + i)
+    if x != y {
+      return 0
+    }
+    if x == 0 {
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Skip the app name at `p` (length `name-len`) and one following space, so
+// apps receive their argument string: "sum notes.txt" -> "notes.txt". With
+// no arguments this yields a pointer to an empty string, never garbage.
+fn shell-args-tail(p: Int, name-len: Int) -> Int {
+  let t = p + name-len
+  if load8(t) == 32 {
+    t = t + 1
+  }
+  return t
+}
+
+// Match `runapp <name>` with an optional argument tail: `p` must start with
+// `name` (length `name-len`) and continue with end-of-line or a space.
+fn shell-args-match(p: Int, name: Int, name-len: Int) -> Int {
+  let i = 0
+  while i < name-len {
+    if load8(p + i) != load8(name + i) {
+      return 0
+    }
+    i += 1
+  }
+  let c = load8(p + name-len)
+  if c == 0 || c == 32 {
+    return 1
+  }
+  return 0
+}
+
 // Return the index of the next argument after `start`, or 0 if none.
 fn next-arg(start: Int) -> Int {
   let i = start
@@ -366,6 +411,9 @@ fn shell-try-pipe(port: Int) -> Int {
         serial-write-dec-wide(port, pct)
         serial-write-cstr(port, "%)")
         serial-nl(port)
+        serial-write-cstr(port, "  kernel heap unallocated: ")
+        serial-write-dec-wide(port, mem-heap-free())
+        serial-nl(port)
         serial-write-cstr(port, "  heap free:  ")
         serial-write-dec-wide(port, free / 1048576)
         serial-write-cstr(port, " MiB")
@@ -456,13 +504,16 @@ fn shell-run-with-redir(port: Int) -> void {
     serial-write-dec-wide(port, pct)
     serial-write-cstr(port, "%)")
     serial-nl(port)
+    serial-write-cstr(port, "  kernel heap unallocated: ")
+    serial-write-dec-wide(port, mem-heap-free())
+    serial-nl(port)
     serial-write-cstr(port, "  heap free:  ")
     serial-write-dec-wide(port, free / 1048576)
     serial-write-cstr(port, " MiB")
     serial-nl(port)
   } else if line-eq("ticks") != 0 {
     serial-write-cstr(port, "  timer ticks 0x")
-    serial-write-hex(port, ticks)
+    serial-write-hex(port, ticks-now())
     serial-nl(port)
   } else if line-eq("ps") != 0 {
     proc-list(port)
@@ -547,7 +598,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -706,6 +757,73 @@ fn shell(port: Int) -> void {
       sci-load(port, boot-image-find(BOOT-IMAGE-USER-HELLO))
     } else if line-eq("uecho") != 0 {
       sci-load(port, boot-image-find(BOOT-IMAGE-USER-ECHO))
+    } else if line-eq("apps") != 0 {
+      serial-write-cstr(port, "  preinstalled dynamic apps: calc notes hd sysmon bench files clock sum man sysinfo")
+      serial-nl(port)
+      serial-write-cstr(port, "  usage: runapp <app> [args]  (runapp man for the platform manual)")
+      serial-nl(port)
+    } else if line-prefix("runapp ") >= 0 {
+      let arg = line + line-prefix("runapp ")
+      let app-kind = 0
+      let app-name = 0
+      let app-grants = SCI-APP-GRANTS
+      let app-args = 0
+      if shell-args-match(arg, "calc", 4) != 0 {
+        app-kind = BOOT-IMAGE-APP-CALC
+        app-name = "app-calc"
+        app-args = shell-args-tail(arg, 4)
+      } else if shell-args-match(arg, "notes", 5) != 0 {
+        app-kind = BOOT-IMAGE-APP-NOTES
+        app-name = "app-notes"
+        app-grants = SCI-APP-FS-GRANTS
+        app-args = shell-args-tail(arg, 5)
+      } else if shell-args-match(arg, "hd", 2) != 0 {
+        app-kind = BOOT-IMAGE-APP-HD
+        app-name = "app-hd"
+        app-grants = SCI-APP-FS-GRANTS
+        app-args = shell-args-tail(arg, 2)
+      } else if shell-args-match(arg, "sysmon", 6) != 0 {
+        app-kind = BOOT-IMAGE-APP-SYSMON
+        app-name = "app-sysmon"
+        app-args = shell-args-tail(arg, 6)
+      } else if shell-args-match(arg, "bench", 5) != 0 {
+        app-kind = BOOT-IMAGE-APP-BENCH
+        app-name = "app-bench"
+        app-args = shell-args-tail(arg, 5)
+      } else if shell-args-match(arg, "files", 5) != 0 {
+        app-kind = BOOT-IMAGE-APP-FILES
+        app-name = "app-files"
+        app-grants = SCI-APP-FS-GRANTS
+        app-args = shell-args-tail(arg, 5)
+      } else if shell-args-match(arg, "clock", 5) != 0 {
+        app-kind = BOOT-IMAGE-APP-CLOCK
+        app-name = "app-clock"
+        app-args = shell-args-tail(arg, 5)
+      } else if shell-args-match(arg, "sum", 3) != 0 {
+        app-kind = BOOT-IMAGE-APP-SUM
+        app-name = "app-sum"
+        app-grants = SCI-APP-FS-GRANTS
+        app-args = shell-args-tail(arg, 3)
+      } else if shell-args-match(arg, "man", 3) != 0 {
+        app-kind = BOOT-IMAGE-APP-MAN
+        app-name = "app-man"
+        app-args = shell-args-tail(arg, 3)
+      } else if shell-args-match(arg, "sysinfo", 7) != 0 {
+        app-kind = BOOT-IMAGE-APP-SYSINFO
+        app-name = "app-sysinfo"
+        app-args = shell-args-tail(arg, 7)
+      }
+      if app-kind == 0 {
+        serial-write-cstr(port, "  runapp: unknown app (try: apps)")
+        serial-nl(port)
+      } else {
+        let rc = sci-load-runtime-component(port, boot-image-find(app-kind), app-name, app-grants, 1, app-args)
+        serial-write-cstr(port, "  runapp: ")
+        serial-write-cstr(port, app-name)
+        serial-write-cstr(port, " returned 0x")
+        serial-write-hex(port, rc)
+        serial-nl(port)
+      }
     } else if line-prefix("exec ") >= 0 {
       let arg = line-prefix("exec ")
       let rc = posix-sys-execve(line + arg, 0, 0)
@@ -762,13 +880,16 @@ fn shell(port: Int) -> void {
       serial-write-dec-wide(port, pct)
       serial-write-cstr(port, "%)")
       serial-nl(port)
+      serial-write-cstr(port, "  kernel heap unallocated: ")
+      serial-write-dec-wide(port, mem-heap-free())
+      serial-nl(port)
       serial-write-cstr(port, "  heap free:  ")
       serial-write-dec-wide(port, free / 1048576)
       serial-write-cstr(port, " MiB")
       serial-nl(port)
     } else if line-eq("ticks") != 0 {
       serial-write-cstr(port, "  timer ticks 0x")
-      serial-write-hex(port, ticks)
+      serial-write-hex(port, ticks-now())
       serial-nl(port)
     } else if line-eq("ps") != 0 {
       proc-list(port)

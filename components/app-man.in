@@ -1,0 +1,117 @@
+package space.app
+
+// man (boot kind 18): the Space application platform manual, printed as an
+// app. This is the runnable documentation of the app surface: how apps are
+// packaged (SCI v2), what authority they hold (capability grants), the
+// APP-API v1 cap-info contract, and the preinstalled app set. Run `man`
+// arguments to jump to a section: `runapp man apps|api|caps`.
+
+component AppMan {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppManEntry
+}
+
+interface AppManEntry {
+  fn app-man-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+// appapi shared-library imports (boot-image kind 14, APP-API v1).
+interrupt fn api-version() -> Int {
+}
+
+interrupt fn api-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn api-writeline(port: Int, addr: Int) -> void {
+}
+
+interrupt fn api-write-dec(port: Int, value: Int) -> void {
+}
+
+interrupt fn api-args(cap-info: Int) -> Int {
+}
+
+fn p(s: Int) -> void {
+  api-writeline(COM1, s)
+  return
+}
+
+fn app-man-entry(cap-info: Int) -> Int {
+  let section = api-args(cap-info)
+
+  api-write(COM1, "man: Space application platform manual, APP-API v")
+  api-write-dec(COM1, api-version())
+  p("")
+  p("apps are SCI v2 dynamic modules: compiled from .in, isolated in a")
+  p("domain, bound against declared capability grants at load time, and")
+  p("run on demand from the shell: runapp <app> [args].")
+  p("")
+
+  if section-eq(section, "apps") == 1 {
+    p("preinstalled apps:")
+    p("  calc     arithmetic evaluator")
+    p("  notes    full-screen text editor (saves notes.txt)")
+    p("  hd       hex dump a file: hd notes.txt")
+    p("  sysmon   live kernel/domains/memory monitor")
+    p("  bench    deterministic prime benchmark")
+    p("  files    filesystem self-test and directory listing")
+    p("  clock    RTC date/time and uptime")
+    p("  sum      checksum a file: sum notes.txt")
+    p("  man      this manual")
+    p("  sysinfo  show own capability grants")
+    return 0
+  }
+
+  if section-eq(section, "caps") == 1 {
+    p("capability grants (cap-info +0):")
+    p("  bit0 serial console   bit1 filesystem read/write")
+    p("grants are declared by the app and enforced by the loader before")
+    p("entry: undeclared authority is a load-time denial, not a runtime")
+    p("error. apps see no kernel memory, devices, or other domains.")
+    return 0
+  }
+
+  if section-eq(section, "api") == 1 {
+    p("APP-API v1 cap-info page (rcx at entry):")
+    p("  +0 grants        +16 heap base     +24 heap size")
+    p("  +32 shared page  +40 domain id     +48/+56 console size")
+    p("  +64 args string pointer")
+    p("libraries: libspace (kind 7) utilities; appapi (kind 14) this")
+    p("contract. kernel services bind by name against granted exports.")
+    return 0
+  }
+
+  p("sections: apps, api, caps  (e.g. runapp man api)")
+  return 0
+}
+
+fn section-eq(section: Int, name: Int) -> Int {
+  // Empty argument matches nothing so the default summary always shows.
+  if load8(section) == 0 {
+    return 0
+  }
+  let i = 0
+  while true {
+    let x = load8(section + i)
+    let y = load8(name + i)
+    if x != y {
+      return 0
+    }
+    if x == 0 {
+      return 1
+    }
+    i += 1
+  }
+  return 0
+}

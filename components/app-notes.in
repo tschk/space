@@ -1,0 +1,857 @@
+package space.app
+
+// notes (boot kind 10): a vro-style text editor as a dynamically linked,
+// isolated app — modeled after undivisible/vro (micro-inspired editor).
+// Edits /notes.txt through the kernel filesystem service, so notes persist
+// across reboots when a volume backend is present.
+//
+// vro surface implemented here:
+//   - full-screen render with line-number gutter and status bar
+//   - insert / backspace / delete, Enter, Tab = two spaces
+//   - arrows, Home, End, PgUp, PgDn
+//   - Ctrl-S save, Ctrl-Q quit (unsaved: Ctrl-Q again discards)
+//   - Ctrl-F incremental search (next occurrence from cursor)
+//   - Ctrl-E command bar: w | q | wq | goto <line>
+
+component AppNotes {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+  capability storage: BlockStorage(read, write)
+
+  export entry: AppNotesEntry
+}
+
+interface AppNotesEntry {
+  fn app-notes-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+const COM1 = 0x3F8
+const NOTES-BUF-SIZE = 16384
+const NOTES-SCREEN-ROWS = 22
+const NOTES-COLS = 76
+const NOTES-GUTTER = 5
+
+const KEY-LEFT = 1000
+const KEY-RIGHT = 1001
+const KEY-UP = 1002
+const KEY-DOWN = 1003
+const KEY-HOME = 1004
+const KEY-END = 1005
+const KEY-PGUP = 1006
+const KEY-PGDN = 1007
+const KEY-DELETE = 1008
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+}
+
+interrupt fn fs-write-file(name: Int, buf: Int, size: Int) -> Int {
+}
+
+// libspace shared-library imports (boot kind 7).
+interrupt fn lib-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn lib-write-dec(port: Int, value: Int) -> void {
+}
+
+interrupt fn lib-readline(port: Int, buf: Int, max: Int) -> Int {
+}
+
+// --- editor state (app-owned data segment) ----------------------------------
+var n-row: Int = 0
+var n-col: Int = 0
+var n-len: Int = 0
+var n-dirty: Int = 0
+var n-scroll: Int = 0
+
+// --- terminal primitives ----------------------------------------------------
+fn t-put(ch: Int) -> void {
+  outb(COM1, ch)
+  return
+}
+
+fn t-csi(a: Int, b: Int) -> void {
+  t-put(27)
+  t-put(91)
+  t-write-dec(a)
+  t-put(b)
+  return
+}
+
+// CSI n1;n2 final — 2-parameter form (row;col cursor position).
+fn t-csi-xy(n1: Int, n2: Int) -> void {
+  t-put(27)
+  t-put(91)
+  t-write-dec(n1)
+  t-put(59)
+  t-write-dec(n2)
+  t-put(72)
+  return
+}
+
+fn t-write-dec(v: Int) -> void {
+  if v == 0 {
+    t-put(48)
+    return
+  }
+  let digits = 16
+  let buf = 8
+  let work = v
+  let n = 0
+  while work > 0 {
+    let d = work - (work / 10) * 10
+    store8(buf + n, 48 + d)
+    n = n + 1
+    work = work / 10
+  }
+  while n > 0 {
+    n = n - 1
+    t-put(load8(buf + n))
+  }
+  return
+}
+
+fn t-clear-screen() -> void {
+  // CSI 2J
+  t-put(27)
+  t-put(91)
+  t-put(50)
+  t-put(74)
+  return
+}
+
+fn t-cursor-hide() -> void {
+  // CSI ?25l
+  t-put(27)
+  t-put(91)
+  t-put(63)
+  t-put(50)
+  t-put(53)
+  t-put(108)
+  return
+}
+
+fn t-cursor-show() -> void {
+  // CSI ?25h
+  t-put(27)
+  t-put(91)
+  t-put(63)
+  t-put(50)
+  t-put(53)
+  t-put(104)
+  return
+}
+
+fn t-alt-enter() -> void {
+  // CSI ?1049h
+  t-put(27)
+  t-put(91)
+  t-put(63)
+  t-put(49)
+  t-put(48)
+  t-put(52)
+  t-put(57)
+  t-put(104)
+  return
+}
+
+fn t-alt-exit() -> void {
+  // CSI ?1049l
+  t-put(27)
+  t-put(91)
+  t-put(63)
+  t-put(49)
+  t-put(48)
+  t-put(52)
+  t-put(57)
+  t-put(108)
+  return
+}
+
+// --- raw key input with escape-sequence parsing ------------------------------
+var t-pushback: Int = 0
+
+fn t-read-byte() -> Int {
+  if t-pushback != 0 {
+    let p = t-pushback
+    t-pushback = 0
+    return p
+  }
+  while (inb(COM1 + 5) & 1) == 0 {
+  }
+  return inb(COM1)
+}
+
+fn t-get-key() -> Int {
+  let b = t-read-byte()
+  if b != 27 {
+    return b
+  }
+  let b2 = t-read-byte()
+  if b2 != 91 {
+    t-pushback = b2
+    return 27
+  }
+  let b3 = t-read-byte()
+  if b3 == 65 {
+    return KEY-UP
+  }
+  if b3 == 66 {
+    return KEY-DOWN
+  }
+  if b3 == 67 {
+    return KEY-RIGHT
+  }
+  if b3 == 68 {
+    return KEY-LEFT
+  }
+  if b3 == 72 {
+    return KEY-HOME
+  }
+  if b3 == 70 {
+    return KEY-END
+  }
+  if b3 == 51 {
+    t-read-byte()
+    return KEY-DELETE
+  }
+  if b3 == 53 {
+    t-read-byte()
+    return KEY-PGUP
+  }
+  if b3 == 54 {
+    t-read-byte()
+    return KEY-PGDN
+  }
+  return 0
+}
+
+// --- buffer model (NUL-terminated, LF line endings) --------------------------
+var n-buf: Int = 0
+
+fn n-row-offset(row: Int) -> Int {
+  if row <= 0 {
+    return 0
+  }
+  let off = 0
+  let r = 0
+  while r < row && off < n-len {
+    if load8(n-buf + off) == 10 {
+      r = r + 1
+    }
+    off = off + 1
+  }
+  return off
+}
+
+fn n-row-length(row: Int) -> Int {
+  let off = n-row-offset(row)
+  let n = 0
+  while off + n < n-len && load8(n-buf + off + n) != 10 {
+    n = n + 1
+  }
+  return n
+}
+
+fn n-count-rows() -> Int {
+  if n-len == 0 {
+    return 1
+  }
+  let count = 1
+  let i = 0
+  while i < n-len {
+    if load8(n-buf + i) == 10 {
+      count = count + 1
+    }
+    i = i + 1
+  }
+  return count
+}
+
+fn n-cursor-offset() -> Int {
+  return n-row-offset(n-row) + n-col
+}
+
+fn n-insert-byte(ch: Int) -> void {
+  let len = n-len
+  if len >= NOTES-BUF-SIZE - 1 {
+    return
+  }
+  let off = n-cursor-offset()
+  let i = len
+  while i > off {
+    store8(n-buf + i, load8(n-buf + i - 1))
+    i = i - 1
+  }
+  store8(n-buf + off, ch)
+  n-len = len + 1
+  store8(n-buf + n-len, 0)
+  n-dirty = 1
+  return
+}
+
+fn n-delete-byte() -> void {
+  let len = n-len
+  let off = n-cursor-offset()
+  if off >= len {
+    return
+  }
+  let i = off
+  while i < len - 1 {
+    store8(n-buf + i, load8(n-buf + i + 1))
+    i = i + 1
+  }
+  n-len = len - 1
+  store8(n-buf + n-len, 0)
+  n-dirty = 1
+  return
+}
+
+fn n-backspace() -> void {
+  let off = n-cursor-offset()
+  if off == 0 {
+    return
+  }
+  if load8(n-buf + off - 1) == 10 {
+    n-row = n-row - 1
+    n-col = n-row-length(n-row)
+  } else {
+    n-col = n-col - 1
+  }
+  let len = n-len
+  let i = off - 1
+  while i < len - 1 {
+    store8(n-buf + i, load8(n-buf + i + 1))
+    i = i + 1
+  }
+  n-len = len - 1
+  store8(n-buf + n-len, 0)
+  n-dirty = 1
+  return
+}
+
+fn n-insert-newline() -> void {
+  n-insert-byte(10)
+  n-row = n-row + 1
+  n-col = 0
+  return
+}
+
+fn n-insert-char(ch: Int) -> void {
+  n-insert-byte(ch)
+  n-col = n-col + 1
+  return
+}
+
+fn n-move-left() -> void {
+  if n-col > 0 {
+    n-col = n-col - 1
+  } else if n-row > 0 {
+    n-row = n-row - 1
+    n-col = n-row-length(n-row)
+  }
+  return
+}
+
+fn n-move-right() -> void {
+  if n-col < n-row-length(n-row) {
+    n-col = n-col + 1
+  } else if n-row < n-count-rows() - 1 {
+    n-row = n-row + 1
+    n-col = 0
+  }
+  return
+}
+
+fn n-clamp-col() -> void {
+  let rl = n-row-length(n-row)
+  if n-col > rl {
+    n-col = rl
+  }
+  return
+}
+
+fn n-move-up() -> void {
+  if n-row > 0 {
+    n-row = n-row - 1
+    n-clamp-col()
+  }
+  return
+}
+
+fn n-move-down() -> void {
+  if n-row < n-count-rows() - 1 {
+    n-row = n-row + 1
+    n-clamp-col()
+  }
+  return
+}
+
+fn n-move-home() -> void {
+  n-col = 0
+  return
+}
+
+fn n-move-end() -> void {
+  n-col = n-row-length(n-row)
+  return
+}
+
+fn n-page-up() -> void {
+  if n-row >= NOTES-SCREEN-ROWS {
+    n-row = n-row - NOTES-SCREEN-ROWS
+  } else {
+    n-row = 0
+  }
+  n-clamp-col()
+  return
+}
+
+fn n-page-down() -> void {
+  let total = n-count-rows()
+  if n-row + NOTES-SCREEN-ROWS < total {
+    n-row = n-row + NOTES-SCREEN-ROWS
+  } else {
+    n-row = total - 1
+  }
+  n-clamp-col()
+  return
+}
+
+// --- rendering ---------------------------------------------------------------
+fn n-adjust-scroll() -> void {
+  if n-row < n-scroll {
+    n-scroll = n-row
+  }
+  if n-row >= n-scroll + NOTES-SCREEN-ROWS {
+    n-scroll = n-row - NOTES-SCREEN-ROWS + 1
+  }
+  return
+}
+
+// Reverse-video attribute on/off around the status bar.
+fn t-attr-on() -> void {
+  t-put(27)
+  t-put(91)
+  t-put(55)
+  t-put(109)
+  return
+}
+
+fn t-attr-off() -> void {
+  t-put(27)
+  t-put(91)
+  t-put(48)
+  t-put(109)
+  return
+}
+
+fn n-render() -> void {
+  n-adjust-scroll()
+  let total = n-count-rows()
+
+  t-cursor-hide()
+  t-clear-screen()
+
+  let y = 0
+  while y < NOTES-SCREEN-ROWS {
+    let filerow = n-scroll + y
+    t-csi-xy(y + 1, 1)
+
+    if filerow < total {
+      // Line-number gutter, vro style.
+      let linenum = filerow + 1
+      t-put(32)
+      if linenum < 10 {
+        t-put(32)
+        t-put(32)
+      } else if linenum < 100 {
+        t-put(32)
+      }
+      t-write-dec(linenum)
+      t-put(32)
+
+      let off = n-row-offset(filerow)
+      let rl = n-row-length(filerow)
+      let c = 0
+      while c < rl && c < NOTES-COLS - NOTES-GUTTER {
+        t-put(load8(n-buf + off + c))
+        c = c + 1
+      }
+    } else {
+      t-put(32)
+      t-put(32)
+      t-put(32)
+      t-put(32)
+      t-put(126)
+    }
+    // Clear to end of line.
+    t-csi(0, 75)
+    y = y + 1
+  }
+
+  // Status bar.
+  t-csi-xy(24, 1)
+  t-attr-on()
+  t-put(32)
+  t-put(110)  // n
+  t-put(111)  // o
+  t-put(116)  // t
+  t-put(101)  // e
+  t-put(115)  // s
+  t-put(46)   // .
+  t-put(116)  // t
+  t-put(120)  // x
+  t-put(116)  // t
+  if n-dirty != 0 {
+    t-put(43)
+  } else {
+    t-put(32)
+  }
+  t-put(32)
+  t-put(32)
+  t-write-dec(n-row + 1)
+  t-put(58)
+  t-write-dec(n-col + 1)
+  t-put(32)
+  t-put(32)
+  t-write-dec(total)
+  t-put(32)
+  t-put(108)  // l
+  t-put(105)  // i
+  t-put(110)  // n
+  t-put(101)  // e
+  t-put(115)  // s
+  t-csi(0, 75)
+  t-attr-off()
+
+  t-csi-xy(n-row - n-scroll + 1, n-col + NOTES-GUTTER + 1)
+  t-cursor-show()
+  return
+}
+
+// Status-bar flash message (SAVED / found / errors), vro-style.
+fn n-flash(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int, g: Int) -> void {
+  t-csi-xy(24, 1)
+  t-attr-on()
+  t-put(32)
+  if a != 0 {
+    t-put(a)
+  }
+  if b != 0 {
+    t-put(b)
+  }
+  if c != 0 {
+    t-put(c)
+  }
+  if d != 0 {
+    t-put(d)
+  }
+  if e != 0 {
+    t-put(e)
+  }
+  if f != 0 {
+    t-put(f)
+  }
+  if g != 0 {
+    t-put(g)
+  }
+  t-csi(0, 75)
+  t-attr-off()
+  t-csi-xy(n-row - n-scroll + 1, n-col + NOTES-GUTTER + 1)
+  return
+}
+
+// --- persistence -------------------------------------------------------------
+fn n-save() -> Int {
+  let rc = fs-write-file("notes.txt", n-buf, n-len)
+  if rc < 0 {
+    return -1
+  }
+  n-dirty = 0
+  return 0
+}
+
+// --- command bar (Ctrl-E), vro surface: w | q | wq | goto <line> -------------
+fn n-command-bar() -> Int {
+  // Returns 1 to quit, 0 to continue editing.
+  t-alt-exit()
+  t-cursor-show()
+  serial-write-cstr(COM1, "  :")
+  let cmd = n-buf + NOTES-BUF-SIZE
+  lib-readline(COM1, cmd, 256)
+  let result = 0
+
+  if cmd-eq(cmd, "wq") == 1 {
+    n-save()
+    result = 1
+  } else if cmd-eq(cmd, "w") == 1 {
+    if n-save() == 0 {
+      serial-write-cstr(COM1, "  saved notes.txt")
+    } else {
+      serial-write-cstr(COM1, "  save FAILED")
+    }
+    serial-nl-ln(COM1)
+  } else if cmd-eq(cmd, "q") == 1 {
+    if n-dirty != 0 {
+      serial-write-cstr(COM1, "  unsaved changes: use wq, or q! to discard")
+      serial-nl-ln(COM1)
+    } else {
+      result = 1
+    }
+  } else if cmd-eq(cmd, "q!") == 1 {
+    result = 1
+  } else if cmd-goto(cmd) >= 0 {
+    let line = cmd-goto(cmd)
+    if line >= 1 && line <= n-count-rows() {
+      n-row = line - 1
+      n-col = 0
+    } else {
+      serial-write-cstr(COM1, "  out of range")
+      serial-nl-ln(COM1)
+    }
+  } else if cmd-eq(cmd, "help") == 1 {
+    serial-write-cstr(COM1, "  w  q  q!  wq  goto <line>")
+    serial-nl-ln(COM1)
+  } else {
+    serial-write-cstr(COM1, "  unknown command (help)")
+    serial-nl-ln(COM1)
+  }
+
+  t-alt-enter()
+  n-render()
+  return result
+}
+
+fn serial-nl-ln(port: Int) -> void {
+  outb(port, 13)
+  outb(port, 10)
+  return
+}
+
+fn cmd-eq(a: Int, b: Int) -> Int {
+  let i = 0
+  while true {
+    let ca = load8(a + i)
+    let cb = load8(b + i)
+    if ca != cb {
+      return 0
+    }
+    if ca == 0 {
+      return 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Matches "goto <number>"; returns the line number, or -1.
+fn cmd-goto(cmd: Int) -> Int {
+  if load8(cmd) != 103 || load8(cmd + 1) != 111 || load8(cmd + 2) != 116 || load8(cmd + 3) != 111 || load8(cmd + 4) != 32 {
+    return -1
+  }
+  let i = 5
+  while load8(cmd + i) == 32 {
+    i = i + 1
+  }
+  let n = 0
+  let any = 0
+  while load8(cmd + i) >= 48 && load8(cmd + i) <= 57 {
+    n = n * 10 + (load8(cmd + i) - 48)
+    any = 1
+    i = i + 1
+  }
+  if any == 0 || load8(cmd + i) != 0 {
+    return -1
+  }
+  return n
+}
+
+// --- incremental search (Ctrl-F) --------------------------------------------
+fn n-search() -> void {
+  t-alt-exit()
+  t-cursor-show()
+  serial-write-cstr(COM1, "  find: ")
+  let pat = n-buf + NOTES-BUF-SIZE
+  lib-readline(COM1, pat, 256)
+  if load8(pat) != 0 {
+    // Search from just after the cursor; wrap once.
+    let start = n-cursor-offset() + 1
+    let found = n-find(pat, start)
+    if found < 0 {
+      found = n-find(pat, 0)
+    }
+    if found < 0 {
+      serial-write-cstr(COM1, "  not found: ")
+      lib-write(COM1, pat)
+      serial-nl-ln(COM1)
+    } else {
+      // Convert buffer offset to row/col.
+      let off = 0
+      let row = 0
+      while off < found {
+        if load8(n-buf + off) == 10 {
+          row = row + 1
+        }
+        off = off + 1
+      }
+      n-row = row
+      n-col = found - n-row-offset(row)
+    }
+  }
+  t-alt-enter()
+  n-render()
+  return
+}
+
+fn n-find(pat: Int, from: Int) -> Int {
+  let plen = 0
+  while load8(pat + plen) != 0 {
+    plen = plen + 1
+  }
+  let i = from
+  while i + plen <= n-len {
+    let j = 0
+    let ok = 1
+    while j < plen {
+      if load8(n-buf + i + j) != load8(pat + j) {
+        ok = 0
+      }
+      j = j + 1
+    }
+    if ok == 1 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// --- main loop ---------------------------------------------------------------
+fn app-notes-entry(cap-info: Int) -> Int {
+  let port = COM1
+  n-buf = load64(cap-info + 16)
+
+  // Load notes.txt; a missing file starts an empty buffer.
+  let n = fs-read-file("notes.txt", n-buf)
+  if n < 0 {
+    n = 0
+    store8(n-buf, 0)
+  }
+  n-len = n
+  n-row = 0
+  n-col = 0
+  n-dirty = 0
+  n-scroll = 0
+
+  t-alt-enter()
+  n-render()
+
+  let quit = 0
+  while quit == 0 {
+    let ch = t-get-key()
+    if ch == 0 {
+      // fall through to render
+    } else if ch == 17 {
+      // Ctrl-Q: quit; if dirty, one confirmation press discards.
+      if n-dirty != 0 {
+        t-alt-exit()
+        t-cursor-show()
+        serial-write-cstr(port, "notes: unsaved changes. Ctrl-Q again to discard, any key to resume.")
+        serial-nl-ln(port)
+        let ch2 = t-get-key()
+        if ch2 == 17 {
+          quit = 1
+        }
+        if quit == 0 {
+          t-alt-enter()
+          n-render()
+        }
+      } else {
+        quit = 1
+      }
+    } else if ch == 19 {
+      // Ctrl-S: save.
+      if n-save() == 0 {
+        n-flash(83, 65, 86, 69, 68, 0, 0)  // SAVED
+      } else {
+        n-flash(70, 65, 73, 76, 0, 0, 0)   // FAIL
+      }
+    } else if ch == 5 {
+      // Ctrl-E: command bar.
+      if n-command-bar() != 0 {
+        quit = 1
+      }
+    } else if ch == 6 {
+      // Ctrl-F: search.
+      n-search()
+    } else if ch == KEY-LEFT {
+      n-move-left()
+      n-render()
+    } else if ch == KEY-RIGHT {
+      n-move-right()
+      n-render()
+    } else if ch == KEY-UP {
+      n-move-up()
+      n-render()
+    } else if ch == KEY-DOWN {
+      n-move-down()
+      n-render()
+    } else if ch == KEY-HOME {
+      n-move-home()
+      n-render()
+    } else if ch == KEY-END {
+      n-move-end()
+      n-render()
+    } else if ch == KEY-PGUP {
+      n-page-up()
+      n-render()
+    } else if ch == KEY-PGDN {
+      n-page-down()
+      n-render()
+    } else if ch == KEY-DELETE {
+      n-delete-byte()
+      n-render()
+    } else if ch == 9 {
+      n-insert-char(32)
+      n-insert-char(32)
+      n-render()
+    } else if ch == 13 || ch == 10 {
+      n-insert-newline()
+      n-render()
+    } else if ch == 8 || ch == 127 {
+      n-backspace()
+      n-render()
+    } else if ch >= 32 && ch < 127 {
+      n-insert-char(ch)
+      n-render()
+    }
+  }
+
+  t-alt-exit()
+  t-cursor-show()
+  serial-write-cstr(port, "notes: ")
+  if n-dirty != 0 {
+    serial-write-cstr(port, "closed with unsaved changes")
+  } else {
+    serial-write-cstr(port, "closed")
+  }
+  serial-nl-ln(port)
+  return 0
+}

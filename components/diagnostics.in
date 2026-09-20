@@ -2,7 +2,7 @@ package space.kernel
 
 fn diagnostics-fetch(port: Int) -> void {
   serial-write-cstr(port, "  SpaceOS")
-  serial-write-cstr(port, " 0.2.")
+  serial-write-cstr(port, " 0.1.")
   serial-write-dec-wide(port, SPACE-VERSION-PATCH)
   serial-nl(port)
   serial-write-cstr(port, "  kernel      Space nanokernel")

@@ -291,7 +291,7 @@ fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
 }
 
 fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  // SCI header is 32 bytes; ELF probe needs more and checks itself.
+  // SCI headers are 32 bytes (v1) or 64 bytes (v2); ELF probes itself.
   if size < 32 {
     return LINUX-ENOEXEC
   }
@@ -299,7 +299,7 @@ fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if magic == LINUX-ELF-MAGIC {
     return posix-elf-exec-image(port, image, size, path)
   }
-  if magic != 0x5343490000000001 {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     return LINUX-ENOEXEC
   }
   serial-write-cstr(port, "posix: execve loading SCI from ")

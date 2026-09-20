@@ -1,0 +1,92 @@
+package space.app
+
+// bench (boot kind 13): deterministic CPU benchmark as a dynamically
+// linked, isolated app. Counts primes below 100000 by trial division and
+// reports the score against kernel ticks — reproducible across hosts.
+
+component AppBench {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppBenchEntry
+}
+
+interface AppBenchEntry {
+  fn app-bench-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+const PIT-HZ = 100
+const BENCH-LIMIT = 100000
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn serial-nl(port: Int) -> void {
+}
+
+interrupt fn ticks-now() -> Int {
+}
+
+// libspace shared-library imports (boot kind 7).
+interrupt fn lib-write-dec(port: Int, value: Int) -> void {
+}
+
+fn bench-is-prime(n: Int) -> Int {
+  if n < 4 {
+    if n > 1 {
+      return 1
+    }
+    return 0
+  }
+  if (n - 1) % 2 == 0 {
+    // odd n: trial odd divisors up to sqrt(n)
+    let d = 3
+    while d * d <= n {
+      if n - (n / d) * d == 0 {
+        return 0
+      }
+      d = d + 2
+    }
+    return 1
+  }
+  return 0
+}
+
+fn app-bench-entry(cap-info: Int) -> Int {
+  let port = COM1
+
+  serial-write-cstr(port, "bench: counting primes below 100000 (trial division)")
+  serial-nl(port)
+
+  let t0 = ticks-now()
+  let count = 0
+  let n = 2
+  while n < BENCH-LIMIT {
+    count = count + bench-is-prime(n)
+    n = n + 1
+  }
+  let t1 = ticks-now()
+
+  serial-write-cstr(port, "bench: found ")
+  lib-write-dec(port, count)
+  serial-write-cstr(port, " primes in ")
+  lib-write-dec(port, (t1 - t0) * 10)
+  serial-write-cstr(port, " ms")
+  serial-nl(port)
+  if t1 > t0 {
+    serial-write-cstr(port, "bench: score ")
+    lib-write-dec(port, (count * PIT-HZ) / (t1 - t0))
+    serial-write-cstr(port, " primes/s")
+    serial-nl(port)
+  }
+  return count
+}

@@ -1,0 +1,183 @@
+package space.app
+
+// APP-API v1 (boot-image kind 14): the versioned application platform ABI,
+// provided as a second shared library alongside libspace (kind 7).
+//
+// Division of responsibility:
+//   libspace — generic C-library-style utilities (formatting, readline).
+//   appapi   — the app platform contract itself: API version, argument
+//              access on the cap-info page, and console helpers apps use
+//              so they never hardcode ABI offsets.
+//
+// Like every shared library, appapi is self-contained (no imports of its
+// own) and stateless (no writable globals): its text maps RX into every
+// importing component's domain at its linked base (0x3E000000). Kernel
+// services stay per-app imports bound against the app's own capability
+// grants; the library holds no authority and cannot escalate.
+
+component AppApi {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppApiEntry
+}
+
+interface AppApiEntry {
+  fn api-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+// Entry is never invoked by the loader; libraries provide symbols only.
+fn api-entry(cap-info: Int) -> Int {
+  return 0
+}
+
+// --- platform identity -------------------------------------------------------
+
+// APP-API version. 1 = this surface: cap-info layout below, args at +64.
+fn api-version() -> Int {
+  return 1
+}
+
+// Cap-info page layout (APP-API v1):
+//   +0  granted capability bitmask
+//   +8  reserved
+//   +16 heap base     +24 heap size (2 MiB, per-component)
+//   +32 shared page   +40 domain id
+//   +48 console width +56 console height
+//   +64 args string pointer (0/empty when launched without arguments)
+
+fn api-cap-grants(cap-info: Int) -> Int {
+  return load64(cap-info + 0)
+}
+
+fn api-heap-base(cap-info: Int) -> Int {
+  return load64(cap-info + 16)
+}
+
+fn api-heap-size(cap-info: Int) -> Int {
+  return load64(cap-info + 24)
+}
+
+// Argument string passed by the launcher (`runapp <app> <args>`).
+fn api-args(cap-info: Int) -> Int {
+  return load64(cap-info + 64)
+}
+
+// --- console -----------------------------------------------------------------
+
+fn api-wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn api-putch(port: Int, ch: Int) -> void {
+  api-wait(port)
+  outb(port, ch)
+  return
+}
+
+fn api-write(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    api-putch(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn api-writeline(port: Int, addr: Int) -> void {
+  api-write(port, addr)
+  api-putch(port, 13)
+  api-putch(port, 10)
+  return
+}
+
+fn pow10(n: Int) -> Int {
+  let r = 1
+  let i = 0
+  while i < n {
+    r *= 10
+    i += 1
+  }
+  return r
+}
+
+// Unsigned decimal, unpadded.
+fn api-write-dec(port: Int, value: Int) -> void {
+  if value < 0 {
+    api-putch(port, 45)
+    value = -value
+  }
+  let digits = 0
+  let v = value
+  while v >= 10 {
+    v = v / 10
+    digits += 1
+  }
+  let i = digits
+  while i >= 0 {
+    api-putch(port, 48 + value / pow10(i) % 10)
+    i -= 1
+  }
+  return
+}
+
+// Unsigned decimal, zero-padded to a fixed width (timestamps, sizes).
+fn api-write-dec-padded(port: Int, value: Int, width: Int) -> void {
+  let digits = 0
+  let v = value
+  while v >= 10 {
+    v = v / 10
+    digits += 1
+  }
+  let pad = width - 1 - digits
+  while pad > 0 {
+    api-putch(port, 48)
+    pad -= 1
+  }
+  api-write-dec(port, value)
+  return
+}
+
+// Line reader with echo and backspace handling; returns the length.
+fn api-readline(port: Int, buf: Int, max: Int) -> Int {
+  let i = 0
+  while i < max - 1 {
+    while (inb(port + 5) & 1) == 0 {
+    }
+    let c = inb(port) & 0x7F
+    if c == 13 {
+      c = 10
+    }
+    if c == 10 {
+      api-putch(port, 13)
+      api-putch(port, 10)
+      store8(buf + i, 0)
+      return i
+    }
+    if c == 8 || c == 127 {
+      if i > 0 {
+        i -= 1
+        api-putch(port, 8)
+        api-putch(port, 32)
+        api-putch(port, 8)
+      }
+    } else if c >= 32 {
+      store8(buf + i, c)
+      i += 1
+      api-putch(port, c)
+    }
+  }
+  store8(buf + i, 0)
+  return i
+}
