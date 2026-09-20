@@ -418,7 +418,13 @@ comp_invoke_stub:
     pop r12
     pop r11
     pop rbx
-    jmp comp_invoke_stub
+    ; The component entry returned: park this task. Interrupts stay enabled
+    ; so the timer keeps scheduling other tasks; this task's context is
+    ; resumed here on each future tick and never re-enters the component.
+.park:
+    sti
+    hlt
+    jmp .park
 
 ; --- cooperative context switch --------------------------------------------
 ; context_switch(rdi = pointer to the outgoing task's saved-RSP slot,

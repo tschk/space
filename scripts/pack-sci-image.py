@@ -2,7 +2,9 @@ import os
 import struct
 import sys
 
-MAGIC = 0x5350414345424F4F
+SCI_MAGIC = 0x5343490000000001
+SCI_MAGIC_V2 = 0x5343490000000002
+BOOT_MAGIC = 0x5350414345424F4F
 IMAGE_BASE = 0x100000
 HANDOFF_OFFSET = 0xF00
 IMAGE_LIMIT = 0x300000
@@ -13,7 +15,8 @@ entries = []
 for spec in specs:
     kind_text, path = spec.split(":", 1)
     blob = open(path, "rb").read()
-    if len(blob) < 32 or struct.unpack_from("<Q", blob)[0] != 0x5343490000000001:
+    magic = struct.unpack_from("<Q", blob)[0]
+    if len(blob) < 32 or magic not in (SCI_MAGIC, SCI_MAGIC_V2):
         raise SystemExit(f"invalid SCI: {path}")
     off = (len(out) + 4095) & -4096
     out += b"\x00" * (off - len(out))
@@ -23,7 +26,7 @@ for spec in specs:
 table_off = (len(out) + 4095) & -4096
 out += b"\x00" * (table_off - len(out))
 table_phys = IMAGE_BASE + table_off
-out += struct.pack("<QQ", MAGIC, len(entries))
+out += struct.pack("<QQ", BOOT_MAGIC, len(entries))
 for entry in entries:
     out += struct.pack("<QQQQ", *entry)
 if IMAGE_BASE + len(out) > IMAGE_LIMIT:

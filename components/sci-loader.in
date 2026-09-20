@@ -9,11 +9,47 @@ var volume-shared: Int = 0
 var volume-via-marker: Int = 0
 
 const SCI-MAGIC = 0x5343490000000001
+// SCI v2: 64-byte manifest with export/import symbol tables (dynamic linking).
+const SCI-MAGIC-V2 = 0x5343490000000002
+const SCI-V2-HEADER = 64
+const SCI-V2-EXPORT-COUNT = 32
+const SCI-V2-EXPORT-TABLE = 40
+const SCI-V2-IMPORT-COUNT = 48
+const SCI-V2-IMPORT-TABLE = 56
 const SCI-GUEST-GRANTS = 1
 const SCI-DISPLAY-GRANTS = 1
 const SCI-INPUT-GRANTS = 3
 const SCI-VOLUME-GRANTS = 0
+const SCI-LIB-GRANTS = 1
+const SCI-DYN-GRANTS = 1
+// App grants. SCI manifests encode required capabilities as ordinal bits
+// (bit N set = the Nth capability declared in the component block): a
+// serial-only app requires 0x1, an app that also declares storage requires
+// 0x3. Kernel-internal cap-type masks (cap-serial etc.) are a separate
+// vocabulary and never appear in SCI manifests.
+const SCI-APP-GRANTS = 1
+const SCI-APP-FS-GRANTS = 3
 const VOLUME-NVME-LBA = 65536
+
+// Dynamic-linking registry: exported symbols from the kernel boot image
+// (kind 0 provider), registered shared-library SCIs, and successfully loaded
+// modules. Each entry has a provider record so bind can map provider text
+// into the importing domain. Kernel entries carry zero provider fields.
+const DYN-MAX-EXPORTS = 1024
+const LIB-VIRT-BASE = 0x3F000000
+const KERNEL-CODE-BASE = 0x101100
+const KERNEL-HEADER = 0x101000
+
+var lib-registered: Int = 0
+var lib-phys: Int = 0
+var lib-entry: Int = 0
+var lib-size: Int = 0
+var dyn-name-tab: Int = 0
+var dyn-fn-tab: Int = 0
+var dyn-prov-phys: Int = 0
+var dyn-prov-base: Int = 0
+var dyn-prov-size: Int = 0
+var dyn-count: Int = 0
 
 const COMP-GNOME-DESKTOP = 0x001E1E2E
 const COMP-GNOME-PANEL = 0x00181825
@@ -66,7 +102,226 @@ fn comp-thread-wrapper() -> Int {
   return invoke1(comp-entry-arg, comp-cap-info-arg)
 }
 
-fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int) -> Int {
+// --- dynamic linking ---------------------------------------------------------
+
+// Byte-compare two NUL-terminated strings. Returns 1 when equal.
+fn dyn-str-eq(a: Int, b: Int) -> Int {
+  let i = 0
+  let ca = load8(a + i)
+  let cb = load8(b + i)
+  while ca != 0 && cb != 0 {
+    if ca != cb {
+      return 0
+    }
+    i = i + 1
+    ca = load8(a + i)
+    cb = load8(b + i)
+  }
+  if ca == cb {
+    return 1
+  }
+  return 0
+}
+
+// Resolve a symbol name against the dynamic-link registry.
+// Returns the registry index, or -1 when unresolved.
+fn dyn-resolve-idx(name: Int) -> Int {
+  let i = 0
+  while i < dyn-count {
+    if dyn-str-eq(load64(dyn-name-tab + i * 8), name) != 0 {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn dyn-ensure-tables() -> void {
+  if dyn-name-tab == 0 {
+    dyn-name-tab = alloc(DYN-MAX-EXPORTS * 8)
+    dyn-fn-tab = alloc(DYN-MAX-EXPORTS * 8)
+    dyn-prov-phys = alloc(DYN-MAX-EXPORTS * 8)
+    dyn-prov-base = alloc(DYN-MAX-EXPORTS * 8)
+    dyn-prov-size = alloc(DYN-MAX-EXPORTS * 8)
+  }
+  return
+}
+
+// Add one registry entry. Kernel-provider entries pass provider 0/0/0.
+fn dyn-add(name: Int, fn-addr: Int, prov-phys: Int, prov-base: Int, prov-size: Int) -> void {
+  if dyn-count >= DYN-MAX-EXPORTS {
+    return
+  }
+  store64(dyn-name-tab + dyn-count * 8, name)
+  store64(dyn-fn-tab + dyn-count * 8, fn-addr)
+  store64(dyn-prov-phys + dyn-count * 8, prov-phys)
+  store64(dyn-prov-base + dyn-count * 8, prov-base)
+  store64(dyn-prov-size + dyn-count * 8, prov-size)
+  dyn-count = dyn-count + 1
+  return
+}
+
+// Register the nanokernel's own export table (boot-image header field
+// [40..48] holds the table's absolute virtual address). Kernel symbols need
+// no provider mapping: kernel text is mapped in every kernel-clone domain.
+fn dyn-register-kernel-exports(port: Int) -> Int {
+  let table = load64(KERNEL-HEADER + 40)
+  if table == 0 {
+    serial-write-cstr(port, "  SCI: kernel exports: none")
+    serial-nl(port)
+    return -1
+  }
+  dyn-ensure-tables()
+  let count = load64(table + 0)
+  let i = 0
+  while i < count && dyn-count < DYN-MAX-EXPORTS {
+    let rec = table + 8 + i * 16
+    dyn-add(table + load64(rec + 0), KERNEL-CODE-BASE + load64(rec + 8), 0, 0, 0)
+    i = i + 1
+  }
+  serial-write-cstr(port, "  SCI: kernel exports registered: ")
+  serial-write-dec-wide(port, count)
+  serial-nl(port)
+  return 0
+}
+
+// Register the export table of a loaded SCI v2 image as a provider record so
+// later modules can import from it (chained dynamic modules).
+fn dyn-register-image-exports(port: Int, load-addr: Int, entry: Int, image-size: Int) -> Int {
+  if load64(load-addr) != SCI-MAGIC-V2 {
+    return -1
+  }
+  let export-count = load64(load-addr + SCI-V2-EXPORT-COUNT)
+  if export-count == 0 {
+    return 0
+  }
+  dyn-ensure-tables()
+  let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
+  let i = 0
+  while i < export-count && dyn-count < DYN-MAX-EXPORTS {
+    let rec = export-table + i * 16
+    dyn-add(load-addr + load64(rec + 0), entry + load64(rec + 8), load-addr, entry - SCI-V2-HEADER, image-size)
+    i = i + 1
+  }
+  return 0
+}
+
+// Register a shared-library SCI (boot-image kind 7 = libspace, kind 14 =
+// appapi): validate its manifest, record its physical image, and copy its
+// export table into the registry. Each library keeps its own provider base,
+// so any number of libraries can coexist; importing components map each
+// provider's text at the base that library was linked at. Library text is
+// later mapped into importing components at its linked virtual base.
+fn sci-register-library(port: Int, load-addr: Int) -> Int {
+  if load-addr == 0 {
+    return -1
+  }
+  let magic = load64(load-addr + 0)
+  if magic != SCI-MAGIC-V2 {
+    serial-write-cstr(port, "  SCI: library manifest is not SCI v2")
+    serial-nl(port)
+    return -1
+  }
+  let required = load64(load-addr + 8)
+  let missing = required & (-1 ^ SCI-LIB-GRANTS)
+  if missing != 0 {
+    serial-write-cstr(port, "  SCI: DENIED library cap 0x")
+    serial-write-hex(port, missing)
+    serial-nl(port)
+    return -1
+  }
+  let img-entry = load64(load-addr + 16)
+  let img-size = load64(load-addr + 24)
+  dyn-ensure-tables()
+  let export-count = load64(load-addr + SCI-V2-EXPORT-COUNT)
+  let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
+  let i = 0
+  while i < export-count && dyn-count < DYN-MAX-EXPORTS {
+    let rec = export-table + i * 16
+    dyn-add(load-addr + load64(rec + 0), img-entry + load64(rec + 8), load-addr, img-entry - SCI-V2-HEADER, img-size)
+    i = i + 1
+  }
+  lib-phys = load-addr
+  lib-entry = img-entry
+  lib-size = img-size
+  lib-registered = 1
+  serial-write-cstr(port, "  SCI: library registered at 0x")
+  serial-write-hex(port, img-entry)
+  serial-write-cstr(port, ", ")
+  serial-write-dec-wide(port, export-count)
+  serial-write-cstr(port, " exports")
+  serial-nl(port)
+  return 0
+}
+
+// Map a registry entry's provider image (if any) into the importing domain
+// as shared RX text. Kernel providers (provider phys 0) need no mapping.
+fn dyn-map-provider(domain: Int, idx: Int) -> void {
+  let phys = load64(dyn-prov-phys + idx * 8)
+  if phys == 0 {
+    return
+  }
+  let base = load64(dyn-prov-base + idx * 8)
+  let size = load64(dyn-prov-size + idx * 8)
+  let pages = (size + 4095) / 4096
+  let p = 0
+  while p < pages {
+    domain-map-user-code(domain, base + p * 4096, phys + p * 4096)
+    p = p + 1
+  }
+  return
+}
+
+// Bind a component's imports: resolve each name against the registry, map
+// the provider's image into the component's domain as shared RX text, and
+// patch the `call rel32` displacement. Returns -1 (deny load) when any
+// import has no registered provider.
+fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
+  // Only SCI v2 images carry an import table; v1 (32-byte manifest) images
+  // have no symbol tables — offset 48 is component code there.
+  if load64(load-addr) != SCI-MAGIC-V2 {
+    return 0
+  }
+  let count = load64(load-addr + SCI-V2-IMPORT-COUNT)
+  if count == 0 {
+    return 0
+  }
+  if dyn-count == 0 {
+    serial-write-cstr(port, "  SCI: DENIED no provider registered")
+    serial-nl(port)
+    return -1
+  }
+  let import-table = load-addr + load64(load-addr + SCI-V2-IMPORT-TABLE)
+  let i = 0
+  while i < count {
+    let rec = import-table + i * 16
+    let name = load-addr + load64(rec + 0)
+    let site = load64(rec + 8)
+    let idx = dyn-resolve-idx(name)
+    if idx < 0 {
+      serial-write-cstr(port, "  SCI: DENIED unresolved import ")
+      serial-write-cstr(port, name)
+      serial-nl(port)
+      return -1
+    }
+    dyn-map-provider(domain, idx)
+    // rel32 displacement relative to the next instruction (site + 5).
+    // Site offsets are manifest-relative (the 64-byte SCI v2 header precedes
+    // the code), and `entry` is the linked code start (base + 64), so
+    // entry + site is the call's virtual address — the same byte the store
+    // below patches through the kernel's identity map of `load-addr`.
+    let site-virt = entry + site
+    store32(load-addr + SCI-V2-HEADER + site + 1, load64(dyn-fn-tab + idx * 8) - site-virt - 5)
+    i = i + 1
+  }
+  serial-write-cstr(port, "  SCI: bound ")
+  serial-write-dec-wide(port, count)
+  serial-write-cstr(port, " imports")
+  serial-nl(port)
+  return 0
+}
+
+fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {
   serial-write-cstr(port, "  SCI: loading ")
   serial-write-cstr(port, name)
   serial-nl(port)
@@ -76,11 +331,15 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
     return -1
   }
   let magic = load64(load-addr + 0)
-  if magic != SCI-MAGIC {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: no valid component manifest at 0x")
     serial-write-hex(port, load-addr)
     serial-nl(port)
     return -1
+  }
+  let header = 32
+  if magic == SCI-MAGIC-V2 {
+    header = SCI-V2-HEADER
   }
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
@@ -106,7 +365,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   serial-nl(port)
 
   let component = component-register(name, entry, required)
-  let virt-load = entry - 32
+  let virt-load = entry - header
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
   while i < image-pages {
@@ -115,6 +374,13 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   }
   serial-write-cstr(port, "  SCI: image mapped")
   serial-nl(port)
+
+  // Bind imports before the component ever runs (SCI v2 dynamic linking).
+  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+    return -1
+  }
+  // Chained dynamic modules: this component's exports become importable.
+  dyn-register-image-exports(port, load-addr, entry, image-size)
 
   // Allocate and map a 2 MiB heap for the component.
   let heap-pages = COMP-HEAP-SIZE / 4096
@@ -144,7 +410,11 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   store64(component + 40, domain)
   obj-link(root-realm, component)
 
-  let cap-info = alloc(64)
+  // cap-info is the app ABI page (APP-API v1): grants@0, heap@16/24,
+  // shared page@32, domain@40, console size@48/56, args string@64. The
+  // args pointer targets memory owned by the caller (empty string when
+  // the launcher passes none).
+  let cap-info = alloc(96)
   store64(cap-info + 0, grants)
   store64(cap-info + 8, 0)
   store64(cap-info + 16, COMP-HEAP-VIRT)
@@ -153,10 +423,26 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int)
   store64(cap-info + 40, domain)
   store64(cap-info + 48, 800)
   store64(cap-info + 56, 600)
+  store64(cap-info + 64, args)
 
   serial-write-cstr(port, "  SCI: starting ")
   serial-write-cstr(port, name)
   serial-nl(port)
+  if sync != 0 {
+    // Synchronous mode (runapp): run the component entry inside its own
+    // domain and return its status. No preempt thread is registered, so
+    // apps work after preempt-stop, when the shell owns the CPU.
+    let prev = domain-get-current()
+    domain-switch(domain)
+    let rc = invoke1(entry, cap-info)
+    domain-switch(prev)
+    serial-write-cstr(port, "  SCI: ")
+    serial-write-cstr(port, name)
+    serial-write-cstr(port, " exited 0x")
+    serial-write-hex(port, rc)
+    serial-nl(port)
+    return rc
+  }
   comp-entry-arg = entry
   comp-cap-info-arg = cap-info
   comp-domain-arg = domain
@@ -210,7 +496,15 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
   let image-size = load64(load-addr + 24)
-  if load64(load-addr) != SCI-MAGIC || (required & (-1 ^ SCI-VOLUME-GRANTS)) != 0 {
+  let magic = load64(load-addr)
+  let header = 32
+  if magic == SCI-MAGIC-V2 {
+    header = SCI-V2-HEADER
+  }
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
+    return -1
+  }
+  if (required & (-1 ^ SCI-VOLUME-GRANTS)) != 0 {
     return -1
   }
   let domain = domain-create()
@@ -218,8 +512,11 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
-    domain-map-user-code(domain, entry - 32 + i * 4096, load-addr + i * 4096)
+    domain-map-user-code(domain, entry - header + i * 4096, load-addr + i * 4096)
     i = i + 1
+  }
+  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+    return -1
   }
   let heap = COMP-HEAP-VIRT
   let heap-frames = alloc(COMP-HEAP-SIZE / 4096 * 8)
@@ -539,11 +836,15 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     return -1
   }
   let magic = load64(load-addr + 0)
-  if magic != SCI-MAGIC {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: no valid component manifest at 0x")
     serial-write-hex(port, load-addr)
     serial-nl(port)
     return -1
+  }
+  let header = 32
+  if magic == SCI-MAGIC-V2 {
+    header = SCI-V2-HEADER
   }
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
@@ -567,7 +868,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     return -1
   }
   let component = component-register("sci-guest", entry, required)
-  let virt-load = entry - 32
+  let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0
   while i < image-pages {
@@ -581,6 +882,11 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   serial-write-hex(port, image-pages)
   serial-write-cstr(port, " pages, cap check passed")
   serial-nl(port)
+  // Bind imports before the component ever runs (SCI v2 dynamic linking).
+  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+    return -1
+  }
+  dyn-register-image-exports(port, load-addr, entry, image-size)
   store64(component + 40, domain)
   obj-link(root-realm, component)
   serial-write-cstr(port, "  SCI: registered component object id 0x")
