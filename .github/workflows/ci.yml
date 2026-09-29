@@ -32,7 +32,7 @@ jobs:
       - name: Add in to PATH
         run: echo "${{ github.workspace }}/vendor/inauguration/in-cli/target/release" >> "$GITHUB_PATH"
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y nasm qemu-system-x86
+        run: sudo apt-get update && sudo apt-get install -y nasm qemu-system-x86 ripgrep
       - name: Build boot image
         run: |
           mkdir -p "$BUILD_DIR"

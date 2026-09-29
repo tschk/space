@@ -4,6 +4,13 @@ set -euo pipefail
 SPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SPACE_DIR"
 
+# Missing rg would silently pass every "if rg ..." boundary check and fail the
+# negative assertions with a confusing message; fail loudly instead.
+command -v rg >/dev/null 2>&1 || {
+  echo "check-architecture-boundaries.sh requires ripgrep (rg)" >&2
+  exit 1
+}
+
 if rg -n 'store64\([^)]*cap-info \+ (0|8), (cap-count|cap-table-base)' components kernel --glob '*.in'; then
   echo "component startup ABI exposes the kernel capability table" >&2
   exit 1
