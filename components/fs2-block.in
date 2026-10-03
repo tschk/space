@@ -102,7 +102,9 @@ fn sf-bno-in-range(bno: Int) -> Int {
 }
 
 fn sf-read-block(bno: Int, buf: Int) -> Int {
-  if sf-bno-in-range(bno) == 0 {
+  // Block zero supplies the bounds themselves, so it must be readable before
+  // the superblock has been loaded. Every other read and every write is bounded.
+  if bno != 0 && sf-bno-in-range(bno) == 0 {
     return -1
   }
   if sf-mem-disk != 0 {

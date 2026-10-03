@@ -544,6 +544,11 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     }
     serial-write-cstr(port, "volume: NVMe backing loaded")
     serial-nl(port)
+    // A missing backing filesystem must not become an implicit disk format.
+    // Leave Volume unavailable so the caller can continue without writing it.
+    if mounted == 0 {
+      return -1
+    }
   }
   store64(cap-info + 40, mounted)
 

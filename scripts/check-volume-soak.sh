@@ -33,6 +33,7 @@ BUILD_DIR="$BUILD_DIR" "$SCRIPT_DIR/build-runtime-components.sh" >/dev/null
 
 rm -f "$SERIAL_A" "$SERIAL_B" "$FIFO_A" "$FIFO_B" "$NVME_IMG"
 truncate -s 64M "$NVME_IMG"
+python3 "$SCRIPT_DIR/check-volume-preservation.sh" --seed "$NVME_IMG"
 
 wait_marker() {
   local serial="$1" qpid="$2" marker="$3" tries="${4:-600}"

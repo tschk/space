@@ -27,6 +27,8 @@ jobs:
         bash scripts/check-kernel-contracts.sh
         bash scripts/check-image-formats.sh
         bash scripts/check-runtime-honesty.sh
+        bash scripts/check-sparkfs-init.sh
+        bash scripts/check-volume-preservation.sh
         bash scripts/check-process-vfs.sh
         bash scripts/check-personality-abi.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
