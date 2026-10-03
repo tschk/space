@@ -53,9 +53,13 @@ def translate(text: str) -> str:
             output.append("int64_t " + line[4:] + ";")
         elif line.startswith("if ") or line.startswith("while "):
             match = re.fullmatch(r"(if|while) (.+) \{", line)
-            if not match:
-                raise ValueError(f"unsupported condition: {line}")
-            output.append(f"{match[1]} ({match[2]}) {{")
+            if match:
+                output.append(f"{match[1]} ({match[2]}) {{")
+            else:
+                match = re.fullmatch(r"if (.+) \{ (return(?: .+)?) \}", line)
+                if not match:
+                    raise ValueError(f"unsupported condition: {line}")
+                output.append(f"if ({match[1]}) {{ {match[2]}; }}")
         elif line in ("}", "} else {"):
             output.append(line)
         elif line == "return":
@@ -132,9 +136,10 @@ int main(void) {
   puts("PASS: unknown/blank/error NVMe preserved; memory bootstrap, explicit format, valid remount and bounds retained"); return 0;
 }
 '''
-with tempfile.TemporaryDirectory(prefix="space-sparkfs-") as temp:
-    path = Path(temp)
-    (path / "fixture.c").write_text(fixture)
-    subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-O0", "-Werror=implicit-function-declaration",
-                    str(path / "fixture.c"), "-o", str(path / "fixture")], check=True)
-    subprocess.run([str(path / "fixture")], check=True)
+if __name__ == "__main__":
+    with tempfile.TemporaryDirectory(prefix="space-sparkfs-") as temp:
+        path = Path(temp)
+        (path / "fixture.c").write_text(fixture)
+        subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-O0", "-Werror=implicit-function-declaration",
+                        str(path / "fixture.c"), "-o", str(path / "fixture")], check=True)
+        subprocess.run([str(path / "fixture")], check=True)
