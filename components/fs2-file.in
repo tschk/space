@@ -25,7 +25,8 @@ fn sparkfs-init() -> void {
   }
   let magic = load32(sf-super + SF-SB-MAGIC)
   if magic != SF-MAGIC {
-    sparkfs-format()
+    // Boot must preserve blank or foreign NVMe namespaces. Formatting is an
+    // explicit shell operation; only the newly allocated memory disk is automatic.
     return
   }
   let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
