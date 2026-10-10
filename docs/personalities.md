@@ -181,7 +181,7 @@ execution's or the kernel's handles. All owned descriptors are closed on return
 or exit. The fixtures keep kernel fd 3 open, probe its protection, exhaust the
 remaining 12 slots, then exit without closing them. Tests first run without a
 storage grant, then with one, and repeat to verify cleanup and import restoration.
-A Linux return variant checks the same cleanup when the entry returns normally.
+Linux and Darwin return variants check the same cleanup when the entry returns normally.
 Asynchronous volume RPC and direct NVMe SparkFS are rejected by this runner,
 which disables interrupts. Fixture commands require a fresh descriptor table.
 Existing VFS path copies use the bump allocator; descriptor cleanup does not

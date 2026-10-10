@@ -123,3 +123,4 @@ run_fixture linux linux-fileio-elf linuxfileio 'foreign: file I/O exit status 42
 run_fixture darwin darwin-fileio-macho darwinfileio 'foreign: file I/O exit status 42' file
 run_fixture windows windows-fileio-pe windowsfileio 'foreign: file I/O exit status 42' file
 run_fixture linux linux-fileio-return-elf linuxfileio 'foreign: file I/O exit status 42' file
+run_fixture darwin darwin-fileio-return-macho darwinfileio 'foreign: file I/O exit status 42' file
