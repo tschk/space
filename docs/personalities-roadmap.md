@@ -108,7 +108,9 @@ Typed handle table: 16-byte records; 1/2 console; 3–15 file/process; types fre
 Both are asserted in QEMU by golden greps, not by inspection:
 `windows: LastError/NTSTATUS consistency OK` (5/5 scenarios + 10/10 rc pairs
 satisfying `GetLastError() == RtlNtStatusToDosError(RtlGetLastNtStatus())`) and
-`darwin: errno consistency OK` (6/6 scenarios).
+`darwin: errno consistency OK` (13/13 scenarios, including Darwin ENOSYS=78
+for both dispatch results and errno, internal -38 translation, closed-fd
+fcntl validation, and class-tagged BSD dispatch with unsupported-class rejection).
 
 ### Automation
 - `scripts/check-windows-personality.sh` — QEMU boot, `windows`, greps CreateFile/Heap/Copy path + LastError/NTSTATUS pairs
@@ -134,7 +136,8 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 ### M3 — Process / memory / console (done / partial)
 - Windows: CreateProcessA → SCI spawn, WaitForSingleObject, VirtualAlloc/Free, console/heap/env
 - Darwin: fork/execve/wait4 **dispatch**, mmap, sockets, pipe-lite
-- Still missing: safe fork+wait demo without halt; PE/Mach-O loaders
+- Darwin trusted in-place Mach-O fixture validation/execution: `darwinmacho`
+- Still missing: safe fork+wait demo without halt; PE/general Mach-O loaders
 
 ### M4 — Service-thread parity with Linux (partial)
 - [partial] Windows typed handle table (file/console/process; 16-byte records) — done on `feat/personalities`
@@ -144,7 +147,8 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 
 ### M5 — Binary loaders (far)
 - Windows: PE/COFF load into domain + ntdll-shaped entry (not full kernel32)
-- Darwin: Mach-O load + dyld stub
+- Darwin: trusted single-segment Mach-O fixture path implemented; general mapping,
+  process entry and dyld remain missing
 - ReactOS-inspired: separate “Native” vs “subsystem” layers in docs + code layout
 
 ### M6 — Subsystem fidelity (multi-year)
@@ -160,7 +164,7 @@ Seek, rename, mkdir/chdir/getcwd, GetFileSize/fstat, pids/tids.
 |-----|----------------|------------|
 | Typed object/handle table | Wait/DuplicateHandle realism | **Windows file/console/process done**; event/sync still open |
 | Windows PE load | “Run .exe” | SCI/domain loader + reloc |
-| Darwin Mach-O load | “Run Mach-O” | same |
+| General Darwin Mach-O load | Beyond the trusted fixed-address fixture | Address-space policy + process entry + dyld/reloc |
 | Real pipe / socketpair | Shell pipelines under Darwin | channel fabric |
 | Safe fork+wait demo | Process model proof | non-halting child exit |
 | Personality RPC threads | Isolation like posix | domain + preempt policy |

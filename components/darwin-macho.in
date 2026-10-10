@@ -1,0 +1,162 @@
+package space.kernel
+
+// ponytail: trusted in-place, single RX segment only; add mapping/dyld before
+// accepting ordinary macOS executables. Caller supplies a readable image buffer.
+const DARWIN-MACHO-MAGIC = 0xFEEDFACF
+const DARWIN-MACHO-LOAD-ADDR = 0x280000
+const DARWIN-ENOEXEC = -8
+
+fn darwin-macho-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 128 || size > 0x200000 {
+    return DARWIN-ENOEXEC
+  }
+  if image > 0x100000000 - size {
+    return DARWIN-ENOEXEC
+  }
+  if load32(image) != DARWIN-MACHO-MAGIC || load32(image + 4) != 0x1000007 {
+    return DARWIN-ENOEXEC
+  }
+  if load32(image + 8) != 3 || load32(image + 12) != 2 {
+    return DARWIN-ENOEXEC
+  }
+  // Exact supported command set: one segment and one LC_MAIN, in either order.
+  if load32(image + 16) != 2 || load32(image + 20) != 96 {
+    return DARWIN-ENOEXEC
+  }
+  if load32(image + 24) != 1 || load32(image + 28) != 0 {
+    return DARWIN-ENOEXEC
+  }
+  let off = 32
+  let segment = 0
+  let entry = -1
+  let i = 0
+  while i < 2 {
+    if off > 120 {
+      return DARWIN-ENOEXEC
+    }
+    let cmd = load32(image + off)
+    let len = load32(image + off + 4)
+    if len < 8 || (len & 7) != 0 || len > 128 - off {
+      return DARWIN-ENOEXEC
+    }
+    let p = image + off
+    if cmd == 0x19 {
+      if segment != 0 || len != 72 {
+        return DARWIN-ENOEXEC
+      }
+      // Fixed-address file-backed RX segment: no BSS, sections, or relocations.
+      if load64(p + 24) != image || load64(p + 32) != size {
+        return DARWIN-ENOEXEC
+      }
+      if load64(p + 40) != 0 || load64(p + 48) != size {
+        return DARWIN-ENOEXEC
+      }
+      if load32(p + 56) != 5 || load32(p + 60) != 5 {
+        return DARWIN-ENOEXEC
+      }
+      if load32(p + 64) != 0 || load32(p + 68) != 0 {
+        return DARWIN-ENOEXEC
+      }
+      segment = 1
+    } else if cmd == 0x80000028 {
+      if entry != -1 || len != 24 || load64(p + 16) != 0 {
+        return DARWIN-ENOEXEC
+      }
+      entry = load64(p + 8)
+      if entry < 128 || entry >= size {
+        return DARWIN-ENOEXEC
+      }
+    } else {
+      return DARWIN-ENOEXEC
+    }
+    off = off + len
+    i = i + 1
+  }
+  if off != 128 || segment != 1 || entry < 128 {
+    return DARWIN-ENOEXEC
+  }
+  return entry
+}
+
+fn darwin-macho-exec-image(port: Int, image: Int, size: Int) -> Int {
+  let entry = darwin-macho-entry(image, size)
+  if entry < 0 {
+    return entry
+  }
+  serial-write-cstr(port, "darwin: loading trusted in-place Mach-O fixture")
+  serial-nl(port)
+  return invoke1(image + entry, 0)
+}
+
+// Mutate one field and restore it so each rejection tests the same valid fixture.
+fn darwin-macho-reject(image: Int, off: Int, value: Int, wide: Int) -> Int {
+  let saved = load32(image + off)
+  if wide != 0 {
+    saved = load64(image + off)
+    store64(image + off, value)
+  } else {
+    store32(image + off, value)
+  }
+  let rc = darwin-macho-entry(image, 4096)
+  if wide != 0 {
+    store64(image + off, saved)
+  } else {
+    store32(image + off, saved)
+  }
+  if rc == DARWIN-ENOEXEC {
+    return 1
+  }
+  return 0
+}
+
+fn darwin-macho-demo(port: Int) -> void {
+  let image = DARWIN-MACHO-LOAD-ADDR
+  let ok = 0
+  if darwin-macho-entry(image, 4096) != 128 {
+    serial-write-cstr(port, "darwin: Mach-O rejected: fixture missing or invalid")
+    serial-nl(port)
+    return
+  }
+  ok = ok + 1
+  if darwin-macho-exec-image(port, image, 31) == DARWIN-ENOEXEC {
+    ok = ok + 1
+  }
+  if darwin-macho-entry(0, 4096) == DARWIN-ENOEXEC {
+    ok = ok + 1
+  }
+  if darwin-macho-entry(0xFFFFF001, 4096) == DARWIN-ENOEXEC {
+    ok = ok + 1
+  }
+  ok = ok + darwin-macho-reject(image, 0, 0, 0)
+  ok = ok + darwin-macho-reject(image, 4, 0x100000C, 0)
+  ok = ok + darwin-macho-reject(image, 12, 1, 0)
+  ok = ok + darwin-macho-reject(image, 16, 0xFFFFFFFF, 0)
+  ok = ok + darwin-macho-reject(image, 20, 0xFFFFFFFF, 0)
+  ok = ok + darwin-macho-reject(image, 24, 0x200001, 0)
+  ok = ok + darwin-macho-reject(image, 36, 7, 0)
+  ok = ok + darwin-macho-reject(image, 36, 0xFFFFFFF8, 0)
+  ok = ok + darwin-macho-reject(image, 32, 0x80000022, 0)
+  ok = ok + darwin-macho-reject(image, 56, -1, 1)
+  ok = ok + darwin-macho-reject(image, 64, -1, 1)
+  ok = ok + darwin-macho-reject(image, 72, -1, 1)
+  ok = ok + darwin-macho-reject(image, 80, 4097, 1)
+  ok = ok + darwin-macho-reject(image, 92, 7, 0)
+  ok = ok + darwin-macho-reject(image, 96, 1, 0)
+  ok = ok + darwin-macho-reject(image, 112, 4096, 1)
+  ok = ok + darwin-macho-reject(image, 112, 127, 1)
+  ok = ok + darwin-macho-reject(image, 104, 0x19, 0)
+  serial-write-cstr(port, "darwin: Mach-O validation scenarios ")
+  serial-write-dec-wide(port, ok)
+  serial-write-cstr(port, "/22")
+  serial-nl(port)
+  if ok != 22 {
+    serial-write-cstr(port, "darwin: Mach-O validation FAILED")
+    serial-nl(port)
+    return
+  }
+  let rc = darwin-macho-exec-image(port, image, 4096)
+  serial-write-cstr(port, "darwin: Mach-O exec returned ")
+  serial-write-dec-wide(port, rc)
+  serial-nl(port)
+  return
+}

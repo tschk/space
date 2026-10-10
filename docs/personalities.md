@@ -77,12 +77,19 @@ Space Darwin personality follows that split:
 
 - Implement a **BSD-shaped** call surface first (not full XNU).
 - Keep **Mach** as explicit stubs (`task_self` → 1, `mach_msg` → -1) until a real
-  port/message fabric exists.
-- Where Darwin and FreeBSD numbers conflict on Space (Darwin `wait4` vs `lseek`
-  both claim 199 in some tables), Space uses FreeBSD-leaning picks: `wait4=7`,
-  `lseek=199`.
+  port/message fabric exists. The raw `mach_msg` stub returns -1; the public
+  dispatcher normalizes this unspecified backend error to EINVAL (-22).
+- Darwin `wait4=7`, `recvfrom=29`, and `lseek=199` agree with ravynOS's
+  [XNU syscall table](https://github.com/ravynsoft/ravynos/blob/darwin/Kernel/xnu/bsd/kern/syscalls.master).
+- The `.in` dispatcher accepts bare BSD numbers and x86_64 Unix-class numbers
+  (`0x2000000 | number`); other classes and tagged local shims return ENOSYS.
+  This does not install a hardware SYSCALL entry or macOS register/error ABI.
+- Dispatch translates internal Linux-shaped errors to Darwin numbers in both
+  the negative result and the errno slot (`ENOSYS=78`, not Linux's 38).
+- `getcwd=192`, `getpagesize=276`, and the Mach/errno shims remain Space-local
+  interfaces; they are not macOS binary ABI promises.
 
-BSD numbers used (classic / FreeBSD-leaning, documented in `darwin.in`):
+BSD numbers used (Darwin where implemented; Space-local shims noted):
 
 | # | call | maps to |
 |---|------|---------|
@@ -90,12 +97,12 @@ BSD numbers used (classic / FreeBSD-leaning, documented in `darwin.in`):
 | 2 | fork | `posix-sys-fork` (dispatch only; shell demo skips) |
 | 3 / 4 | read / write | VFS + serial stdio |
 | 5 / 6 | open / close | `vfs-open` / `vfs-close` |
-| 7 | wait4 | `posix-sys-wait4` (FreeBSD; Darwin 199 = lseek here) |
+| 7 | wait4 | `posix-sys-wait4` |
 | 10 | unlink | `fs-delete` |
 | 12 | chdir | `posix-sys-chdir` |
 | 20 | getpid | `current-task` |
 | 24 / 25 | getuid / geteuid | constant 0 |
-| 29 | recvfrom | `sock-recvfrom` (FreeBSD num) |
+| 29 | recvfrom | `sock-recvfrom` |
 | 33 | access | `fs-stat` probe → 0 / ENOENT |
 | 37 | kill | `proc-signal` |
 | 41 | dup | clone vfs-fd-table entry |
@@ -114,6 +121,26 @@ BSD numbers used (classic / FreeBSD-leaning, documented in `darwin.in`):
 | 197 | mmap | `posix-sys-mmap` (a0 addr a1 len a2 prot; anon) |
 | 199 | lseek | `vfs-lseek` |
 | 0x1000 | mach task_self | constant 1 |
-| 0x1001 | mach_msg | -1 |
+| 0x1001 | mach_msg | raw stub -1; dispatch -22 / EINVAL |
 
 Checks: `scripts/check-darwin-personality.sh`, `scripts/check-windows-personality.sh`.
+
+Source review and acceptance checks: [ravynOS Darwin reference](ravynos-darwin-review.md).
+
+## Trusted Mach-O fixture path
+
+`darwinmacho` validates and invokes a boot-injected thin x86_64 Mach-O image at
+0x280000. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
+MH_NOUNDEFS, exactly one RX LC_SEGMENT_64 with no sections, and one LC_MAIN.
+The segment must already reside at its declared address, be entirely file-backed,
+and contain the entry after the commands. Command bounds and all 64-bit ranges
+are checked before invocation; unsupported commands, dyld, PIE, BSS and imports
+are rejected. The caller must supply a readable image buffer.
+
+This is a trusted fixture executed as a returning function at CPL0, using Space's
+existing identity map. It does not implement macOS process startup, syscalls,
+isolation, dynamic linking, or execution of arbitrary applications.
+
+Run `bash scripts/check-darwin-macho.sh` to assemble the checked-in fixture,
+exercise malformed-image rejection under QEMU, and verify its return value 42.
+Ordinary boot images report a missing fixture without modifying that region.

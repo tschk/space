@@ -38,6 +38,7 @@ import "../components/process.in"
 import "../components/linux.in"
 // Darwin personality stub (Mach/BSD subset demo).
 import "../components/darwin.in"
+import "../components/darwin-macho.in"
 // Windows personality translator (Win32/NT-shaped subset, not full ABI).
 import "../components/windows.in"
 // VBE framebuffer driver (drawing primitives + bitmap font), Wayland-style

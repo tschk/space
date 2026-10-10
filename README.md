@@ -92,6 +92,7 @@ bash scripts/check-linux-elf.sh       # Linux ELF personality
 bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
 bash scripts/check-fs-dirs.sh         # mkdir/rmdir/mv/rm full coverage
 bash scripts/check-personalities.sh   # Linux/Windows/Darwin personalities
+bash scripts/check-darwin-macho.sh    # trusted in-place Mach-O fixture
 ```
 
 Browser demo (Alpenglow-style v86 shell, built with moonshine): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.
