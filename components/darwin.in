@@ -5,8 +5,8 @@ package space.kernel
 // Userland OS personality on Darwin is mostly BSD syscalls (syscalls.master), not raw Mach
 // for files/process. Space follows that: BSD numbers → vfs-*/fs-*/proc-signal.
 //
-// Classic BSD/xnu numbers used here (FreeBSD-leaning where Darwin conflicts):
-//   exit=1, fork=2, read=3, write=4, open=5, close=6, wait4=7 (FreeBSD; Darwin 199=lseek),
+// Darwin BSD numbers for implemented calls (Space-only shims noted separately):
+//   exit=1, fork=2, read=3, write=4, open=5, close=6, wait4=7,
 //   unlink=10, chdir=12, getpid=20, getuid=24, geteuid=25, recvfrom=29, access=33, kill=37,
 //   dup=41, pipe=42, execve=59, socket=97, connect=98, sendto=133, rename=128,
 //   mkdir=136, rmdir=137, stat=188, fstat=189, getcwd=192, mmap=197, lseek=199, munmap=73
@@ -14,6 +14,9 @@ package space.kernel
 // Optional Mach stubs: task_self trap 0x1000 → 1; mach_msg 0x1001 → -1.
 // errno: negative dispatch results land in darwin-errno-last; read via 0x2000 (__error()).
 // Pipe lite: max 4 pipes, 4KB ring; vfs fd type field (+24) = 2, pipe idx at +8.
+
+// x86_64 Unix/BSD syscall class occupies bits 24..31.
+const DARWIN-SYSCALL-CLASS-UNIX = 0x2000000
 
 const DARWIN-SYS-EXIT = 1
 const DARWIN-SYS-FORK = 2
@@ -77,7 +80,7 @@ var darwin-errno-last: Int = 0
 const DARWIN-ESRCH = -3
 const DARWIN-EBADF = -9
 const DARWIN-ENOENT = -2
-const DARWIN-ENOSYS = -38
+const DARWIN-ENOSYS = -78
 const DARWIN-ENOMEM = -12
 const DARWIN-EACCES = -13
 const DARWIN-EEXIST = -17
@@ -172,7 +175,7 @@ fn darwin-errno(vfs-rc: Int) -> Int {
   if vfs-rc == -12 {
     return DARWIN-ENOMEM
   }
-  if vfs-rc == -38 {
+  if vfs-rc == -38 || vfs-rc == DARWIN-ENOSYS {
     return DARWIN-ENOSYS
   }
   return DARWIN-EINVAL
@@ -440,7 +443,7 @@ fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
 
 // fcntl minimal: F_GETFD returns close-on-exec flag, F_SETFD sets it.
 fn darwin-sys-fcntl(fd: Int, cmd: Int, arg: Int) -> Int {
-  if fd < 0 || fd >= VFS-MAX-FDS {
+  if vfs-fd-valid(fd) == 0 {
     return DARWIN-EBADF
   }
   if cmd == DARWIN-F-GETFD {
@@ -668,6 +671,13 @@ fn darwin-sys-recvfrom(fd: Int, buf: Int, len: Int) -> Int {
 
 // BSD/Mach-ish dispatch. a0..a3 carry classic arg slots (open mode in a2, kill sig in a1).
 fn darwin-dispatch-call(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int {
+  if num >= DARWIN-SYSCALL-CLASS-UNIX && num < 0x3000000 {
+    num = num - DARWIN-SYSCALL-CLASS-UNIX
+    // Space-local Mach and errno shims are never class-tagged BSD calls.
+    if num >= 0x1000 {
+      return DARWIN-ENOSYS
+    }
+  }
   if darwin-ready == 0 {
     darwin-init()
   }
@@ -794,7 +804,8 @@ fn darwin-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> I
   }
   let rc = darwin-dispatch-call(port, num, a0, a1, a2, a3)
   if rc < 0 {
-    darwin-errno-last = 0 - darwin-errno(rc)
+    rc = darwin-errno(rc)
+    darwin-errno-last = 0 - rc
   }
   return rc
 }
@@ -885,7 +896,7 @@ fn darwin-errno-demo(port: Int) -> void {
   }
 
   // Unknown syscall number → ENOSYS.
-  darwin-dispatch(port, 60000, 0, 0, 0, 0)
+  let unknown-rc = darwin-dispatch(port, 60000, 0, 0, 0, 0)
   let e4 = darwin-dispatch(port, DARWIN-SYS-ERRNO, 0, 0, 0, 0)
   serial-write-cstr(port, "darwin: errno after unknown syscall = ")
   serial-write-dec-wide(port, e4)
@@ -894,7 +905,13 @@ fn darwin-errno-demo(port: Int) -> void {
   serial-write-cstr(port, ")")
   serial-nl(port)
   checks = checks + 1
-  if e4 == 0 - DARWIN-ENOSYS {
+  if e4 == 78 && unknown-rc == -78 {
+    ok = ok + 1
+  }
+
+  // Both internal Linux-shaped and personality-native ENOSYS must translate once.
+  checks = checks + 1
+  if darwin-errno(-38) == -78 && darwin-errno(-78) == -78 {
     ok = ok + 1
   }
 
@@ -916,6 +933,43 @@ fn darwin-errno-demo(port: Int) -> void {
   if e6 == 0 {
     ok = ok + 1
   }
+
+  // In-range but unopened descriptors must fail both fcntl flag commands.
+  checks = checks + 1
+  if darwin-dispatch(port, DARWIN-SYS-FCNTL, 15, DARWIN-F-GETFD, 0, 0) == DARWIN-EBADF {
+    if darwin-errno-last == 9 {
+      ok = ok + 1
+    }
+  }
+  checks = checks + 1
+  if darwin-dispatch(port, DARWIN-SYS-FCNTL, 15, DARWIN-F-SETFD, 1, 0) == DARWIN-EBADF {
+    if darwin-errno-last == 9 {
+      ok = ok + 1
+    }
+  }
+  darwin-dispatch(port, DARWIN-SYS-SETERRNO, 0, 0, 0, 0)
+
+  // Class-tagged BSD calls use the same handler and error translation.
+  checks = checks + 1
+  if darwin-dispatch(port, 0x2000014, 0, 0, 0, 0) == current-task {
+    ok = ok + 1
+  }
+  checks = checks + 1
+  if darwin-dispatch(port, 0x2000003, 15, rbuf, 8, 0) == -9 {
+    if darwin-errno-last == 9 {
+      ok = ok + 1
+    }
+  }
+  // Other syscall classes and class-tagged local shims must not alias BSD calls.
+  checks = checks + 1
+  if darwin-dispatch(port, 0x1000014, 0, 0, 0, 0) == -78 {
+    ok = ok + 1
+  }
+  checks = checks + 1
+  if darwin-dispatch(port, 0x2001000, 0, 0, 0, 0) == -78 {
+    ok = ok + 1
+  }
+  darwin-dispatch(port, DARWIN-SYS-SETERRNO, 0, 0, 0, 0)
 
   serial-write-cstr(port, "darwin: errno scenarios ")
   serial-write-dec-wide(port, ok)

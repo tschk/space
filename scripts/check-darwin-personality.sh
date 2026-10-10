@@ -64,11 +64,12 @@ fi
 grep -qE 'darwin: errno after open\(missing\) = 2 \(ENOENT\)' "$SERIAL_LOG"
 grep -qE 'darwin: errno after read\(bad fd\) = 9 \(EBADF\)' "$SERIAL_LOG"
 grep -qE 'darwin: errno after kill\(invalid\) = 3 \(ESRCH\)' "$SERIAL_LOG"
-grep -qE 'darwin: errno after unknown syscall = 38 \(ENOSYS\)' "$SERIAL_LOG"
+grep -qE 'darwin: errno after unknown syscall = 78 \(ENOSYS\)' "$SERIAL_LOG"
 if grep -qF "darwin: errno consistency FAILED" "$SERIAL_LOG"; then
   echo "FAIL: darwin errno consistency check failed" >&2
   exit 1
 fi
+grep -qF "darwin: errno scenarios 13/13" "$SERIAL_LOG"
 grep -qF "darwin: errno consistency OK" "$SERIAL_LOG"
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
 echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat + errno map)"
