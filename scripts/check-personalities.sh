@@ -16,4 +16,7 @@ bash "$SCRIPT_DIR/check-darwin-personality.sh"
 echo "==> Darwin trusted Mach-O fixture (QEMU)"
 bash "$SCRIPT_DIR/check-darwin-macho.sh"
 
+echo "==> Foreign ELF/Mach-O/PE fixtures (QEMU)"
+bash "$SCRIPT_DIR/check-foreign-syscalls.sh"
+
 echo "PASS: all personality gates green"

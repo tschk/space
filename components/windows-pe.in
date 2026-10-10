@@ -1,0 +1,138 @@
+package space.kernel
+
+// ponytail: one fixed-address, file-backed PE32+ section and bounded named imports.
+// Add mapping, relocations and process isolation before ordinary Windows apps.
+fn win-pe-name(image: Int, size: Int, rva: Int, name: Int) -> Int {
+  let n = strlen(name) + 1
+  if rva < 512 || rva > size - n { return 0 }
+  let i = 0
+  while i < n {
+    if load8(image + rva + i) != load8(name + i) { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn win-pe-import-name(index: Int) -> Int {
+  if index == 0 { return "WriteFile" }
+  if index == 1 { return "ExitProcess" }
+  if index == 2 { return "CreateFileA" }
+  if index == 3 { return "ReadFile" }
+  if index == 4 { return "CloseHandle" }
+  return 0
+}
+
+fn win-pe-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 1024 || size > 0x200000 || (size & 511) != 0 || image > 0x100000000 - size { return -8 }
+  if posix-load16(image) != 0x5A4D || load32(image + 60) != 128 { return -8 }
+  if load32(image + 128) != 0x4550 || posix-load16(image + 132) != 0x8664 || posix-load16(image + 134) != 1 { return -8 }
+  if load64(image + 140) != 0 || posix-load16(image + 148) != 240 || posix-load16(image + 150) != 0x23 { return -8 }
+  let opt = image + 152
+  if posix-load16(opt) != 0x20B || load64(opt + 24) != image { return -8 }
+  if load32(opt + 32) != 512 || load32(opt + 36) != 512 || load32(opt + 56) != size || load32(opt + 60) != 512 { return -8 }
+  if posix-load16(opt + 68) != 3 || posix-load16(opt + 70) != 0 || load32(opt + 108) != 16 { return -8 }
+  let i = 0
+  while i < 16 {
+    if i != 1 && load64(opt + 112 + i * 8) != 0 { return -8 }
+    i = i + 1
+  }
+  let sec = image + 392
+  if load32(sec + 8) != size - 512 || load32(sec + 12) != 512 || load32(sec + 16) != size - 512 || load32(sec + 20) != 512 { return -8 }
+  if load64(sec + 24) != 0 || load32(sec + 32) != 0 || load32(sec + 36) != 0x60000020 { return -8 }
+  let entry = load32(opt + 16)
+  if entry < 512 || entry >= size { return -8 }
+  let imp = load32(opt + 120)
+  if imp < 512 || imp > size - 40 || load32(opt + 124) != 40 { return -8 }
+  let p = image + imp
+  if load64(p + 4) != 0 || load64(p + 20) != 0 || load64(p + 28) != 0 || load32(p + 36) != 0 { return -8 }
+  let lookup = load32(p)
+  let iat = load32(p + 16)
+  if lookup < 512 || lookup > size - 48 || iat < 512 || iat > size - 48 || (iat & 7) != 0 { return -8 }
+  if lookup < iat + 48 && iat < lookup + 48 { return -8 }
+  if win-pe-name(image, size, load32(p + 12), "KERNEL32.dll") == 0 { return -8 }
+  let count = 0
+  let done = 0
+  while count <= 5 && done == 0 {
+    let name = load64(image + lookup + count * 8)
+    if load64(image + iat + count * 8) != name { return -8 }
+    if name == 0 {
+      done = 1
+    } else {
+      if count == 5 || name < 512 || name > size - 3 { return -8 }
+      if posix-load16(image + name) != 0 { return -8 }
+      if win-pe-name(image, size, name + 2, win-pe-import-name(count)) == 0 { return -8 }
+      count = count + 1
+    }
+  }
+  if done == 0 || (count != 2 && count != 5) { return -8 }
+  // Validation is read-only; binding happens only after all checks succeed.
+  return entry
+}
+
+fn win-pe-exec(image: Int, size: Int, storage-cap: Int) -> Int {
+  let entry = win-pe-entry(image, size)
+  if entry < 0 { return entry }
+  let descriptor = image + load32(image + 272)
+  let lookup = image + load32(descriptor)
+  let iat = image + load32(descriptor + 16)
+  let i = 0
+  while i < 5 && load64(lookup + i * 8) != 0 {
+    store64(iat + i * 8, load64(0x40E8 + i * 8))
+    i = i + 1
+  }
+  let rc = foreign-exec(image + entry, image, size, 3, storage-cap)
+  i = 0
+  while i < 5 && load64(lookup + i * 8) != 0 {
+    store64(iat + i * 8, load64(lookup + i * 8))
+    i = i + 1
+  }
+  return rc
+}
+
+fn win-pe-reject(image: Int, off: Int, value: Int) -> Int {
+  let saved = load64(image + off)
+  store64(image + off, value)
+  let rc = win-pe-entry(image, 4096)
+  store64(image + off, saved)
+  if rc == -8 { return 1 }
+  return 0
+}
+
+fn win-pe-demo(port: Int) -> void {
+  let image = 0x280000
+  let entry = win-pe-entry(image, 4096)
+  if entry != 512 {
+    serial-write-cstr(port, "windows: PE fixture missing or invalid")
+    serial-nl(port)
+    return
+  }
+  let ok = 1
+  if win-pe-entry(image, 1023) == -8 { ok = ok + 1 }
+  if win-pe-entry(0, 4096) == -8 { ok = ok + 1 }
+  ok = ok + win-pe-reject(image, 60, -1)
+  ok = ok + win-pe-reject(image, 128, 0)
+  ok = ok + win-pe-reject(image, 148, 0)
+  ok = ok + win-pe-reject(image, 168, 4096)
+  ok = ok + win-pe-reject(image, 176, -1)
+  ok = ok + win-pe-reject(image, 272, -1)
+  ok = ok + win-pe-reject(image, 404, -1)
+  ok = ok + win-pe-reject(image, 0x800, -1)
+  ok = ok + win-pe-reject(image, 0x810, -1)
+  ok = ok + win-pe-reject(image, 0x840, -1)
+  ok = ok + win-pe-reject(image, 0x900, 0)
+  ok = ok + win-pe-reject(image, 0x920, 0)
+  serial-write-cstr(port, "windows: PE validation scenarios ")
+  serial-write-dec-wide(port, ok)
+  serial-write-cstr(port, "/15")
+  serial-nl(port)
+  if ok != 15 {
+    serial-write-cstr(port, "windows: PE validation FAILED")
+    serial-nl(port)
+    return
+  }
+  let rc = win-pe-exec(image, 4096, -1)
+  serial-write-cstr(port, "windows: PE import exit status ")
+  serial-write-dec-wide(port, rc)
+  serial-nl(port)
+  return
+}

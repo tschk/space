@@ -547,7 +547,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin darwinmacho windows fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -984,8 +984,20 @@ fn shell(port: Int) -> void {
       usb-kbd-cmd(port)
     } else if line-eq("linux") != 0 {
       linux-demo(port)
+    } else if line-eq("linuxsyscall") != 0 {
+      linux-syscall-demo(port)
+    } else if line-eq("linuxfileio") != 0 {
+      foreign-fileio-demo(port, 1)
+    } else if line-eq("darwinfileio") != 0 {
+      foreign-fileio-demo(port, 2)
+    } else if line-eq("windowsfileio") != 0 {
+      foreign-fileio-demo(port, 3)
+    } else if line-eq("windowspe") != 0 {
+      win-pe-demo(port)
     } else if line-eq("linuxelf") != 0 {
       linux-elf-probe(port)
+    } else if line-eq("darwinsyscall") != 0 {
+      darwin-syscall-demo(port)
     } else if line-eq("darwinmacho") != 0 {
       darwin-macho-demo(port)
     } else if line-eq("darwin") != 0 {

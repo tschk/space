@@ -160,3 +160,18 @@ fn darwin-macho-demo(port: Int) -> void {
   serial-nl(port)
   return
 }
+
+fn darwin-syscall-demo(port: Int) -> void {
+  let image = DARWIN-MACHO-LOAD-ADDR
+  let entry = darwin-macho-entry(image, 4096)
+  if entry != 128 {
+    serial-write-cstr(port, "darwin: syscall Mach-O fixture missing or invalid")
+    serial-nl(port)
+    return
+  }
+  let rc = foreign-exec(image + entry, image, 4096, 2, -1)
+  serial-write-cstr(port, "darwin: syscall Mach-O exit status ")
+  serial-write-dec-wide(port, rc)
+  serial-nl(port)
+  return
+}

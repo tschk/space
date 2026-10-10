@@ -1,0 +1,264 @@
+package space.kernel
+
+// ponytail: synchronous trusted CPL0 fixtures, bounded serial/file I/O. CPL3, process
+// stacks and broader syscalls require a separate execution/address-space contract.
+var foreign-image: Int = 0
+var foreign-size: Int = 0
+var foreign-mode: Int = 0
+var foreign-fds: Int = 0
+var foreign-file-cap: Int = 0
+var foreign-storage-cap: Int = -1
+
+fn foreign-buffer-valid(buf: Int, len: Int) -> Int {
+  if len < 0 || len > 4096 || buf < foreign-image || buf > foreign-image + foreign-size || len > foreign-image + foreign-size - buf { return 0 }
+  return 1
+}
+
+fn foreign-fd-owned(fd: Int) -> Int {
+  if fd < 3 || fd >= VFS-MAX-FDS { return 0 }
+  return (foreign-fds >> fd) & 1
+}
+
+fn foreign-file-open(path: Int, flags: Int) -> Int {
+  if flags != 0 { return -22 }
+  let i = 0
+  let done = 0
+  while i < 256 && done == 0 {
+    if foreign-buffer-valid(path + i, 1) == 0 { return -14 }
+    if load8(path + i) == 0 { done = 1 } else { i = i + 1 }
+  }
+  if done == 0 { return -36 }
+  if i == 0 { return -2 }
+  // The trusted runner disables interrupts; asynchronous volume RPC must wait
+  // for a process execution contract. Only the synchronous RAM SparkFS path.
+  if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
+  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  let fd = vfs-open(path, VFS-O-RDONLY)
+  if fd == -16 { return -24 }
+  if fd >= 3 { foreign-fds = foreign-fds | (1 << fd) }
+  return fd
+}
+
+fn foreign-file-read(fd: Int, buf: Int, len: Int) -> Int {
+  if foreign-fd-owned(fd) == 0 { return -9 }
+  if foreign-buffer-valid(buf, len) == 0 { return -14 }
+  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
+  return vfs-read(fd, buf, len)
+}
+
+fn foreign-file-close(fd: Int) -> Int {
+  if foreign-fd-owned(fd) == 0 { return -9 }
+  let rc = vfs-close(fd)
+  if rc == 0 { foreign-fds = foreign-fds ^ (1 << fd) }
+  return rc
+}
+
+fn foreign-exec(entry: Int, image: Int, size: Int, mode: Int, storage-cap: Int) -> Int {
+  if foreign-mode != 0 {
+    return -16
+  }
+  if image <= 0 || size <= 0 || size > 0x200000 || image > 0x100000000 - size {
+    return -8
+  }
+  if entry < image || entry >= image + size || (mode != 1 && mode != 2 && mode != 3) {
+    return -8
+  }
+  foreign-image = image
+  foreign-size = size
+  foreign-mode = mode
+  foreign-fds = 0
+  foreign-storage-cap = storage-cap
+  store64(0x40D8, foreign-syscall-dispatch)
+  let rc = invoke1(load64(0x40E0), entry)
+  let fd = 3
+  while fd < VFS-MAX-FDS {
+    if foreign-fd-owned(fd) != 0 { vfs-close(fd) }
+    fd = fd + 1
+  }
+  foreign-fds = 0
+  foreign-storage-cap = -1
+  foreign-mode = 0
+  foreign-image = 0
+  foreign-size = 0
+  return rc
+}
+
+fn foreign-syscall-dispatch(frame: Int) -> Int {
+  let num = load64(frame + 112)
+  let fd = load64(frame + 72)
+  let buf = load64(frame + 80)
+  let len = load64(frame + 88)
+  let rc = -38
+  if foreign-mode == 2 {
+    rc = -78
+  }
+  if (foreign-mode == 2 && num == 0x2000001) || (foreign-mode != 2 && num == 60) {
+    if foreign-mode == 3 {
+      store64(frame + 112, fd & 0xFFFFFFFF)
+    } else {
+      store64(frame + 112, fd & 255)
+    }
+    return 1
+  }
+  if foreign-mode == 3 && num == 2 {
+    rc = foreign-file-open(fd, buf)
+    if rc < 0 { rc = -1 }
+    store64(frame + 112, rc)
+    return 0
+  }
+  if foreign-mode == 3 && num == 3 {
+    rc = foreign-file-close(fd)
+    if rc == 0 { rc = 1 } else { rc = 0 }
+    store64(frame + 112, rc)
+    return 0
+  }
+  if foreign-mode == 3 && num == 0 {
+    let written = load64(frame + 48)
+    if foreign-buffer-valid(written, 4) == 0 || load64(frame + 40) != 0 {
+      store64(frame + 112, 0)
+      return 0
+    }
+    store32(written, 0)
+    rc = foreign-file-read(fd, buf, len)
+  }
+  if (foreign-mode == 2 && num == 0x2000004) || (foreign-mode != 2 && num == 1) {
+    // PE imports use BOOL plus a bounded bytes-written pointer, not Unix errno.
+    if foreign-mode == 3 {
+      let written = load64(frame + 48)
+      if written < foreign-image || written > foreign-image + foreign-size - 4 || load64(frame + 40) != 0 {
+        store64(frame + 112, 0)
+        return 0
+      }
+      store32(written, 0)
+    }
+    if fd != 1 && fd != 2 {
+      rc = -9
+    } else if foreign-buffer-valid(buf, len) == 0 {
+      rc = -14
+    } else if cap-require(cap-serial()) == 0 {
+      rc = -13
+    } else if len == 0 {
+      rc = 0
+    } else {
+      rc = sys-write(1, buf, len)
+      if rc < 0 {
+        rc = -13
+      }
+    }
+  }
+  if (foreign-mode == 1 && num == 2) || (foreign-mode == 2 && num == 0x2000005) {
+    rc = foreign-file-open(fd, buf)
+  }
+  if (foreign-mode == 1 && num == 0) || (foreign-mode == 2 && num == 0x2000003) {
+    rc = foreign-file-read(fd, buf, len)
+  }
+  if (foreign-mode == 1 && num == 3) || (foreign-mode == 2 && num == 0x2000006) {
+    rc = foreign-file-close(fd)
+  }
+  if foreign-mode == 3 {
+    if rc < 0 {
+      rc = 0
+    } else {
+      store32(load64(frame + 48), rc)
+      rc = 1
+    }
+  }
+  if foreign-mode == 2 {
+    if rc == -38 { rc = -78 }
+    if rc == -36 { rc = -63 }
+    let flags = load64(frame + 32) & -2
+    if rc < 0 {
+      flags = flags | 1
+      rc = 0 - rc
+    }
+    store64(frame + 32, flags)
+  }
+  store64(frame + 112, rc)
+  return 0
+}
+
+fn foreign-fileio-demo(port: Int, mode: Int) -> void {
+  let image = 0x280000
+  let entry = posix-elf-entry(image, 4096)
+  if mode == 2 { entry = darwin-macho-entry(image, 4096) }
+  if mode == 3 { entry = win-pe-entry(image, 4096) }
+  if (mode != 3 && entry != 128) || (mode == 3 && entry != 512) || volume-ready != 0 || sf-mem-disk == 0 {
+    serial-write-cstr(port, "foreign: file I/O fixture unavailable")
+    serial-nl(port)
+    return
+  }
+  if mode == 3 {
+    let ok = 1
+    ok = ok + win-pe-reject(image, 0x960, 0)
+    ok = ok + win-pe-reject(image, 0x980, 0)
+    ok = ok + win-pe-reject(image, 0x9A0, 0)
+    ok = ok + win-pe-reject(image, 0x850, -1)
+    ok = ok + win-pe-reject(image, 0x868, 0x920)
+    ok = ok + win-pe-reject(image, 0x810, -1)
+    ok = ok + win-pe-reject(image, 0x810, 0x840)
+    serial-write-cstr(port, "windows: PE file I/O validation scenarios ")
+    serial-write-dec-wide(port, ok)
+    serial-write-cstr(port, "/8")
+    serial-nl(port)
+    if ok != 8 {
+      serial-write-cstr(port, "windows: PE file I/O validation FAILED")
+      serial-nl(port)
+      return
+    }
+  }
+  if fs-write-file("foreign-read.txt", "foreign: VFS file contents\n", 27) != 0 {
+    serial-write-cstr(port, "foreign: file I/O seed FAILED")
+    serial-nl(port)
+    return
+  }
+  if foreign-file-cap <= 0 {
+    let rights = cap-serial() | cap-storage()
+    foreign-file-cap = cap-mint(root-realm, rights)
+  }
+  if foreign-file-cap <= 0 { return }
+  // Keep a host descriptor open: guest read/close probes must not affect it.
+  let host = vfs-open("foreign-read.txt", VFS-O-RDONLY)
+  if host != 3 {
+    if host >= 3 { vfs-close(host) }
+    serial-write-cstr(port, "foreign: file I/O fixture requires a fresh descriptor table")
+    serial-nl(port)
+    return
+  }
+  let before = vfs-fd-alloc()
+  let denied = -1
+  if mode == 3 {
+    denied = win-pe-exec(image, 4096, -1)
+  } else {
+    denied = foreign-exec(image + entry, image, 4096, mode, -1)
+  }
+  if (mode == 3 && denied != 99) || (mode != 3 && denied != 102) {
+    vfs-close(host)
+    serial-write-cstr(port, "foreign: file I/O capability denial FAILED")
+    serial-nl(port)
+    return
+  }
+  serial-write-cstr(port, "foreign: file I/O storage grant required")
+  serial-nl(port)
+  let rc = -8
+  if mode == 3 {
+    rc = win-pe-exec(image, 4096, foreign-file-cap)
+  } else {
+    rc = foreign-exec(image + entry, image, 4096, mode, foreign-file-cap)
+  }
+  serial-write-cstr(port, "foreign: file I/O exit status ")
+  serial-write-dec-wide(port, rc)
+  serial-nl(port)
+  if rc != 42 {
+    serial-write-cstr(port, "foreign: file I/O execution FAILED")
+    serial-nl(port)
+  }
+  if foreign-fds != 0 || vfs-fd-alloc() != before || vfs-fd-valid(host) == 0 || load64(vfs-fd-table + host * 32 + 8) != 0 {
+    serial-write-cstr(port, "foreign: file I/O cleanup FAILED")
+  } else {
+    serial-write-cstr(port, "foreign: file I/O handles restored")
+  }
+  serial-nl(port)
+  vfs-close(host)
+  return
+}

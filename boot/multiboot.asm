@@ -111,7 +111,7 @@ entry32:
 
     mov ecx, 0xC0000080              ; IA32_EFER
     rdmsr
-    or eax, 1 << 8                    ; EFER.LME
+    or eax, (1 << 8) | 1              ; EFER.LME + SCE (64-bit SYSCALL)
     or eax, 1 << 11
     wrmsr
 
@@ -132,6 +132,27 @@ long_mode:
     mov fs, ax
     mov gs, ax
     mov rsp, 0x90000
+
+    ; Trusted CPL0 foreign-fixture entry, separate from the native int 0x80 ABI.
+    mov ecx, 0xC0000081              ; STAR kernel CS=0x08, SS=0x10
+    xor eax, eax
+    mov edx, 8
+    wrmsr
+    mov ecx, 0xC0000082              ; LSTAR
+    mov rax, foreign_syscall_entry
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
+    mov ecx, 0xC0000084              ; FMASK: mask IF, DF and TF on entry
+    mov eax, (1 << 9) | (1 << 10) | (1 << 8)
+    xor edx, edx
+    wrmsr
+    mov qword [0x40E0], foreign_run
+    mov qword [0x40E8], foreign_writefile
+    mov qword [0x40F0], foreign_exitprocess
+    mov qword [0x40F8], foreign_createfilea
+    mov qword [0x4100], foreign_readfile
+    mov qword [0x4108], foreign_closehandle
 
     ; Publish the ISR stub addresses so the `.in` kernel can install them in
     ; its IDT. The kernel publishes its dispatcher at [0x4000]; the stubs read
@@ -377,6 +398,163 @@ comp_invoke_stub:
     pop r11
     pop rbx
     jmp comp_invoke_stub
+
+; A single synchronous trusted fixture owns this saved continuation. Interrupts
+; stay disabled; exit abandons the payload stack and restores the kernel caller.
+foreign_run:
+    cmp qword [foreign_saved_rsp], 0
+    jne foreign_run_busy
+    pushfq
+    cli
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+    mov [foreign_saved_rsp], rsp
+    sub rsp, 32                     ; entry shadow space for Microsoft x64
+    call rdi
+foreign_finish:
+    mov rsp, [foreign_saved_rsp]
+    mov qword [foreign_saved_rsp], 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    popfq
+    ret
+foreign_run_busy:
+    mov rax, -16
+    ret
+
+foreign_syscall_entry:
+    cmp qword [foreign_saved_rsp], 0
+    je .inactive
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, rsp                     ; same GP frame layout as int 0x80
+    sub rsp, 64                      ; reserve .in callee parameter scratch
+    cld
+    call [0x40D8]                    ; returns 1 for exit, 0 for syscall return
+    add rsp, 64
+    cmp rax, 1
+    je .exit
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    push r11
+    popfq
+    jmp rcx                         ; CPL0 only; SYSRET would require CPL3
+.exit:
+    mov rax, [rsp + 112]
+    jmp foreign_finish
+.inactive:
+    mov rax, -38
+    push r11
+    popfq
+    jmp rcx
+
+align 8
+foreign_saved_rsp: dq 0
+
+; Microsoft x64 imports reuse the trusted dispatcher frame. Preserve RDI/RSI;
+; the dispatcher uses integer operations only and leaves XMM6-XMM15 untouched.
+foreign_writefile:
+    mov eax, 1
+    jmp foreign_fileio_import
+foreign_readfile:
+    xor eax, eax
+foreign_fileio_import:
+    mov r10, [rsp + 40]              ; fifth argument: OVERLAPPED
+    push rdi
+    push rsi
+    mov rdi, rcx
+    mov rsi, rdx
+    mov edx, r8d
+    pushfq
+    pop r11
+    lea rcx, [rel .done]
+    jmp foreign_syscall_entry
+.done:
+    pop rsi
+    pop rdi
+    ret
+foreign_createfilea:
+    cmp edx, 0x80000000             ; GENERIC_READ, FILE_SHARE_READ only
+    jne .invalid
+    cmp r8d, 1
+    jne .invalid
+    test r9, r9
+    jnz .invalid
+    cmp dword [rsp + 40], 3         ; OPEN_EXISTING
+    jne .invalid
+    cmp dword [rsp + 48], 0x80      ; FILE_ATTRIBUTE_NORMAL
+    jne .invalid
+    cmp qword [rsp + 56], 0
+    jne .invalid
+    push rdi
+    push rsi
+    mov rdi, rcx
+    xor esi, esi
+    mov eax, 2
+    pushfq
+    pop r11
+    lea rcx, [rel .done]
+    jmp foreign_syscall_entry
+.done:
+    pop rsi
+    pop rdi
+    ret
+.invalid:
+    mov rax, -1
+    ret
+foreign_closehandle:
+    push rdi
+    push rsi
+    mov rdi, rcx
+    mov eax, 3
+    pushfq
+    pop r11
+    lea rcx, [rel .done]
+    jmp foreign_syscall_entry
+.done:
+    pop rsi
+    pop rdi
+    ret
+foreign_exitprocess:
+    mov edi, ecx
+    mov eax, 60
+    pushfq
+    pop r11
+    jmp foreign_syscall_entry
 
 ; --- cooperative context switch --------------------------------------------
 ; context_switch(rdi = pointer to the outgoing task's saved-RSP slot,

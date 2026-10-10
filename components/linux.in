@@ -213,3 +213,51 @@ fn linux-demo(port: Int) -> void {
   serial-nl(port)
   return
 }
+
+fn linux-elf-reject(image: Int, off: Int, value: Int) -> Int {
+  let saved = load64(image + off)
+  store64(image + off, value)
+  let rc = posix-elf-entry(image, 4096)
+  store64(image + off, saved)
+  if rc == LINUX-ENOEXEC {
+    return 1
+  }
+  return 0
+}
+
+fn linux-syscall-demo(port: Int) -> void {
+  let image = LINUX-ELF-LOAD-ADDR
+  let entry = posix-elf-entry(image, 4096)
+  if entry != 128 {
+    serial-write-cstr(port, "linux: syscall ELF fixture missing or invalid")
+    serial-nl(port)
+    return
+  }
+  let ok = 1
+  if posix-elf-entry(image, 119) == LINUX-ENOEXEC { ok = ok + 1 }
+  if posix-elf-entry(0, 4096) == LINUX-ENOEXEC { ok = ok + 1 }
+  ok = ok + linux-elf-reject(image, 0, 0)
+  ok = ok + linux-elf-reject(image, 16, 0)
+  ok = ok + linux-elf-reject(image, 32, -1)
+  ok = ok + linux-elf-reject(image, 56, 65535)
+  ok = ok + linux-elf-reject(image, 72, -1)
+  ok = ok + linux-elf-reject(image, 80, -1)
+  ok = ok + linux-elf-reject(image, 96, -1)
+  ok = ok + linux-elf-reject(image, 104, 4097)
+  ok = ok + linux-elf-reject(image, 24, image + 4096)
+  ok = ok + linux-elf-reject(image, 64, 0x700000001)
+  serial-write-cstr(port, "linux: ELF validation scenarios ")
+  serial-write-dec-wide(port, ok)
+  serial-write-cstr(port, "/13")
+  serial-nl(port)
+  if ok != 13 {
+    serial-write-cstr(port, "linux: ELF validation FAILED")
+    serial-nl(port)
+    return
+  }
+  let rc = foreign-exec(image + entry, image, 4096, 1, -1)
+  serial-write-cstr(port, "linux: syscall ELF exit status ")
+  serial-write-dec-wide(port, rc)
+  serial-nl(port)
+  return
+}

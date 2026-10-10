@@ -47,6 +47,7 @@ fn sf-lookup-path(path: Int) -> Int {
     return ino
   }
   let name-buf = alloc(SF-NAME-MAX + 1)
+  store8(name-buf + SF-NAME-MAX, 0)
   let i = 0
   if load8(path) == 47 {
     i = 1

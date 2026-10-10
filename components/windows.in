@@ -39,7 +39,7 @@ package space.kernel
 //  35  WIN-RtlNtStatusToDosError → a0 NTSTATUS → Win32 error
 //  36  WIN-RtlGetLastWin32Error → win-last-error (alias of GetLastError)
 //
-// Honest: not full Win32, not PE loader, not CSRSS, not real NT objects.
+// This translator is not full Win32/CSRSS/NT; windows-pe.in owns trusted PE fixtures.
 
 const WIN-CALL-WRITEFILE = 1
 const WIN-CALL-GETCURRENTPROCESSID = 2

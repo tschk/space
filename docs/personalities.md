@@ -144,3 +144,55 @@ isolation, dynamic linking, or execution of arbitrary applications.
 Run `bash scripts/check-darwin-macho.sh` to assemble the checked-in fixture,
 exercise malformed-image rejection under QEMU, and verify its return value 42.
 Ordinary boot images report a missing fixture without modifying that region.
+
+The experimental `linuxsyscall` and `darwinsyscall` commands extend this trusted
+fixture path with hardware SYSCALL instructions for bounded serial writes and
+exit. Linux uses syscall numbers 1/60 and negative errors; Darwin uses Unix-class
+numbers 0x2000004/0x2000001 and carry plus positive errno. Buffers must remain
+inside the loaded image, writes are limited to 4096 bytes, and exit restores the
+shell continuation. These run synchronously at CPL0 with interrupts disabled;
+they provide neither process isolation nor general application compatibility.
+
+`windowspe` validates a PE32+ console image with one fixed-address, file-backed
+section, equal 512-byte file/section alignment, and named imports from
+`KERNEL32.dll`: `WriteFile`, `ExitProcess`, optionally followed by `CreateFileA`,
+`ReadFile`, `CloseHandle` in that order. Only after validation does it bind
+the import address table to Microsoft x64 adapters. `WriteFile` accepts handles
+1/2, bounded image buffers and a bytes-written pointer inside the image, with
+null OVERLAPPED; it returns BOOL and the written byte count. `ExitProcess`
+restores the same shell continuation. Binding is undone after exit. General
+DLL loading, relocations, TLS, exceptions, LastError, process startup and memory
+protection are unsupported. This is a trusted in-place fixture, not a Windows
+process environment.
+
+`linuxfileio`, `darwinfileio`, and `windowsfileio` run read-only file fixtures.
+They seed `foreign-read.txt` on RAM SparkFS and exercise actual Linux
+open/read/close syscalls 2/0/3, Darwin Unix-class calls 0x2000005/0x2000003/0x2000006,
+or the three Windows file imports. Unix opens accept flags 0 only. `CreateFileA`
+accepts GENERIC_READ, FILE_SHARE_READ, null security attributes, OPEN_EXISTING,
+FILE_ATTRIBUTE_NORMAL, and null template only. Other arguments fail without
+backend access. `ReadFile` requires an image-owned byte-count pointer and null
+OVERLAPPED, returns BOOL plus bytes read, and succeeds with zero bytes at EOF.
+
+Paths must terminate within the image and 256 bytes; transfers stay inside the
+image and at most 4096 bytes. A caller-supplied storage capability is required.
+Each execution owns only descriptors it opened; read/close cannot use another
+execution's or the kernel's handles. All owned descriptors are closed on return
+or exit. The fixtures keep kernel fd 3 open, probe its protection, exhaust the
+remaining 12 slots, then exit without closing them. Tests first run without a
+storage grant, then with one, and repeat to verify cleanup and import restoration.
+A Linux return variant checks the same cleanup when the entry returns normally.
+Asynchronous volume RPC and direct NVMe SparkFS are rejected by this runner,
+which disables interrupts. Fixture commands require a fresh descriptor table.
+Existing VFS path copies use the bump allocator; descriptor cleanup does not
+reclaim those allocations. File writes, process isolation and general Windows
+path/sharing semantics remain unsupported.
+
+Run `bash scripts/check-foreign-syscalls.sh` (also included in personality gates).
+It checks 13 malformed/valid ELF scenarios, 15 PE scenarios, error conventions,
+exact output, exit status 42, and shell resumption for serial and file fixtures
+on all three ABIs, plus eight malformed/valid PE file-import cases. The
+separate Mach-O gate covers 22 validation scenarios. Use `INAUGURATION_DIR` to
+select a different compiler checkout. Investigation also found and fixed a
+generic reassigned-binding constant-propagation bug in the sibling compiler;
+the fixture dispatcher compares ABI numbers directly without mutable aliases.
