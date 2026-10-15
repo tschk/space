@@ -8,11 +8,23 @@ SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-windows-personality}"
-IN="$INAUG_DIR/in-cli/target/release/in"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 SERIAL_BASE="$BUILD_DIR/serial"
 SERIAL_IN="$SERIAL_BASE.in"
 SERIAL_OUT="$SERIAL_BASE.out"
 SERIAL_LOG="$BUILD_DIR/serial.log"
+cleanup() {
+  if [ -n "${CATPID:-}" ]; then
+    kill "$CATPID" 2>/dev/null || true
+    wait "$CATPID" 2>/dev/null || true
+  fi
+  if [ -n "${QPID:-}" ]; then
+    kill "$QPID" 2>/dev/null || true
+    wait "$QPID" 2>/dev/null || true
+  fi
+  rm -f "$SERIAL_IN" "$SERIAL_OUT"
+}
+trap cleanup EXIT
 
 mkdir -p "$BUILD_DIR"
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG"
@@ -27,7 +39,8 @@ NASM="${NASM:-nasm}"
 
 mkfifo "$SERIAL_IN" "$SERIAL_OUT"
 qemu-system-x86_64 -kernel "$BUILD_DIR/kernel.bin" -m 512M -no-reboot \
-  -display none -serial "pipe:$SERIAL_BASE" -daemonize
+  -display none -serial "pipe:$SERIAL_BASE" &
+QPID=$!
 timeout 40 cat "$SERIAL_OUT" > "$SERIAL_LOG" &
 CATPID=$!
 for _ in $(seq 1 300); do
@@ -49,6 +62,7 @@ for _ in $(seq 1 200); do
 done
 kill "$CATPID" 2>/dev/null || true
 wait "$CATPID" 2>/dev/null || true
+CATPID=""
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
 
 grep -qE "CreateFile|WriteFile" "$SERIAL_LOG"
@@ -56,6 +70,7 @@ grep -qE "SetFilePointer|MoveFile" "$SERIAL_LOG"
 grep -qE "CreateDirectory|GetLastError|VirtualAlloc" "$SERIAL_LOG"
 grep -qE "HeapAlloc|CopyFile|GetModuleFileName" "$SERIAL_LOG"
 grep -qF "windows: typed handles active" "$SERIAL_LOG"
+grep -qF "windows: WaitForSingleObject invalid handle WAIT_FAILED OK" "$SERIAL_LOG"
 # GetStdHandle optional deeper marker
 # LastError / NTSTATUS must be real codes, paired, and not leftover zeros.
 grep -qE 'windows: DeleteFileA\(missing\) GetLastError = 2 NTSTATUS = -1073741772' "$SERIAL_LOG"

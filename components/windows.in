@@ -63,6 +63,8 @@ const WIN-CALL-VIRTUALALLOC = 19
 const WIN-CALL-VIRTUALFREE = 20
 const WIN-CALL-CREATEPROCESSA = 21
 const WIN-CALL-WAITFORSINGLEOBJECT = 22
+const WIN-WAIT-OBJECT-0 = 0
+const WIN-WAIT-FAILED = 0xFFFFFFFF
 const WIN-CALL-GETCOMMANDLINEA = 23
 const WIN-CALL-WRITECONSOLEA = 24
 const WIN-CALL-GETMODULEFILENAMEA = 25
@@ -791,16 +793,17 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let handle = a0
     if win-handle-type(handle) != WIN-HANDLE-TYPE-PROCESS {
       win-set-error(WIN-ERROR-INVALID-HANDLE)
-      return 0
+      return WIN-WAIT-FAILED
     }
     let pid = win-handle-value(handle)
-    let code = proc-wait(pid)
-    if code < 0 {
+    if pid < 0 || pid >= proc-count {
       win-set-error(WIN-ERROR-INVALID-HANDLE)
-      return 0
+      return WIN-WAIT-FAILED
     }
+    // An exit code, including a negative one, is not a wait failure.
+    proc-wait(pid)
     win-clear-error()
-    return 0
+    return WIN-WAIT-OBJECT-0
   }
   if num == WIN-CALL-GETCOMMANDLINEA {
     if win-cmdline == 0 {
@@ -1395,6 +1398,13 @@ fn win-demo(port: Int) -> void {
   let perr = win-dispatch(port, WIN-CALL-GETLASTERROR, 0, 0, 0, 0)
   serial-write-cstr(port, "windows: GetLastError() after CreateProcessA = ")
   serial-write-dec-wide(port, perr)
+  serial-nl(port)
+  let invalid-wait = win-dispatch(port, WIN-CALL-WAITFORSINGLEOBJECT, -1, 0, 0, 0)
+  if invalid-wait == WIN-WAIT-FAILED && win-last-error == WIN-ERROR-INVALID-HANDLE && win-last-status == WIN-STATUS-INVALID-HANDLE {
+    serial-write-cstr(port, "windows: WaitForSingleObject invalid handle WAIT_FAILED OK")
+  } else {
+    serial-write-cstr(port, "windows: WaitForSingleObject invalid handle FAILED")
+  }
   serial-nl(port)
   // Optional: if test.sci present, spawn + typed process handle.
   let testapp = "test.sci"
