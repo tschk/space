@@ -72,6 +72,26 @@ var comp-entry-arg: Int = 0
 var comp-cap-info-arg: Int = 0
 var comp-domain-arg: Int = 0
 
+fn sci-image-acceptable(header: Int, entry: Int, image-size: Int) -> Int {
+  // Reject images with no payload: a bare header (32 or 64 bytes) contains
+  // no code, yet entry - header would still map and invoke one byte past it.
+  // Entry may be an offset or a packed-image absolute address (0x40000000
+  // style), so only require it to sit past the header.
+  if image-size <= header || image-size > 0x200000 {
+    return 0
+  }
+  if entry < header {
+    return 0
+  }
+  // The loader maps whole source pages at entry - header; a base that is
+  // not page-aligned would place the entry at the wrong image byte or on
+  // an unmapped page.
+  if (entry - header) & 4095 != 0 {
+    return 0
+  }
+  return 1
+}
+
 fn boot-image-find(kind: Int) -> Int {
   let table = load64(0x40D0)
   if table == 0 || load64(table) != BOOT-IMAGE-TABLE-MAGIC {
@@ -344,6 +364,11 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
   let image-size = load64(load-addr + 24)
+  if sci-image-acceptable(header, entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
   serial-write-cstr(port, "  SCI: manifest ok entry 0x")
   serial-write-hex(port, entry)
   serial-nl(port)
@@ -355,16 +380,25 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     serial-nl(port)
     return -1
   }
+  let component = component-register(name, entry, required)
+  let cap-idx = cap-mint(component, required)
+  if cap-idx < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    component-unregister(component)
+    return -1
+  }
   let domain = domain-create()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
+    cap-revoke(cap-idx)
+    component-unregister(component)
     return -1
   }
+  domain-set-cap(domain, cap-idx)
   serial-write-cstr(port, "  SCI: domain created")
   serial-nl(port)
-
-  let component = component-register(name, entry, required)
   let virt-load = entry - header
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
@@ -854,6 +888,11 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   let required = load64(load-addr + 8)
   let entry = load64(load-addr + 16)
   let image-size = load64(load-addr + 24)
+  if sci-image-acceptable(header, entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
   serial-write-cstr(port, "  SCI: manifest ok, caps 0x")
   serial-write-hex(port, required)
   serial-write-cstr(port, " entry 0x")
@@ -866,13 +905,23 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
     serial-nl(port)
     return -1
   }
+  let component = component-register("sci-guest", entry, required)
+  let cap-idx = cap-mint(component, required)
+  if cap-idx < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    component-unregister(component)
+    return -1
+  }
   let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
+    cap-revoke(cap-idx)
+    component-unregister(component)
     return -1
   }
-  let component = component-register("sci-guest", entry, required)
+  domain-set-cap(domain, cap-idx)
   let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0

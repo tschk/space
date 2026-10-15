@@ -15,9 +15,12 @@ Space is a component-based operating system built on a five-layer architecture:
 ```
 
 The native model is **component + capability + object + execution graph** — not
-process + file + syscall + user. There is no POSIX in the kernel. Linux, Darwin,
-and Windows compatibility are `.in` microservices that translate legacy concepts
-into Space primitives.
+process + file + syscall + user. Linux, Darwin, and Windows personalities are
+kernel-linked `.in` translators in the same boot image (`components/linux.in`,
+`darwin.in`, `windows.in`, `posix.in`). They are not isolated processes.
+
+Domains currently clone the 4 GiB identity map and run at CPL0. That is not
+isolation. See [`architecture.md`](architecture.md).
 
 ## Status
 
@@ -40,7 +43,7 @@ symbol is denied while boot continues (`scripts/check-dynamic-modules.sh`).
 image (core dynamic nanokernel + filesystem shell, ~3x smaller). Both carry
 preinstalled dynamic apps — `calc` (expression REPL), `notes` (persistent
 notes), `hd` (file hexdump), `sysmon` (live kernel monitor), `bench`
-(deterministic CPU benchmark) — that load on demand into isolated domains via
+(deterministic CPU benchmark) — that load on demand into per-app domains via
 the shell's `runapp` command (`scripts/check-image-variants.sh`).
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
@@ -88,6 +91,7 @@ cargo install inauguration --locked
 ```
 
 ```sh
+bash scripts/check-all.sh             # static gates + QEMU boot + audit hardening
 bash scripts/check-qemu-boot.sh       # full boot verification
 bash scripts/build-multicomponent.sh  # SCI component loading demo
 bash scripts/check-sci-contract.sh    # metadata validation
@@ -110,6 +114,7 @@ bash scripts/check-linux-elf.sh       # Linux ELF personality
 bash scripts/check-volume-deep-soak.sh # NVMe volume deep soak
 bash scripts/check-fs-dirs.sh         # mkdir/rmdir/mv/rm full coverage
 bash scripts/check-personalities.sh   # Linux/Windows/Darwin personalities
+bash scripts/check-darwin-macho.sh    # trusted in-place Mach-O fixture
 ```
 
 Browser demo (Alpenglow-style v86 shell, built with moonshine): see [`docs/v86-website.md`](docs/v86-website.md) and `website/`.

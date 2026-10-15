@@ -42,7 +42,7 @@ if ! grep -qF "space interactive shell" "$SERIAL_LOG" 2>/dev/null; then
   exit 1
 fi
 
-printf 'darwin\nhalt\n' > "$SERIAL_IN"
+printf 'darwinmacho\ndarwin\nhalt\n' > "$SERIAL_IN"
 for _ in $(seq 1 200); do
   grep -qF "darwin: personality demo complete" "$SERIAL_LOG" 2>/dev/null && break
   sleep 0.1
@@ -51,6 +51,7 @@ kill "$CATPID" 2>/dev/null || true
 wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
 
+grep -qF 'darwin: Mach-O rejected: fixture missing or invalid' "$SERIAL_LOG"
 grep -qE 'darwin: open\(|darwin: write\(' "$SERIAL_LOG"
 grep -qF "darwin: mkdir(darwin-dir)" "$SERIAL_LOG"
 grep -qF "darwin: getcwd()" "$SERIAL_LOG"
@@ -64,11 +65,12 @@ fi
 grep -qE 'darwin: errno after open\(missing\) = 2 \(ENOENT\)' "$SERIAL_LOG"
 grep -qE 'darwin: errno after read\(bad fd\) = 9 \(EBADF\)' "$SERIAL_LOG"
 grep -qE 'darwin: errno after kill\(invalid\) = 3 \(ESRCH\)' "$SERIAL_LOG"
-grep -qE 'darwin: errno after unknown syscall = 38 \(ENOSYS\)' "$SERIAL_LOG"
+grep -qE 'darwin: errno after unknown syscall = 78 \(ENOSYS\)' "$SERIAL_LOG"
 if grep -qF "darwin: errno consistency FAILED" "$SERIAL_LOG"; then
   echo "FAIL: darwin errno consistency check failed" >&2
   exit 1
 fi
+grep -qF "darwin: errno scenarios 13/13" "$SERIAL_LOG"
 grep -qF "darwin: errno consistency OK" "$SERIAL_LOG"
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
 echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat + errno map)"

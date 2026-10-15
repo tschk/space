@@ -39,7 +39,7 @@ package space.kernel
 //  35  WIN-RtlNtStatusToDosError → a0 NTSTATUS → Win32 error
 //  36  WIN-RtlGetLastWin32Error → win-last-error (alias of GetLastError)
 //
-// Honest: not full Win32, not PE loader, not CSRSS, not real NT objects.
+// This translator is not full Win32/CSRSS/NT; windows-pe.in owns trusted PE fixtures.
 
 const WIN-CALL-WRITEFILE = 1
 const WIN-CALL-GETCURRENTPROCESSID = 2
@@ -883,9 +883,19 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       win-set-error(WIN-ERROR-FILE-NOT-FOUND)
       return 0
     }
-    let cbuf = alloc(4096)
-    let n = fs-read-file(src, cbuf)
-    if n < 0 {
+    let sbuf = alloc(64)
+    if fs-stat(src, sbuf) != 0 {
+      win-set-error-unlink(src)
+      return 0
+    }
+    let src-size = load64(sbuf + SF-ST-SIZE)
+    if src-size < 0 || src-size > 0x100000 {
+      win-set-error-unlink(src)
+      return 0
+    }
+    let cbuf = alloc(src-size + 1)
+    let n = fs-read-file(src, cbuf, src-size)
+    if n != src-size {
       win-set-error-unlink(src)
       return 0
     }

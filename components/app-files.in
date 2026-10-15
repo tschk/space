@@ -33,7 +33,7 @@ interface BlockStorage {
 const COM1 = 0x3F8
 
 // Kernel service imports (interrupt fn = no caller-saved spills).
-interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+interrupt fn fs-read-file(name: Int, buf: Int, max: Int) -> Int {
 }
 
 interrupt fn fs-write-file(name: Int, buf: Int, size: Int) -> Int {
@@ -104,7 +104,7 @@ fn app-files-entry(cap-info: Int) -> Int {
   }
 
   // 2. Read it back and verify byte-for-byte.
-  let n = fs-read-file(DEMO-NAME, buf)
+  let n = fs-read-file(DEMO-NAME, buf, 0x200000)
   if n < 0 {
     api-write(port, "files: read-back failed")
     api-putch(port, 13)

@@ -241,7 +241,7 @@ fn proc-dummy-entry() -> Int {
 // and invokes its entry point.
 fn sci-load-file(port: Int, pathname: Int) -> Int {
   let header-buf = alloc(4096)
-  let rc = fs-read-file(pathname, header-buf)
+  let rc = fs-read-file(pathname, header-buf, 4096)
   if rc < 32 {
     serial-write-cstr(port, "  SCI: failed to read manifest header from ")
     serial-write-cstr(port, pathname)
@@ -280,7 +280,13 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   serial-write-hex(port, image-size)
   serial-nl(port)
 
-  let missing = required & (-1 ^ realm-grants)
+  if sci-image-acceptable(header, entry, image-size) == 0 {
+    serial-write-cstr(port, "  SCI: invalid entry or image-size")
+    serial-nl(port)
+    return -1
+  }
+
+  let missing = required & (-1 ^ SCI-GUEST-GRANTS)
   if missing != 0 {
     serial-write-cstr(port, "  SCI: DENIED undeclared cap 0x")
     serial-write-hex(port, missing)
@@ -298,7 +304,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     z = z + 1
   }
 
-  let bytes-read = fs-read-file(pathname, load-addr)
+  let bytes-read = fs-read-file(pathname, load-addr, pages * 4096)
   if bytes-read < image-size {
     serial-write-cstr(port, "  SCI: read failed (got 0x")
     serial-write-hex(port, bytes-read)
@@ -307,17 +313,26 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
 
+  let component = component-register(pathname, entry, required)
+  let cap-idx = cap-mint(component, required)
+  if cap-idx < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    component-unregister(component)
+    return -1
+  }
   let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
+    cap-revoke(cap-idx)
+    component-unregister(component)
     return -1
   }
+  domain-set-cap(domain, cap-idx)
   sci-last-domain = domain
   sci-last-entry = entry
   sci-last-caps = required
-
-  let component = component-register(pathname, entry, required)
   let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0

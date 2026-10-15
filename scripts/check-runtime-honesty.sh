@@ -210,21 +210,23 @@ def main() -> int:
         "sf-bno-in-range(bno) == 0" in write_blk,
     )
 
-    print("[4/6] ELF execve copies PT_LOAD then jumps at CPL0; DNS compression is followed...")
+    print("[4/6] ELF execve runs the trusted in-place subset through the foreign runner; DNS compression is followed...")
     elf = fn_body(posix, "posix-elf-exec-image") or ""
+    entry = fn_body(posix, "posix-elf-entry") or ""
     check(
         "ELF magic is the 64-bit little-endian ident word",
         "const LINUX-ELF-MAGIC = 0x00010102464C457F" in posix,
     )
     check(
-        "posix-elf-exec-image copies PT_LOAD filesz then zeroes BSS to memsz",
-        "store8(vaddr + k, load8(image + off + k))" in elf
-        and "store8(vaddr + k, 0)" in elf
-        and "while k < memsz" in elf,
+        "posix-elf-entry accepts only one RX PT_LOAD at the image base",
+        "load32(ph + 4) != 5" in entry
+        and "load64(ph + 16) != image" in entry
+        and "posix-load16(image + 56) != 1" in entry,
     )
     check(
-        "posix-elf-exec-image still jumps with invoke1(entry, 0) at CPL0",
-        "return invoke1(entry, 0)" in elf,
+        "posix-elf-exec-image routes through foreign-exec instead of a raw CPL0 invoke1",
+        "foreign-exec(image + entry, image, size, 1, foreign-file-cap)" in elf
+        and "invoke1(entry, 0)" not in elf,
     )
     skip = fn_body(dns, "dns-skip-name") or ""
     check(
@@ -248,8 +250,8 @@ def main() -> int:
 
     print("[5/6] Capabilities, channels, SCI grants, preempt-stop...")
     check(
-        "sys-cap-check is a thin wrapper over the global cap table",
-        "fn sys-cap-check(idx: Int, rights: Int) -> Int {\n  return cap-check(idx, rights)\n}" in syscall,
+        "sys-cap-check only queries the caller's current cap",
+        "fn sys-cap-check(idx: Int, rights: Int) -> Int {\n  if idx != current-cap {" in syscall,
     )
     check(
         "kernel channel/domain/storage/net paths do not consult cap-check",
@@ -309,9 +311,9 @@ def main() -> int:
 
     print("[6/6] Syscall channel handles remain raw pointers...")
     check(
-        "sys-chan-send/recv pass the caller handle straight through",
-        "fn sys-chan-send(ch: Int, msg: Int) -> void {\n  chan-send(ch, msg)" in syscall
-        and "fn sys-chan-recv(ch: Int) -> Int {\n  return chan-recv(ch)" in syscall,
+        "sys-chan-send/recv keep their cap guard and pass the handle through",
+        "fn sys-chan-send(ch: Int, msg: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  chan-send(ch, msg)" in syscall
+        and "fn sys-chan-recv(ch: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  return chan-recv(ch)" in syscall,
     )
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")

@@ -101,6 +101,10 @@ fn cap-mint(target-obj: Int, rights: Int) -> Int {
   return idx
 }
 
+fn cap-require(rights: Int) -> Int {
+  return cap-check(current-cap, rights)
+}
+
 fn cap-check(idx: Int, rights: Int) -> Int {
   if idx < 0 || idx >= cap-count {
     return 0

@@ -38,8 +38,11 @@ import "../components/process.in"
 import "../components/linux.in"
 // Darwin personality stub (Mach/BSD subset demo).
 import "../components/darwin.in"
+import "../components/darwin-macho.in"
+import "../components/foreign-exec.in"
 // Windows personality translator (Win32/NT-shaped subset, not full ABI).
 import "../components/windows.in"
+import "../components/windows-pe.in"
 // VBE framebuffer driver (drawing primitives + bitmap font), Wayland-style
 // compositor (window manager + desktop rendering), and SPDP display server.
 import "../components/display.in"
@@ -208,6 +211,8 @@ fn kernel-entry(mb-info: Int) -> Int {
   }
 
   domain-init()
+  store64(domain-table + 16, kernel-cap)
+  current-cap = kernel-cap
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: domain subsystem init, ")
     serial-write-dec-wide(port, domain-count)

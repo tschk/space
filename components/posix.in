@@ -226,68 +226,47 @@ fn posix-load16(addr: Int) -> Int {
   return load8(addr) | (load8(addr + 1) << 8)
 }
 
-fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  if size < 120 {
+// Trusted in-place executable subset: one RX PT_LOAD, no mapping or dyld.
+fn posix-elf-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 120 || size > 0x200000 || image > 0x100000000 - size {
     return LINUX-ENOEXEC
   }
-  if load64(image + 0) != LINUX-ELF-MAGIC {
+  if load64(image) != LINUX-ELF-MAGIC || posix-load16(image + 16) != 2 || posix-load16(image + 18) != 0x3E || load32(image + 20) != 1 {
     return LINUX-ENOEXEC
   }
-  if posix-load16(image + 16) != 2 {
+  if load64(image + 32) != 64 || posix-load16(image + 52) != 64 || posix-load16(image + 54) != 56 || posix-load16(image + 56) != 1 {
     return LINUX-ENOEXEC
   }
-  if posix-load16(image + 18) != 0x3E {
+  let ph = image + 64
+  let filesz = load64(ph + 32)
+  if load32(ph) != 1 || load32(ph + 4) != 5 || load64(ph + 8) != 0 || load64(ph + 16) != image {
+    return LINUX-ENOEXEC
+  }
+  if filesz < 120 || filesz > size || load64(ph + 40) != filesz || load64(ph + 48) != 4096 {
     return LINUX-ENOEXEC
   }
   let entry = load64(image + 24)
-  let phoff = load64(image + 32)
-  let phentsize = posix-load16(image + 54)
-  let phnum = posix-load16(image + 56)
-  if entry == 0 || phoff == 0 || phentsize < 56 || phnum == 0 {
+  if entry < image + 120 || entry >= image + filesz {
     return LINUX-ENOEXEC
   }
-  if phnum > 16 {
-    return LINUX-ENOEXEC
-  }
-  let i = 0
-  while i < phnum {
-    let ph = image + phoff + i * phentsize
-    if ph + 56 > image + size {
-      return LINUX-ENOEXEC
-    }
-    if load32(ph + 0) == 1 {
-      let off = load64(ph + 8)
-      let vaddr = load64(ph + 16)
-      let filesz = load64(ph + 32)
-      let memsz = load64(ph + 40)
-      if filesz < 0 || memsz < 0 || filesz > memsz {
-        return LINUX-ENOEXEC
-      }
-      if off < 0 || off + filesz < off || off + filesz > size {
-        return LINUX-ENOEXEC
-      }
-      if vaddr == 0 || vaddr + memsz < vaddr {
-        return LINUX-ENOEXEC
-      }
-      if memsz > 0x200000 {
-        return LINUX-ENOEXEC
-      }
-      let k = 0
-      while k < filesz {
-        store8(vaddr + k, load8(image + off + k))
-        k = k + 1
-      }
-      while k < memsz {
-        store8(vaddr + k, 0)
-        k = k + 1
-      }
-    }
-    i = i + 1
+  return entry - image
+}
+
+fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
+  let entry = posix-elf-entry(image, size)
+  if entry < 0 {
+    return entry
   }
   serial-write-cstr(port, "posix: execve loading ELF from ")
   serial-write-cstr(port, path)
   serial-nl(port)
-  return invoke1(entry, 0)
+  // Execute through the foreign runner so raw `syscall` instructions reach
+  // foreign-syscall-dispatch instead of faulting with an inactive runner.
+  if foreign-file-cap <= 0 {
+    let rights = cap-serial() | cap-storage()
+    foreign-file-cap = cap-mint(root-realm, rights)
+  }
+  return foreign-exec(image + entry, image, size, 1, foreign-file-cap)
 }
 
 fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
@@ -329,7 +308,7 @@ fn posix-sys-execve(path: Int, argv: Int, envp: Int) -> Int {
   }
   let pages = (file-size + 4095) / 4096
   let buf = load-arena-alloc(pages * 4096)
-  let got = fs-read-file(path, buf)
+  let got = fs-read-file(path, buf, pages * 4096)
   if got < 0 || got < file-size {
     return LINUX-EIO
   }

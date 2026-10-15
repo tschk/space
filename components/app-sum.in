@@ -40,7 +40,7 @@ const COM1 = 0x3F8
 const BANNER = "space-app-api-v1"
 
 // Kernel service imports (interrupt fn = no caller-saved spills).
-interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+interrupt fn fs-read-file(name: Int, buf: Int, max: Int) -> Int {
 }
 
 // appapi shared-library imports (boot-image kind 14, APP-API v1).
@@ -151,7 +151,7 @@ fn app-sum-entry(cap-info: Int) -> Int {
   let args = api-args(cap-info)
   if load8(args) != 0 {
     let buf = api-heap-base(cap-info)
-    let n = fs-read-file(args, buf)
+    let n = fs-read-file(args, buf, 0x200000)
     if n >= 0 {
       api-write(port, "sum: ")
       api-write(port, args)

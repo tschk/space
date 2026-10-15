@@ -14,8 +14,8 @@ fn nvme-start-storage-component(port: Int) -> Int {
     return 0
   }
   storage-domain = domain-create()
-  if storage-domain == 0 {
-    storage-domain = 1
+  if storage-domain <= 0 {
+    return -1
   }
 
   let shared-mailbox = domain-create-shared-page(0, storage-domain, STORAGE-MAILBOX-VIRT, STORAGE-MAILBOX-VIRT)

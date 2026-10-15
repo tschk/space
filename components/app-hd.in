@@ -38,7 +38,7 @@ interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
 interrupt fn serial-nl(port: Int) -> void {
 }
 
-interrupt fn fs-read-file(name: Int, buf: Int) -> Int {
+interrupt fn fs-read-file(name: Int, buf: Int, max: Int) -> Int {
 }
 
 // libspace shared-library imports (boot kind 7).
@@ -91,7 +91,7 @@ fn app-hd-entry(cap-info: Int) -> Int {
     return -1
   }
 
-  let n = fs-read-file(path, buf)
+  let n = fs-read-file(path, buf, HD-BUF)
   if n < 0 {
     serial-write-cstr(port, "hd: read failed")
     serial-nl(port)

@@ -101,6 +101,8 @@ fn kernel-entry(mb-info: Int) -> Int {
   let kernel-cap = cap-mint(root-realm, 0xF)
 
   domain-init()
+  store64(domain-table + 16, kernel-cap)
+  current-cap = kernel-cap
   interrupts-init()
 
   // The nanokernel publishes its own services as dynamic-link providers,

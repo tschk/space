@@ -370,14 +370,14 @@ fn shell-try-pipe(port: Int) -> Int {
         fs-list-path(shell-path(line + line-prefix("ls ")), port)
       } else if line-prefix("cat ") >= 0 {
         let abuf = alloc(4096)
-        let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf)
+        let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf, 4096)
         if n >= 0 {
           let j = 0
           while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
         }
       } else if line-prefix("read ") >= 0 {
         let abuf = alloc(4096)
-        let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf)
+        let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf, 4096)
         if n >= 0 {
           let j = 0
           while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
@@ -461,14 +461,14 @@ fn shell-run-with-redir(port: Int) -> void {
     fs-list-path(shell-path(line + line-prefix("ls ")), port)
   } else if line-prefix("cat ") >= 0 {
     let abuf = alloc(4096)
-    let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf)
+    let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf, 4096)
     if n >= 0 {
       let j = 0
       while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
     }
   } else if line-prefix("read ") >= 0 {
     let abuf = alloc(4096)
-    let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf)
+    let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf, 4096)
     if n >= 0 {
       let j = 0
       while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
@@ -598,7 +598,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf darwin windows fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -1020,7 +1020,7 @@ fn shell(port: Int) -> void {
     } else if line-prefix("read ") >= 0 {
       let arg = line-prefix("read ")
       let buf = alloc(4096)
-      let n = fs-read-file(shell-path(line + arg), buf)
+      let n = fs-read-file(shell-path(line + arg), buf, 4096)
       if n < 0 {
         serial-write-cstr(port, "  read: file not found")
       } else {
@@ -1034,7 +1034,7 @@ fn shell(port: Int) -> void {
     } else if line-prefix("cat ") >= 0 {
       let arg = line-prefix("cat ")
       let buf = alloc(4096)
-      let n = fs-read-file(shell-path(line + arg), buf)
+      let n = fs-read-file(shell-path(line + arg), buf, 4096)
       if n < 0 {
         serial-write-cstr(port, "  cat: file not found")
       } else {
@@ -1105,8 +1105,22 @@ fn shell(port: Int) -> void {
       usb-kbd-cmd(port)
     } else if line-eq("linux") != 0 {
       linux-demo(port)
+    } else if line-eq("linuxsyscall") != 0 {
+      linux-syscall-demo(port)
+    } else if line-eq("linuxfileio") != 0 {
+      foreign-fileio-demo(port, 1)
+    } else if line-eq("darwinfileio") != 0 {
+      foreign-fileio-demo(port, 2)
+    } else if line-eq("windowsfileio") != 0 {
+      foreign-fileio-demo(port, 3)
+    } else if line-eq("windowspe") != 0 {
+      win-pe-demo(port)
     } else if line-eq("linuxelf") != 0 {
       linux-elf-probe(port)
+    } else if line-eq("darwinsyscall") != 0 {
+      darwin-syscall-demo(port)
+    } else if line-eq("darwinmacho") != 0 {
+      darwin-macho-demo(port)
     } else if line-eq("darwin") != 0 {
       darwin-demo(port)
     } else if line-eq("windows") != 0 {
@@ -1232,6 +1246,42 @@ fn shell(port: Int) -> void {
       if w != -1 {
         ok = 0
         serial-write-cstr(port, "  sys-write buf=0 not rejected")
+        serial-nl(port)
+      }
+      if load64(0x4058) != 0 || load64(0x4060) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  cr3 stubs still published")
+        serial-nl(port)
+      }
+      let saved-cap = current-cap
+      let weak = cap-mint(root-realm, cap-timer())
+      current-cap = weak
+      let probe = "x"
+      if sys-write(1, probe, 1) != -1 {
+        ok = 0
+        serial-write-cstr(port, "  sys-write without serial cap not rejected")
+        serial-nl(port)
+      }
+      if sys-chan-create(4) != 0 {
+        ok = 0
+        serial-write-cstr(port, "  sys-chan-create without graph cap not rejected")
+        serial-nl(port)
+      }
+      current-cap = saved-cap
+      let guest-dom = domain-create()
+      let guest-comp = component-register("hard-guest", 0, cap-serial())
+      if sci-bind-domain-cap(guest-dom, guest-comp, cap-serial()) >= 0 {
+        domain-switch(guest-dom)
+        let kg = sys-write(1, 0x200000, 16)
+        domain-switch(0)
+        if kg != -1 {
+          ok = 0
+          serial-write-cstr(port, "  guest sys-write of kernel globals not rejected")
+          serial-nl(port)
+        }
+      } else {
+        ok = 0
+        serial-write-cstr(port, "  guest cap mint failed")
         serial-nl(port)
       }
       // DNS parser must reject a truncated message (huge ancount, short len).
@@ -1371,7 +1421,7 @@ fn shell(port: Int) -> void {
                   let rest = line-prefix("read ")
                   if rest >= 0 {
                     let rbuf = alloc(4096)
-                    let rsize = fs-read-file(line + rest, rbuf)
+                    let rsize = fs-read-file(line + rest, rbuf, 4096)
                     if rsize < 0 {
                       serial-write-cstr(port, "  read: file not found")
                     } else {
