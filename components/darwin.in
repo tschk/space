@@ -94,6 +94,7 @@ const DARWIN-ESPIPE = -29
 // fcntl commands (minimal).
 const DARWIN-F-GETFD = 1
 const DARWIN-F-SETFD = 2
+const DARWIN-FD-CLOEXEC = 1
 
 // close-on-exec tracking: 1 bit per fd (max 16 fds → 16 bits).
 var darwin-fd-cloexec: Int = 0
@@ -497,7 +498,7 @@ fn darwin-sys-fcntl(fd: Int, cmd: Int, arg: Int) -> Int {
     return 0
   }
   if cmd == DARWIN-F-SETFD {
-    if arg != 0 {
+    if (arg & DARWIN-FD-CLOEXEC) != 0 {
       darwin-fd-cloexec = darwin-fd-cloexec | (1 << fd)
     } else {
       if (darwin-fd-cloexec & (1 << fd)) != 0 {
@@ -1367,6 +1368,18 @@ fn darwin-demo(port: Int) -> void {
         serial-write-cstr(port, "darwin: fcntl descriptor flags independent OK")
       } else {
         serial-write-cstr(port, "darwin: fcntl descriptor flags independent FAILED")
+      }
+      serial-nl(port)
+      // Other argument bits must not masquerade as FD_CLOEXEC.
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-SETFD, 2, 0)
+      let masked-clear = darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-GETFD, 0, 0)
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-SETFD, 3, 0)
+      let masked-set = darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-GETFD, 0, 0)
+      let other-retained = darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-GETFD, 0, 0)
+      if masked-clear == 0 && masked-set == 1 && other-retained == 1 {
+        serial-write-cstr(port, "darwin: fcntl descriptor flag mask OK")
+      } else {
+        serial-write-cstr(port, "darwin: fcntl descriptor flag mask FAILED")
       }
       serial-nl(port)
       darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-SETFD, 0, 0)

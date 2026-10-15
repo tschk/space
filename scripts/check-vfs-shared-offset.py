@@ -103,6 +103,13 @@ fn main()->Int{
  if vfs-lseek(independent,19,0)!=19 || vfs-fd-offset(copy)!=19{return 12;}
  if darwin-sys-dup2(original,original)!=original || darwin-sys-fcntl(original,DARWIN-F-GETFD,0)!=1{return 13;}
  if darwin-sys-dup2(original,copy)!=copy || vfs-fd-offset(copy)!=19{return 14;}
+ // F_SETFD consumes FD_CLOEXEC bit zero, not boolean truthiness.
+ darwin-sys-fcntl(copy,DARWIN-F-SETFD,1);
+ darwin-sys-fcntl(copy,DARWIN-F-SETFD,2);
+ if darwin-sys-fcntl(copy,DARWIN-F-GETFD,0)!=0 || darwin-sys-fcntl(original,DARWIN-F-GETFD,0)!=1{return 20;}
+ darwin-sys-fcntl(copy,DARWIN-F-SETFD,3);
+ if darwin-sys-fcntl(copy,DARWIN-F-GETFD,0)!=1{return 21;}
+ darwin-sys-fcntl(copy,DARWIN-F-SETFD,0);
  darwin-sys-close(original);
  if darwin-sys-fcntl(original,DARWIN-F-GETFD,0)!=DARWIN-EBADF || vfs-fd-offset(copy)!=19{return 15;}
  let reopened=vfs-open(99,2);if reopened!=3 || vfs-fd-offset(reopened)!=0{return 16;}

@@ -87,6 +87,7 @@ fi
 grep -qF "darwin: errno scenarios 13/13" "$SERIAL_LOG"
 grep -qF "darwin: errno consistency OK" "$SERIAL_LOG"
 grep -qF "darwin: fcntl descriptor flags independent OK" "$SERIAL_LOG"
+grep -qF "darwin: fcntl descriptor flag mask OK" "$SERIAL_LOG"
 grep -qF "darwin: pipe duplicate lifetime OK" "$SERIAL_LOG"
 grep -qF "darwin: personality demo complete" "$SERIAL_LOG"
 echo "PASS: Darwin personality demo (open/write/mkdir/getcwd/rename + pipe|mmap|socket|stat + errno map)"
