@@ -17,15 +17,8 @@ component Display {
 }
 
 
-fn outw(port: Int, val: Int) -> void {
-  outb(port, val & 0xFF)
-  outb(port + 1, (val >> 8) & 0xFF)
-  return
-}
-
-fn inw(port: Int) -> Int {
-  return inb(port) | (inb(port + 1) << 8)
-}
+// BGA registers require atomic 16-bit port accesses. Use the compiler
+// inw/outw primitives; bytewise wrappers do not implement this device ABI.
 
 var comp-backbuf: Int = 0
 
@@ -510,6 +503,10 @@ var comp-drag-mode: Int = 0   // index of window being dragged (-1 = none)
 var comp-drag-off-x: Int = 0 // drag offset from window origin to mouse
 var comp-drag-off-y: Int = 0
 var comp-running: Int = 0    // 1 when compositor loop is active
+// Alpenglowed-inspired switcher: bounded ASCII query, existing windows only.
+var comp-launcher-open: Int = 0
+var comp-launcher-query: Int = 0
+var comp-launcher-len: Int = 0
 
 // --- damage-rect state ------------------------------------------------------
 // Pending damage is a single union rect (x0,y0,x1,y1, exclusive x1/y1).
@@ -642,6 +639,12 @@ fn comp-init() -> void {
   comp-drag-mode = -1
   comp-dragging = -1
   comp-running = 0
+  comp-launcher-open = 0
+  comp-launcher-len = 0
+  if comp-launcher-query == 0 {
+    comp-launcher-query = alloc(33)
+  }
+  store8(comp-launcher-query, 0)
   comp-cur-drawn = 0
   comp-cursor-init()
   comp-term-init()
@@ -792,6 +795,7 @@ fn comp-win-close(idx: Int) -> void {
   }
   comp-win-clear(comp-count - 1)
   comp-count = comp-count - 1
+  comp-dmg-add(0, 0, fb-width, COMP-TASKBAR-H)
   // Adjust focused index
   if comp-focused >= comp-count {
     comp-focused = comp-count - 1
@@ -850,6 +854,7 @@ fn comp-win-focus(idx: Int) -> void {
     i = i + 1
   }
   comp-focused = idx
+  comp-dmg-add(0, 0, fb-width, COMP-TASKBAR-H)
   comp-win-damage(idx)
   return
 }
@@ -1827,6 +1832,10 @@ fn comp-render() -> void {
       comp-render-taskbar()
     }
 
+    // The switcher is above client windows and uses the same damage clip.
+    if comp-launcher-open != 0 {
+      comp-render-launcher()
+    }
     comp-clip-clear()
 
     // Blit only the damaged region.
@@ -1853,9 +1862,26 @@ fn comp-render() -> void {
   return
 }
 
+// Taskbar geometry follows the scaled glyph width, with room for twelve
+// characters. Long titles are bounded to their own button.
+fn comp-taskbar-btn-width() -> Int {
+  return 12 * (fb-font-scale * 8 + 2) + 8
+}
+
+fn comp-taskbar-label(x: Int, y: Int, title: Int, fg: Int) -> void {
+  let i = 0
+  while i < 12 {
+    let ch = load8(title + i)
+    if ch == 0 { return }
+    fb-draw-char(x + i * (fb-font-scale * 8 + 2), y, ch, fg)
+    i = i + 1
+  }
+  return
+}
+
 // Taskbar window-button geometry: button index -> x offset from the start.
 fn comp-taskbar-btn-x(idx: Int) -> Int {
-  return fb-width / 2 - 80 + idx * 90
+  return fb-width / 2 - 80 + idx * comp-taskbar-btn-width()
 }
 
 // Number of window buttons that fit before the right-side activity dot.
@@ -1865,7 +1891,9 @@ fn comp-taskbar-max-btns() -> Int {
   if avail <= 0 {
     return 0
   }
-  return avail / 90
+  let capacity = avail / comp-taskbar-btn-width()
+  if comp-count > capacity && capacity > 0 { return capacity - 1 }
+  return capacity
 }
 
 // Draw the taskbar at the bottom of the screen, with window buttons that
@@ -1896,15 +1924,15 @@ fn comp-render-taskbar() -> void {
       if focused != 0 {
         btn-bg = 0x00333336
       }
-      fb-fill-rect(btn-x, bar-y + 2, 86, COMP-TASKBAR-H - 4, btn-bg)
-      comp-draw-label(btn-x + 4, bar-y + 5, title, COMP-COLOR-MUTED, btn-bg)
+      fb-fill-rect(btn-x, bar-y + 2, comp-taskbar-btn-width() - 4, COMP-TASKBAR-H - 4, btn-bg)
+      comp-taskbar-label(btn-x + 4, bar-y + 5, title, COMP-COLOR-MUTED)
     }
     i2 = i2 + 1
   }
   if comp-count > max-btns {
     // Overflow indicator: a small ellipsis at the last button slot.
     let ox = comp-taskbar-btn-x(max-btns)
-    fb-fill-rect(ox, bar-y + 2, 86, COMP-TASKBAR-H - 4, COMP-COLOR-PANEL-LINE)
+    fb-fill-rect(ox, bar-y + 2, comp-taskbar-btn-width() - 4, COMP-TASKBAR-H - 4, COMP-COLOR-PANEL-LINE)
     let oi = 0
     while oi < 3 {
       fb-fill-rect(ox + 8 + oi * 10, bar-y + COMP-TASKBAR-H / 2 - 2, 4, 4, FB-COLOR-WHITE)
@@ -1915,17 +1943,129 @@ fn comp-render-taskbar() -> void {
   return
 }
 
+// Match window titles case-insensitively without allocating or shell execution.
+fn comp-launcher-matches(title: Int) -> Int {
+  let i = 0
+  while i < comp-launcher-len {
+    let ch = load8(title + i)
+    if ch >= 65 && ch <= 90 { ch = ch + 32 }
+    let query = load8(comp-launcher-query + i)
+    if query >= 65 && query <= 90 { query = query + 32 }
+    if ch == 0 || ch != query { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn comp-launcher-first() -> Int {
+  let i = 0
+  while i < comp-count {
+    let title = load64(comp-win-base(i) + 24)
+    if title != 0 {
+      if comp-launcher-matches(title) != 0 { return i }
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn comp-launcher-show(port: Int) -> void {
+  comp-launcher-open = 1
+  comp-launcher-len = 0
+  store8(comp-launcher-query, 0)
+  comp-dmg-full()
+  serial-write-cstr(port, "space: launcher opened")
+  serial-nl(port)
+  return
+}
+
+fn comp-launcher-hide(port: Int) -> void {
+  comp-launcher-open = 0
+  comp-dmg-full()
+  serial-write-cstr(port, "space: launcher dismissed")
+  serial-nl(port)
+  return
+}
+
+fn comp-launcher-key(port: Int, key: Int) -> void {
+  if key == 27 || key == 9 || key == 12 {
+    comp-launcher-hide(port)
+    return
+  }
+  if key == 10 || key == 13 {
+    let selected = comp-launcher-first()
+    if selected >= 0 {
+      comp-win-restore(selected)
+      serial-write-cstr(port, "space: launcher focused ")
+      serial-write-cstr(port, load64(comp-win-base(selected) + 24))
+      serial-nl(port)
+      comp-launcher-hide(port)
+    }
+    return
+  }
+  if key == 8 || key == 127 {
+    if comp-launcher-len > 0 { comp-launcher-len = comp-launcher-len - 1 }
+  } else if key >= 32 && key <= 126 && comp-launcher-len < 32 {
+    store8(comp-launcher-query + comp-launcher-len, key)
+    comp-launcher-len = comp-launcher-len + 1
+  }
+  store8(comp-launcher-query + comp-launcher-len, 0)
+  comp-dmg-add(fb-width / 2 - 360, COMP-TASKBAR-H + 16, fb-width / 2 + 360, COMP-TASKBAR-H + 240)
+  return
+}
+
+fn comp-render-launcher() -> void {
+  let x = fb-width / 2 - 360
+  let y = COMP-TASKBAR-H + 16
+  fb-fill-rect(x, y, 720, 224, COMP-COLOR-BORDER)
+  fb-fill-rect(x + 1, y + 1, 718, 222, COMP-COLOR-PANEL)
+  comp-draw-label-aa(x + 20, y + 14, "SWITCH WINDOW", FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  comp-draw-label-aa(x + 20, y + 44, ">", COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+  comp-draw-label-aa(x + 50, y + 44, comp-launcher-query, FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  let first = comp-launcher-first()
+  if first < 0 {
+    comp-draw-label-aa(x + 20, y + 88, "NO MATCHING WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  } else {
+    let i = 0
+    let row = 0
+    while i < comp-count && row < 4 {
+      let title = load64(comp-win-base(i) + 24)
+      if title != 0 {
+        if comp-launcher-matches(title) != 0 {
+          let color = COMP-COLOR-MUTED
+          if i == first { color = COMP-COLOR-ACCENT }
+          comp-draw-label-aa(x + 20, y + 80 + row * 28, title, color, COMP-COLOR-PANEL)
+          row = row + 1
+        }
+      }
+      i = i + 1
+    }
+  }
+  comp-draw-label-aa(x + 20, y + 198, "ENTER FOCUS / ESC CANCEL", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  return
+}
+
 fn comp-render-topbar() -> void {
   fb-fill-rect(0, 0, fb-width, COMP-TASKBAR-H, COMP-COLOR-PANEL)
-  let tx2 = 0
-  while tx2 < fb-width {
-    fb-put-pixel(tx2, COMP-TASKBAR-H - 1, COMP-COLOR-PANEL-LINE)
-    tx2 = tx2 + 1
-  }
+  fb-fill-rect(0, COMP-TASKBAR-H - 1, fb-width, 1, COMP-COLOR-PANEL-LINE)
   let ty = (COMP-TASKBAR-H - fb-font-scale * 8) / 2
   comp-draw-label-aa(12, ty, "SPACE OS", FB-COLOR-WHITE, COMP-COLOR-PANEL)
-  comp-draw-label-aa(fb-width / 2 - 40, ty, "WORKSPACE", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
-  comp-draw-label-aa(fb-width - 200, ty, "DESKTOP", COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+  fb-fill-rect(220, 2, 340, COMP-TASKBAR-H - 4, COMP-COLOR-TITLE)
+  comp-draw-label-aa(232, ty, "TAB  SWITCH WINDOW", COMP-COLOR-MUTED, COMP-COLOR-TITLE)
+  if comp-focused >= 0 && comp-focused < comp-count {
+    let title = load64(comp-win-base(comp-focused) + 24)
+    if title != 0 {
+      comp-draw-label-aa(fb-width / 2 - 120, ty, title, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+    }
+  }
+  let count = 0
+  let i = 0
+  while i < comp-count {
+    if load64(comp-win-base(i) + 24) != 0 { count = count + 1 }
+    i = i + 1
+  }
+  comp-draw-label-aa(fb-width - 230, ty, "WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  comp-draw-dec(fb-width - 70, ty, count, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
   return
 }
 
@@ -1939,7 +2079,7 @@ fn comp-handle-taskbar-click(mx: Int) -> Int {
     let flags3 = load32(base + 20)
     if title != 0 {
       let btn-x = comp-taskbar-btn-x(i2)
-      if mx >= btn-x && mx < btn-x + 90 {
+      if mx >= btn-x && mx < btn-x + comp-taskbar-btn-width() {
         if (flags3 & COMP-WIN-MINIMIZED) != 0 {
           comp-win-restore(i2)
         } else {
@@ -1967,6 +2107,14 @@ fn comp-render-taskbar-dot() -> void {
 
 // Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
 fn comp-handle-click(mx: Int, my: Int) -> Int {
+  if comp-launcher-open != 0 {
+    comp-launcher-hide(com1())
+    return 1
+  }
+  if my < COMP-TASKBAR-H && mx >= 220 && mx < 560 {
+    comp-launcher-show(com1())
+    return 1
+  }
   let idx = comp-win-at-point(mx, my)
   if idx < 0 {
     // Check taskbar click
@@ -2066,6 +2214,15 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
 
 // Handle a keyboard event (key press). Returns 1 to exit compositor.
 fn comp-handle-key(port: Int, key: Int) -> Int {
+  if comp-launcher-open != 0 {
+    comp-launcher-key(port, key)
+    return 0
+  }
+  // Tab is available on PS/2 and USB; Ctrl-L is also accepted over serial.
+  if key == 9 || key == 12 {
+    comp-launcher-show(port)
+    return 0
+  }
   // Escape key (27) exits the compositor
   if key == 27 {
     return 1
