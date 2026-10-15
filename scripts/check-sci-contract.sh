@@ -4,7 +4,8 @@
 """Validate compiled kernel SCI metadata against the sci-schema.md contract.
 
 Usage:
-    python3 check-sci-contract.sh [--kernel KERNEL_IN] [--in COMPILER] [--trampoline TRAMP]
+    IN=/path/to/in bash scripts/check-sci-contract.sh
+    Optional environment: KERNEL_IN, TRAMPOLINE, BUILD_DIR, INAUGURATION_DIR
 """
 import json, os, subprocess, sys
 
@@ -23,14 +24,15 @@ def main():
     kernel_in = os.environ.get("KERNEL_IN",
         os.path.join(os.path.dirname(__file__) or ".", "..", "kernel", "kernel-root.in"))
     space_dir = os.path.abspath(os.path.join(os.path.dirname(__file__) or ".", ".."))
-    if os.environ.get("INAUGURATION_DIR"):
-        inaug_dir = os.environ["INAUGURATION_DIR"]
-    elif os.path.isdir(os.path.join(space_dir, "vendor", "inauguration", "in-cli")):
-        inaug_dir = os.path.join(space_dir, "vendor", "inauguration")
-    else:
-        inaug_dir = os.path.join(os.path.dirname(space_dir), "inauguration")
-    in_bin = os.environ.get("IN",
-        os.path.join(inaug_dir, "in-cli", "target", "release", "in"))
+    in_bin = os.environ.get("IN")
+    if not in_bin:
+        # Use the same resolver as the build scripts; removed vendor checkouts
+        # must not shadow the selected compiler.
+        inaug_dir = subprocess.check_output([
+            "bash", "-c", 'source "$1"; inauguration_dir "$2"',
+            "inauguration-dir", os.path.join(space_dir, "scripts", "inauguration-dir.sh"), space_dir,
+        ], text=True).strip()
+        in_bin = os.path.join(inaug_dir, "in-cli", "target", "release", "in")
     build_dir = os.environ.get("BUILD_DIR", "/tmp/space-sci-check")
 
     os.makedirs(build_dir, exist_ok=True)

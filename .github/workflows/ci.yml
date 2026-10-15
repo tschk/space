@@ -11,7 +11,7 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: inauguration
-      inauguration-ref: v0.9.11
+      inauguration-ref: 6e11635a333957b989d2c2a31ca1ebc934905bd2
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot

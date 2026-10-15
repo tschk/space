@@ -28,8 +28,8 @@ VOLUME_BASE=0x60000000
 
 mkdir -p "$BUILD_DIR"
 
-echo "[1/3] Building compiler..."
-cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
+echo "[1/3] Selecting compiler..."
+[ -x "$IN" ] || cargo build --release -q --manifest-path "$INAUG_DIR/in-cli/Cargo.toml"
 
 echo "[2/3] Compiling nanokernel and runtime components..."
 NASM="${NASM:-nasm}"
