@@ -17,7 +17,7 @@ SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-spdp-composite}"
-IN="$INAUG_DIR/in-cli/target/release/in"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 SERIAL_BASE="$BUILD_DIR/serial"
 SERIAL_IN="$SERIAL_BASE.in"
 SERIAL_OUT="$SERIAL_BASE.out"
@@ -78,8 +78,23 @@ for _ in $(seq 1 50); do
 done
 grep -qF "dsp: demo composited" "$SERIAL_LOG" || { echo "dsp demo did not composite" >&2; exit 1; }
 
-printf 'screendump %s\n' "$PPM" | nc -U "$MONITOR" >/dev/null 2>&1
-sleep 0.5
+python3 - "$MONITOR" "$PPM" <<'PYMONITOR'
+import socket
+import sys
+
+with socket.socket(socket.AF_UNIX) as monitor:
+    monitor.settimeout(5)
+    monitor.connect(sys.argv[1])
+    for command in [None, f"screendump {sys.argv[2]}\n"]:
+        if command is not None:
+            monitor.sendall(command.encode())
+        reply = b""
+        while b"(qemu) " not in reply:
+            chunk = monitor.recv(4096)
+            if not chunk:
+                raise SystemExit("QEMU monitor closed before completing screenshot")
+            reply += chunk
+PYMONITOR
 
 echo "[4/4] Checking composite pixels..."
 python3 - "$PPM" <<'PY'
