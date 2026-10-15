@@ -22,8 +22,13 @@ fn sys-write(fd: Int, buf: Int, len: Int) -> Int {
   if len <= 0 || len > 4096 || buf == 0 {
     return -1
   }
-  if domain-current != 0 && buf < COMP-SHARED-VIRT {
-    return -1
+  if domain-current != 0 {
+    // Offset math cannot wrap: buf >= COMP-SHARED-VIRT and len <= 4096 keep
+    // the whole [buf, buf+len) window inside the 4096-byte shared page.
+    let off = buf - COMP-SHARED-VIRT
+    if off < 0 || off > 4096 - len {
+      return -1
+    }
   }
   let port = com1()
   let i = 0
@@ -46,8 +51,13 @@ fn sys-read(fd: Int, buf: Int, len: Int) -> Int {
   if len <= 0 || len > 4096 || buf == 0 {
     return -1
   }
-  if domain-current != 0 && buf < COMP-SHARED-VIRT {
-    return -1
+  if domain-current != 0 {
+    // Offset math cannot wrap: buf >= COMP-SHARED-VIRT and len <= 4096 keep
+    // the whole [buf, buf+len) window inside the 4096-byte shared page.
+    let off = buf - COMP-SHARED-VIRT
+    if off < 0 || off > 4096 - len {
+      return -1
+    }
   }
   let port = com1()
   let i = 0

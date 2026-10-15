@@ -147,12 +147,15 @@ long_mode:
     mov eax, (1 << 9) | (1 << 10) | (1 << 8)
     xor edx, edx
     wrmsr
-    mov qword [0x40E0], foreign_run
-    mov qword [0x40E8], foreign_writefile
-    mov qword [0x40F0], foreign_exitprocess
-    mov qword [0x40F8], foreign_createfilea
-    mov qword [0x4100], foreign_readfile
-    mov qword [0x4108], foreign_closehandle
+    ; Foreign-fixture stubs live at 0x4120+: 0x40E0..0x4118 are the native
+    ; user-mode publications (enter_user, leave_user, kernel_cr3, tss,
+    ; load_tr, guest_active) written later in boot.
+    mov qword [0x4120], foreign_run
+    mov qword [0x4128], foreign_writefile
+    mov qword [0x4130], foreign_exitprocess
+    mov qword [0x4138], foreign_createfilea
+    mov qword [0x4140], foreign_readfile
+    mov qword [0x4148], foreign_closehandle
 
     ; Publish the ISR stub addresses so the `.in` kernel can install them in
     ; its IDT. The kernel publishes its dispatcher at [0x4000]; the stubs read
@@ -481,6 +484,8 @@ foreign_run_busy:
 foreign_syscall_entry:
     cmp qword [foreign_saved_rsp], 0
     je .inactive
+    lea rsp, [rsp - 128]             ; skip the SysV red zone: leaf payloads may
+                                     ; keep live data in the 128 bytes below RSP
     push rax
     push rbx
     push rcx
@@ -520,6 +525,7 @@ foreign_syscall_entry:
     pop rax
     push r11
     popfq
+    lea rsp, [rsp + 128]             ; hand back the payload RSP above the red zone
     jmp rcx                         ; CPL0 only; SYSRET would require CPL3
 .exit:
     mov rax, [rsp + 112]

@@ -110,7 +110,10 @@ def main() -> int:
         ("DARWIN-MACH-TASK-SELF", 0x1000),
         ("DARWIN-SYS-ERRNO", 0x2000),
         ("DARWIN-ENOENT", -2),
-        ("DARWIN-ENOSYS", -38),
+        ("DARWIN-ENOSYS", -78),
+        ("DARWIN-ECHILD", -10),
+        ("DARWIN-EAGAIN", -35),
+        ("DARWIN-ESPIPE", -29),
     ])
     check("Darwin O_CREAT is 0x200, not Linux 64", const_int(darwin, "DARWIN-O-CREAT") != const_int(posix, "LINUX-O-CREAT"))
 

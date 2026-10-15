@@ -70,7 +70,7 @@ fn foreign-exec(entry: Int, image: Int, size: Int, mode: Int, storage-cap: Int) 
   foreign-fds = 0
   foreign-storage-cap = storage-cap
   store64(0x40D8, foreign-syscall-dispatch)
-  let rc = invoke1(load64(0x40E0), entry)
+  let rc = invoke1(load64(0x4120), entry)
   let fd = 3
   while fd < VFS-MAX-FDS {
     if foreign-fd-owned(fd) != 0 { vfs-close(fd) }

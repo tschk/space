@@ -49,6 +49,11 @@ fn linux-dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
   if posix-active == 0 {
     linux-init()
   }
+  // domain-create failure leaves linux-init half-done (posix-active == 0,
+  // posix-shared-page == 0); fail the syscall instead of dereferencing null.
+  if posix-shared-page == 0 {
+    return LINUX-ENOSYS
+  }
   while load64(posix-shared-page + POSIX-RPC-OFF-REQ) != 0 {
   }
   store64(posix-shared-page + POSIX-RPC-OFF-NUM, num)

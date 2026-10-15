@@ -75,10 +75,12 @@ var comp-domain-arg: Int = 0
 fn sci-image-acceptable(header: Int, entry: Int, image-size: Int) -> Int {
   // Reject images with no payload: a bare header (32 or 64 bytes) contains
   // no code, yet entry - header would still map and invoke one byte past it.
+  // Entry may be an offset or a packed-image absolute address (0x40000000
+  // style), so only require it to sit past the header.
   if image-size <= header || image-size > 0x200000 {
     return 0
   }
-  if entry < header || entry >= image-size {
+  if entry < header {
     return 0
   }
   return 1

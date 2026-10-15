@@ -87,6 +87,9 @@ const DARWIN-EEXIST = -17
 const DARWIN-EINVAL = -22
 const DARWIN-ENOSPC = -28
 const DARWIN-EIO = -5
+const DARWIN-ECHILD = -10
+const DARWIN-EAGAIN = -35
+const DARWIN-ESPIPE = -29
 
 // fcntl commands (minimal).
 const DARWIN-F-GETFD = 1
@@ -174,6 +177,15 @@ fn darwin-errno(vfs-rc: Int) -> Int {
   }
   if vfs-rc == -12 {
     return DARWIN-ENOMEM
+  }
+  if vfs-rc == -10 {
+    return DARWIN-ECHILD
+  }
+  if vfs-rc == -11 {
+    return DARWIN-EAGAIN
+  }
+  if vfs-rc == -29 {
+    return DARWIN-ESPIPE
   }
   if vfs-rc == -38 || vfs-rc == DARWIN-ENOSYS {
     return DARWIN-ENOSYS
@@ -844,6 +856,15 @@ fn darwin-errno-name(err: Int) -> Int {
   }
   if err == 0 - DARWIN-ENOSYS {
     return "ENOSYS"
+  }
+  if err == 0 - DARWIN-ECHILD {
+    return "ECHILD"
+  }
+  if err == 0 - DARWIN-EAGAIN {
+    return "EAGAIN"
+  }
+  if err == 0 - DARWIN-ESPIPE {
+    return "ESPIPE"
   }
   return "EUNKNOWN"
 }

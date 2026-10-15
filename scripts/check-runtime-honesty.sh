@@ -250,8 +250,8 @@ def main() -> int:
 
     print("[5/6] Capabilities, channels, SCI grants, preempt-stop...")
     check(
-        "sys-cap-check is a thin wrapper over the global cap table",
-        "fn sys-cap-check(idx: Int, rights: Int) -> Int {\n  return cap-check(idx, rights)\n}" in syscall,
+        "sys-cap-check only queries the caller's current cap",
+        "fn sys-cap-check(idx: Int, rights: Int) -> Int {\n  if idx != current-cap {" in syscall,
     )
     check(
         "kernel channel/domain/storage/net paths do not consult cap-check",
@@ -311,9 +311,9 @@ def main() -> int:
 
     print("[6/6] Syscall channel handles remain raw pointers...")
     check(
-        "sys-chan-send/recv pass the caller handle straight through",
-        "fn sys-chan-send(ch: Int, msg: Int) -> void {\n  chan-send(ch, msg)" in syscall
-        and "fn sys-chan-recv(ch: Int) -> Int {\n  return chan-recv(ch)" in syscall,
+        "sys-chan-send/recv keep their cap guard and pass the handle through",
+        "fn sys-chan-send(ch: Int, msg: Int) -> void {\n  if cap-require(cap-graph()) == 0 {\n    return\n  }\n  chan-send(ch, msg)" in syscall
+        and "fn sys-chan-recv(ch: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  return chan-recv(ch)" in syscall,
     )
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")

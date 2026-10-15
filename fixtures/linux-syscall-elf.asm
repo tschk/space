@@ -53,6 +53,24 @@ entry:
     syscall
     cmp rax, msg.len
     jne fail
+    mov rax, 0x1111111111111111
+    cmp rbx, rax
+    jne fail
+    mov rax, 0x2222222222222222
+    cmp rbp, rax
+    jne fail
+    mov rax, 0x3333333333333333
+    cmp r12, rax
+    jne fail
+    mov rax, 0x4444444444444444
+    cmp r13, rax
+    jne fail
+    mov rax, 0x5555555555555555
+    cmp r14, rax
+    jne fail
+    mov rax, 0x6666666666666666
+    cmp r15, rax
+    jne fail
 
     xor ebx, ebx
     xor ebp, ebp

@@ -11,6 +11,7 @@ SERIAL="$BUILD_DIR/serial.log"
 FIFO="$BUILD_DIR/serial_in"
 mkdir -p "$BUILD_DIR"
 if [ -n "${KERNEL_BIN:-}" ]; then
+  [ -f "$KERNEL_BIN" ] || { echo "KERNEL_BIN not found: $KERNEL_BIN" >&2; exit 1; }
   echo "[1/3] Using KERNEL_BIN=$KERNEL_BIN"
   KERNEL="$KERNEL_BIN"
 else

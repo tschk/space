@@ -142,8 +142,11 @@ def main() -> int:
         and "domain-enter-user(entry, cap-info, domain)" in read("components/sci-loader.in"),
     )
     check(
-        "kernel domain-init still invokes the published cr3_write stub",
-        "invoke1(load64(0x4060), kernel-pml4)" in domain,
+        "kernel domain-init privatizes the cr3 stubs before use",
+        "cr3-write-stub = load64(0x4060)" in domain
+        and "store64(0x4060, 0)" in domain
+        and "cr3-write(kernel-pml4)" in domain
+        and "invoke1(load64(0x4060)" not in domain,
     )
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")
