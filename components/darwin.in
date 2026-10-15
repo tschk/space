@@ -98,7 +98,7 @@ const DARWIN-F-SETFD = 2
 // close-on-exec tracking: 1 bit per fd (max 16 fds → 16 bits).
 var darwin-fd-cloexec: Int = 0
 
-// Pipe side-table: slot = used|buf|head|count|r_open|w_open (48 bytes).
+// Pipe side-table: slot = used|buf|head|count|reader_refs|writer_refs (48 bytes).
 const DARWIN-PIPE-MAX = 4
 const DARWIN-PIPE-CAP = 4096
 const DARWIN-PIPE-SLOT = 48
@@ -223,6 +223,16 @@ fn darwin-pipe-end(fd: Int) -> Int {
   return load64(vfs-fd-table + fd * 32 + 16)
 }
 
+// Each descriptor owns one reference to its pipe endpoint.
+fn darwin-pipe-retain(idx: Int, end: Int) -> void {
+  let base = darwin-pipe-table + idx * DARWIN-PIPE-SLOT
+  let offset = DARWIN-PIPE-OFF-ROPEN
+  if end == DARWIN-PIPE-END-WRITE {
+    offset = DARWIN-PIPE-OFF-WOPEN
+  }
+  store64(base + offset, load64(base + offset) + 1)
+}
+
 fn darwin-pipe-release(idx: Int, end: Int) -> void {
   if idx < 0 || idx >= DARWIN-PIPE-MAX {
     return
@@ -231,10 +241,13 @@ fn darwin-pipe-release(idx: Int, end: Int) -> void {
   if load64(base + DARWIN-PIPE-OFF-USED) == 0 {
     return
   }
-  if end == DARWIN-PIPE-END-READ {
-    store64(base + DARWIN-PIPE-OFF-ROPEN, 0)
-  } else {
-    store64(base + DARWIN-PIPE-OFF-WOPEN, 0)
+  let offset = DARWIN-PIPE-OFF-ROPEN
+  if end == DARWIN-PIPE-END-WRITE {
+    offset = DARWIN-PIPE-OFF-WOPEN
+  }
+  let refs = load64(base + offset)
+  if refs > 0 {
+    store64(base + offset, refs - 1)
   }
   if load64(base + DARWIN-PIPE-OFF-ROPEN) == 0 {
     if load64(base + DARWIN-PIPE-OFF-WOPEN) == 0 {
@@ -431,6 +444,10 @@ fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
   if newfd < 0 || newfd >= VFS-MAX-FDS {
     return DARWIN-EBADF
   }
+  // Retain first: the target may already reference this same pipe endpoint.
+  if darwin-fd-is-pipe(oldfd) != 0 {
+    darwin-pipe-retain(darwin-pipe-slot(oldfd), darwin-pipe-end(oldfd))
+  }
   // Close target if already open (ignore close errors per POSIX).
   if vfs-fd-valid(newfd) != 0 {
     if darwin-fd-is-pipe(newfd) != 0 {
@@ -468,7 +485,6 @@ fn darwin-sys-fcntl(fd: Int, cmd: Int, arg: Int) -> Int {
     if arg != 0 {
       darwin-fd-cloexec = darwin-fd-cloexec | (1 << fd)
     } else {
-      darwin-fd-cloexec = darwin-fd-cloexec & (1 << fd)
       if (darwin-fd-cloexec & (1 << fd)) != 0 {
         darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << fd)
       }
@@ -572,6 +588,9 @@ fn darwin-sys-dup(fd: Int) -> Int {
   store64(nbase + 8, load64(base + 8))
   store64(nbase + 16, load64(base + 16))
   store64(nbase + 24, load64(base + 24))
+  if darwin-fd-is-pipe(fd) != 0 {
+    darwin-pipe-retain(darwin-pipe-slot(fd), darwin-pipe-end(fd))
+  }
   return nfd
 }
 
@@ -607,6 +626,8 @@ fn darwin-sys-pipe(fds: Int) -> Int {
   if rfd < 0 {
     return DARWIN-ENOMEM
   }
+  // vfs-fd-alloc finds a free slot; reserve it before allocating the writer.
+  store64(vfs-fd-table + rfd * 32, 0)
   let wfd = vfs-fd-alloc()
   if wfd < 0 {
     vfs-fd-clear(rfd)
@@ -1214,6 +1235,20 @@ fn darwin-demo(port: Int) -> void {
     serial-write-cstr(port, " w=")
     serial-write-dec-wide(port, wfd)
     serial-nl(port)
+    let pipeidx = darwin-pipe-slot(rfd)
+    let reader-copy = darwin-dispatch(port, DARWIN-SYS-DUP, rfd, 0, 0, 0)
+    let writer-copy = darwin-dispatch(port, DARWIN-SYS-DUP, wfd, 0, 0, 0)
+    let duplicated = 0
+    if reader-copy >= 0 && writer-copy >= 0 {
+      darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
+      darwin-dispatch(port, DARWIN-SYS-CLOSE, wfd, 0, 0, 0)
+      rfd = reader-copy
+      wfd = writer-copy
+      duplicated = 1
+    } else {
+      if reader-copy >= 0 { darwin-dispatch(port, DARWIN-SYS-CLOSE, reader-copy, 0, 0, 0) }
+      if writer-copy >= 0 { darwin-dispatch(port, DARWIN-SYS-CLOSE, writer-copy, 0, 0, 0) }
+    }
     let pmsg = "pipe-lite"
     let plen = 0
     while load8(pmsg + plen) != 0 {
@@ -1237,6 +1272,12 @@ fn darwin-demo(port: Int) -> void {
     serial-nl(port)
     darwin-dispatch(port, DARWIN-SYS-CLOSE, rfd, 0, 0, 0)
     darwin-dispatch(port, DARWIN-SYS-CLOSE, wfd, 0, 0, 0)
+    if duplicated == 1 && pw == plen && pr == plen && load64(darwin-pipe-table + pipeidx * DARWIN-PIPE-SLOT + DARWIN-PIPE-OFF-USED) == 0 {
+      serial-write-cstr(port, "darwin: pipe duplicate lifetime OK")
+    } else {
+      serial-write-cstr(port, "darwin: pipe duplicate lifetime FAILED")
+    }
+    serial-nl(port)
   }
 
   // dup2: clone fd onto a specific slot.
@@ -1283,6 +1324,26 @@ fn darwin-demo(port: Int) -> void {
     serial-write-cstr(port, "darwin: fcntl(fd, F_GETFD) after F_SETFD(1) = ")
     serial-write-dec-wide(port, getfd2)
     serial-nl(port)
+    // Clearing one descriptor must not clear another descriptor's flags.
+    let otherfd = darwin-dispatch(port, DARWIN-SYS-OPEN, fcntlname, DARWIN-O-RDONLY, 0, 0)
+    if otherfd >= 0 {
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-SETFD, 1, 0)
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-SETFD, 0, 0)
+      let cleared = darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-GETFD, 0, 0)
+      let retained = darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-GETFD, 0, 0)
+      // Repeat the clear, and reject an invalid fd without changing any flags.
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, fcntlfd, DARWIN-F-SETFD, 0, 0)
+      let invalid = darwin-dispatch(port, DARWIN-SYS-FCNTL, -1, DARWIN-F-SETFD, 0, 0)
+      let retained-after = darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-GETFD, 0, 0)
+      if cleared == 0 && retained == 1 && invalid == DARWIN-EBADF && retained-after == 1 {
+        serial-write-cstr(port, "darwin: fcntl descriptor flags independent OK")
+      } else {
+        serial-write-cstr(port, "darwin: fcntl descriptor flags independent FAILED")
+      }
+      serial-nl(port)
+      darwin-dispatch(port, DARWIN-SYS-FCNTL, otherfd, DARWIN-F-SETFD, 0, 0)
+      darwin-dispatch(port, DARWIN-SYS-CLOSE, otherfd, 0, 0, 0)
+    }
     darwin-dispatch(port, DARWIN-SYS-CLOSE, fcntlfd, 0, 0, 0)
   }
   darwin-dispatch(port, DARWIN-SYS-UNLINK, fcntlname, 0, 0, 0)
