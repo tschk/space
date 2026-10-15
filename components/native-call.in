@@ -1,0 +1,17 @@
+package space.kernel
+
+// Space CPU stubs and component entries use the raw machine ABI: zero, one,
+// or two Int arguments and an Int result. Targets must preserve the platform's
+// callee-saved registers and must not throw through a language error carrier.
+// These wrappers are not for language exception callbacks. A null target traps.
+fn invoke(pointer: Int) -> Int {
+  return invoke-native(pointer)
+}
+
+fn invoke1(pointer: Int, first: Int) -> Int {
+  return invoke-native1(pointer, first)
+}
+
+fn invoke2(pointer: Int, first: Int, second: Int) -> Int {
+  return invoke-native2(pointer, first, second)
+}

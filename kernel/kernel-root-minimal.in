@@ -1,3 +1,5 @@
+// Raw machine ABI for CPU stubs and SCI component entries.
+import "../components/native-call.in"
 import "../components/serial.in"
 import "../components/memory.in"
 import "../components/object.in"
@@ -84,12 +86,7 @@ fn kernel-entry(mb-info: Int) -> Int {
   serial-write-cstr(port, "space: kernel root entered (minimal image, Space 0.1.0)")
   serial-nl(port)
 
-  // Zero the compiler's global data area before any globals are read.
-  let g = 0
-  while g < 0x10000 {
-    store64(0x200000 + g, 0)
-    g = g + 8
-  }
+  // Writable globals, including their initial values, are loaded in the boot image.
   boot-quiet = 1
 
   discover-memory(mb-info)

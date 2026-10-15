@@ -149,6 +149,19 @@ def main() -> int:
         and "invoke1(load64(0x4060)" not in domain,
     )
 
+    shell = read("components/shell.in")
+    guest = shell[shell.index('let guest-comp = component-register("hard-guest"'):]
+    guest = guest[:guest.index("// DNS parser")]
+    check(
+        "hardening selftest binds a minted serial capability before entering guest",
+        "sci-bind-domain-cap(" not in shell
+        and guest.index("cap-mint(guest-comp, cap-serial())") < guest.index("domain-create()")
+        and guest.index("domain-set-cap(guest-dom, guest-cap)") < guest.index("domain-switch(guest-dom)")
+        and "if guest-dom > 0" in guest
+        and "cap-revoke(guest-cap)" in guest
+        and guest.count("component-unregister(guest-comp)") == 2,
+    )
+
     print(f"\n=== Results: {passed} passed, {failed} failed ===")
     if failed:
         print("FAIL: kernel contracts")

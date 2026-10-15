@@ -1,5 +1,8 @@
 package space.kernel
 
+// Raw machine ABI for CPU stubs and SCI component entries.
+import "../components/native-call.in"
+
 // PCI configuration-space access and bus enumeration.
 import "../components/pci.in"
 // Cross-domain channel fabric.
@@ -165,14 +168,7 @@ fn kernel-entry(mb-info: Int) -> Int {
   serial-write-cstr(port, "space: kernel root entered (Space 0.1.0)")
   serial-nl(port)
 
-  // Zero the compiler's global data area before any globals are read.
-  // The bootloader loads the kernel image but does not guarantee this
-  // region is cleared, and the multiboot info structure may overlap it.
-  let g = 0
-  while g < 0x10000 {
-    store64(0x200000 + g, 0)
-    g = g + 8
-  }
+  // Writable globals, including their initial values, are loaded in the boot image.
   boot-quiet = 1
 
   discover-memory(mb-info)

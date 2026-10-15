@@ -42,15 +42,39 @@ fn discover-memory(mb: Int) -> void {
   }
   total-ram = total
   region-count = count
-  // Place the heap above the kernel image, the boot trampoline, and the
-  // compiler's global data area. The compiler emits globals at 0x200000, so
-  // the heap must start above that region to avoid runtime corruption.
+  // Boot-only SCI header extension: initialized data address and byte size.
+  // An older zeroed extension retains the existing 3 MiB reservation.
+  let data-base = load64(0x101000 + 64)
+  let data-size = load64(0x101000 + 72)
+  let reserved-end = 0x300000
+  if data-base != 0 || data-size != 0 {
+    // The boot lowerer fixes data at 2 MiB; the trampoline maps only 4 GiB.
+    // Bound before addition so signed arithmetic and page rounding cannot wrap.
+    if data-base != 0x200000 || data-size <= 0 || data-size > 0xFFE00000 {
+      panic("invalid boot data range")
+    }
+    let data-end = data-base + data-size
+    let aligned-end = (data-end + 4095) & -4096
+    if aligned-end > reserved-end {
+      reserved-end = aligned-end
+    }
+  }
   let hstart = best-base
-  if hstart < 0x300000 {
-    hstart = 0x300000
+  if hstart < reserved-end {
+    hstart = reserved-end
+  }
+  if best-base < 0 || best-len <= 0 || best-base >= 0x100000000 {
+    panic("invalid heap memory range")
+  }
+  let hend = 0x100000000
+  if best-len < hend - best-base {
+    hend = best-base + best-len
+  }
+  if hstart >= hend {
+    panic("boot data leaves no heap memory")
   }
   heap-next = hstart
-  heap-end = best-base + best-len
+  heap-end = hend
   return
 }
 

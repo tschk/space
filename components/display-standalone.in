@@ -117,3 +117,37 @@ var total-ram: Int = 0
 var proc-count: Int = 0
 var domain-count: Int = 0
 var nvme-ready: Int = 0
+
+// SCI entry owns the component heap/capability bootstrap. The kernel links
+// display.in directly and enters the shared compositor through comp-run.
+fn display-entry(cap-info: Int) -> Int {
+  let port = com1()
+  serial-init(port)
+  serial-write-cstr(port, "display: component entered")
+  serial-nl(port)
+  if cap-info != 0 {
+    let heap-base = load64(cap-info + 16)
+    let heap-size = load64(cap-info + 24)
+    if heap-base != 0 && heap-size != 0 {
+      display-heap-init(heap-base, heap-size)
+    }
+  }
+  let rc = fb-init(0)
+  if rc == 0 {
+    serial-write-cstr(port, "display: framebuffer initialized")
+    serial-nl(port)
+    fb-info(port)
+  } else {
+    serial-write-cstr(port, "display: framebuffer not available")
+    serial-nl(port)
+  }
+  dsp-init()
+  let ch = 0
+  if cap-info != 0 {
+    ch = load64(cap-info + 32)
+  }
+  dsp-run(ch, port)
+  serial-write-cstr(port, "display: component exited")
+  serial-nl(port)
+  return 0
+}
