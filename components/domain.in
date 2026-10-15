@@ -365,16 +365,3 @@ fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -
   domain-map-user-data(dom-b, virt-b, page)
   return page
 }
-
-// Release a just-created domain on a load failure. Only safe for the
-// most recently created domain before any mapping or shared page exists.
-fn domain-release(id: Int) -> void {
-  if id < 0 || id != domain-count - 1 {
-    return
-  }
-  store64(domain-table + id * 24 + 0, 0)
-  store64(domain-table + id * 24 + 8, DOMAIN-FREE)
-  store64(domain-table + id * 24 + 16, -1)
-  domain-count = domain-count - 1
-  return
-}

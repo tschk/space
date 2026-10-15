@@ -748,12 +748,17 @@ fn app-notes-entry(cap-info: Int) -> Int {
   let port = COM1
   n-buf = load64(cap-info + 16)
 
-  // Load notes.txt; a missing file starts an empty buffer.
-  let n = fs-read-file("notes.txt", n-buf, NOTES-BUF-SIZE)
+  // Load notes.txt; a missing file starts an empty buffer. Cap the read at
+  // NOTES-BUF-SIZE - 1 and always NUL-terminate: n-insert-byte keeps n-len
+  // below NOTES-BUF-SIZE and expects a terminator at n-buf + n-len.
+  let n = fs-read-file("notes.txt", n-buf, NOTES-BUF-SIZE - 1)
   if n < 0 {
     n = 0
-    store8(n-buf, 0)
   }
+  if n > NOTES-BUF-SIZE - 1 {
+    n = NOTES-BUF-SIZE - 1
+  }
+  store8(n-buf + n, 0)
   n-len = n
   n-row = 0
   n-col = 0

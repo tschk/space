@@ -313,24 +313,26 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
 
+  let component = component-register(pathname, entry, required)
+  let cap-idx = cap-mint(component, required)
+  if cap-idx < 0 {
+    serial-write-cstr(port, "  SCI: cap_mint failed")
+    serial-nl(port)
+    component-unregister(component)
+    return -1
+  }
   let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
+    cap-revoke(cap-idx)
+    component-unregister(component)
     return -1
   }
+  domain-set-cap(domain, cap-idx)
   sci-last-domain = domain
   sci-last-entry = entry
   sci-last-caps = required
-
-  let component = component-register(pathname, entry, required)
-  if sci-bind-domain-cap(domain, component, required) < 0 {
-    serial-write-cstr(port, "  SCI: cap_mint failed")
-    serial-nl(port)
-    component-unregister(component)
-    domain-release(domain)
-    return -1
-  }
   let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0

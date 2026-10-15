@@ -43,7 +43,7 @@ symbol is denied while boot continues (`scripts/check-dynamic-modules.sh`).
 image (core dynamic nanokernel + filesystem shell, ~3x smaller). Both carry
 preinstalled dynamic apps — `calc` (expression REPL), `notes` (persistent
 notes), `hd` (file hexdump), `sysmon` (live kernel monitor), `bench`
-(deterministic CPU benchmark) — that load on demand into isolated domains via
+(deterministic CPU benchmark) — that load on demand into per-app domains via
 the shell's `runapp` command (`scripts/check-image-variants.sh`).
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).

@@ -113,12 +113,12 @@ fn sys-chan-create(cap: Int) -> Int {
 }
 
 // Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
-fn sys-chan-send(ch: Int, msg: Int) -> void {
+fn sys-chan-send(ch: Int, msg: Int) -> Int {
   if cap-require(cap-graph()) == 0 {
-    return
+    return -1
   }
   chan-send(ch, msg)
-  return
+  return 0
 }
 
 // Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
@@ -180,8 +180,7 @@ fn syscall-dispatch(frame: Int) -> void {
   } else if num == 6 {
     let ch = load64(frame + 72)
     let msg = load64(frame + 80)
-    sys-chan-send(ch, msg)
-    store64(frame + 112, 0)
+    store64(frame + 112, sys-chan-send(ch, msg))
   } else if num == 7 {
     let ch = load64(frame + 72)
     store64(frame + 112, sys-chan-recv(ch))

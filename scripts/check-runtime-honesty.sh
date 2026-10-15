@@ -312,7 +312,7 @@ def main() -> int:
     print("[6/6] Syscall channel handles remain raw pointers...")
     check(
         "sys-chan-send/recv keep their cap guard and pass the handle through",
-        "fn sys-chan-send(ch: Int, msg: Int) -> void {\n  if cap-require(cap-graph()) == 0 {\n    return\n  }\n  chan-send(ch, msg)" in syscall
+        "fn sys-chan-send(ch: Int, msg: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  chan-send(ch, msg)" in syscall
         and "fn sys-chan-recv(ch: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  return chan-recv(ch)" in syscall,
     )
 

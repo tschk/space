@@ -163,10 +163,13 @@ subset of the load-path grant mask (`SCI-GUEST-GRANTS` for packed/file guest
 SCI; display/input/volume use their own constants). Packed `boot-image-find`
 also bounds physical address and size.
 
-That deny path is metadata. Components run at CPL0 on a cloned 4 GiB identity
-map, so a guest can still issue `inb`/`outb` and touch kernel-mapped memory.
-Syscall `cap-check` gates serial and channel syscalls; it is not a hardware
-boundary.
+That deny path is metadata. Kernel-linked components (personalities, runtime
+components) run at CPL0 on a cloned 4 GiB identity map, so they can still
+issue `inb`/`outb` and touch kernel-mapped memory. SCI guests loaded through
+`sci-load`/`sci-load-file` instead get an exclusive `domain-create-user` page
+table and enter at CPL3 via `domain-enter-user`, with no identity clone.
+Syscall `cap-check` gates serial and channel syscalls; for kernel-linked code
+it is a contract, not a hardware boundary.
 
 The sidecar JSON still records:
 

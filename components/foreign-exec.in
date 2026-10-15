@@ -160,8 +160,15 @@ fn foreign-syscall-dispatch(frame: Int) -> Int {
     if rc < 0 {
       rc = 0
     } else {
-      store32(load64(frame + 48), rc)
-      rc = 1
+      // Local guard: only write the bytes-written count through a pointer
+      // inside the image, like the read/write paths above.
+      let written = load64(frame + 48)
+      if foreign-buffer-valid(written, 4) == 0 {
+        rc = 0
+      } else {
+        store32(written, rc)
+        rc = 1
+      }
     }
   }
   if foreign-mode == 2 {
