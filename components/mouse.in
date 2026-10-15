@@ -69,6 +69,7 @@ fn ps2-read() -> Int {
 
 // Initialize the PS/2 mouse. Returns 0 on success.
 fn mouse-init() -> Int {
+  mouse-ready = 0
   // Disable both PS/2 ports
   ps2-cmd(0xAD)  // disable first port
   ps2-cmd(0xA7)  // disable second port (mouse)
@@ -95,16 +96,26 @@ fn mouse-init() -> Int {
   mouse-cmd(0xFF)
   let ack = ps2-read()  // 0xFA = ACK
   if ack != 0xFA {
+    ps2-cmd(0xAE)
     return -1
   }
 
-  // Set defaults
-  mouse-cmd(0xF6)
-  ps2-read()  // ACK
+  // Reset also returns a BAT result and device ID after its ACK. Consume
+  // both before sending another command, so ACKs cannot become mouse packets.
+  let bat = ps2-read()
+  let device-id = ps2-read()
+  if bat != 0xAA || device-id != 0 {
+    ps2-cmd(0xAE)
+    return -1
+  }
 
-  // Enable data reporting
+  // Defaults select the standard three-byte packet protocol.
+  mouse-cmd(0xF6)
+  if ps2-read() != 0xFA { ps2-cmd(0xAE); return -1 }
+
+  // Enable data reporting only after every initialization response matched.
   mouse-cmd(0xF4)
-  ps2-read()  // ACK
+  if ps2-read() != 0xFA { ps2-cmd(0xAE); return -1 }
 
   // Enable first PS/2 port
   ps2-cmd(0xAE)

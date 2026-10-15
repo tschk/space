@@ -772,6 +772,7 @@ fn ps2-read() -> Int {
 }
 
 fn mouse-init() -> Int {
+  mouse-ready = 0
   ps2-cmd(0xAD)
   ps2-cmd(0xA7)
   while (inb(PS2-STATUS) & 0x01) != 0 {
@@ -787,12 +788,18 @@ fn mouse-init() -> Int {
   mouse-cmd(0xFF)
   let ack = ps2-read()
   if ack != 0xFA {
+    ps2-cmd(0xAE)
     return -1
   }
+  // Reset returns ACK, BAT, then device ID. Drain and validate all three
+  // before the next command, keeping response bytes out of mouse packets.
+  let bat = ps2-read()
+  let device-id = ps2-read()
+  if bat != 0xAA || device-id != 0 { ps2-cmd(0xAE); return -1 }
   mouse-cmd(0xF6)
-  ps2-read()
+  if ps2-read() != 0xFA { ps2-cmd(0xAE); return -1 }
   mouse-cmd(0xF4)
-  ps2-read()
+  if ps2-read() != 0xFA { ps2-cmd(0xAE); return -1 }
   ps2-cmd(0xAE)
   mouse-x = mouse-screen-w / 2
   mouse-y = mouse-screen-h / 2
