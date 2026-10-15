@@ -88,8 +88,8 @@ def main() -> int:
 
     print("[3/5] Channels / storage / net...")
     check(
-        "chan-new rejects cap<=0",
-        re.search(r"fn chan-new\(cap: Int\) -> Int \{\n  if cap <= 0 \{\n    return 0\n  \}", channel)
+        "chan-new rejects capacities outside 1..4096 before allocation",
+        re.search(r"fn chan-new\(cap: Int\) -> Int \{\n  //[^\n]*\n  if cap <= 0 \|\| cap > 4096 \{\n    return 0\n  \}", channel)
         is not None,
     )
     check("chan-valid exists before send/recv", "fn chan-valid" in channel)
