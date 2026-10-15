@@ -1987,6 +1987,14 @@ fn comp-launcher-hide(port: Int) -> void {
   return
 }
 
+fn comp-launcher-focus(port: Int, selected: Int) -> void {
+  comp-win-restore(selected)
+  serial-write-cstr(port, "space: launcher focused ")
+  serial-write-cstr(port, load64(comp-win-base(selected) + 24))
+  serial-nl(port)
+  comp-launcher-hide(port)
+}
+
 fn comp-launcher-key(port: Int, key: Int) -> void {
   if key == 27 || key == 9 || key == 12 {
     comp-launcher-hide(port)
@@ -1995,11 +2003,7 @@ fn comp-launcher-key(port: Int, key: Int) -> void {
   if key == 10 || key == 13 {
     let selected = comp-launcher-first()
     if selected >= 0 {
-      comp-win-restore(selected)
-      serial-write-cstr(port, "space: launcher focused ")
-      serial-write-cstr(port, load64(comp-win-base(selected) + 24))
-      serial-nl(port)
-      comp-launcher-hide(port)
+      comp-launcher-focus(port, selected)
     }
     return
   }
@@ -2108,6 +2112,28 @@ fn comp-render-taskbar-dot() -> void {
 // Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
 fn comp-handle-click(mx: Int, my: Int) -> Int {
   if comp-launcher-open != 0 {
+    let x = fb-width / 2 - 360
+    let y = COMP-TASKBAR-H + 16
+    // Only the four visible result rows are actionable; filtered row indices
+    // are not window indices. Blank space and outside clicks just dismiss.
+    if mx >= x + 20 && mx < x + 700 && my >= y + 80 && my < y + 192 {
+      let wanted = (my - y - 80) / 28
+      let row = 0
+      let i = 0
+      while i < comp-count && row < 4 {
+        let title = load64(comp-win-base(i) + 24)
+        if title != 0 {
+          if comp-launcher-matches(title) != 0 {
+            if row == wanted {
+              comp-launcher-focus(com1(), i)
+              return 1
+            }
+            row = row + 1
+          }
+        }
+        i = i + 1
+      }
+    }
     comp-launcher-hide(com1())
     return 1
   }

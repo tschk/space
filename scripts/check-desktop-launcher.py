@@ -108,7 +108,23 @@ with (out/'qemu.log').open('w') as qlog:
         move(-660,-1050); start=len(log); click()
         wait('space: launcher opened',start)
         capture('pointer-opened-launcher')
-        command('sendkey esc'); wait('space: launcher dismissed',start)
+        # Filtered first row must select UTILITIES, not window index zero.
+        key('util'); move(400,130); start=len(log); click()
+        wait('space: launcher focused UTILITIES',start)
+        utility_pointer=capture('pointer-filtered-utilities')
+        assert focused_title(utility_pointer) == focused_title(focused), 'filtered pointer row selected wrong window'
+        # Reopen at topbar, then outside-click must dismiss without focus.
+        move(-400,-130); start=len(log); click(); wait('space: launcher opened',start)
+        move(200,350); start=len(log); click(); wait('space: launcher dismissed',start)
+        assert b'space: launcher focused' not in log[start:], 'outside click focused a window'
+        outside=capture('pointer-outside-dismissed')
+        assert focused_title(outside) == focused_title(utility_pointer), 'outside click changed focus'
+        # No-match row cannot accidentally select window zero.
+        move(-200,-350); start=len(log); click(); wait('space: launcher opened',start)
+        key('zzzz'); move(400,130); start=len(log); click(); wait('space: launcher dismissed',start)
+        assert b'space: launcher focused' not in log[start:], 'no-match click focused a window'
+        no_match=capture('pointer-no-match-dismissed')
+        assert focused_title(no_match) == focused_title(utility_pointer), 'no-match click changed focus'
         # First Escape dismisses only the switcher; a second retains desktop exit.
         start=len(log); command('sendkey tab'); wait('space: launcher opened',start)
         start=len(log)
