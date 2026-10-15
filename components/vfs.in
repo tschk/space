@@ -23,7 +23,14 @@ fn vfs-init() -> void {
 }
 
 fn vfs-fd-table-alloc() -> void {
-  vfs-fd-table = alloc(VFS-MAX-FDS * 32)
+  // Preserve the public 32-byte descriptor rows, followed by fd->open-file
+  // mappings and a bounded pool of {offset, reference count} records.
+  vfs-fd-table = alloc(VFS-MAX-FDS * 56)
+  let word = VFS-MAX-FDS * 32
+  while word < VFS-MAX-FDS * 56 {
+    store64(vfs-fd-table + word, 0)
+    word = word + 8
+  }
   let i = 0
   while i < VFS-MAX-FDS {
     vfs-fd-clear(i)
@@ -33,11 +40,61 @@ fn vfs-fd-table-alloc() -> void {
 }
 
 fn vfs-fd-clear(fd: Int) -> void {
+  let mapping = vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8
+  let record = load64(mapping)
+  if record != 0 {
+    store64(record + 8, load64(record + 8) - 1)
+    store64(mapping, 0)
+  }
   let base = vfs-fd-table + fd * 32
   store64(base + 0, -1)
   store64(base + 8, 0)
   store64(base + 16, 0)
   store64(base + 24, 0)
+  return
+}
+
+// Ensure one shared offset record per open, never per pathname. Lazy setup
+// also supports existing callers that construct a descriptor row directly.
+fn vfs-fd-open-file(fd: Int) -> Int {
+  let mapping = vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8
+  let record = load64(mapping)
+  if record != 0 { return record }
+  let i = 0
+  while i < VFS-MAX-FDS {
+    let candidate = vfs-fd-table + VFS-MAX-FDS * 40 + i * 16
+    if load64(candidate + 8) == 0 {
+      store64(candidate, load64(vfs-fd-table + fd * 32 + 8))
+      store64(candidate + 8, 1)
+      store64(mapping, candidate)
+      return candidate
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn vfs-fd-offset(fd: Int) -> Int {
+  let record = load64(vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8)
+  if record != 0 { return load64(record) }
+  return load64(vfs-fd-table + fd * 32 + 8)
+}
+
+fn vfs-fd-set-offset(fd: Int, value: Int) -> void {
+  let record = load64(vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8)
+  if record == 0 {
+    store64(vfs-fd-table + fd * 32 + 8, value)
+    return
+  }
+  store64(record, value)
+  // Keep the legacy descriptor offset word truthful for existing observers.
+  let i = 0
+  while i < VFS-MAX-FDS {
+    if load64(vfs-fd-table + VFS-MAX-FDS * 32 + i * 8) == record {
+      store64(vfs-fd-table + i * 32 + 8, value)
+    }
+    i = i + 1
+  }
   return
 }
 
@@ -106,6 +163,7 @@ fn vfs-open(pathname: Int, flags: Int) -> Int {
     store64(base + 8, 0)
     store64(base + 16, flags)
     store64(base + 24, 0)
+    if vfs-fd-open-file(fd) == 0 { vfs-fd-clear(fd); return -16 }
     return fd
   }
   if sf-disk-ready == 0 {
@@ -136,6 +194,7 @@ fn vfs-open(pathname: Int, flags: Int) -> Int {
   store64(base + 8, 0)
   store64(base + 16, flags)
   store64(base + 24, 0)
+  if vfs-fd-open-file(fd) == 0 { vfs-fd-clear(fd); return -16 }
   return fd
 }
 
@@ -172,7 +231,7 @@ fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
   }
   let base = vfs-fd-table + fd * 32
   let path = load64(base + 0)
-  let offset = load64(base + 8)
+  let offset = vfs-fd-offset(fd)
   let n = 0
   if volume-ready != 0 {
     n = volume-rpc-pread(path, buf, count, offset)
@@ -182,7 +241,7 @@ fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
   if n < 0 {
     return -5
   }
-  store64(base + 8, offset + n)
+  vfs-fd-set-offset(fd, offset + n)
   return n
 }
 
@@ -204,7 +263,7 @@ fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
   }
   let base = vfs-fd-table + fd * 32
   let path = load64(base + 0)
-  let offset = load64(base + 8)
+  let offset = vfs-fd-offset(fd)
   let n = 0
   if volume-ready != 0 {
     n = volume-rpc-pwrite(path, buf, count, offset)
@@ -214,7 +273,7 @@ fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
   if n < 0 {
     return -5
   }
-  store64(base + 8, offset + n)
+  vfs-fd-set-offset(fd, offset + n)
   return n
 }
 
@@ -231,7 +290,7 @@ fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
   if file-size < 0 {
     return -5
   }
-  let cur-offset = load64(base + 8)
+  let cur-offset = vfs-fd-offset(fd)
   let new-offset = 0
   if whence == 0 {
     new-offset = offset
@@ -245,6 +304,6 @@ fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
   if new-offset < 0 {
     return -22
   }
-  store64(base + 8, new-offset)
+  vfs-fd-set-offset(fd, new-offset)
   return new-offset
 }

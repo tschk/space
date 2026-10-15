@@ -1023,8 +1023,8 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
-    // Get current position from VFS fd table (offset 8 = pos).
-    let pos = load64(vfs-fd-table + vfd * 32 + 8)
+    // Read the shared open-file position through the VFS accessor.
+    let pos = vfs-fd-offset(vfd)
     let fpath = load64(vfs-fd-table + vfd * 32 + 0)
     if fpath == -1 || fpath == 0 {
       win-set-error(WIN-ERROR-INVALID-HANDLE)

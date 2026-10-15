@@ -265,14 +265,21 @@ fn darwin-sys-open(pathname: Int, flags: Int, mode: Int) -> Int {
 }
 
 fn darwin-sys-close(fd: Int) -> Int {
+  let rc = 0
   if darwin-fd-is-pipe(fd) != 0 {
     let idx = darwin-pipe-slot(fd)
     let end = darwin-pipe-end(fd)
     darwin-pipe-release(idx, end)
     vfs-fd-clear(fd)
-    return 0
+  } else {
+    rc = vfs-close(fd)
   }
-  return vfs-close(fd)
+  if rc == 0 && fd >= 0 && fd < VFS-MAX-FDS {
+    if (darwin-fd-cloexec & (1 << fd)) != 0 {
+      darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << fd)
+    }
+  }
+  return rc
 }
 
 fn darwin-pipe-read(fd: Int, buf: Int, count: Int) -> Int {
@@ -444,6 +451,13 @@ fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
   if newfd < 0 || newfd >= VFS-MAX-FDS {
     return DARWIN-EBADF
   }
+  // Retain before replacement; target may share this same open file.
+  let record = 0
+  if oldfd >= 3 && darwin-fd-is-pipe(oldfd) == 0 {
+    record = vfs-fd-open-file(oldfd)
+    if record == 0 { return DARWIN-ENOMEM }
+    store64(record + 8, load64(record + 8) + 1)
+  }
   // Retain first: the target may already reference this same pipe endpoint.
   if darwin-fd-is-pipe(oldfd) != 0 {
     darwin-pipe-retain(darwin-pipe-slot(oldfd), darwin-pipe-end(oldfd))
@@ -463,6 +477,7 @@ fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
   store64(nbase + 8, load64(obase + 8))
   store64(nbase + 16, load64(obase + 16))
   store64(nbase + 24, load64(obase + 24))
+  store64(vfs-fd-table + VFS-MAX-FDS * 32 + newfd * 8, record)
   // Clear close-on-exec for the new fd.
   if (darwin-fd-cloexec & (1 << newfd)) != 0 {
     darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << newfd)
@@ -560,7 +575,7 @@ fn darwin-sys-geteuid() -> Int {
   return 0
 }
 
-// Clone path/offset/flags from an open vfs fd into a new slot.
+// Duplicate descriptor metadata while sharing the regular-file offset record.
 fn darwin-sys-dup(fd: Int) -> Int {
   if vfs-fd-valid(fd) == 0 {
     return DARWIN-EBADF
@@ -575,6 +590,9 @@ fn darwin-sys-dup(fd: Int) -> Int {
     store64(nbase + 8, 0)
     store64(nbase + 16, load64(vfs-fd-table + fd * 32 + 16))
     store64(nbase + 24, 0)
+    if (darwin-fd-cloexec & (1 << nfd)) != 0 {
+      darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << nfd)
+    }
     return nfd
   }
   let base = vfs-fd-table + fd * 32
@@ -583,11 +601,21 @@ fn darwin-sys-dup(fd: Int) -> Int {
   if nfd < 0 {
     return DARWIN-ENOSYS
   }
+  let record = 0
+  if darwin-fd-is-pipe(fd) == 0 {
+    record = vfs-fd-open-file(fd)
+    if record == 0 { return DARWIN-ENOMEM }
+    store64(record + 8, load64(record + 8) + 1)
+  }
   let nbase = vfs-fd-table + nfd * 32
   store64(nbase + 0, path)
   store64(nbase + 8, load64(base + 8))
   store64(nbase + 16, load64(base + 16))
   store64(nbase + 24, load64(base + 24))
+  store64(vfs-fd-table + VFS-MAX-FDS * 32 + nfd * 8, record)
+  if (darwin-fd-cloexec & (1 << nfd)) != 0 {
+    darwin-fd-cloexec = darwin-fd-cloexec ^ (1 << nfd)
+  }
   if darwin-fd-is-pipe(fd) != 0 {
     darwin-pipe-retain(darwin-pipe-slot(fd), darwin-pipe-end(fd))
   }

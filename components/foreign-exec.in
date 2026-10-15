@@ -260,7 +260,7 @@ fn foreign-fileio-demo(port: Int, mode: Int) -> void {
     serial-write-cstr(port, "foreign: file I/O execution FAILED")
     serial-nl(port)
   }
-  if foreign-fds != 0 || vfs-fd-alloc() != before || vfs-fd-valid(host) == 0 || load64(vfs-fd-table + host * 32 + 8) != 0 {
+  if foreign-fds != 0 || vfs-fd-alloc() != before || vfs-fd-valid(host) == 0 || vfs-fd-offset(host) != 0 {
     serial-write-cstr(port, "foreign: file I/O cleanup FAILED")
   } else {
     serial-write-cstr(port, "foreign: file I/O handles restored")

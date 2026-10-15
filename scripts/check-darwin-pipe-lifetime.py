@@ -47,14 +47,14 @@ fn store8(p:Int,v:Int)->void{heap[p]=v;}
 fn vfs-close(fd:Int)->Int{vfs-fd-clear(fd);return 0;}
 '''
 vfs = (root / 'components/vfs.in').read_text()
-for name in ('vfs-fd-valid', 'vfs-fd-clear', 'vfs-fd-alloc'):
+for name in ('vfs-fd-valid', 'vfs-fd-clear', 'vfs-fd-alloc', 'vfs-fd-open-file', 'vfs-fd-table-alloc'):
     start = vfs.index('fn ' + name + '(')
     following = re.search(r'\nfn ', vfs[start + 3:])
     end = start + 3 + following.start() if following else len(vfs)
     functions.append(vfs[start:end])
 source += '\n'.join(functions) + '''
 fn main()->Int{
- vfs-fd-table=alloc(512);let i=3;while i<16{vfs-fd-clear(i);i+=1;}
+ vfs-fd-table-alloc();
  let pair=alloc(8);if darwin-sys-pipe(pair)!=0{return 1;}
  let r=load32(pair);let w=load32(pair+4);let idx=darwin-pipe-slot(r);
  let r2=darwin-sys-dup(r);let w2=darwin-sys-dup(w);
