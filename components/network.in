@@ -48,6 +48,7 @@ var tcp-peer-mss: Int = 1460
 var tcp-peer-wnd: Int = 65535
 var tcp-recv-wnd: Int = 65535
 var tcp-send-wnd: Int = 1460
+var tcp-isn: Int = 1
 
 fn mmio-r32-impl(off: Int) -> Int {
   return load32(nic-mmio + off)
@@ -200,7 +201,7 @@ fn build-arp-impl() -> Int {
 
 fn cstr-len-impl(addr: Int) -> Int {
   let n = 0
-  while load8(addr + n) != 0 {
+  while n < 1472 && load8(addr + n) != 0 {
     n = n + 1
   }
   return n
@@ -246,8 +247,30 @@ fn tcp-checksum-impl(ip: Int, tcp-len: Int) -> Int {
 }
 
 fn build-udp-impl(payload: Int) -> Int {
+  return build-udp-to-impl(payload, -1, 0x0A000202, 9999, 9999)
+}
+
+fn build-udp-to-impl(payload: Int, plen-in: Int, rip: Int, rport: Int, lport: Int) -> Int {
   let p = nic-tx-buf
-  let plen = cstr-len-impl(payload)
+  let plen = plen-in
+  if plen < 0 {
+    plen = cstr-len-impl(payload)
+  }
+  if plen > 1472 {
+    plen = 1472
+  }
+  let dest-ip = rip
+  if dest-ip == 0 {
+    dest-ip = 0x0A000202
+  }
+  let dest-port = rport & 0xFFFF
+  if dest-port == 0 {
+    dest-port = 9999
+  }
+  let src-port = lport & 0xFFFF
+  if src-port == 0 {
+    src-port = 9999
+  }
   for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
   net-store-mac-impl(p + 6)
   store8(p + 12, 0x08); store8(p + 13, 0x00)
@@ -260,14 +283,16 @@ fn build-udp-impl(payload: Int) -> Int {
   store8(ip + 8, 0x40); store8(ip + 9, 0x11)
   store8(ip + 12, 10); store8(ip + 13, 0)
   store8(ip + 14, 2); store8(ip + 15, 15)
-  store8(ip + 16, 10); store8(ip + 17, 0)
-  store8(ip + 18, 2); store8(ip + 19, 2)
+  store8(ip + 16, (dest-ip >> 24) & 0xFF)
+  store8(ip + 17, (dest-ip >> 16) & 0xFF)
+  store8(ip + 18, (dest-ip >> 8) & 0xFF)
+  store8(ip + 19, dest-ip & 0xFF)
   let csum = ip-checksum-impl(ip, 20)
   store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
   let udp = ip + 20
   let ulen = 8 + plen
-  store8(udp + 0, 0x27); store8(udp + 1, 0x0F)
-  store8(udp + 2, 0x27); store8(udp + 3, 0x0F)
+  store8(udp + 0, (src-port >> 8) & 0xFF); store8(udp + 1, src-port & 0xFF)
+  store8(udp + 2, (dest-port >> 8) & 0xFF); store8(udp + 3, dest-port & 0xFF)
   store8(udp + 4, (ulen >> 8) & 0xFF); store8(udp + 5, ulen & 0xFF)
   store8(udp + 6, 0x00); store8(udp + 7, 0x00)
   for i in 0..plen { store8(udp + 8 + i, load8(payload + i)) }
@@ -299,8 +324,10 @@ fn build-tcp-syn-impl(rip: Int, rport: Int) -> Int {
   let tcp = ip + 20
   store8(tcp + 0, 0x30); store8(tcp + 1, 0x39)
   store8(tcp + 2, (rport >> 8) & 0xFF); store8(tcp + 3, rport & 0xFF)
-  store8(tcp + 4, 0x00); store8(tcp + 5, 0x00)
-  store8(tcp + 6, 0x00); store8(tcp + 7, 0x01)
+  store8(tcp + 4, (tcp-isn >> 24) & 0xFF)
+  store8(tcp + 5, (tcp-isn >> 16) & 0xFF)
+  store8(tcp + 6, (tcp-isn >> 8) & 0xFF)
+  store8(tcp + 7, tcp-isn & 0xFF)
   store8(tcp + 8, 0x00); store8(tcp + 9, 0x00)
   store8(tcp + 10, 0x00); store8(tcp + 11, 0x00)
   store8(tcp + 12, 0x60)
@@ -350,6 +377,48 @@ fn build-tcp-ack-impl(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
   store8(tcp + 11, ack & 0xFF)
   store8(tcp + 12, 0x50)
   store8(tcp + 13, 0x10)
+  store8(tcp + 14, (tcp-recv-wnd >> 8) & 0xFF); store8(tcp + 15, tcp-recv-wnd & 0xFF)
+  store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
+  store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)
+  let tcsum = tcp-checksum-impl(ip, 20)
+  store8(tcp + 16, (tcsum >> 8) & 0xFF); store8(tcp + 17, tcsum & 0xFF)
+  return 54
+}
+
+fn build-tcp-fin-impl(rip: Int, rport: Int, seq: Int, ack: Int) -> Int {
+  let p = nic-tx-buf
+  for i in 0..6 { store8(p + i, load8(gw-mac + i)) }
+  net-store-mac-impl(p + 6)
+  store8(p + 12, 0x08); store8(p + 13, 0x00)
+  let ip = p + 14
+  let iplen = 40
+  store8(ip + 0, 0x45); store8(ip + 1, 0x00)
+  store8(ip + 2, (iplen >> 8) & 0xFF); store8(ip + 3, iplen & 0xFF)
+  store8(ip + 4, 0x00); store8(ip + 5, 0x00)
+  store8(ip + 6, 0x40); store8(ip + 7, 0x00)
+  store8(ip + 8, 0x40); store8(ip + 9, 0x06)
+  store8(ip + 12, 10); store8(ip + 13, 0)
+  store8(ip + 14, 2); store8(ip + 15, 15)
+  store8(ip + 16, (rip >> 24) & 0xFF)
+  store8(ip + 17, (rip >> 16) & 0xFF)
+  store8(ip + 18, (rip >> 8) & 0xFF)
+  store8(ip + 19, rip & 0xFF)
+  store8(ip + 10, 0x00); store8(ip + 11, 0x00)
+  let csum = ip-checksum-impl(ip, 20)
+  store8(ip + 10, (csum >> 8) & 0xFF); store8(ip + 11, csum & 0xFF)
+  let tcp = ip + 20
+  store8(tcp + 0, 0x30); store8(tcp + 1, 0x39)
+  store8(tcp + 2, (rport >> 8) & 0xFF); store8(tcp + 3, rport & 0xFF)
+  store8(tcp + 4, (seq >> 24) & 0xFF)
+  store8(tcp + 5, (seq >> 16) & 0xFF)
+  store8(tcp + 6, (seq >> 8) & 0xFF)
+  store8(tcp + 7, seq & 0xFF)
+  store8(tcp + 8, (ack >> 24) & 0xFF)
+  store8(tcp + 9, (ack >> 16) & 0xFF)
+  store8(tcp + 10, (ack >> 8) & 0xFF)
+  store8(tcp + 11, ack & 0xFF)
+  store8(tcp + 12, 0x50)
+  store8(tcp + 13, 0x11)
   store8(tcp + 14, (tcp-recv-wnd >> 8) & 0xFF); store8(tcp + 15, tcp-recv-wnd & 0xFF)
   store8(tcp + 16, 0x00); store8(tcp + 17, 0x00)
   store8(tcp + 18, 0x00); store8(tcp + 19, 0x00)

@@ -1,0 +1,111 @@
+package space.app
+
+// clock (boot kind 16): wall-clock time and uptime as an isolated app.
+// Reads the CMOS RTC directly through ports 0x70/0x71 (granted via the
+// serial capability's port I/O), converts BCD or binary register encodings,
+// and reports uptime from the kernel tick export. Zero-padding comes from
+// APP-API v1, so the output is a fixed-width timestamp.
+
+component AppClock {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppClockEntry
+}
+
+interface AppClockEntry {
+  fn app-clock-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+const RTC-ADDR = 0x70
+const RTC-DATA = 0x71
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn ticks-now() -> Int {
+}
+
+// appapi shared-library imports (boot-image kind 14, APP-API v1).
+interrupt fn api-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn api-write-dec-padded(port: Int, value: Int, width: Int) -> void {
+}
+
+interrupt fn api-putch(port: Int, ch: Int) -> void {
+}
+
+// Update-in-progress is status register A bit 7. Select it through the
+// NMI-masked index (0x80 | reg): the index port echoes what was written,
+// so a later spin must never test the index port itself.
+fn rtc-uip() -> Int {
+  outb(RTC-ADDR, 0x8A)
+  return inb(RTC-DATA) & 0x80
+}
+
+fn rtc-read(reg: Int) -> Int {
+  while rtc-uip() != 0 {
+  }
+  outb(RTC-ADDR, reg)
+  return inb(RTC-DATA)
+}
+
+// Status register B bit 2: 1 = binary mode, 0 = BCD. QEMU boots in BCD.
+// Read once through the NMI-masked index (0x80 | reg) and cache the mode;
+// plain time-register reads use unmasked indices 0..9.
+var rtc-binary-mode: Int = -1
+
+fn rtc-read-status(reg: Int) -> Int {
+  outb(RTC-ADDR, 0x80 | reg)
+  return inb(RTC-DATA)
+}
+
+fn rtc-decode(v: Int) -> Int {
+  if rtc-binary-mode == -1 {
+    rtc-binary-mode = (rtc-read-status(0x0B) >> 2) & 1
+  }
+  if rtc-binary-mode == 1 {
+    return v
+  }
+  return (v & 0x0F) + (v >> 4) * 10
+}
+
+fn app-clock-entry(cap-info: Int) -> Int {
+  let port = COM1
+  let sec = rtc-decode(rtc-read(0))
+  let min = rtc-decode(rtc-read(2))
+  let hour = rtc-decode(rtc-read(4))
+  let day = rtc-decode(rtc-read(7))
+  let month = rtc-decode(rtc-read(8))
+  let year = rtc-decode(rtc-read(9))
+
+  api-write(port, "clock: 20")
+  api-write-dec-padded(port, year, 2)
+  api-putch(port, 45)
+  api-write-dec-padded(port, month, 2)
+  api-putch(port, 45)
+  api-write-dec-padded(port, day, 2)
+  api-putch(port, 32)
+  api-write-dec-padded(port, hour, 2)
+  api-putch(port, 58)
+  api-write-dec-padded(port, min, 2)
+  api-putch(port, 58)
+  api-write-dec-padded(port, sec, 2)
+
+  let ticks = ticks-now()
+  api-write(port, " (uptime ")
+  api-write-dec-padded(port, ticks / 100, 1)
+  api-putch(port, 46)
+  api-write-dec-padded(port, ticks % 100, 2)
+  api-write(port, " s)")
+  api-putch(port, 13)
+  api-putch(port, 10)
+  return 0
+}

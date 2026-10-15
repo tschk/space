@@ -24,7 +24,7 @@ FIFO_A="$BUILD_DIR/serial_in_a"
 FIFO_B="$BUILD_DIR/serial_in_b"
 NVME_IMG="$BUILD_DIR/nvme.img"
 VOLUME_PHYS=0x220000
-VOLUME_ENTRY=0x60000020
+VOLUME_BASE=0x60000000
 IMAGE_KIND="full"
 
 mkdir -p "$BUILD_DIR"
@@ -33,6 +33,7 @@ BUILD_DIR="$BUILD_DIR" "$SCRIPT_DIR/build-runtime-components.sh" >/dev/null
 
 rm -f "$SERIAL_A" "$SERIAL_B" "$FIFO_A" "$FIFO_B" "$NVME_IMG"
 truncate -s 64M "$NVME_IMG"
+python3 "$SCRIPT_DIR/check-volume-preservation.sh" --seed "$NVME_IMG"
 
 wait_marker() {
   local serial="$1" qpid="$2" marker="$3" tries="${4:-600}"
@@ -71,7 +72,7 @@ build_volume_only() {
     --out "$BUILD_DIR/kernel.bin" >/dev/null
   "$IN" compile --path "$SPACE_DIR/components/volume.in" --entry volume-entry \
     --target native --target-triple x86_64-unknown-none --emit sci \
-    --base "$VOLUME_ENTRY" --out "$BUILD_DIR/volume.sci"
+    --base "$VOLUME_BASE" --out "$BUILD_DIR/volume.sci"
   python3 - "$BUILD_DIR" "$VOLUME_PHYS" <<'PY'
 import sys, os
 bd, volume_phys = sys.argv[1], int(sys.argv[2], 0)

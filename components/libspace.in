@@ -1,0 +1,132 @@
+package space.lib
+
+// Shared-library SCI component. Its export table is the Space dynamic-linking
+// provider: the kernel registers its symbols at boot and every importing
+// component gets its text mapped at LIB-VIRT-BASE (0x3F000000) in its own
+// domain. Library text is position-fixed (image compiled at 0x3F000000) and
+// read-only; calls run with the caller's capabilities and in the caller's
+// domain. This library must be self-contained (no imports of its own) and
+// stateless (no writable globals) because its pages map RX into every domain.
+
+component LibSpace {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: LibEntry
+}
+
+interface LibEntry {
+  fn lib-entry(cap-info: Int) -> Int
+}
+
+const LIB-COM1 = 0x3F8
+
+// Entry is never invoked by the loader; libraries provide symbols only.
+fn lib-entry(cap-info: Int) -> Int {
+  return 0
+}
+
+fn lib-wait(port: Int) -> void {
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  return
+}
+
+fn lib-put(port: Int, ch: Int) -> void {
+  lib-wait(port)
+  outb(port, ch)
+  return
+}
+
+fn lib-nl(port: Int) -> void {
+  lib-put(port, 10)
+  return
+}
+
+fn lib-write(port: Int, addr: Int) -> void {
+  let i = 0
+  let c = load8(addr + i)
+  while c != 0 {
+    lib-put(port, c)
+    i = i + 1
+    c = load8(addr + i)
+  }
+  return
+}
+
+fn lib-write-hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nibble = (value >> shift) & 0xF
+    if nibble < 10 {
+      lib-put(port, 48 + nibble)
+    } else {
+      lib-put(port, 87 + nibble)
+    }
+    shift = shift - 4
+  }
+  return
+}
+
+fn lib-write-dec(port: Int, value: Int) -> void {
+  let n = value
+  if n < 0 {
+    lib-put(port, 45)
+    n = -n
+  }
+  if n == 0 {
+    lib-put(port, 48)
+    return
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    lib-put(port, 48 + (n / div) % 10)
+    div = div / 10
+  }
+  return
+}
+
+fn lib-port() -> Int {
+  return LIB-COM1
+}
+
+// Blocking line reader for interactive apps. Echoes typed characters,
+// handles backspace (8/127) and CR, NUL-terminates, returns length.
+// Stateless: all state lives in the caller's buffer.
+fn lib-readline(port: Int, buf: Int, max: Int) -> Int {
+  let i = 0
+  while i < max - 1 {
+    while (inb(port + 5) & 1) == 0 {
+    }
+    let c = inb(port) & 0x7F
+    if c == 13 {
+      c = 10
+    }
+    if c == 10 {
+      lib-put(port, 13)
+      lib-put(port, 10)
+      store8(buf + i, 0)
+      return i
+    }
+    if c == 8 || c == 127 {
+      if i > 0 {
+        i = i - 1
+        lib-put(port, 8)
+        lib-put(port, 32)
+        lib-put(port, 8)
+      }
+    } else if c >= 32 {
+      store8(buf + i, c)
+      i = i + 1
+      lib-put(port, c)
+    }
+  }
+  store8(buf + i, 0)
+  return i
+}

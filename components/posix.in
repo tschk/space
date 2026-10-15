@@ -260,11 +260,17 @@ fn posix-elf-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   serial-write-cstr(port, "posix: execve loading ELF from ")
   serial-write-cstr(port, path)
   serial-nl(port)
-  return invoke1(image + entry, 0)
+  // Execute through the foreign runner so raw `syscall` instructions reach
+  // foreign-syscall-dispatch instead of faulting with an inactive runner.
+  if foreign-file-cap <= 0 {
+    let rights = cap-serial() | cap-storage()
+    foreign-file-cap = cap-mint(root-realm, rights)
+  }
+  return foreign-exec(image + entry, image, size, 1, foreign-file-cap)
 }
 
 fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
-  // SCI header is 32 bytes; ELF probe needs more and checks itself.
+  // SCI headers are 32 bytes (v1) or 64 bytes (v2); ELF probes itself.
   if size < 32 {
     return LINUX-ENOEXEC
   }
@@ -272,7 +278,7 @@ fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if magic == LINUX-ELF-MAGIC {
     return posix-elf-exec-image(port, image, size, path)
   }
-  if magic != 0x5343490000000001 {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     return LINUX-ENOEXEC
   }
   serial-write-cstr(port, "posix: execve loading SCI from ")
@@ -302,7 +308,7 @@ fn posix-sys-execve(path: Int, argv: Int, envp: Int) -> Int {
   }
   let pages = (file-size + 4095) / 4096
   let buf = load-arena-alloc(pages * 4096)
-  let got = fs-read-file(path, buf)
+  let got = fs-read-file(path, buf, pages * 4096)
   if got < 0 || got < file-size {
     return LINUX-EIO
   }

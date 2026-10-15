@@ -330,12 +330,27 @@ fn sock-sendto(fd: Int, buf: Int, len: Int, rip: Int, rport: Int) -> Int {
   }
   store32(base + SOCK-OFF-RIP, rip)
   store32(base + SOCK-OFF-RPORT, rport & 0xFFFF)
-  // Existing build-udp hardcodes 10.0.2.15->10.0.2.2:9999; still drive TX path.
   let payload = buf
   if len <= 0 {
     payload = "space-udp"
   }
-  let flen = build-udp-impl(payload)
+  let dest-ip = rip
+  if dest-ip == 0 {
+    dest-ip = 0x0A000202
+  }
+  let dest-port = rport & 0xFFFF
+  if dest-port == 0 {
+    dest-port = 9999
+  }
+  let send-len = len
+  if send-len <= 0 {
+    send-len = 9
+  }
+  let src-port = load32(base + SOCK-OFF-LPORT) & 0xFFFF
+  if src-port == 0 {
+    src-port = 9999
+  }
+  let flen = build-udp-to-impl(payload, send-len, dest-ip, dest-port, src-port)
   e1000-tx-impl(flen)
   if len > 0 {
     return len
@@ -430,6 +445,10 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
   store32(base + SOCK-OFF-RIP, ip)
   store32(base + SOCK-OFF-RPORT, port & 0xFFFF)
   store64(base + SOCK-OFF-STATE, SOCK-STATE-SYN-SENT)
+  tcp-isn = (ticks * 1103515245 + 12345) & 0xFFFFFFFF
+  if tcp-isn == 0 {
+    tcp-isn = 1
+  }
   let rport = port & 0xFFFF
   let flen = build-tcp-syn-impl(ip, rport)
   e1000-tx-impl(flen)
@@ -445,10 +464,10 @@ fn sock-connect(fd: Int, ip: Int, port: Int) -> Int {
     return -1
   }
   let ack-num = tcp-last-seq + 1
-  flen = build-tcp-ack-impl(ip, rport, 1, ack-num)
+  flen = build-tcp-ack-impl(ip, rport, tcp-isn, ack-num)
   e1000-tx-impl(flen)
-  // ISN was 1; after handshake local next-seq is 2, remote ack is SYN+ACK seq+1.
-  tcp-local-seq = 2
+  // After SYN, local next-seq is ISN+1; remote ack is SYN+ACK seq+1.
+  tcp-local-seq = tcp-isn + 1
   tcp-remote-ack = ack-num
   tcp-send-wnd = tcp-peer-mss
   store64(base + SOCK-OFF-STATE, SOCK-STATE-ESTABLISHED)
@@ -462,6 +481,17 @@ fn sock-close(fd: Int) -> Int {
     return -1
   }
   let base = sock-table + fd * SOCK-SIZE
+  let kind = load64(base + SOCK-OFF-TYPE)
+  let state = load64(base + SOCK-OFF-STATE)
+  if kind == SOCK-TYPE-TCP && state == SOCK-STATE-ESTABLISHED {
+    if sock-ensure-link() != 0 {
+      let rip = load32(base + SOCK-OFF-RIP)
+      let rport = load32(base + SOCK-OFF-RPORT) & 0xFFFF
+      let flen = build-tcp-fin-impl(rip, rport, tcp-local-seq, tcp-remote-ack)
+      e1000-tx-impl(flen)
+      tcp-local-seq = tcp-local-seq + 1
+    }
+  }
   store64(base + SOCK-OFF-USED, 0)
   store64(base + SOCK-OFF-TYPE, 0)
   store32(base + SOCK-OFF-LPORT, 0)

@@ -1,0 +1,106 @@
+package space.app
+
+// sysmon (boot kind 12): live system monitor as a dynamically linked,
+// isolated app. Reads kernel state through exported accessor functions
+// (kernel time service, tick and heap counters) and its own capability
+// grant. Refreshes once per second; 'q' quits.
+
+component AppSysmon {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppSysmonEntry
+}
+
+interface AppSysmonEntry {
+  fn app-sysmon-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+const PIT-HZ = 100
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn serial-nl(port: Int) -> void {
+}
+
+interrupt fn time-print(port: Int) -> void {
+}
+
+interrupt fn ticks-now() -> Int {
+}
+
+interrupt fn mem-heap-free() -> Int {
+}
+
+// libspace shared-library imports (boot kind 7).
+interrupt fn lib-put(port: Int, ch: Int) -> void {
+}
+
+interrupt fn lib-write-dec(port: Int, value: Int) -> void {
+}
+
+fn app-sysmon-entry(cap-info: Int) -> Int {
+  let port = COM1
+
+  serial-write-cstr(port, "sysmon: kernel state (q quits)")
+  serial-nl(port)
+
+  let quit = 0
+  while quit == 0 {
+    // Clock (kernel time service), uptime, heap, authority.
+    time-print(port)
+    serial-write-cstr(port, "  ")
+    lib-write-dec(port, ticks-now() / PIT-HZ)
+    serial-write-cstr(port, "s uptime")
+    serial-nl(port)
+    serial-write-cstr(port, "  heap free: ")
+    lib-write-dec(port, mem-heap-free())
+    serial-write-cstr(port, " bytes")
+    serial-nl(port)
+    serial-write-cstr(port, "  caps: 0x")
+    sysmon-hex(port, load64(cap-info))
+    serial-nl(port)
+    serial-write-cstr(port, "  -- q to quit, any key refreshes")
+    serial-nl(port)
+
+    // Sleep ~1s, aborting early on a keypress.
+    let t0 = ticks-now()
+    let key = 0
+    while quit == 0 && key == 0 && ticks-now() < t0 + PIT-HZ {
+      if (inb(port + 5) & 1) != 0 {
+        key = inb(port) & 0x7F
+        if key == 113 {
+          quit = 1
+        }
+      }
+    }
+  }
+  serial-write-cstr(port, "sysmon: bye")
+  serial-nl(port)
+  return 0
+}
+
+// Fixed-width 16-digit hex for the capability mask.
+fn sysmon-hex(port: Int, value: Int) -> void {
+  let shift = 60
+  while shift >= 0 {
+    let nib = (value >> shift) & 0xF
+    if nib < 10 {
+      lib-put(port, 48 + nib)
+    } else {
+      lib-put(port, 87 + nib)
+    }
+    shift = shift - 4
+  }
+  return
+}

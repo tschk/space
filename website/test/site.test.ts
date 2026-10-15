@@ -34,8 +34,11 @@ describe("space site", () => {
       const html = await res.text();
       expect(html).toContain("<!DOCTYPE html>");
       expect(html).toContain('<html lang="en">');
-      expect(html).toContain("<title>Space</title>");
-      expect(html).toContain("Space nanokernel in the browser via v86.");
+      expect(html).toContain("<title>Space 0.1.0</title>");
+      expect(html).toContain(
+        "Space 0.1.0 — a dynamic nanokernel: components bind kernel services and shared libraries at load time, with ten preinstalled apps on an APP-API v1 surface. Running in the browser via v86.",
+      );
+      expect(html).toContain("v0.1.0");
       expect(html).toContain("loading Space shell");
       expect(html).toContain("https://github.com/tschk/space");
       expect(html).toContain("https://tsc.hk");

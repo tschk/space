@@ -48,11 +48,11 @@ fn fs-list-path(path: Int, port: Int) -> void {
   return
 }
 
-fn fs-read-file(name: Int, buf: Int) -> Int {
+fn fs-read-file(name: Int, buf: Int, max: Int) -> Int {
   if volume-ready != 0 {
-    return volume-rpc-read-file(name, buf, 0x100000)
+    return volume-rpc-read-file(name, buf, max)
   }
-  return sparkfs-read(name, buf, 0x7FFFFFFF)
+  return sparkfs-read(name, buf, max)
 }
 
 fn fs-write-file(name: Int, buf: Int, size: Int) -> Int {

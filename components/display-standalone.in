@@ -2,96 +2,67 @@ package space.display
 
 import "display.in"
 
-// Standalone shim: provides symbols that display.in needs but the kernel
-// provides via its own imports (memory.in, serial.in, pci.in, channel.in,
-// mouse.in, usb.in, etc.). This file is used ONLY by the SCI build
+// Standalone display SCI shim — now dynamic. The functions display.in needs
+// from the nanokernel are declared here with empty bodies: the compiler
+// records them as SCI v2 imports and the loader binds them to the kernel's
+// own export table (dynamic nanokernel) before the component's entry runs.
+// Component-owned state stays local: the component heap mirror, the input
+// stubs used before the input component exists (kernel versions read mouse
+// state variables that are kernel-owned, so they are not importable), and
+// the kernel-state mirrors. This file is used ONLY by the SCI build
 // (build-runtime-components.sh). The kernel build links display.in directly
 // against the kernel's own modules.
 
 const COM1-PORT = 0x3F8
 const SPACE-VERSION-MAJOR = 0
-const SPACE-VERSION-MINOR = 2
-const SPACE-VERSION-PATCH = 76
+const SPACE-VERSION-MINOR = 1
+const SPACE-VERSION-PATCH = 0
 
 fn com1() -> Int {
   return COM1-PORT
 }
 
-// --- serial I/O (minimal standalone copy) -----------------------------------
-fn serial-wait-tx(port: Int) -> void {
-  while (inb(port + 5) & 0x20) == 0 {
-  }
-  return
+// --- nanokernel service imports (bound by the loader) ------------------------
+interrupt fn serial-wait-tx(port: Int) -> void {
 }
 
-fn serial-init(port: Int) -> void {
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x80)
-  outb(port + 0, 0x03)
-  outb(port + 1, 0x00)
-  outb(port + 3, 0x03)
-  outb(port + 2, 0xC7)
-  outb(port + 4, 0x0B)
-  return
+interrupt fn serial-init(port: Int) -> void {
 }
 
-fn serial-put(port: Int, ch: Int) -> void {
-  serial-wait-tx(port)
-  outb(port, ch)
-  return
+interrupt fn serial-put(port: Int, ch: Int) -> void {
 }
 
-fn serial-nl(port: Int) -> void {
-  serial-put(port, 10)
-  return
+interrupt fn serial-nl(port: Int) -> void {
 }
 
-fn serial-write-cstr(port: Int, addr: Int) -> void {
-  let i = 0
-  let c = load8(addr + i)
-  while c != 0 {
-    serial-put(port, c)
-    i = i + 1
-    c = load8(addr + i)
-  }
-  return
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
 }
 
-fn serial-write-dec-wide(port: Int, value: Int) -> void {
-  let n = value
-  if n < 0 {
-    serial-put(port, 45)
-    n = -n
-  }
-  if n == 0 {
-    serial-put(port, 48)
-    return
-  }
-  let div = 1
-  while n / div >= 10 {
-    div = div * 10
-  }
-  while div > 0 {
-    serial-put(port, 48 + (n / div) % 10)
-    div = div / 10
-  }
-  return
+interrupt fn serial-write-dec-wide(port: Int, value: Int) -> void {
 }
 
-fn serial-write-hex(port: Int, value: Int) -> void {
-  let shift = 60
-  while shift >= 0 {
-    let nibble = (value >> shift) & 0xF
-    if nibble < 10 {
-      serial-put(port, 48 + nibble)
-    } else {
-      serial-put(port, 87 + nibble)
-    }
-    shift = shift - 4
-  }
-  return
+interrupt fn serial-write-hex(port: Int, value: Int) -> void {
 }
 
+interrupt fn pci-read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
+}
+
+interrupt fn pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
+}
+
+interrupt fn pci-bar-mmio(bus: Int, dev: Int, func: Int, off: Int, need: Int) -> Int {
+}
+
+interrupt fn chan-count(c: Int) -> Int {
+}
+
+interrupt fn chan-recv(c: Int) -> Int {
+}
+
+interrupt fn frame-alloc() -> Int {
+}
+
+// --- serial input probe (shell.in owns the kernel copy; local here) ----------
 fn serial-has-byte(port: Int) -> Int {
   return 0
 }
@@ -115,35 +86,6 @@ fn alloc(n: Int) -> Int {
   }
   heap-next = next
   return p
-}
-
-// --- PCI (standalone) -------------------------------------------------------
-const PCI-CONFIG-ADDR = 0xCF8
-const PCI-CONFIG-DATA = 0xCFC
-
-fn pci-read32(bus: Int, dev: Int, func: Int, off: Int) -> Int {
-  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI-CONFIG-ADDR, addr)
-  return inl(PCI-CONFIG-DATA)
-}
-
-fn pci-write32(bus: Int, dev: Int, func: Int, off: Int, val: Int) -> void {
-  let addr = 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC)
-  outl(PCI-CONFIG-ADDR, addr)
-  outl(PCI-CONFIG-DATA, val)
-  return
-}
-
-fn outl(port: Int, val: Int) -> void {
-  outb(port, val & 0xFF)
-  outb(port + 1, (val >> 8) & 0xFF)
-  outb(port + 2, (val >> 16) & 0xFF)
-  outb(port + 3, (val >> 24) & 0xFF)
-  return
-}
-
-fn inl(port: Int) -> Int {
-  return inb(port) | (inb(port + 1) << 8) | (inb(port + 2) << 16) | (inb(port + 3) << 24)
 }
 
 // --- input stubs (SCI display gets input via channel from input component) ---
@@ -175,25 +117,3 @@ var total-ram: Int = 0
 var proc-count: Int = 0
 var domain-count: Int = 0
 var nvme-ready: Int = 0
-
-fn chan-count(c: Int) -> Int {
-  if c == 0 {
-    return 0
-  }
-  let head = load64(c + 0)
-  let tail = load64(c + 8)
-  let cap = load64(c + 16)
-  let n = tail - head
-  if n < 0 {
-    n = n + cap
-  }
-  return n
-}
-
-fn chan-recv(c: Int) -> Int {
-  let head = load64(c + 0)
-  let cap = load64(c + 16)
-  let msg = load64(c + 32 + head * 8)
-  store64(c + 0, (head + 1) % cap)
-  return msg
-}

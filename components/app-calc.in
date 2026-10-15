@@ -1,0 +1,284 @@
+package space.app
+
+// calc (boot kind 9): interactive integer expression REPL running as a
+// dynamically linked module in its own isolated domain. Shunting-yard
+// evaluation with precedence for + - * / % and parentheses. Imports the
+// kernel serial services and libspace's lib-readline.
+
+component AppCalc {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppCalcEntry
+}
+
+interface AppCalcEntry {
+  fn app-calc-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+// Kernel service imports (interrupt fn = no caller-saved spills).
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn serial-write-hex(port: Int, value: Int) -> void {
+}
+
+interrupt fn serial-nl(port: Int) -> void {
+}
+
+// libspace shared-library imports (boot kind 7).
+interrupt fn lib-put(port: Int, ch: Int) -> void {
+}
+
+fn lib-write(port: Int, addr: Int) -> void {
+}
+
+interrupt fn lib-write-dec(port: Int, value: Int) -> void {
+}
+
+interrupt fn lib-readline(port: Int, buf: Int, max: Int) -> Int {
+}
+
+var calc-err: Int = 0
+
+// Apply a binary operator. Sets calc-err on divide-by-zero or bad op.
+fn calc-apply(op: Int, a: Int, b: Int) -> Int {
+  if op == 43 {
+    return a + b
+  }
+  if op == 45 {
+    return a - b
+  }
+  if op == 42 {
+    return a * b
+  }
+  if op == 47 {
+    if b == 0 {
+      calc-err = 2
+      return 0
+    }
+    return a / b
+  }
+  if op == 37 {
+    if b == 0 {
+      calc-err = 2
+      return 0
+    }
+    return a - (a / b) * b
+  }
+  calc-err = 1
+  return 0
+}
+
+// Operator precedence: + - bind least, * / % bind tighter.
+fn calc-prec(op: Int) -> Int {
+  if op == 43 || op == 45 {
+    return 1
+  }
+  return 2
+}
+
+fn app-calc-entry(cap-info: Int) -> Int {
+  let port = COM1
+  // Scratch space: vals[64] | ops[64] | line[256] in the component heap.
+  let heap = load64(cap-info + 16)
+  let vals = heap
+  let ops = heap + 512
+  let line = heap + 1024
+
+  serial-write-cstr(port, "calc: integer REPL, e.g. 2+3*4 or (1+15)/4; 'q' quits")
+  serial-nl(port)
+
+  while true {
+    serial-write-cstr(port, "calc> ")
+    lib-readline(port, line, 256)
+
+    if load8(line) == 113 && load8(line + 1) == 0 {
+      serial-write-cstr(port, "calc: bye")
+      serial-nl(port)
+      return 0
+    }
+    if load8(line) != 0 {
+      // --- shunting-yard evaluation (no recursion, fixed stacks) ---
+      calc-err = 0
+      let vn = 0
+      let on = 0
+      let i = 0
+      // prev: 0 = expecting a value, 1 = just got a value
+      let prev = 0
+      let err = 0
+      let running = 1
+      while running == 1 {
+        let c = load8(line + i)
+        if c == 0 {
+          running = 0
+        } else if c == 32 {
+          i = i + 1
+        } else if c == 40 {
+          if prev == 1 {
+            err = 1
+            running = 0
+          } else {
+            store64(ops + on * 8, 40)
+            on = on + 1
+            prev = 0
+            i = i + 1
+          }
+        } else if c == 41 {
+          if prev != 1 {
+            err = 1
+            running = 0
+          } else {
+            // Pop until the matching '('.
+            let go = 1
+            while go == 1 && on > 0 {
+              let top = load64(ops + (on - 1) * 8)
+              if top == 40 {
+                go = 0
+              } else {
+                if vn < 2 {
+                  err = 1
+                  go = 0
+                  running = 0
+                } else {
+                  let b = load64(vals + (vn - 1) * 8)
+                  let a = load64(vals + (vn - 2) * 8)
+                  on = on - 1
+                  vn = vn - 2
+                  store64(vals + vn * 8, calc-apply(top, a, b))
+                  vn = vn + 1
+                  if calc-err != 0 {
+                    err = 1
+                    go = 0
+                    running = 0
+                  }
+                }
+              }
+            }
+            if on == 0 {
+              err = 1
+              running = 0
+            } else {
+              on = on - 1
+            }
+            prev = 1
+            i = i + 1
+          }
+        } else if c == 43 || c == 45 || c == 42 || c == 47 || c == 37 {
+          if prev != 1 {
+            err = 1
+            running = 0
+          } else {
+            let prec = calc-prec(c)
+            let go = 1
+            while go == 1 && on > 0 {
+              let top = load64(ops + (on - 1) * 8)
+              if top == 40 {
+                go = 0
+              } else if calc-prec(top) < prec {
+                go = 0
+              } else {
+                if vn < 2 {
+                  err = 1
+                  go = 0
+                  running = 0
+                } else {
+                  let b = load64(vals + (vn - 1) * 8)
+                  let a = load64(vals + (vn - 2) * 8)
+                  on = on - 1
+                  vn = vn - 2
+                  store64(vals + vn * 8, calc-apply(top, a, b))
+                  vn = vn + 1
+                  if calc-err != 0 {
+                    err = 1
+                    go = 0
+                    running = 0
+                  }
+                }
+              }
+            }
+            store64(ops + on * 8, c)
+            on = on + 1
+            prev = 0
+            i = i + 1
+          }
+        } else if c >= 48 && c <= 57 {
+          if prev == 1 {
+            err = 1
+            running = 0
+          } else {
+            let n = 0
+            while load8(line + i) >= 48 && load8(line + i) <= 57 {
+              n = n * 10 + (load8(line + i) - 48)
+              i = i + 1
+            }
+            store64(vals + vn * 8, n)
+            vn = vn + 1
+            prev = 1
+          }
+        } else {
+          err = 1
+          running = 0
+        }
+      }
+
+      // Unwind remaining operators.
+      if prev != 1 {
+        err = 1
+      }
+      let go = 1
+      while go == 1 && on > 0 && err == 0 {
+        let top = load64(ops + (on - 1) * 8)
+        if top == 40 {
+          err = 1
+        } else {
+          if vn < 2 {
+            err = 1
+          } else {
+            let b = load64(vals + (vn - 1) * 8)
+            let a = load64(vals + (vn - 2) * 8)
+            on = on - 1
+            vn = vn - 2
+            store64(vals + vn * 8, calc-apply(top, a, b))
+            vn = vn + 1
+            if calc-err != 0 {
+              err = 1
+            }
+          }
+        }
+      }
+      if err == 0 && vn != 1 {
+        err = 1
+      }
+
+      if err != 0 {
+        if calc-err == 2 {
+          serial-write-cstr(port, "calc: divide by zero")
+        } else {
+          serial-write-cstr(port, "calc: syntax error")
+        }
+        serial-nl(port)
+      } else {
+        let r = load64(vals)
+        serial-write-cstr(port, "calc: ")
+        lib-write(port, line)
+        serial-write-cstr(port, " = ")
+        lib-write-dec(port, r)
+        serial-write-cstr(port, " (0x")
+        serial-write-hex(port, r)
+        serial-write-cstr(port, ")")
+        serial-nl(port)
+      }
+    }
+  }
+  return 0
+}

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Fresh-orb toolchain for Space: nasm, QEMU, clang, Rust, Inauguration submodule, website deps.
+set -euo pipefail
+
+log() { printf '[setup %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+step() {
+  local label=$1
+  shift
+  local start
+  start=$(date +%s)
+  log "start: ${label}"
+  "$@"
+  log "done: ${label} ($(($(date +%s) - start))s)"
+}
+
+need_bin() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+install_apt() {
+  local -a missing=()
+  local pkg
+  for pkg in "$@"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+      missing+=("$pkg")
+    fi
+  done
+  if ((${#missing[@]} == 0)); then
+    log "apt packages already present"
+    return 0
+  fi
+  log "apt-get install: ${missing[*]}"
+  sudo apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
+}
+
+ensure_qemu_nasm_clang() {
+  local -a pkgs=()
+  need_bin nasm || pkgs+=(nasm)
+  need_bin qemu-system-x86_64 || pkgs+=(qemu-system-x86)
+  need_bin clang || pkgs+=(clang)
+  need_bin python3 || pkgs+=(python3)
+  if ((${#pkgs[@]} > 0)); then
+    install_apt "${pkgs[@]}"
+  else
+    log "nasm/qemu/clang/python3 already on PATH"
+  fi
+}
+
+ensure_rust() {
+  if need_bin rustc && need_bin cargo; then
+    log "rustc $(rustc --version | awk '{print $2}')"
+    return 0
+  fi
+  log "installing rustup stable"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+  # shellcheck disable=SC1091
+  source "${HOME}/.cargo/env"
+}
+
+ensure_cargo_path() {
+  if [[ -f "${HOME}/.cargo/env" ]]; then
+    # shellcheck disable=SC1091
+    source "${HOME}/.cargo/env"
+  fi
+  local marker='# space orb cargo path'
+  if [[ -f "${HOME}/.bash_profile" ]] && grep -Fqx "${marker}" "${HOME}/.bash_profile" 2>/dev/null; then
+    return 0
+  fi
+  cat >>"${HOME}/.bash_profile" <<'EOF'
+
+# space orb cargo path
+if [[ -f "${HOME}/.cargo/env" ]]; then
+  # shellcheck disable=SC1091
+  source "${HOME}/.cargo/env"
+fi
+EOF
+}
+
+ensure_submodules() {
+  if [[ ! -d .git ]]; then
+    log "skip submodules (not a git checkout)"
+    return 0
+  fi
+  # Inauguration is required to compile the kernel. ci-recipes is only
+  # consumed by GitHub Actions (`uses: tschk/ci-recipes/...@master`); the
+  # recorded gitlink may not exist on the remote, so skip initializing it.
+  git submodule update --init vendor/inauguration
+}
+
+ensure_website() {
+  if [[ ! -f website/package.json ]]; then
+    return 0
+  fi
+  if ! need_bin bun; then
+    log "bun missing; skip website install"
+    return 0
+  fi
+  (cd website && bun install --frozen-lockfile)
+}
+
+cd "$(dirname "$0")/.."
+log "repo $(pwd)"
+step "nasm qemu clang" ensure_qemu_nasm_clang
+step "rust" ensure_rust
+ensure_cargo_path
+step "submodules" ensure_submodules
+step "website bun install" ensure_website
+log "setup complete"
+nasm -v | head -1
+qemu-system-x86_64 --version | head -1
+clang --version | head -1
+python3 --version
+if need_bin rustc; then rustc --version; fi
+if need_bin bun; then bun --version; fi
+if [[ -x vendor/inauguration/in-cli/target/release/in ]]; then
+  log "in compiler already built"
+elif [[ -d vendor/inauguration/in-cli ]]; then
+  log "in compiler present as source (build on demand)"
+fi

@@ -83,6 +83,22 @@ denies a superset. That is not hardware isolation. Syscalls consult
 `cap-check` against the current domain's minted cap index; mint/revoke
 from userspace return `-1`.
 
+Components are also dynamically linked: SCI v2 artifacts carry export and
+import symbol tables. Shared libraries (e.g. `components/libspace.in`, boot
+kind `BOOT-IMAGE-LIB`) register their symbols with the loader at boot; a
+component's imports are resolved by name and its call sites patched before
+the entry point runs, and an import with no registered provider denies the
+load. The nanokernel participates in the same registry: the boot emitter
+appends a kernel export table (its address recorded in the boot header at
+`[40..48]`) so components bind kernel services directly, and every
+successfully loaded module registers its own exports, so later modules can
+bind to earlier ones (chained dynamic modules, boot kind 8). Preinstalled
+dynamic apps (`calc`, `notes`, `hd`, `sysmon`, `bench`, boot kinds 9-11) ride in the boot
+image and load on demand via the shell's `runapp` command. Two root variants
+build from the same components: the full standard image and a minimal
+core-only image (`kernel-root-minimal.in`). Full contract
+in [`sci-schema.md`](sci-schema.md).
+
 ---
 
 ## Nanokernel
@@ -102,7 +118,7 @@ x86_64. It provides:
 - **Preemptive scheduler** — timer-driven context switching
 - **Typed channels** — CSP-style ring buffers with blocking send/recv
 - **Cross-domain channels** — shared-page IPC between memory domains
-- **Memory domains** — per-component page tables that currently clone the 4 GiB identity map (not a security boundary)
+- **Memory domains** — SCI guests get exclusive CPL3 user page tables; kernel-linked services still clone the 4 GiB identity map at CPL0 (not a security boundary)
 - **SCI loader** — loads and validates external component images
 - **e1000 NIC driver** — MMIO register access, TX/RX rings, ARP, UDP
 - **Deterministic execution** — xorshift64 PRNG with seeded workloads
@@ -120,24 +136,28 @@ x86_64. It provides:
 
 ## Memory Domains
 
-Domains are separate page-table trees, not a security boundary today.
+Domains are separate page-table trees. Two regimes exist today:
 
 - Domain 0 is the kernel domain. After boot the live kernel PML4 is relocated
-  off physical `0x1000` onto a heap frame.
-- `domain_create()` allocates a new PML4 and **copies the kernel's four page
-  directories** — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
-  Extra SCI image/heap/shared mappings are additive. A guest can still
-  `load64(0x200000)` (kernel globals) and reach MMIO.
-- All component entry is CPL0 (`CS=0x08`). The GDT has no DPL3 segments.
-  `cr3_write` is bound into a kernel global at `domain-init` and the
-  published pointer at `0x4060` is cleared; guests still run at ring 0, so
-  they can execute privileged instructions until CPL3+`iret` exists.
+  off physical `0x1000` onto a heap frame, and the published `cr3_read` /
+  `cr3_write` stubs at `0x4058` / `0x4060` are cleared and re-bound into
+  kernel globals so low-memory pointers no longer hand out CR3 control.
+- **Kernel-linked components** (personalities, shell, runtime components via
+  `domain_create()`) still run at CPL0 inside a copy of the kernel's four
+  page directories — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
+  Extra SCI image/heap/shared mappings are additive. A kernel-linked
+  component can still `load64(0x200000)` (kernel globals) and reach MMIO.
+- **SCI guests** (`sci-load`, `sci-load-file`, apps) use
+  `domain_create_user()`: an empty PML4 with only trampoline, IDT, TSS RSP0
+  stack, and exclusive `U=1` 4 KiB image/stub/stack pages — no identity
+  clone, kernel globals unmapped. The GDT carries DPL3 segments and a TSS;
+  `domain_enter_user()` enters at CPL3 via `iretq` on TSS RSP0, and
+  timer/syscall/exception stubs switch back to `kernel_cr3`.
 - `domain_switch()` changes CR3. `domain_map()` installs a mapping.
   Shared pages are for IPC, not isolation.
 
-Exclusive maps plus CPL3 are required before domains can be advertised as
-isolation. Do not land exclusive maps without a CPL3 trampoline: `invoke1`
-under guest CR3 still needs kernel text mapped.
+Kernel-linked CPL0 services are the remaining gap before domains can be
+advertised as isolation.
 
 ---
 
@@ -201,6 +221,53 @@ deliver to the caller. The IDT entry for vector 0x80 has DPL=3, so
 user-mode code can invoke it directly.
 
 Native Space syscalls (0-4): write, read, exit, yield, getpid.
+
+---
+
+## Application Surface
+
+Apps are SCI v2 dynamic modules compiled from `.in`, isolated in their own
+domain, and run on demand from the shell with `runapp <app> [args]`.
+Authority is declared per app and enforced by the loader before entry:
+grant bit 0 is the serial console, bit 1 adds filesystem read/write.
+Undeclared authority is a load-time denial, never a runtime surprise.
+
+Two shared libraries provide code without authority. libspace (boot-image
+kind 7, linked at `0x3F000000`) supplies C-library-style utilities. appapi
+(kind 14, linked at `0x3E000000`) is the versioned application platform
+contract, APP-API v1: `api-version`, argument access, heap discovery, and
+console formatting. Its text maps read-execute into every importing domain;
+it imports nothing and holds no grants, so it cannot escalate.
+
+Every app receives a cap-info page at entry (APP-API v1 layout):
+
+| Offset | Field |
+|--------|-------|
+| +0 | granted capability bitmask |
+| +16/+24 | component heap base / size (2 MiB) |
+| +32 | shared page |
+| +40 | domain id |
+| +48/+56 | console width / height |
+| +64 | args string pointer from `runapp <app> <args>` |
+
+Preinstalled apps (boot-image kinds 9-19, packed into both `standard.bin`
+and `minimal.bin`):
+
+| Kind | App | Purpose | Grants |
+|------|-----|---------|--------|
+| 9 | calc | arithmetic evaluator | serial |
+| 10 | notes | full-screen text editor (`notes.txt`) | serial+fs |
+| 11 | hd | hex dump a file | serial+fs |
+| 12 | sysmon | live kernel/domain/memory monitor | serial |
+| 13 | bench | deterministic prime benchmark | serial |
+| 15 | files | filesystem round trip + directory listing | serial+fs |
+| 16 | clock | CMOS RTC date/time and uptime | serial |
+| 17 | sum | CRC-32 / FNV-1a checksums | serial+fs |
+| 18 | man | the platform manual, printed as an app | serial |
+| 19 | sysinfo | shows its own capability grants | serial |
+
+`scripts/check-image-variants.sh` boots both images and drives every app,
+pinning deterministic outputs (prime count 9592, checksums, grant masks).
 
 ---
 
@@ -328,6 +395,9 @@ components/
   diagnostics.in determinism.in editor.in time.in
   input.in volume.in display-standalone.in
   windows.in darwin.in linux.in
+  libspace.in           shared library: C-library-style utilities (kind 7)
+  appapi.in             shared library: APP-API v1 platform contract (kind 14)
+  app-*.in              preinstalled apps (kinds 9-13, 15-19)
   volume-mem.in         standalone memory-backed Volume SCI component
 boot/
   multiboot.asm         x86_64 CPU bring-up

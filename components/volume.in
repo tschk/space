@@ -85,6 +85,8 @@ const SF-DEFAULT-JOURNAL-BLOCKS = 2
 
 const SF-MEM-DISK-BLOCKS = 256  // 1 MiB memory-backed disk for testing
 const SF-MEM-DISK-SIZE = 1048576  // 256 * 4096
+const SF-MAX-TOTAL-BLOCKS = 65536
+const SF-MAX-INODE-COUNT = 4096
 
 // Superblock offsets
 const SF-SB-MAGIC = 0
@@ -767,6 +769,11 @@ fn vol-sparkfs-init() -> void {
     }
     let total = load64(vol-sf-super + SF-SB-TOTAL-BLOCKS)
     let ino-count = load32(vol-sf-super + SF-SB-INODE-COUNT)
+    if total < 2 || total > SF-MAX-TOTAL-BLOCKS || ino-count < 1 || ino-count > SF-MAX-INODE-COUNT {
+      vol-sparkfs-format-mem-disk()
+      vol-vfs-init()
+      return
+    }
     let bitmap-bytes = (total + 7) / 8
     let bitmap-start = load64(vol-sf-super + SF-SB-BITMAP-START)
     vol-sf-bitmap = alloc(bitmap-bytes)
@@ -790,6 +797,12 @@ fn vol-sparkfs-init() -> void {
 }
 
 fn vol-sf-do-format(total: Int, ino-count: Int) -> void {
+  if total < 2 || total > SF-MAX-TOTAL-BLOCKS {
+    return
+  }
+  if ino-count < 1 || ino-count > SF-MAX-INODE-COUNT {
+    return
+  }
   if vol-sf-super == 0 {
     vol-sf-super = alloc(SF-BLOCK-SIZE)
   }

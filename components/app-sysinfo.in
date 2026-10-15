@@ -1,0 +1,55 @@
+package space.dyn
+
+// Preinstalled app (boot kind 10): system introspection from inside an
+// isolated dynamic module. Reads its own capability grant from the cap-info
+// page the loader passes at entry and prints it — authority made visible.
+
+component AppSysinfo {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: AppSysinfoEntry
+}
+
+interface AppSysinfoEntry {
+  fn app-sysinfo-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+interrupt fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+interrupt fn serial-write-hex(port: Int, value: Int) -> void {
+}
+
+interrupt fn serial-nl(port: Int) -> void {
+}
+
+fn app-sysinfo-entry(cap-info: Int) -> Int {
+  let port = COM1
+  let caps = load64(cap-info)
+  serial-write-cstr(port, "app-sysinfo: granted caps 0x")
+  serial-write-hex(port, caps)
+  serial-nl(port)
+  // Deterministic self-check: xorshift state machine over its own image.
+  let x = 0x13579BDF
+  let k = 0
+  while k < 8 {
+    x = x ^ (x << 13)
+    x = x ^ (x >> 7)
+    x = x ^ (x << 17)
+    k = k + 1
+  }
+  serial-write-cstr(port, "app-sysinfo: xorshift self-check 0x")
+  serial-write-hex(port, x)
+  serial-nl(port)
+  return x
+}

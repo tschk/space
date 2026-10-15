@@ -36,6 +36,8 @@ const SF-DEFAULT-JOURNAL-BLOCKS = 2
 
 const SF-MEM-DISK-BLOCKS = 256  // 1 MiB memory-backed disk for testing
 const SF-MEM-DISK-SIZE = 1048576  // 256 * 4096
+const SF-MAX-TOTAL-BLOCKS = 65536  // 256 MiB; refuse larger on-disk totals
+const SF-MAX-INODE-COUNT = 4096
 
 // Superblock offsets
 const SF-SB-MAGIC = 0

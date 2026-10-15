@@ -1,0 +1,53 @@
+package space.dyn
+
+// Dynamic module demo (boot kind 8): imports nanokernel services
+// (serial-*) resolved against the kernel's own export table, plus a
+// shared-library symbol (lib-put) — one module, two provider kinds. The
+// loader binds all call sites before this component's entry runs.
+
+component DynMod {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  capability serial: DebugConsole(write)
+
+  export entry: DynModEntry
+}
+
+interface DynModEntry {
+  fn dyn-mod-entry(cap-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+const COM1 = 0x3F8
+
+// Import stubs for kernel services (interrupt fn = no caller-saved spills).
+fn serial-write-cstr(port: Int, addr: Int) -> void {
+}
+
+fn serial-write-hex(port: Int, value: Int) -> void {
+}
+
+fn serial-nl(port: Int) -> void {
+}
+
+// Import stub for the libspace shared library.
+fn lib-put(port: Int, ch: Int) -> void {
+}
+
+fn dyn-mod-entry(cap-info: Int) -> Int {
+  let port = COM1
+  serial-write-cstr(port, "dynmod: kernel services bound, marker 0x")
+  serial-write-hex(port, 0xD9)
+  serial-nl(port)
+  lib-put(port, 108)
+  lib-put(port, 105)
+  lib-put(port, 98)
+  serial-nl(port)
+  return 0xD9
+}
+

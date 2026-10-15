@@ -201,6 +201,24 @@ long_mode:
     mov rbx, 0x40D0
     mov rax, [boot_image_table]
     mov [rbx], rax
+    mov rbx, 0x40E0
+    mov rax, enter_user
+    mov [rbx], rax
+    mov rbx, 0x40E8
+    mov rax, leave_user
+    mov [rbx], rax
+    mov rbx, 0x40F8
+    mov rax, kernel_cr3
+    mov [rbx], rax
+    mov rbx, 0x4100
+    mov rax, tss
+    mov [rbx], rax
+    mov rbx, 0x4108
+    mov rax, load_tr
+    mov [rbx], rax
+    mov rbx, 0x4118
+    mov rax, guest_active
+    mov [rbx], rax
 
     xor rdi, rdi
     mov edi, [mb_info]               ; arg0 = multiboot info pointer
@@ -229,9 +247,18 @@ isr_timer:
     push r9
     push r10
     push r11
+    mov rax, cr3
+    mov [timer_saved_cr3], rax
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .dispatch
+    mov cr3, rax
+.dispatch:
     mov rdi, 32
     mov rax, [0x4000]
     call rax
+    mov rax, [timer_saved_cr3]
+    mov cr3, rax
     pop r11
     pop r10
     pop r9
@@ -262,6 +289,11 @@ exc_14:
     push 14         ; #PF: CPU already pushed an error code
     jmp exc_common
 exc_common:
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .handler
+    mov cr3, rax
+.handler:
     mov rdi, [rsp]       ; vector
     mov rsi, [rsp + 8]   ; error code
     mov rdx, [rsp + 16]  ; faulting RIP
@@ -336,9 +368,19 @@ isr_syscall:
     push r13
     push r14
     push r15
+    mov rax, [kernel_cr3]
+    test rax, rax
+    jz .dispatch
+    mov cr3, rax
+.dispatch:
     mov rdi, rsp                 ; arg0 = pointer to saved register frame
     mov rax, [0x4070]            ; syscall_dispatch, published by the .in kernel
     call rax
+    cmp qword [guest_active], 0
+    je .restore
+    mov rdi, [rsp + 112]
+    jmp leave_user
+.restore:
     pop r15
     pop r14
     pop r13
@@ -397,7 +439,13 @@ comp_invoke_stub:
     pop r12
     pop r11
     pop rbx
-    jmp comp_invoke_stub
+    ; The component entry returned: park this task. Interrupts stay enabled
+    ; so the timer keeps scheduling other tasks; this task's context is
+    ; resumed here on each future tick and never re-enters the component.
+.park:
+    sti
+    hlt
+    jmp .park
 
 ; A single synchronous trusted fixture owns this saved continuation. Interrupts
 ; stay disabled; exit abandons the payload stack and restores the kernel caller.
@@ -591,14 +639,108 @@ cr3_write:
     mov cr3, rdi
     ret
 
+; enter_user(args): rdi -> {rip, arg, user_rsp, user_cr3}. IRETQ to CPL3.
+enter_user:
+    pop qword [enter_saved_rip]
+    mov [enter_saved_rbx], rbx
+    mov [enter_saved_rbp], rbp
+    mov [enter_saved_r12], r12
+    mov [enter_saved_r13], r13
+    mov [enter_saved_r14], r14
+    mov [enter_saved_r15], r15
+    mov [enter_saved_rsp], rsp
+    mov qword [guest_active], 1
+    mov r8, [rdi]
+    mov r9, [rdi + 8]
+    mov rdx, [rdi + 16]
+    mov rcx, [rdi + 24]
+    cli
+    mov rax, [tss + 4]
+    test rax, rax
+    jz .segs
+    mov rsp, rax
+.segs:
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    push qword 0x23
+    push rdx
+    push qword 0x3002
+    push qword 0x1B
+    push r8
+    mov rdi, r9
+    test rcx, rcx
+    jz .iret
+    mov cr3, rcx
+.iret:
+    iretq
+
+leave_user:
+    cli
+    mov rax, rdi
+    mov qword [guest_active], 0
+    mov rcx, [kernel_cr3]
+    test rcx, rcx
+    jz .stack
+    mov cr3, rcx
+.stack:
+    mov rsp, [enter_saved_rsp]
+    mov bx, 0x10
+    mov ds, bx
+    mov es, bx
+    mov ss, bx
+    mov r15, [enter_saved_r15]
+    mov r14, [enter_saved_r14]
+    mov r13, [enter_saved_r13]
+    mov r12, [enter_saved_r12]
+    mov rbp, [enter_saved_rbp]
+    mov rbx, [enter_saved_rbx]
+    sti
+    jmp qword [enter_saved_rip]
+
+load_tr:
+    mov ax, 0x28
+    ltr ax
+    ret
+
 align 4
 mb_info: dd 0
 
 align 8
+kernel_cr3: dq 0
+timer_saved_cr3: dq 0
+enter_saved_rsp: dq 0
+enter_saved_rbx: dq 0
+enter_saved_rbp: dq 0
+enter_saved_r12: dq 0
+enter_saved_r13: dq 0
+enter_saved_r14: dq 0
+enter_saved_r15: dq 0
+enter_saved_rip: dq 0
+guest_active: dq 0
+
+align 16
+tss:
+    dd 0
+    dq 0
+    times 104 - 12 db 0
+
+align 8
 gdt:
-    dq 0x0000000000000000           ; null descriptor
-    dq 0x00AF9A000000FFFF           ; 0x08: 64-bit code (P, DPL0, exec/read, L)
-    dq 0x00CF92000000FFFF           ; 0x10: data (P, DPL0, read/write)
+    dq 0x0000000000000000           ; null
+    dq 0x00AF9A000000FFFF           ; 0x08 kernel CS DPL0
+    dq 0x00CF92000000FFFF           ; 0x10 kernel DS DPL0
+    dq 0x00AFFA000000FFFF           ; 0x18 user CS DPL3
+    dq 0x00CFF2000000FFFF           ; 0x20 user DS DPL3
+tss_desc:
+    dw 103
+    dw tss
+    db 0x10
+    db 0x89
+    db 0
+    db 0
+    dd 0
+    dd 0
 gdt_end:
 gdt_desc:
     dw gdt_end - gdt - 1

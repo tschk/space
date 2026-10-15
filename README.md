@@ -31,6 +31,20 @@ under QEMU. Desktop works via shell `desktop` (kernel-linked `components/display
 display/input (preempt-stop), SCI loader (`hello`/`uecho`), execve SCI from FS,
 Linux demo / ELF personality, VFS, NVMe volume multi-file + deep soak, UDP/TCP
 data path, DHCP lease, DNS A for dotted names, personalities (Linux/Windows/Darwin).
+Components are dynamically linked: SCI v2 images carry export/import tables and
+the loader binds user components against the `libspace` shared library at load
+time. The nanokernel is itself a link provider (its boot image carries an
+export table; 670+ symbols registered at boot), loaded modules register their
+own exports for later modules, and a dynamic module importing an unknown
+symbol is denied while boot continues (`scripts/check-dynamic-modules.sh`).
+
+**Space 0.1.0** ships two images (`scripts/build-images.sh`): a full
+**standard** image (network, NVMe/USB, personalities, display) and a **minimal**
+image (core dynamic nanokernel + filesystem shell, ~3x smaller). Both carry
+preinstalled dynamic apps — `calc` (expression REPL), `notes` (persistent
+notes), `hd` (file hexdump), `sysmon` (live kernel monitor), `bench`
+(deterministic CPU benchmark) — that load on demand into isolated domains via
+the shell's `runapp` command (`scripts/check-image-variants.sh`).
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 Linux/Windows/Darwin personality progress: [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
@@ -67,13 +81,13 @@ Measured via serial output polling on Apple M3 (macOS, QEMU TCG).
 
 ## Build and run
 
-Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration. The
-`vendor/inauguration` submodule is the compiler pin (CI uses the same git
-ref). `INAUGURATION_DIR` overrides it; otherwise the pin, then a sibling
-checkout at `../inauguration`.
+Requirements: `clang`, `nasm`, `qemu-system-x86_64`, and Inauguration —
+installed from crates.io (`cargo install inauguration --locked`), a sibling
+checkout at `../inauguration`, or via `$INAUGURATION_DIR`. There is no vendor
+submodule.
 
 ```sh
-git submodule update --init --recursive
+cargo install inauguration --locked
 ```
 
 ```sh
@@ -81,6 +95,14 @@ bash scripts/check-all.sh             # static gates + QEMU boot + audit hardeni
 bash scripts/check-qemu-boot.sh       # full boot verification
 bash scripts/build-multicomponent.sh  # SCI component loading demo
 bash scripts/check-sci-contract.sh    # metadata validation
+bash scripts/check-architecture-boundaries.sh  # component authority gate
+bash scripts/check-kernel-contracts.sh         # syscall/domain/net host contracts
+bash scripts/check-image-formats.sh            # SCI packer + SparkFS/SCI headers
+bash scripts/check-runtime-honesty.sh          # TCP/PCI/SparkFS/ELF honesty contracts
+bash scripts/check-process-vfs.sh              # process table / VFS / DHCP / libc
+bash scripts/check-personality-abi.sh          # Linux/Darwin/Windows syscall ABI
+bash scripts/check-qemu-smoke.sh               # boot to serial shell + hardening
+bash scripts/check-qemu-shell.sh               # help / ps / mem over serial
 bash scripts/check-network.sh         # e1000 ARP/UDP test
 bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path
@@ -107,6 +129,7 @@ kernel/
 components/
   display.in                kernel-linked display (shell `desktop`)
   display-standalone.in     standalone display SCI component
+  libspace.in               shared-library SCI (dynamic-linking provider)
   mouse.in                  PS/2 mouse input
   shell.in                  interactive serial shell
   pci.in                    PCI bus enumeration

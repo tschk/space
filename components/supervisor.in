@@ -86,3 +86,15 @@ fn run-supervisor(port: Int) -> void {
   supervisor-activate(port, c3)
   return
 }
+// Reclaim a component record on a load failure. component-register bump-
+// allocates from the object arena; rolling back is only safe when the
+// record is the newest allocation, which holds on cap-mint failure paths
+// where nothing else allocates between register and bind.
+fn component-unregister(c: Int) -> void {
+  if c == 0 || c + 64 != obj-arena-next {
+    return
+  }
+  obj-arena-next = c
+  obj-counter = obj-counter - 1
+  return
+}

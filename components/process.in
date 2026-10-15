@@ -170,7 +170,7 @@ fn proc-poll-signals(pid: Int) -> Int {
 // Block the caller until `pid` has exited or been killed, then return its exit
 // code. Uses cooperative yield-polling since .in has no atomics yet.
 fn proc-wait(pid: Int) -> Int {
-  if pid >= proc-count { return -1 }
+  if pid < 0 || pid >= proc-count { return -1 }
   let base = proc-table + pid * PROC-SIZE
   while load64(base + PROC-OFF-STATUS) != PROC-EXITED && load64(base + PROC-OFF-STATUS) != PROC-KILLED {
     proc-poll-signals(pid)
@@ -241,7 +241,7 @@ fn proc-dummy-entry() -> Int {
 // and invokes its entry point.
 fn sci-load-file(port: Int, pathname: Int) -> Int {
   let header-buf = alloc(4096)
-  let rc = fs-read-file(pathname, header-buf)
+  let rc = fs-read-file(pathname, header-buf, 4096)
   if rc < 32 {
     serial-write-cstr(port, "  SCI: failed to read manifest header from ")
     serial-write-cstr(port, pathname)
@@ -249,11 +249,15 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
   let magic = load64(header-buf + 0)
-  if magic != SCI-MAGIC {
+  if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: invalid magic in ")
     serial-write-cstr(port, pathname)
     serial-nl(port)
     return -1
+  }
+  let header = 32
+  if magic == SCI-MAGIC-V2 {
+    header = SCI-V2-HEADER
   }
   let required = load64(header-buf + 8)
   let entry = load64(header-buf + 16)
@@ -276,7 +280,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   serial-write-hex(port, image-size)
   serial-nl(port)
 
-  if sci-image-acceptable(entry, image-size) == 0 {
+  if sci-image-acceptable(header, entry, image-size) == 0 {
     serial-write-cstr(port, "  SCI: invalid entry or image-size")
     serial-nl(port)
     return -1
@@ -300,7 +304,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     z = z + 1
   }
 
-  let bytes-read = fs-read-file(pathname, load-addr)
+  let bytes-read = fs-read-file(pathname, load-addr, pages * 4096)
   if bytes-read < image-size {
     serial-write-cstr(port, "  SCI: read failed (got 0x")
     serial-write-hex(port, bytes-read)
@@ -309,7 +313,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
     return -1
   }
 
-  let domain = domain-create()
+  let domain = domain-create-user()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
@@ -323,14 +327,20 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   if sci-bind-domain-cap(domain, component, required) < 0 {
     serial-write-cstr(port, "  SCI: cap_mint failed")
     serial-nl(port)
+    component-unregister(component)
+    domain-release(domain)
     return -1
   }
-  let virt-load = entry - 32
+  let virt-load = entry - header
   let image-pages = (image-size + 4095) / 4096
   let i = 0
   while i < image-pages {
     domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
     i = i + 1
+  }
+  // Bind imports before the component ever runs (SCI v2 dynamic linking).
+  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+    return -1
   }
 
   store64(component + 40, domain)
@@ -340,9 +350,7 @@ fn sci-load-file(port: Int, pathname: Int) -> Int {
   store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
 
-  domain-switch(domain)
-  let status = invoke1(entry, cap-info)
-  domain-switch(0)
+  let status = domain-enter-user(entry, cap-info, domain)
 
   store64(component + 48, status)
   serial-write-cstr(port, "  SCI: guest ")

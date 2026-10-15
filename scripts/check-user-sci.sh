@@ -56,6 +56,7 @@ rm -f "$FIFO"
 
 ok_hello=0
 ok_echo=0
+ok_bound=0
 if grep -qF "hello from user SCI" "$SERIAL" 2>/dev/null \
    || grep -qF "SCI: component returned status 0x0000000000004849" "$SERIAL" 2>/dev/null; then
   ok_hello=1
@@ -63,6 +64,11 @@ fi
 if grep -qF "user echo SCI" "$SERIAL" 2>/dev/null \
    || grep -qF "SCI: component returned status 0x0000000000004543" "$SERIAL" 2>/dev/null; then
   ok_echo=1
+fi
+if grep -qF "SCI: library registered at 0x000000003f000040" "$SERIAL" 2>/dev/null \
+   && grep -qF "SCI: bound 2 imports" "$SERIAL" 2>/dev/null \
+   && grep -qF "SCI: bound 3 imports" "$SERIAL" 2>/dev/null; then
+  ok_bound=1
 fi
 if [ "$ok_hello" != "1" ]; then
   echo "FAIL: user SCI hello marker missing" >&2
@@ -74,4 +80,9 @@ if [ "$ok_echo" != "1" ]; then
   sed -n '/space>/,/halt/p' "$SERIAL" 2>/dev/null | tail -40 >&2 || true
   exit 1
 fi
-echo "PASS: user SCI hello + uecho loaded and ran"
+if [ "$ok_bound" != "1" ]; then
+  echo "FAIL: dynamic import binding markers missing" >&2
+  sed -n '/space>/,/halt/p' "$SERIAL" 2>/dev/null | tail -40 >&2 || true
+  exit 1
+fi
+echo "PASS: user SCI hello + uecho dynamically linked against libspace and ran"

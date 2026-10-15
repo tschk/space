@@ -7,3 +7,19 @@ const BOOT-IMAGE-INPUT = 3
 const BOOT-IMAGE-VOLUME = 4
 const BOOT-IMAGE-USER-HELLO = 5
 const BOOT-IMAGE-USER-ECHO = 6
+const BOOT-IMAGE-LIB = 7
+const BOOT-IMAGE-DYN-MOD = 8
+const BOOT-IMAGE-APP-CALC = 9
+const BOOT-IMAGE-APP-NOTES = 10
+const BOOT-IMAGE-APP-HD = 11
+const BOOT-IMAGE-APP-SYSMON = 12
+const BOOT-IMAGE-APP-BENCH = 13
+// APP-API v1 platform: a second shared library (the versioned application
+// ABI) plus the preinstalled app set it serves. Kinds 15-19 are apps;
+// kind 14 is a library and is registered by the loader, never scheduled.
+const BOOT-IMAGE-APP-API = 14
+const BOOT-IMAGE-APP-FILES = 15
+const BOOT-IMAGE-APP-CLOCK = 16
+const BOOT-IMAGE-APP-SUM = 17
+const BOOT-IMAGE-APP-MAN = 18
+const BOOT-IMAGE-APP-SYSINFO = 19

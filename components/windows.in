@@ -884,7 +884,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let cbuf = alloc(4096)
-    let n = fs-read-file(src, cbuf)
+    let n = fs-read-file(src, cbuf, 4096)
     if n < 0 {
       win-set-error-unlink(src)
       return 0

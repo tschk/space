@@ -11,6 +11,7 @@ mkdir -p "$BUILD_DIR"
 BUILD_DIR="$BUILD_DIR" "$SCRIPT_DIR/build-runtime-components.sh" >/dev/null
 rm -f "$SERIAL_A" "$SERIAL_B" "$FIFO_A" "$FIFO_B" "$NVME_IMG"
 truncate -s 64M "$NVME_IMG"
+python3 "$SCRIPT_DIR/check-volume-preservation.sh" --seed "$NVME_IMG"
 
 boot_until() {
   local serial="$1"
@@ -49,7 +50,7 @@ boot_until() {
   return 1
 }
 
-echo "[1/2] Boot A: format Volume + write via SCI RPC onto NVMe..."
+echo "[1/2] Boot A: mount initialized Volume fixture + write via SCI RPC onto NVMe..."
 if ! boot_until "$SERIAL_A" "$FIFO_A" "volume: component init/write/read passed"; then
   echo "FAIL: boot A missing volume: component init/write/read passed" >&2
   exit 1
