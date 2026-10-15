@@ -36,6 +36,7 @@ jobs:
         python3 scripts/check-boot-data-reservation.py --in "$IN_BIN"
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
+        python3 scripts/check-display-allocation.py --in "$IN_BIN"
         python3 scripts/check-posix-wait-status.py --in "$IN_BIN"
         python3 scripts/check-windows-wait-result.py --in "$IN_BIN"
         python3 scripts/check-ps2-mouse-init.py --in "$IN_BIN"

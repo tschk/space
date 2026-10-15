@@ -78,13 +78,17 @@ fn display-heap-init(base: Int, size: Int) -> void {
 }
 
 fn alloc(n: Int) -> Int {
+  // Reject wrapping alignment before using it in pointer arithmetic, on
+  // either word width. Zero retains the existing no-advance behavior.
+  if n < 0 { return 0 }
   let aligned = (n + 15) & -16
+  if aligned < n { return 0 }
   let p = heap-next
-  let next = heap-next + aligned
-  if next > heap-end {
+  // Compare remaining capacity before adding, so the pointer cannot wrap.
+  if p < 0 || p > heap-end || aligned > heap-end - p {
     return 0
   }
-  heap-next = next
+  heap-next = p + aligned
   return p
 }
 

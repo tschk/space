@@ -2673,7 +2673,11 @@ fn dsp-shm-create-pool(pool-id: Int, size: Int) -> void {
   if pool-id < 0 || pool-id >= DSP-MAX-POOLS {
     return
   }
+  // Reject nonpositive or wrapping sizes before reaching the allocator.
+  if size <= 0 { return }
+  if ((size + 15) & -16) < size { return }
   let p = alloc(size)
+  if p == 0 { return }
   store64(dsp-pools + pool-id * 8, p)
   store64(dsp-pool-sizes + pool-id * 8, size)
   return

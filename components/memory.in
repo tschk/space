@@ -1,13 +1,17 @@
 package space.kernel
 
 fn alloc(n: Int) -> Int {
+  // Reject wrapping alignment before using it in pointer arithmetic, on
+  // either word width. Zero retains the existing no-advance behavior.
+  if n < 0 { panic("invalid allocation size"); return 0 }
   let aligned = (n + 15) & -16
+  if aligned < n { panic("invalid allocation size"); return 0 }
   let p = heap-next
-  let next = heap-next + aligned
-  if next > heap-end {
-    panic("heap exhausted")
+  // Compare remaining capacity before adding, so the pointer cannot wrap.
+  if p < 0 || p > heap-end || aligned > heap-end - p {
+    panic("heap exhausted"); return 0
   }
-  heap-next = next
+  heap-next = p + aligned
   return p
 }
 
