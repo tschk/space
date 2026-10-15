@@ -322,7 +322,9 @@ fn posix-sys-wait4(pid: Int, wstatus: Int, options: Int, rusage: Int) -> Int {
   }
   let code = proc-wait(pid)
   if wstatus != 0 {
-    store32(wstatus, code & 0xFF)
+    // wait status is a C int: normal exit code occupies bits 8..15.
+    // proc-wait exposes only an exit code, not a complete signal reason.
+    store32(wstatus, (code & 0xFF) << 8)
   }
   return pid
 }
