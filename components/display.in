@@ -2544,11 +2544,12 @@ fn dsp-composite() -> void {
     let pool-id = load64(base + 8)
     let buf-off = load64(base + 16)
     let wh = load64(base + 24)
-    let w = wh & 0xFFFF
-    let h = (wh >> 16) & 0xFFFF
+    // Match dsp-surface-geometry: width/x occupy the high half-word.
+    let w = (wh >> 16) & 0xFFFF
+    let h = wh & 0xFFFF
     let xy = load64(base + 32)
-    let sx = xy & 0xFFFF
-    let sy = (xy >> 16) & 0xFFFF
+    let sx = (xy >> 16) & 0xFFFF
+    let sy = xy & 0xFFFF
 
     if w > 0 && h > 0 && pool-id >= 0 && pool-id < DSP-MAX-POOLS {
       let pool = load64(dsp-pools + pool-id * 8)
@@ -2695,9 +2696,9 @@ fn dsp-demo(port: Int) -> Int {
     serial-nl(port)
     return 0
   }
-  // Client-owned pool buffer: 64x64 RGBA.
-  let pw = 64
-  let ph = 64
+  // Asymmetric client-owned pool: exposes transposed dimensions/position.
+  let pw = 96
+  let ph = 32
   let pool-size = pw * ph * 4
   dsp-shm-create-pool(0, pool-size)
   let pool = load64(dsp-pools + 0)
@@ -2720,12 +2721,19 @@ fn dsp-demo(port: Int) -> Int {
     }
     yy = yy + 1
   }
-  // Attach buffer slice [pool 0, offset 0], place at (100,100), commit.
+  // Attach buffer slice [pool 0, offset 0], place at (40,80), commit.
   dsp-surface-attach(sid, (0 << 32) | 0)
-  dsp-surface-geometry(sid, (100 << 48) | (100 << 32) | (pw << 16) | ph)
+  dsp-surface-geometry(sid, (40 << 48) | (80 << 32) | (pw << 16) | ph)
   dsp-surface-commit(sid)
+  // A committed slice extending beyond the pool must remain invisible.
+  let invalid = dsp-create-surface()
+  if invalid >= 0 {
+    dsp-surface-attach(invalid, pool-size - 4)
+    dsp-surface-geometry(invalid, (400 << 48) | (200 << 32) | (pw << 16) | ph)
+    dsp-surface-commit(invalid)
+  }
   dsp-composite()
-  serial-write-cstr(port, "  dsp: demo composited surface at 100,100")
+  serial-write-cstr(port, "  dsp: demo composited surface at 40,80")
   serial-nl(port)
   return 1
 }

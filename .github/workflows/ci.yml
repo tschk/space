@@ -44,6 +44,7 @@ jobs:
         python3 scripts/check-desktop-launcher.py --in "$IN_BIN" --build-dir /tmp/space-desktop-ci
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-shell.sh
+        KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-spdp-composite.sh
 
   website:
     name: Website gates

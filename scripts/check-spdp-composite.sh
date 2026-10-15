@@ -24,9 +24,21 @@ SERIAL_OUT="$SERIAL_BASE.out"
 SERIAL_LOG="$BUILD_DIR/serial.log"
 MONITOR="$BUILD_DIR/qemu-monitor.sock"
 PPM="$BUILD_DIR/composite.ppm"
+QEMU_PID_FILE="$BUILD_DIR/qemu.pid"
+CATPID=""
+cleanup() {
+  if [ -S "$MONITOR" ]; then
+    printf 'quit\n' | timeout 1 nc -U "$MONITOR" >/dev/null 2>&1 || true
+  fi
+  if [ -f "$QEMU_PID_FILE" ]; then
+    kill "$(cat "$QEMU_PID_FILE")" 2>/dev/null || true
+  fi
+  if [ -n "$CATPID" ]; then kill "$CATPID" 2>/dev/null || true; fi
+  rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR" "$QEMU_PID_FILE"
+}
 
 mkdir -p "$BUILD_DIR"
-rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG" "$MONITOR" "$PPM"
+rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG" "$MONITOR" "$PPM" "$QEMU_PID_FILE"
 
 echo "[1/4] Building kernel..."
 if [ -n "${KERNEL_BIN:-}" ]; then
@@ -44,10 +56,11 @@ else
 fi
 
 echo "[2/4] Booting to shell..."
+trap cleanup EXIT
 mkfifo "$SERIAL_IN" "$SERIAL_OUT"
 qemu-system-x86_64 -kernel "$KERNEL" -m 256M -no-reboot \
   -vga std -display none -serial "pipe:$SERIAL_BASE" \
-  -monitor "unix:$MONITOR,server,nowait" -daemonize
+  -monitor "unix:$MONITOR,server,nowait" -pidfile "$QEMU_PID_FILE" -daemonize
 
 timeout 30 cat "$SERIAL_OUT" > "$SERIAL_LOG" &
 CATPID=$!
@@ -89,22 +102,33 @@ pixels = data[i:]
 width = int(parts[1])
 height = int(parts[2])
 
-# Surface is placed at (100,100), 64x64, red/green 8px checker. The composite
+# Surface is placed at (40,80), 96x32, red/green 8px checker. The composite
 # fills the screen with dark blue (0x00000080 -> RGB (0,0,128)) first.
 def c(x, y):
     row = y * width * 3 + x * 3
     return tuple(pixels[row:row + 3])
 
 red = green = blue = 0
-for y in range(100, 164):
-    for x in range(100, 164):
+for y in range(80, 112):
+    for x in range(40, 136):
         col = c(x, y)
+        expected = (255, 0, 0) if (((x-40)//8 + (y-80)//8) % 2 == 0) else (0, 255, 0)
+        if col != expected:
+            raise SystemExit(f"surface pixel {x},{y}: {col} != {expected}")
         if col == (255, 0, 0):
             red += 1
         elif col == (0, 255, 0):
             green += 1
         elif col == (0, 0, 128):
             blue += 1
+# Probe both the old transposed placement and every invalid-slice pixel.
+for x,y in [(80,40),(39,80),(136,80),(40,112)]:
+    if c(x,y) != (0,0,128):
+        raise SystemExit(f"surface escaped geometry at {x},{y}: {c(x,y)}")
+for y in range(200,232):
+    for x in range(400,496):
+        if c(x,y) != (0,0,128):
+            raise SystemExit(f"out-of-pool slice rendered at {x},{y}")
 # Dark-blue background outside the surface.
 bg = 0
 for n in range(0, width * height, 7):
@@ -122,7 +146,4 @@ PY
 PASS=$?
 
 printf 'halt\n' > "$SERIAL_IN"
-printf 'quit\n' | nc -U "$MONITOR" >/dev/null 2>&1 || true
-kill "$CATPID" 2>/dev/null || true
-rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
 exit "$PASS"
