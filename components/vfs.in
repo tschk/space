@@ -198,6 +198,26 @@ fn vfs-open(pathname: Int, flags: Int) -> Int {
   return fd
 }
 
+// Duplicate a regular-file descriptor while retaining its shared open-file offset.
+// Pipe endpoint lifetime belongs to its personality and must not use this helper.
+fn vfs-dup-file(fd: Int) -> Int {
+  if fd < 3 || vfs-fd-valid(fd) == 0 { return -9 }
+  let base = vfs-fd-table + fd * 32
+  if load64(base + 24) != 0 { return -9 }
+  let copy = vfs-fd-alloc()
+  if copy < 0 { return -16 }
+  let record = vfs-fd-open-file(fd)
+  if record == 0 { return -16 }
+  store64(record + 8, load64(record + 8) + 1)
+  let target = vfs-fd-table + copy * 32
+  store64(target, load64(base))
+  store64(target + 8, vfs-fd-offset(fd))
+  store64(target + 16, load64(base + 16))
+  store64(target + 24, 0)
+  store64(vfs-fd-table + VFS-MAX-FDS * 32 + copy * 8, record)
+  return copy
+}
+
 fn vfs-close(fd: Int) -> Int {
   if vfs-fd-valid(fd) == 0 {
     return -9

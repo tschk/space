@@ -69,6 +69,7 @@ for name in [
     "vfs-fd-valid",
     "vfs-open",
     "vfs-close",
+    "vfs-dup-file",
     "vfs-read",
     "vfs-write",
     "vfs-lseek",
@@ -123,6 +124,48 @@ fn main()->Int{
  return 42;
 }
 """
+# Exercise the actual Windows duplicate/close dispatch branches too.
+windows = (root / "components/windows.in").read_text()
+source += "\n" + "\n".join(line for line in windows.splitlines() if line.startswith("const WIN-"))
+source += "\nvar win-handles:Int=0;\nvar win-last-error:Int=0;\n"
+source += "fn win-set-error(error:Int)->Void{win-last-error=error;}\nfn win-clear-error()->Void{win-last-error=0;}\n"
+for name in ["win-handle-base", "win-handle-set", "win-handle-type", "win-handle-value", "win-handle-alloc", "win-handle-alloc-process", "win-handle-free"]:
+    source += extract("windows.in", name) + "\n"
+for call, function in [("DUPLICATEHANDLE", "duplicate"), ("CLOSEHANDLE", "close")]:
+    start = windows.index("  if num == WIN-CALL-" + call + " {")
+    end = windows.index("\n  if num == ", start + 3)
+    source += f"fn windows-{function}(a0:Int)->Int{{let num=WIN-CALL-{call};\n" + windows[start:end] + "\nreturn -99;}\n"
+source = source.replace(" return 42;\n}\n", " return windows-lifetime();\n}\n", 1)
+source += """
+fn windows-lifetime()->Int{
+ vfs-fd-table-alloc();win-handles=alloc(WIN-MAX-HANDLES*WIN-HANDLE-STRIDE);
+ let i=0;while i<WIN-MAX-HANDLES{win-handle-set(i,WIN-HANDLE-TYPE-FREE,0);i+=1;}
+ let fd=vfs-open(99,2);let original=win-handle-alloc(fd);
+ let independent=vfs-open(99,2);let copy=windows-duplicate(original);
+ if copy==WIN-INVALID-HANDLE{return 101;}
+ let copyfd=win-handle-value(copy);
+ if copyfd==fd{return 102;}
+ if vfs-lseek(fd,9,0)!=9 || vfs-fd-offset(copyfd)!=9 || vfs-fd-offset(independent)!=0{return 103;}
+ windows-close(original);
+ let reused=vfs-open(77,2);if reused!=fd{return 104;}
+ if vfs-lseek(reused,55,0)!=55 || vfs-fd-offset(copyfd)!=9{return 105;}
+ io-result=2;if vfs-read(copyfd,1,2)!=2 || io-offset!=9{return 106;}
+ windows-close(copy);if vfs-fd-valid(reused)!=1{return 107;}
+ let other=win-handle-alloc(reused);let sibling=windows-duplicate(other);
+ windows-close(sibling);
+ if vfs-lseek(reused,12,0)!=12{return 108;}
+ if vfs-read(reused,1,2)!=2 || io-offset!=12{return 112;}
+ windows-close(other);
+ // Exhaust Windows slots: the temporary duplicated descriptor must be released.
+ let survivor=win-handle-alloc(independent);
+ i=3;while i<WIN-MAX-HANDLES{if win-handle-type(i)==WIN-HANDLE-TYPE-FREE{win-handle-set(i,WIN-HANDLE-TYPE-PROCESS,1);}i+=1;}
+ let freefd=vfs-fd-alloc();let refs=load64(vfs-fd-open-file(independent)+8);
+ if windows-duplicate(survivor)!=WIN-INVALID-HANDLE || win-last-error!=WIN-ERROR-INVALID-HANDLE{return 109;}
+ if vfs-fd-alloc()!=freefd{return 110;}
+ if load64(vfs-fd-open-file(independent)+8)!=refs{return 111;}
+ return 42;
+}
+"""
 with tempfile.TemporaryDirectory(prefix="space-vfs-offset-") as directory:
     path = Path(directory) / "offset.in"
     path.write_text(source)
@@ -150,5 +193,5 @@ with tempfile.TemporaryDirectory(prefix="space-vfs-offset-") as directory:
         if not report.get("success") or report.get("eval_result") != {"Int": 42}:
             raise SystemExit(f"FAIL {profile}: {run.stdout}\n{run.stderr}")
         print(
-            f"PASS {profile}: shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, failures"
+            f"PASS {profile}: shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, Windows duplicate lifetime/exhaustion, failures"
         )

@@ -983,10 +983,18 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
           i = i + 1
         }
       } else {
-        nh = win-handle-alloc(sval)
+        // Each file handle owns a descriptor; duplicate descriptors share the
+        // open-file offset but closing one must not invalidate its sibling.
+        let copy = vfs-dup-file(sval)
+        if copy < 0 {
+          win-set-error(WIN-ERROR-INVALID-HANDLE)
+          return WIN-INVALID-HANDLE
+        }
+        nh = win-handle-alloc(copy)
+        if nh < 3 || nh >= WIN-MAX-HANDLES { vfs-close(copy) }
       }
     }
-    if nh < 0 || nh >= WIN-MAX-HANDLES {
+    if nh < 3 || nh >= WIN-MAX-HANDLES {
       win-set-error(WIN-ERROR-INVALID-HANDLE)
       return WIN-INVALID-HANDLE
     }
