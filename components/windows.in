@@ -650,8 +650,13 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return -1
     }
     let vfd = win-handle-value(handle)
+    let position = vfs-lseek(vfd, offset, whence)
+    if position < 0 {
+      win-set-error-rc(position)
+      return -1
+    }
     win-clear-error()
-    return vfs-lseek(vfd, offset, whence)
+    return position
   }
   if num == WIN-CALL-GETSTDHANDLE {
     // Space-local: -10 stdin→0, -11 stdout→1, -12 stderr→2

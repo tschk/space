@@ -38,7 +38,7 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 8. `Sleep` — small pause loop (shell path cannot `thr-yield`)
 9. `GetCurrentThreadId` → `current-task`
 10. `DeleteFileA` — `fs-delete` / volume RPC
-11. `SetFilePointer` — `vfs-lseek(vfd, off, whence)` (0=SET)
+11. `SetFilePointer` — `vfs-lseek(vfd, off, whence)` (0=SET); Space-local full `Int` position on success, `-1` with paired error/status on failure (not the Win32 low-DWORD/high-pointer ABI)
 12. `GetStdHandle` — `-10`→0 stdin, `-11`→1 stdout, `-12`→2 stderr
 13. `MoveFileA` — `fs-rename`; return 1/0
 14. `FlushFileBuffers` — no-op success (1) for open handle

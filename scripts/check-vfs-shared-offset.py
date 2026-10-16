@@ -127,14 +127,18 @@ fn main()->Int{
 # Exercise the actual Windows duplicate/close dispatch branches too.
 windows = (root / "components/windows.in").read_text()
 source += "\n" + "\n".join(line for line in windows.splitlines() if line.startswith("const WIN-"))
-source += "\nvar win-handles:Int=0;\nvar win-last-error:Int=0;\n"
-source += "fn win-set-error(error:Int)->Void{win-last-error=error;}\nfn win-clear-error()->Void{win-last-error=0;}\n"
+source += "\nvar win-handles:Int=0;\nvar win-last-error:Int=0;\nvar win-last-status:Int=0;\n"
+for name in ["win-ntstatus", "win-dos-error", "win-status-from-error", "win-set-error", "win-set-status", "win-set-error-rc", "win-clear-error"]:
+    source += extract("windows.in", name) + "\n"
 for name in ["win-handle-base", "win-handle-set", "win-handle-type", "win-handle-value", "win-handle-alloc", "win-handle-alloc-process", "win-handle-free"]:
     source += extract("windows.in", name) + "\n"
 for call, function in [("DUPLICATEHANDLE", "duplicate"), ("CLOSEHANDLE", "close")]:
     start = windows.index("  if num == WIN-CALL-" + call + " {")
     end = windows.index("\n  if num == ", start + 3)
     source += f"fn windows-{function}(a0:Int)->Int{{let num=WIN-CALL-{call};\n" + windows[start:end] + "\nreturn -99;}\n"
+start = windows.index("  if num == WIN-CALL-SETFILEPOINTER {")
+end = windows.index("\n  if num == ", start + 3)
+source += "fn windows-seek(a0:Int,a1:Int,a2:Int)->Int{let num=WIN-CALL-SETFILEPOINTER;\n" + windows[start:end] + "\nreturn -99;}\n"
 source = source.replace(" return 42;\n}\n", " return windows-lifetime();\n}\n", 1)
 source += """
 fn windows-lifetime()->Int{
@@ -158,6 +162,17 @@ fn windows-lifetime()->Int{
  let copyfd=win-handle-value(copy);
  if copyfd==fd{return 102;}
  if vfs-lseek(fd,9,0)!=9 || vfs-fd-offset(copyfd)!=9 || vfs-fd-offset(independent)!=0{return 103;}
+ // Failed Windows seeks report paired errors without committing the shared offset.
+ if windows-seek(copy,0,99)!=-1{return 130;}
+ if win-last-error!=WIN-ERROR-INVALID-PARAMETER || win-last-status!=WIN-STATUS-INVALID-PARAMETER{return 131;}
+ if vfs-fd-offset(fd)!=9 || vfs-fd-offset(copyfd)!=9 || vfs-fd-offset(independent)!=0{return 132;}
+ if windows-seek(copy,-10,1)!=-1{return 133;}
+ if win-last-error!=WIN-ERROR-INVALID-PARAMETER || win-last-status!=WIN-STATUS-INVALID-PARAMETER{return 134;}
+ if vfs-fd-offset(fd)!=9 || vfs-fd-offset(copyfd)!=9{return 135;}
+ if windows-seek(copy,0,1)!=9 || win-last-error!=0 || win-last-status!=0{return 136;}
+ if windows-seek(0,0,0)!=-1 || win-last-error!=WIN-ERROR-INVALID-HANDLE || win-last-status!=WIN-STATUS-INVALID-HANDLE{return 137;}
+ if windows-seek(original,9,0)!=9 || win-last-error!=0 || win-last-status!=0{return 138;}
+
  windows-close(original);
  let reused=vfs-open(77,2);if reused!=fd{return 104;}
  if vfs-lseek(reused,55,0)!=55 || vfs-fd-offset(copyfd)!=9{return 105;}
