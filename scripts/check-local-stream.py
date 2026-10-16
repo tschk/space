@@ -24,7 +24,9 @@ def extract(file, name):
 
 
 v = (s / "components/vfs.in").read_text()
+record = v[v.index("struct VfsStreamPair {") : v.index("\n}", v.index("struct VfsStreamPair {")) + 2]
 source = "\n".join(x for x in v.splitlines() if x.startswith(("const ", "var "))) + "\n"
+source += record + "\n"
 source += "var memory:[Int]=[" + ",".join(["0"] * 50000) + "];\n"
 source += """var cursor:Int=8;
 fn alloc(n:Int)->Int{let p=cursor;cursor+=n;return p;}
@@ -69,6 +71,11 @@ source += """fn main()->Int{
  if vfs-stream-pair(1,2,0,result)!=-22 || load32(result)!=91{return 2;}
  if vfs-stream-pair(1,1,0,result)!=0{return 3;}
  let a=load32(result);let b=load32(result+4);
+ // Private handles are bounded indices, not raw metadata/payload addresses.
+ let row=vfs-fd-table+a*32;let handle=load64(row);store8(out,91);
+ store64(row,0);if vfs-stream-valid(a)!=0 || vfs-stream-read(a,out,1)!=-9 || load8(out)!=91{return 29;}
+ store64(row,VFS-STREAM-MAX+1);if vfs-stream-valid(a)!=0 || vfs-stream-write(a,buf,1)!=-9{return 30;}
+ store64(row,handle);
  if a!=3 || b!=4 || vfs-stream-read(b,out,1)!=-11{return 4;}
  if vfs-stream-read(b,out,-1)!=-22 || vfs-stream-write(a,buf,-1)!=-22{return 5;}
  if vfs-stream-read(b,0,0)!=0 || vfs-stream-write(a,0,0)!=0{return 6;}

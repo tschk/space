@@ -11,8 +11,8 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: inauguration
-      # Inauguration 0.9.243: native flat records for retained endpoint snapshots.
-      inauguration-ref: 012508537b9e370c74d160c5a374303e90843304
+      # Inauguration 0.9.251: typed flat record arrays for stream-pair metadata.
+      inauguration-ref: 77ac2ee0fad6bcea205979181accdf8ef835194b
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot

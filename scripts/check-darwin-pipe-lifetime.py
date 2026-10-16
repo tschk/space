@@ -49,6 +49,8 @@ fn store8(p:Int,v:Int)->void{heap[p]=v;}
 fn vfs-close(fd:Int)->Int{vfs-fd-clear(fd);return 0;}
 '''
 vfs = (root / 'components/vfs.in').read_text()
+record_start = vfs.index("struct VfsStreamPair {")
+source += "\n" + vfs[record_start : vfs.index("\n}", record_start) + 2] + "\n"
 for name in ('vfs-fd-valid', 'vfs-fd-clear', 'vfs-fd-alloc', 'vfs-fd-open-file', 'vfs-fd-table-alloc'):
     start = vfs.index('fn ' + name + '(')
     following = re.search(r'\nfn ', vfs[start + 3:])

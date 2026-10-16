@@ -45,6 +45,15 @@ capacity failures and file-adapter refusal. Empty/full live streams return
 `EAGAIN` synchronously; readiness waits, descriptor transfer and shared memory
 remain open work. These checks do not run a Wayland server or client.
 
+Private stream-pair bookkeeping now uses a fixed table of four typed
+`VfsStreamPair` records, supported by Inauguration 0.9.251. Descriptor rows
+retain their 32-byte layout and carry bounded private pair handles; byte rings
+retain raw byte storage. This replaces metadata offsets without changing the
+transport contract. The next readiness slice must model pending peer-reset
+errors before claiming Linux-compatible `poll`; zero-timeout polling alone
+would still leave blocking waits, socket connection setup and descriptor
+transfer unresolved.
+
 Port boundaries and acceptance:
 
 1. Establish the userspace/runtime contract for libwayland and labwc: local

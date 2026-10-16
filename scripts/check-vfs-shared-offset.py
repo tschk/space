@@ -63,6 +63,8 @@ fn darwin-pipe-release(slot:Int,end:Int)->Void{return;}
 """
 # Preserve real stream-aware shared VFS branches while testing regular-file controls.
 vfs = (root / "components/vfs.in").read_text()
+record_start = vfs.index("struct VfsStreamPair {")
+source += "\n" + vfs[record_start : vfs.index("\n}", record_start) + 2] + "\n"
 source += "\n" + "\n".join(
     line for line in vfs.splitlines()
     if line.startswith(("const VFS-FD-STREAM", "const VFS-STREAM-", "var vfs-stream-"))
