@@ -11,8 +11,8 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: inauguration
-      # Inauguration 0.9.215: native calls, boot data, and word I/O checking.
-      inauguration-ref: 2b68271cb8e54769c57417bd2bf8331bbad0c89d
+      # Inauguration 0.9.236: canonical component metadata beside SCI artifacts.
+      inauguration-ref: 6be02baa2486ff6776be1980eeb50c27817655db
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot
