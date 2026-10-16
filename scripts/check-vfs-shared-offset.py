@@ -140,6 +140,18 @@ source += """
 fn windows-lifetime()->Int{
  vfs-fd-table-alloc();win-handles=alloc(WIN-MAX-HANDLES*WIN-HANDLE-STRIDE);
  let i=0;while i<WIN-MAX-HANDLES{win-handle-set(i,WIN-HANDLE-TYPE-FREE,0);i+=1;}
+ win-handle-set(1,WIN-HANDLE-TYPE-CONSOLE,1);
+ win-handle-set(2,WIN-HANDLE-TYPE-CONSOLE,2);
+ i=0;while i<40{
+  let cloned=windows-duplicate(1);if cloned==WIN-INVALID-HANDLE{return 120;}
+  if win-handle-type(cloned)!=WIN-HANDLE-TYPE-CONSOLE || win-handle-value(cloned)!=1{return 121;}
+  if windows-close(cloned)!=1 || win-handle-type(cloned)!=WIN-HANDLE-TYPE-FREE{return 122;}
+  if windows-close(cloned)!=0 || win-last-error!=WIN-ERROR-INVALID-HANDLE{return 123;}
+  if win-handle-type(1)!=WIN-HANDLE-TYPE-CONSOLE || win-handle-type(2)!=WIN-HANDLE-TYPE-CONSOLE{return 124;}
+  i+=1;
+ }
+ if windows-close(1)!=1 || windows-close(2)!=1{return 125;}
+ if win-handle-type(1)!=WIN-HANDLE-TYPE-CONSOLE || win-handle-type(2)!=WIN-HANDLE-TYPE-CONSOLE{return 126;}
  let fd=vfs-open(99,2);let original=win-handle-alloc(fd);
  let independent=vfs-open(99,2);let copy=windows-duplicate(original);
  if copy==WIN-INVALID-HANDLE{return 101;}

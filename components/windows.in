@@ -571,6 +571,8 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     let handle = a0
     let htype = win-handle-type(handle)
     if htype == WIN-HANDLE-TYPE-CONSOLE || handle == 1 || handle == 2 {
+      // Reserved stdio handles stay available; duplicates own ordinary slots.
+      if handle >= 3 { win-handle-free(handle) }
       win-clear-error()
       return 1
     }
