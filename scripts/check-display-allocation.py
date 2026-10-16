@@ -104,12 +104,16 @@ var calls:Int=0;
 var memory:[Int]=["""
             + ",".join(["0"] * 512)
             + f"""];
+var cleared:Int=0;
+var bad-clear:Int=0;
 fn store64(p:Int,v:Int)->Void{{memory[p]=v;}}
+fn store8(p:Int,v:Int)->Void{{if p<888 || p>=904 || v!=0{{bad-clear=1;}}cleared+=1;}}
 fn alloc(n:Int)->Int{{calls+=1;return {allocated};}}
 {function('display.in', 'dsp-shm-create-pool')}
 fn main()->Int{{memory[8]=777;memory[136]=32;
  dsp-shm-create-pool({pool_id},{size});
  if calls!={calls} || memory[8]!={expected_pool} || memory[136]!={expected_size}{{return 1;}}
+ if cleared!={16 if name == "valid" else 0} || bad-clear!=0{{return 2;}}
  return 42;
 }}
 """

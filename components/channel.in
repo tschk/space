@@ -29,6 +29,60 @@ fn chan-cross-bind(shared-page: Int, local-domain: Int, capacity: Int) -> Int {
   return ch
 }
 
+// Loader shared-page ring: four Int slots form one complete 32-byte SPDP frame.
+// Publish tail/head only after all four words have been written/read. This is
+// separate from the scheduler-backed CSP channel layout below.
+fn chan-page-frame-header-valid(capacity: Int, head: Int, tail: Int, word-size: Int) -> Int {
+  if capacity < 8 || capacity > 508 || (capacity & 3) != 0 { return 0 }
+  if word-size != 8 { return 0 }
+  if head < 0 || head >= capacity || (head & 3) != 0 { return 0 }
+  if tail < 0 || tail >= capacity || (tail & 3) != 0 { return 0 }
+  return 1
+}
+
+fn chan-page-frame-valid(page: Int) -> Int {
+  if page == 0 { return 0 }
+  return chan-page-frame-header-valid(load64(page + 16), load64(page), load64(page + 8), load64(page + 24))
+}
+
+fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {
+  if page == 0 { return -1 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  let next = tail + 4
+  if next == capacity { next = 0 }
+  if next == head { return 0 }
+  let frame = page + 32 + tail * 8
+  store64(frame, object)
+  store64(frame + 8, opcode)
+  store64(frame + 16, arg0)
+  store64(frame + 24, arg1)
+  store64(page + 8, next)
+  return 1
+}
+
+fn chan-page-recv-frame(page: Int, message: Int) -> Int {
+  if page == 0 || message == 0 { return -1 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  if head == tail { return 0 }
+  let frame = page + 32 + head * 8
+  store64(message, load64(frame))
+  store64(message + 8, load64(frame + 8))
+  store64(message + 16, load64(frame + 16))
+  store64(message + 24, load64(frame + 24))
+  let next = head + 4
+  if next == capacity { next = 0 }
+  store64(page, next)
+  return 1
+}
+
 // --- typed channels with blocking (CSP-style) ------------------------------
 // Channels are ring buffers with blocking wait queues. A thread that tries to
 // send on a full channel or recv from an empty one blocks (THR_BLOCKED) and

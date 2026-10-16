@@ -10,8 +10,8 @@ Today every compositor window lives in the kernel's address space. The window
 manager (`comp-*` in `components/display.in`) is kernel-linked: window records,
 terminal ring buffers, the ~8 MB backbuffer, and the cursor all sit in the
 kernel heap/identity map. A "display server" surface pipeline already exists in
-the same file (`dsp-*`) with a wire protocol (`protocol/display.in`, SPDP), but
-it is kernel-side-only, never exercised by a real client, and its only loop
+the same file (`dsp-*`) with a wire protocol (`protocol/display.in`, SPDP), and
+a bounded SCI producer now exercises complete frame transport. The persistent loop
 (`dsp-run`) blocks on `hlt()` with no wakeup source after `preempt-stop`.
 
 The goal is a model where **SCI components own surfaces** in their own memory
@@ -63,6 +63,28 @@ Message flow (already defined in `protocol/display.in`):
     frees it (heap exhaustion) — move the buffer outside the loop.
   - `dsp-composite` reads `pool + offset + w*h*4` with no bound against the
     pool size (OOB read into the heap) — add pool-size tracking and clip.
+
+### SCI transport prerequisite (bounded executable proof)
+
+`dsp sci left` and `dsp sci right`, with `fixtures/spdp-sci/client.in` loaded
+at the proof address by `scripts/check-spdp-sci.py`, synchronously run a real
+SCI producer in its memory domain. Five complete 32-byte SPDP frames travel
+through the loader's existing shared page and control surface geometry.
+`chan-page-*` validates a captured ring header and publishes/consumes whole
+four-word frames; malformed or partial frames do not advance the head or
+reach the dispatcher. Scheduler-backed CSP channels retain their own layout.
+
+The compositor explicitly supplies opaque black **kernel test pixels** in a
+zero-initialized kernel-backed pool. This proves SCI frame transport and
+geometry control, not client-owned pixels, authenticated cross-client surface
+IDs, seat input, or an interactive SCI desktop window. The synchronous drain
+avoids relying on a new scheduler/wakeup mechanism. The optional QEMU check
+uses the existing Linux-proof slot at physical `0x280000` exclusively (not a
+combined Linux/runtime-component image), verifies the kernel does not overlap
+that slot and the SCI ends below the reserved 3MiB heap, and checks both
+geometries and removal of the previous rectangle; the focused
+`check-spdp-page-frames.py` checks full/empty/wrap and malformed/partial frames
+under all compiler profiles.
 
 ### Phase B (not yet implemented)
 - Client surface buffers live in a `domain-create-shared-page` page. The

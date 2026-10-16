@@ -59,6 +59,12 @@ interrupt fn chan-count(c: Int) -> Int {
 interrupt fn chan-recv(c: Int) -> Int {
 }
 
+interrupt fn chan-page-frame-valid(page: Int) -> Int {
+}
+
+interrupt fn chan-page-recv-frame(page: Int, message: Int) -> Int {
+}
+
 interrupt fn frame-alloc() -> Int {
 }
 
@@ -150,7 +156,7 @@ fn display-entry(cap-info: Int) -> Int {
   if cap-info != 0 {
     ch = load64(cap-info + 32)
   }
-  dsp-run(ch, port)
+  dsp-run-page(ch, port)
   serial-write-cstr(port, "display: component exited")
   serial-nl(port)
   return 0

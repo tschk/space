@@ -36,6 +36,7 @@ jobs:
         python3 scripts/check-boot-data-reservation.py --in "$IN_BIN"
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
+        python3 scripts/check-spdp-page-frames.py --in "$IN_BIN"
         python3 scripts/check-display-allocation.py --in "$IN_BIN"
         python3 scripts/check-channel-capacity.py --in "$IN_BIN"
         python3 scripts/check-posix-wait-status.py --in "$IN_BIN"
@@ -48,6 +49,7 @@ jobs:
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-shell.sh
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-spdp-composite.sh
+        python3 scripts/check-spdp-sci.py --in "$IN_BIN" --build-dir /tmp/space-spdp-sci-ci
 
   website:
     name: Website gates

@@ -2688,6 +2688,34 @@ fn dsp-draw-cursor() -> void {
   }
 }
 
+// Drain complete loader-page frames without touching the CSP channel layout.
+// Bound each pass even if a concurrent producer continues publishing.
+fn dsp-drain-page(page: Int, port: Int) -> Int {
+  if chan-page-frame-valid(page) == 0 { return -1 }
+  let count = 0
+  while count < 126 {
+    let result = chan-page-recv-frame(page, dsp-msg)
+    if result < 0 { return -1 }
+    if result == 0 { return count }
+    dsp-handle-msg(load64(dsp-msg), load64(dsp-msg + 8), load64(dsp-msg + 16), load64(dsp-msg + 24), port)
+    count = count + 1
+  }
+  return count
+}
+
+// Loader-page variant; the scheduler-backed CSP server below is unchanged.
+fn dsp-run-page(page: Int, port: Int) -> void {
+  dsp-running = 1
+  serial-write-cstr(port, "  display: server running")
+  serial-nl(port)
+  while dsp-running != 0 {
+    if dsp-drain-page(page, port) < 0 { dsp-running = 0; return }
+    dsp-composite()
+    sti()
+    hlt()
+  }
+}
+
 // Main display server loop. Reads SPDP messages from the channel and processes
 // them. Runs until the channel is closed or an error occurs.
 fn dsp-run(ch: Int, port: Int) -> void {
@@ -2735,6 +2763,8 @@ fn dsp-shm-create-pool(pool-id: Int, size: Int) -> void {
   if ((size + 15) & -16) < size { return }
   let p = alloc(size)
   if p == 0 { return }
+  let offset = 0
+  while offset < size { store8(p + offset, 0); offset = offset + 1 }
   store64(dsp-pools + pool-id * 8, p)
   store64(dsp-pool-sizes + pool-id * 8, size)
   return

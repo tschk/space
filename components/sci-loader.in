@@ -68,6 +68,9 @@ const COMP-HEAP-VIRT = 0x80000000
 const COMP-HEAP-SIZE = 0x200000
 const COMP-SHARED-VIRT = 0x70000000
 
+// Last successful synchronous launch page, retained by its live domain.
+var sci-sync-page: Int = 0
+
 var comp-entry-arg: Int = 0
 var comp-cap-info-arg: Int = 0
 var comp-domain-arg: Int = 0
@@ -342,6 +345,7 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
 }
 
 fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {
+  sci-sync-page = 0
   serial-write-cstr(port, "  SCI: loading ")
   serial-write-cstr(port, name)
   serial-nl(port)
@@ -470,6 +474,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     domain-switch(domain)
     let rc = invoke1(entry, cap-info)
     domain-switch(prev)
+    sci-sync-page = shared
     serial-write-cstr(port, "  SCI: ")
     serial-write-cstr(port, name)
     serial-write-cstr(port, " exited 0x")

@@ -1,0 +1,20 @@
+package space.spdp.proof
+
+import "../../protocol/display.in"
+
+// Real SCI import: loader binds this shared frame publisher to the kernel.
+interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {}
+
+fn client-entry(cap-info: Int) -> Int {
+  let page = load64(cap-info + 32)
+  let args = load64(cap-info + 64)
+  let x = 40
+  if args != 0 && load8(args) == 114 { x = 400 }
+  // Surface0/pool0 belong to this reset proof only; no cross-client identity claim.
+  if chan-page-send-frame(page, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0) != 1 { return 1 }
+  if chan-page-send-frame(page, SPDP-OBJ-SHM, SPDP-SHM-CREATE-POOL, 0, 12288) != 1 { return 2 }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 3 }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, (x << 48) | (80 << 32) | (96 << 16) | 32) != 1 { return 4 }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 5 }
+  return 42
+}
