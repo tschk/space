@@ -1482,8 +1482,14 @@ fn shell(port: Int) -> void {
   return
 }
 
-// SCI transport proof: client frames control geometry; pixels are explicitly
-// kernel-generated opaque black, not a client-owned pixel buffer or window.
+// Bounded synchronous proof: one loader-granted pixel page, not a general window.
+fn dsp-adopt-sync-pixels(domain: Int, pool: Int) -> Int {
+  let physical = sci-sync-pixels(domain, pool)
+  if physical == 0 { return 0 }
+  store64(dsp-pools + pool * 8, physical)
+  store64(dsp-pool-sizes + pool * 8, 4096)
+  return 1
+}
 fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if fb-ready == 0 { return 0 }
   let image = 0x280000
@@ -1491,17 +1497,16 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   dsp-init()
   let args = "left"
   if phase != 0 { args = "right" }
-  if sci-load-runtime-component(port, image, "spdp-proof", cap-memory(), 1, args) != 42 { return 0 }
-  if dsp-drain-page(sci-sync-page, port) != 5 { return 0 }
+  if sci-load-runtime-component(port, image, "spdp-proof", cap-memory() | cap-display(), 1, args) != 42 { return 0 }
+  if dsp-adopt-sync-pixels(sci-sync-domain, 0) == 0 { return 0 }
+  if dsp-drain-page(sci-sync-page, port) != 4 { return 0 }
   let pool = load64(dsp-pools)
   let size = load64(dsp-pool-sizes)
-  if pool == 0 || size != 96 * 32 * 4 || dsp-surface-count != 1 { return 0 }
-  let offset = 0
-  while offset < size { store32(pool + offset, 0xFF000000); offset = offset + 4 }
+  if pool == 0 || size != 4096 || dsp-surface-count != 1 { return 0 }
   dsp-composite()
   serial-write-cstr(port, "  dsp: SCI frame proof ")
   serial-write-dec-wide(port, phase)
-  serial-write-cstr(port, " PASS (kernel test pixels)")
+  serial-write-cstr(port, " PASS (SCI client pixels)")
   serial-nl(port)
   return 1
 }

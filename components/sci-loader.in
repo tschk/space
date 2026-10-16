@@ -67,9 +67,36 @@ const COMP-GNOME-BTN-CLOSE = 0x00C01C28
 const COMP-HEAP-VIRT = 0x80000000
 const COMP-HEAP-SIZE = 0x200000
 const COMP-SHARED-VIRT = 0x70000000
+const COMP-PIXEL-VIRT = 0x70001000
 
 // Last successful synchronous launch page, retained by its live domain.
 var sci-sync-page: Int = 0
+var sci-sync-domain: Int = 0
+var sci-sync-grants: Int = 0
+var sci-sync-pixel-phys: Int = 0
+var sci-sync-pixel-size: Int = 0
+var sci-sync-pixel-pool: Int = 0
+
+// Optional APP-API display extension; nongranted launches expose no pixel mapping.
+fn sci-display-cap-info(info: Int, pixel: Int) -> void {
+  store64(info + 72, 0)
+  store64(info + 80, 0)
+  store64(info + 88, 0)
+  if pixel != 0 {
+    store64(info + 72, COMP-PIXEL-VIRT)
+    store64(info + 80, 4096)
+  }
+}
+
+// Only loader-retained provenance is consulted, never client-writable cap-info.
+fn sci-sync-pixels(domain: Int, pool: Int) -> Int {
+  if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
+  if (sci-sync-grants & (cap-memory() | cap-display())) != (cap-memory() | cap-display()) { return 0 }
+  if pool != 0 || sci-sync-pixel-pool != pool || sci-sync-pixel-size != 4096 { return 0 }
+  if sci-sync-pixel-phys <= 0 || sci-sync-pixel-phys >= 0x100000000 || (sci-sync-pixel-phys & 4095) != 0 { return 0 }
+  return sci-sync-pixel-phys
+}
 
 var comp-entry-arg: Int = 0
 var comp-cap-info-arg: Int = 0
@@ -346,6 +373,11 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
 
 fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {
   sci-sync-page = 0
+  sci-sync-domain = 0
+  sci-sync-grants = 0
+  sci-sync-pixel-phys = 0
+  sci-sync-pixel-size = 0
+  sci-sync-pixel-pool = 0
   serial-write-cstr(port, "  SCI: loading ")
   serial-write-cstr(port, name)
   serial-nl(port)
@@ -448,12 +480,18 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   store64(component + 40, domain)
   obj-link(root-realm, component)
 
+  let pixel = 0
+  if (required & (cap-memory() | cap-display())) == (cap-memory() | cap-display()) {
+    pixel = domain-create-shared-page(0, domain, COMP-PIXEL-VIRT, COMP-PIXEL-VIRT)
+    if pixel == 0 { return -1 }
+  }
+
   // cap-info is the app ABI page (APP-API v1): grants@0, heap@16/24,
   // shared page@32, domain@40, console size@48/56, args string@64. The
   // args pointer targets memory owned by the caller (empty string when
   // the launcher passes none).
   let cap-info = alloc(96)
-  store64(cap-info + 0, grants)
+  store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
   store64(cap-info + 16, COMP-HEAP-VIRT)
   store64(cap-info + 24, COMP-HEAP-SIZE)
@@ -462,6 +500,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   store64(cap-info + 48, 800)
   store64(cap-info + 56, 600)
   store64(cap-info + 64, args)
+  sci-display-cap-info(cap-info, pixel)
 
   serial-write-cstr(port, "  SCI: starting ")
   serial-write-cstr(port, name)
@@ -475,6 +514,11 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     let rc = invoke1(entry, cap-info)
     domain-switch(prev)
     sci-sync-page = shared
+    sci-sync-domain = domain
+    sci-sync-grants = required
+    sci-sync-pixel-phys = pixel
+    if pixel != 0 { sci-sync-pixel-size = 4096 }
+    sci-sync-pixel-pool = 0
     serial-write-cstr(port, "  SCI: ")
     serial-write-cstr(port, name)
     serial-write-cstr(port, " exited 0x")

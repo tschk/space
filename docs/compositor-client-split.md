@@ -64,34 +64,51 @@ Message flow (already defined in `protocol/display.in`):
   - `dsp-composite` reads `pool + offset + w*h*4` with no bound against the
     pool size (OOB read into the heap) — add pool-size tracking and clip.
 
-### SCI transport prerequisite (bounded executable proof)
+### SCI transport and one-page client-pixel proof
 
 `dsp sci left` and `dsp sci right`, with `fixtures/spdp-sci/client.in` loaded
-at the proof address by `scripts/check-spdp-sci.py`, synchronously run a real
-SCI producer in its memory domain. Five complete 32-byte SPDP frames travel
-through the loader's existing shared page and control surface geometry.
-`chan-page-*` validates a captured ring header and publishes/consumes whole
-four-word frames; malformed or partial frames do not advance the head or
-reach the dispatcher. Scheduler-backed CSP channels retain their own layout.
+by `scripts/check-spdp-sci.py`, synchronously run a real SCI producer in its
+memory domain. Four complete 32-byte SPDP frames travel through the loader's
+existing ring page and control surface geometry. `chan-page-*` validates a
+captured ring header and publishes/consumes whole four-word frames; malformed
+or partial frames do not advance the head or reach the dispatcher.
+Scheduler-backed CSP channels retain their own layout.
 
-The compositor explicitly supplies opaque black **kernel test pixels** in a
-zero-initialized kernel-backed pool. This proves SCI frame transport and
-geometry control, not client-owned pixels, authenticated cross-client surface
-IDs, seat input, or an interactive SCI desktop window. The synchronous drain
-avoids relying on a new scheduler/wakeup mechanism. The optional QEMU check
-uses the existing Linux-proof slot at physical `0x280000` exclusively (not a
-combined Linux/runtime-component image), verifies the kernel does not overlap
-that slot and the SCI ends below the reserved 3MiB heap, and checks both
-geometries and removal of the previous rectangle; the focused
-`check-spdp-page-frames.py` checks full/empty/wrap and malformed/partial frames
-under all compiler profiles.
+The fixture packager compiles the same source as a static library to obtain
+canonical named capability metadata, verifies unchanged source/protocol hashes,
+then validates exact component/target/entry, names, interfaces and operations.
+It translates the compiler's ordinal SCI mask into Space's fixed memory/display
+mask20, refusing unknown/duplicate/missing rights or an unexpected ordinal mask
+before replacing any output. This is Space packaging policy, not a compiler
+capability-name policy.
 
-### Phase B (not yet implemented)
-- Client surface buffers live in a `domain-create-shared-page` page. The
-  compositor maps the page and blits from it instead of a kernel `alloc`.
-  Requires the SCI loader to hand the client a shared-page capability and the
-  compositor to learn the page's physical address (extend `SHM_CREATE_POOL`
-  with a shared-page grant, or attach a pre-exported domain page).
+The existing memory+display capability bits enable one separate zeroed pixel
+page at client VA `0x70001000`. The additive runtime-loader APP-API display
+extension is VA@72, size@80, pool-id@88; these fields are explicitly zero for
+nongranted launches. The required manifest bits (verified against the caller
+ceiling) are the effective minted rights and APP-API grants; a permissive caller
+ceiling alone never enables the pixel mapping. The loader retains physical-page/domain/size/grants
+provenance privately and exposes it to synchronous kernel proof orchestration
+only after the client returns. Pool adoption validates that record and active
+domain, never client-writable descriptor values or physical pointers. The
+client writes an asymmetric red/green 64x16 pattern and sends create/attach/
+damage/commit, omitting SHM_CREATE_POOL because the granted pool already exists.
+The fixture deliberately forges its descriptor after writing; adoption still
+uses the trusted loader record. General SHM_CREATE_POOL remains zero-initialized.
+
+This is a bounded **single-client pixel proof**, not authenticated cross-client
+surface ownership, seat input, or an interactive SCI desktop window. Its live
+domain retains the page; reclamation is not introduced. The synchronous drain
+adds no scheduler/wakeup mechanism. The optional QEMU check exclusively uses
+the existing Linux-proof slot at physical `0x280000`, bounds the fixture below
+the 3MiB heap, checks both geometries and old-rectangle removal, and validates
+actual SCI-generated pixels. `check-spdp-page-frames.py` covers malformed frame
+and grant/adoption refusals under all compiler profiles.
+
+### Phase B (remaining work)
+- Generalize the bounded loader-granted pixel proof above into per-client
+  pool/surface ownership and lifetime management; client physical pointers
+  must never be accepted as grants.
 - Input routing: seat events (SPDP) published from the input component back to
   the client that owns the focused surface.
 - A real SCI client component (`.in`) that creates a surface, animates a test

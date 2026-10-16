@@ -52,6 +52,9 @@ fn api-version() -> Int {
 //   +32 shared page   +40 domain id
 //   +48 console width +56 console height
 //   +64 args string pointer (0/empty when launched without arguments)
+// Runtime-loader optional display extension (zero when not memory+display granted):
+//   +72 client pixel-page VA +80 byte size (4096) +88 pool id (0)
+// These are client descriptors, never physical addresses or kernel provenance.
 
 fn api-cap-grants(cap-info: Int) -> Int {
   return load64(cap-info + 0)

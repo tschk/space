@@ -17,7 +17,25 @@ for name in ('chan-page-frame-header-valid', 'chan-page-frame-valid', 'chan-page
 display = (Path(__file__).resolve().parent.parent / 'components/display.in').read_text()
 start = display.index('fn dsp-drain-page(')
 functions.append(display[start:display.index('\n}', start) + 2])
+for filename, names in [('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
+    module = (Path(__file__).resolve().parent.parent / 'components' / filename).read_text()
+    for name in names:
+        start = module.index('fn '+name+'(')
+        functions.append(module[start:module.index('\n}', start)+2])
 source = 'var memory:[Int]=[' + ','.join(['0'] * 2048) + '];\n' + '''
+const COMP-PIXEL-VIRT=0x70001000;
+const DOMAIN-ACTIVE=1;
+var domain-count:Int=2;
+var domain-table:Int=1500;
+var sci-sync-domain:Int=1;
+var sci-sync-grants:Int=20;
+var sci-sync-pixel-phys:Int=4096;
+var sci-sync-pixel-size:Int=4096;
+var sci-sync-pixel-pool:Int=0;
+var dsp-pools:Int=1600;
+var dsp-pool-sizes:Int=1680;
+fn cap-memory()->Int{return 4;}
+fn cap-display()->Int{return 16;}
 var dsp-msg:Int=1200;
 var dispatches:Int=0;
 fn dsp-handle-msg(object:Int,opcode:Int,arg0:Int,arg1:Int,port:Int)->Void{dispatches+=1;}
@@ -55,6 +73,31 @@ fn main()->Int{
  if dsp-drain-page(page,0)!=-1 || dispatches!=0 || load64(message)!=42 || load64(page)!=0{return 21;}
  store64(page+8,4);
  if dsp-drain-page(page,0)!=1 || dispatches!=1 || load64(page)!=4{return 22;}
+ // Optional display fields are absent unless a real page was granted.
+ let info=1800;
+ store64(info+72,77);store64(info+80,88);store64(info+88,99);
+ sci-display-cap-info(info,0);
+ if load64(info+72)!=0 || load64(info+80)!=0 || load64(info+88)!=0{return 23;}
+ sci-display-cap-info(info,4096);
+ if load64(info+72)!=COMP-PIXEL-VIRT || load64(info+80)!=4096 || load64(info+88)!=0{return 24;}
+ store64(domain-table+32,DOMAIN-ACTIVE);
+ // Forged client descriptor values cannot supply a physical pool address.
+ store64(info+72,0xDEAD0000);store64(info+80,9223372036854775807);store64(info+88,7);
+ if dsp-adopt-sync-pixels(1,0)!=1 || load64(dsp-pools)!=4096 || load64(dsp-pool-sizes)!=4096{return 25;}
+ store64(dsp-pools,77);store64(dsp-pool-sizes,88);
+ sci-sync-grants=4;if dsp-adopt-sync-pixels(1,0)!=0{return 26;}
+ sci-sync-grants=16;if dsp-adopt-sync-pixels(1,0)!=0{return 27;}
+ sci-sync-grants=20;
+ if dsp-adopt-sync-pixels(0,0)!=0 || dsp-adopt-sync-pixels(2,0)!=0 || dsp-adopt-sync-pixels(1,1)!=0{return 28;}
+ sci-sync-domain=0;if dsp-adopt-sync-pixels(1,0)!=0{return 29;}sci-sync-domain=1;
+ sci-sync-pixel-size=4095;if dsp-adopt-sync-pixels(1,0)!=0{return 30;}sci-sync-pixel-size=4096;
+ sci-sync-pixel-pool=1;if dsp-adopt-sync-pixels(1,0)!=0{return 31;}sci-sync-pixel-pool=0;
+ sci-sync-pixel-phys=4097;if dsp-adopt-sync-pixels(1,0)!=0{return 32;}
+ sci-sync-pixel-phys=0;if dsp-adopt-sync-pixels(1,0)!=0{return 33;}
+ sci-sync-pixel-phys=0x100000000;if dsp-adopt-sync-pixels(1,0)!=0{return 34;}
+ sci-sync-pixel-phys=4096;store64(domain-table+32,0);
+ if dsp-adopt-sync-pixels(1,0)!=0{return 35;}
+ if load64(dsp-pools)!=77 || load64(dsp-pool-sizes)!=88{return 36;}
  return 42;
 }
 '''
@@ -65,4 +108,4 @@ with tempfile.TemporaryDirectory(prefix='space-spdp-frames-') as directory:
         result = subprocess.run([args.compiler, 'compile', '--path', str(path), '--target', 'jit', '--profile', profile, '--out', str(Path(directory) / 'out'), '--json'], capture_output=True, text=True, check=True, timeout=30)
         report = json.loads(result.stdout)
         assert report.get('success') and report.get('eval_result') == {'Int': 42}, report
-        print(f'PASS {profile}: complete SPDP frames, wrap/full/empty and malformed/partial refusal')
+        print(f'PASS {profile}: SPDP frame guards plus loader pixel-grant provenance, forged descriptor and refusal controls')
