@@ -7,7 +7,13 @@ Space does **not** put POSIX / Win32 / XNU in the nanokernel. Personalities are
 VFS, process, serial, net, and caps. Same idea as ReactOS (`ntdll` → `ntoskrnl`)
 and Darwin (BSD layer over Mach) — see [`personalities.md`](personalities.md).
 
-## Status snapshot (2026-07-15)
+Current fixture coverage includes validated ELF, Mach-O, and PE execution,
+bounded Linux/Darwin hardware syscalls, and selected Windows imports for serial
+output, read-only file I/O, and exit back to the shell. See the current
+[trusted fixture limits and checks](personalities.md#trusted-mach-o-fixture-path).
+These paths do not provide general application compatibility or process isolation.
+
+## Historical translator snapshot (2026-07-15)
 
 | Personality | Files | Approx LOC | Call surface | QEMU check |
 |-------------|-------|------------|--------------|------------|
@@ -15,7 +21,8 @@ and Darwin (BSD layer over Mach) — see [`personalities.md`](personalities.md).
 | Windows (NT-shaped) | `windows.in` | ~886 | Space-local **1–30** Win32/NT-shaped APIs | `scripts/check-windows-personality.sh` |
 | Darwin (BSD-shaped) | `darwin.in` | ~908 | FreeBSD/xnu-leaning BSD nums + 2 Mach stubs | `scripts/check-darwin-personality.sh` |
 
-**Honest ceiling:** not PE loader, not CSRSS, not full `syscalls.master`, not Mach IPC.
+**Translator ceiling:** no CSRSS, full `syscalls.master`, or Mach IPC. The bounded
+PE fixture loader does not provide a general Windows environment.
 
 ---
 

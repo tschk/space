@@ -1,11 +1,11 @@
 # Compatibility personalities
 
-Space nanokernel does not implement foreign kernel ABIs. Personalities are
-translator microservices: a small foreign-shaped call surface maps onto Space
-VFS, process, and serial primitives.
+Space provides bounded foreign ABI fixtures and translator microservices.
+The compatibility surface maps onto Space VFS, process, and serial primitives;
+it does not provide a general Linux, macOS, or Windows process environment.
 
 **Progress + milestones:** [`personalities-roadmap.md`](personalities-roadmap.md)
-(branch `feat/personalities`). Verify: `bash scripts/check-personalities.sh`.
+Verify: `bash scripts/check-personalities.sh`.
 
 ## ReactOS / NT layering (research takeaway)
 
@@ -24,7 +24,7 @@ kernel.” It is a thin translator, same idea as `linux.in` → `posix.in`.
 |-------------|-------|-----------|
 | Linux / POSIX | `linux.in` / `posix.in` | VFS, process, serial |
 | Darwin (BSD subset) | `darwin.in` | BSD nums → VFS/process; Mach stubs only |
-| Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial/process; not PE/CSRSS |
+| Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial/process; bounded PE imports, no CSRSS |
 
 Linux syscall79 `getcwd` returns bytes including NUL, with `-34` for insufficient capacity and `-14` for a null destination. The Darwin Space-local adapter retains its pointer/zero return convention.
 
@@ -48,7 +48,7 @@ Windows call numbers are **Space-local**, not real NT syscall numbers:
 16. `RemoveDirectoryA` — `fs-rmdir`; return 1/0
 17. `GetLastError` — `win-last-error` global (2=ENOENT-style, 6=invalid handle)
 18. `SetLastError` — set `win-last-error` from `a0`
-19. `VirtualAlloc` — `posix-sys-mmap` / `alloc(size)`; preferred addr ignored
+19. `VirtualAlloc` — `posix-sys-mmap`; preferred addr ignored
 20. `VirtualFree` — `posix-sys-munmap` stand-in; return 1/0
 21. `CreateProcessA` — `proc-spawn-sci` on path; typed table handle (type process) or 0
 22. `WaitForSingleObject` — type process only → `proc-wait`
@@ -66,7 +66,8 @@ Types: `0=free`, `1=console`, `2=file`, `3=process`.
 Slots 1/2 reserved console (value 1/2); 3..15 hold file `vfd` or process `pid`.
 All handles (file + process) are table indices 1..15 — no `100+pid` fakes.
 
-**Honest limit:** not full Win32, not PE loader, not CSRSS, not real NT objects.
+**Honest limit:** no full Win32, general DLL loading, CSRSS, or real NT objects.
+The bounded PE fixture path is described below.
 Shell command `windows` runs `win-demo`.
 
 ## Darwin / XNU layering (research takeaway)
@@ -85,7 +86,8 @@ Space Darwin personality follows that split:
   [XNU syscall table](https://github.com/ravynsoft/ravynos/blob/darwin/Kernel/xnu/bsd/kern/syscalls.master).
 - The `.in` dispatcher accepts bare BSD numbers and x86_64 Unix-class numbers
   (`0x2000000 | number`); other classes and tagged local shims return ENOSYS.
-  This does not install a hardware SYSCALL entry or macOS register/error ABI.
+  This dispatcher is separate from the bounded hardware SYSCALL fixture path
+  described below, which supplies Darwin carry/errno handling.
 - Dispatch translates internal Linux-shaped errors to Darwin numbers in both
   the negative result and the errno slot (`ENOSYS=78`, not Linux's 38).
 - `getcwd=192`, `getpagesize=276`, and the Mach/errno shims remain Space-local
