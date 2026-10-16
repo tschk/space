@@ -339,8 +339,11 @@ fn sci-proof-deliver-key(time: Int, key: Int) -> Int {
   let after-tail = load64(page + 8)
   let after-word-size = load64(page + 24)
   if chan-page-frame-header-valid(after-capacity, after-head, after-tail, after-word-size) == 0 { return sci-proof-fail-app() }
-  // Exactly one inbound frame consumed, then three response frames published.
-  if after-capacity != capacity || after-head != consumed || after-tail != (consumed + 12) % capacity { return sci-proof-fail-app() }
+  // Exactly one inbound frame consumed; the fixed proof's Escape returns two
+  // teardown frames, while a/b return three rendering frames. Guest selects none.
+  let replies = 3
+  if key == 27 { replies = 2 }
+  if after-capacity != capacity || after-head != consumed || after-tail != (consumed + replies * 4) % capacity { return sci-proof-fail-app() }
   return 42
 }
 

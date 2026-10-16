@@ -213,6 +213,8 @@ with (out / "qemu.log").open("w") as log:
             for y in range(80, 96):
                 for x in range(40, 104):
                     color = bytes((128, 128, 128))
+                    if phase == "closed":
+                        color = bytes((0, 0, 128))
                     if phase == "a":
                         color = bytes((255, 0, 0)) if x < 60 else bytes((0, 255, 0))
                     if phase == "b":
@@ -237,7 +239,11 @@ with (out / "qemu.log").open("w") as log:
             pixels(key)
         start = len(data)
         monitor.sendall(b"sendkey esc\n")
-        wait("seat: exactly two deliveries, stable endpoints/counters PASS", start)
+        wait("seat: Escape close blue, app retired, no replay PASS", start)
+        wait("seat: two renders and one close, stable endpoints/counters PASS", start)
+        time.sleep(0.3)
+        pixels("closed")
+        assert data.count(b"seat: Escape close blue, app retired, no replay PASS") == 1
         assert data.count(b"seat: client pixels updated for key 97\n") == 1
         assert data.count(b"seat: client pixels updated for key 98\n") == 1
         assert (
@@ -264,5 +270,5 @@ assert snapshot == {
 assert compiler_hash == hashlib.sha256(compiler.read_bytes()).hexdigest()
 (out / "source-hashes.json").write_text(json.dumps(snapshot, indent=2) + "\n")
 print(
-    "PASS actual PS/2 a/b -> two distinct SCI-client pixel patterns exactly once; two stable endpoints and allocation counters"
+    "PASS actual PS/2 a/b -> two distinct SCI-client pixel patterns exactly once, Escape teardown blue/retired/no replay; stable endpoints/counters"
 )

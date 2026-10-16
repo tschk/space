@@ -75,7 +75,7 @@ var sci-sync-ring-unit:Int=4;var sci-sync-page:Int=0;var sci-sync-domain:Int=0;
 var sci-sync-grants:Int=0;var sci-sync-pixel-phys:Int=0;var sci-sync-pixel-size:Int=0;
 var sci-sync-pixel-pool:Int=0;var sci-sync-entry:Int=0;var sci-sync-code-start:Int=0;
 var sci-sync-code-end:Int=0;var sci-sync-info:Int=0;var sci-sync-cap:Int=-1;var sci-sync-object:Int=0;
-var current:Int=0;var invoked:Int=0;var mode:Int=0;var fail-switch:Int=0;
+var current:Int=0;var invoked:Int=0;var mode:Int=0;var fail-switch:Int=0;var expected-key:Int=97;
 fn load64(p:Int)->Int{return memory[p];}
 fn store64(p:Int,v:Int)->Void{memory[p]=v;return;}
 fn cap-memory()->Int{return 4;}
@@ -89,10 +89,17 @@ fn invoke1(entry:Int,info:Int)->Int{
  if load64(info)!=20 || load64(info+8)!=0 || load64(info+16)!=COMP-HEAP-VIRT || load64(info+32)!=COMP-SHARED-VIRT || load64(info+40)!=2 || load64(info+64)!=0 || load64(info+72)!=COMP-PIXEL-VIRT || load64(info+80)!=4096{return -1;}
  if mode==1{return 42;}
  if chan-page-recv-frame(8192,3000)!=1{return -1;}
- if load64(3000)!=4 || load64(3008)!=4 || load64(3016)!=7 || load64(3024)!=spdp-seat-key(97,1){return -1;}
+ if load64(3000)!=4 || load64(3008)!=4 || load64(3016)!=7 || load64(3024)!=spdp-seat-key(expected-key,1){return -1;}
  if mode==2{store64(8192,(load64(8192)+4)%508);return 42;}
  if mode==3{store64(8208,0);return 42;}
  if mode==4{return 7;}
+ if expected-key==27 {
+   if chan-page-send-frame(8192,2,4,0,0)!=1{return -1;}
+   if mode!=6 && chan-page-send-frame(8192,3,1,0,0)!=1{return -1;}
+   if mode==7 && chan-page-send-frame(8192,2,3,0,0)!=1{return -1;}
+   if mode==8{store64(8208,0);}
+   return 42;
+ }
  let i=0;while i<96{store64(info+i,-1);i+=8;}
  if chan-page-send-frame(8192,2,1,0,0)!=1 || chan-page-send-frame(8192,2,2,0,0)!=1 || chan-page-send-frame(8192,2,3,0,0)!=1{return -1;}
  return 42;
@@ -101,7 +108,7 @@ fn invoke1(entry:Int,info:Int)->Int{
     + "\n".join(functions)
     + """
 fn setup()->Int{
- current=0;invoked=0;mode=0;fail-switch=0;sci-proof-input.unit=0;sci-proof-app.unit=0;
+ current=0;invoked=0;mode=0;fail-switch=0;expected-key=97;sci-proof-input.unit=0;sci-proof-app.unit=0;
  store64(domain-table,4096);store64(domain-table+8,1);
  store64(domain-table+24,8192);store64(domain-table+32,1);store64(domain-table+40,0);
  store64(domain-table+48,12288);store64(domain-table+56,1);store64(domain-table+64,1);
@@ -144,6 +151,25 @@ fn main()->Int{
    if sci-proof-input.unit!=1{return 14;}
    failure+=1;
  }
+ // Successful close consumes one seat frame and publishes exactly two replies.
+ if setup()!=1{return 30;}expected-key=27;
+ if sci-proof-deliver-key(7,27)!=42 || invoked!=1 || current!=0 || load64(8192)!=4 || load64(8200)!=12{return 31;}
+ if chan-page-recv-frame(8192,3000)!=1 || chan-page-recv-frame(8192,3000)!=1 || chan-page-recv-frame(8192,3000)!=0{return 32;}
+ sci-proof-app.unit=0;sci-sync-ring-unit=0;
+ if sci-proof-deliver-key(7,27)!=-1 || sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || sci-proof-app.unit!=0 || load64(8192)!=12 || load64(8200)!=12{return 33;}
+ let close-failure=6;
+ while close-failure<9 {
+   if setup()!=1{return 34;}expected-key=27;mode=close-failure;
+   if sci-proof-deliver-key(7,27)!=-1 || invoked!=1 || current!=0 || sci-proof-app.unit!=0{return 35;}
+   if sci-proof-deliver-key(7,27)!=-1 || invoked!=1{return 36;}
+   close-failure+=1;
+ }
+ // Close restore failure preserves private state until explicit kernel recovery.
+ if setup()!=1{return 37;}expected-key=27;fail-switch=2;
+ if sci-proof-deliver-key(7,27)!=-1 || current!=2 || invoked!=1 || sci-proof-app.unit!=4{return 38;}
+ if sci-proof-deliver-key(7,27)!=-1 || invoked!=1 || sci-proof-app.unit!=4{return 39;}
+ current=0;fail-switch=0;
+ if sci-resume-sync(2,0)!=-1 || sci-proof-deliver-key(7,27)!=-1 || invoked!=1 || sci-proof-app.unit!=0{return 40;}
  // Failed entry switch retires safely in the kernel domain without invoking.
  if setup()!=1{return 20;}fail-switch=1;
  if sci-proof-deliver-key(7,97)!=-1 || invoked!=0 || current!=0 || sci-proof-app.unit!=0{return 21;}

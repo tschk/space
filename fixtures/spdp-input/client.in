@@ -32,11 +32,17 @@ fn client-entry(info: Int) -> Int {
     let packed = load64(message + 24)
     let code = packed & 0xFFFFFFFF
     if (packed >> 32) != 1 { return 6 }
+    // No second event can be silently consumed or interpreted as a response.
+    if load64(page) != load64(page + 8) { return 8 }
+    if code == 27 && load64(heap) == 2 {
+      store64(heap, 3)
+      if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DESTROY, 0, 0) != 1 { return 12 }
+      if chan-page-send-frame(page, SPDP-OBJ-SHM, SPDP-SHM-POOL-DESTROY, 0, 0) != 1 { return 13 }
+      return 42
+    }
     if code == 97 && load64(heap) == 0 { phase = 1 }
     else if code == 98 && load64(heap) == 1 { phase = 2 }
     else { return 7 }
-    // No second event can be silently consumed or interpreted as a response.
-    if load64(page) != load64(page + 8) { return 8 }
     store64(heap, phase)
   }
   let y = 0

@@ -1643,9 +1643,23 @@ fn input-app-proof(port: Int) -> Int {
         let key = (event >> 16) & 65535
         if key == 27 {
           if delivered != 2 || input-page-recv(input-page, message) != 0 { return 0 }
+          if sci-proof-deliver-key(ticks, key) != 42 { return 0 }
+          if dsp-drain-page(app-page, port) != 2 { return 0 }
+          if dsp-surface-valid(0) != 0 || load64(dsp-pools) != 0 || load64(dsp-pool-sizes) != 0 { return 0 }
+          dsp-composite()
+          // Logical close only: retire authority for this proof, never free pages.
+          if domain-get-current() != 0 { return 0 }
+          sci-proof-app.unit = 0
+          sci-sync-ring-unit = 0
+          let head = load64(app-page)
+          let tail = load64(app-page + 8)
+          if head != tail || sci-proof-deliver-key(ticks, 27) != -1 || sci-proof-deliver-key(ticks, 97) != -1 { return 0 }
+          if load64(app-page) != head || load64(app-page + 8) != tail { return 0 }
           if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
-          if sci-proof-input.domain != input-domain || sci-proof-input.page != input-page || sci-proof-app.domain != app-domain || sci-proof-app.page != app-page || sci-proof-app.pixel_phys != pixel { return 0 }
-          serial-write-cstr(port, "  seat: exactly two deliveries, stable endpoints/counters PASS")
+          if sci-proof-input.domain != input-domain || sci-proof-input.page != input-page || sci-proof-input.unit != 1 || sci-proof-app.domain != app-domain || sci-proof-app.page != app-page || sci-proof-app.pixel_phys != pixel || sci-proof-app.unit != 0 { return 0 }
+          serial-write-cstr(port, "  seat: Escape close blue, app retired, no replay PASS")
+          serial-nl(port)
+          serial-write-cstr(port, "  seat: two renders and one close, stable endpoints/counters PASS")
           serial-nl(port)
           return 1
         }

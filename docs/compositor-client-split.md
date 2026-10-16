@@ -234,8 +234,8 @@ consumer-tail orientation.
 Delivery is explicitly synchronous and half duplex. The kernel validates the
 client ring drained, publishes one complete seat frame, rebuilds its writable
 descriptor and invokes that retained client. The client consumes exactly that
-frame before writing its pixels and publishing three response frames. The kernel
-validates the expected consumed head and the complete response header/count
+frame before writing its pixels and publishing three rendering response frames
+(or two teardown frames for the fixed proof's Escape close). The kernel validates the expected consumed head and the complete response header/count
 before dispatch/composite. Failed consumption, malformed metadata or failed entry
 retires the client snapshot when the kernel domain is restored: no composite or
 replay. If restoration itself fails, helpers reject further calls in the guest
@@ -245,9 +245,15 @@ this proof provides no general domain-fault recovery mechanism. No generic
 pending-ring selector or new transport/endpoint is exposed to the guest.
 
 This fixed proof filters keys other than `a`, `b` and Escape; it is not general
-keyboard routing. Actual QEMU keys `a` then `b` produce distinct asymmetric 64x16 client-written
-pixel patterns. Screenshots verify every surface pixel and blue bounds. Empty
-polls/key releases do not trigger another delivery; Escape returns to the shell.
+keyboard routing. Actual QEMU keys `a` then `b` produce distinct asymmetric
+64x16 client-written pixel patterns. Screenshots verify every surface pixel,
+blue bounds and the all-blue region after close. Empty
+polls/key releases do not trigger another delivery. Actual Escape is delivered
+as one seat key: the client sends the existing surface/pool destroy messages.
+After validating both replies, the kernel verifies dead surface/detached pool,
+composites blue, retires its app snapshot in domain zero and checks a later
+delivery refuses without changing the drained ring or counters. Only then does
+it return to the shell. This is logical teardown, not domain/frame reclamation.
 Two distinct domain/ring identities, the trusted pixel grant and allocation
 counters remain unchanged after setup. The three-profile `check-sci-seat.py`
 gate exercises the actual snapshot/delivery code with guest-domain, stale-cap,
