@@ -2580,6 +2580,8 @@ fn dsp-selftest(port: Int) -> Int {
     serial-nl(port)
     return 0
   }
+  dsp-surface-destroy(sid)
+  if dsp-surface-valid(sid) != 0 { return 0 }
   serial-write-cstr(port, "  dsp self-test passed")
   serial-nl(port)
   return 1
@@ -2829,8 +2831,45 @@ fn dsp-demo(port: Int) -> Int {
   return 1
 }
 
+// A destroyed slot keeps its old index reserved; stale requests cannot revive it.
+fn dsp-surface-valid(sid: Int) -> Int {
+  if sid < 0 || sid >= dsp-surface-count { return 0 }
+  if load64(dsp-surfaces + sid * dsp-surface-size()) != sid { return 0 }
+  return 1
+}
+
+fn dsp-surface-destroy(sid: Int) -> void {
+  if dsp-surface-valid(sid) == 0 { return }
+  let base = dsp-surfaces + sid * dsp-surface-size()
+  store64(base, -1)
+  store64(base + 8, -1)
+  store64(base + 16, 0)
+  store64(base + 24, 0)
+  store64(base + 32, 0)
+  store64(base + 40, 0)
+  return
+}
+
+// Logical unmap only: pools can be borrowed loader pages, never free them here.
+fn dsp-shm-destroy-pool(pool: Int) -> void {
+  if pool < 0 || pool >= DSP-MAX-POOLS { return }
+  store64(dsp-pools + pool * 8, 0)
+  store64(dsp-pool-sizes + pool * 8, 0)
+  let sid = 0
+  while sid < dsp-surface-count {
+    let base = dsp-surfaces + sid * dsp-surface-size()
+    if load64(base + 8) == pool {
+      store64(base + 8, -1)
+      store64(base + 16, 0)
+      store64(base + 40, 0)
+    }
+    sid = sid + 1
+  }
+  return
+}
+
 fn dsp-surface-attach(sid: Int, packed: Int) -> void {
-  if sid < 0 || sid >= dsp-surface-count {
+  if dsp-surface-valid(sid) == 0 {
     return
   }
   let pool-id = (packed >> 32) & 0xFFFFFFFF
@@ -2842,7 +2881,7 @@ fn dsp-surface-attach(sid: Int, packed: Int) -> void {
 }
 
 fn dsp-surface-geometry(sid: Int, packed: Int) -> void {
-  if sid < 0 || sid >= dsp-surface-count {
+  if dsp-surface-valid(sid) == 0 {
     return
   }
   let x = (packed >> 48) & 0xFFFF
@@ -2856,7 +2895,7 @@ fn dsp-surface-geometry(sid: Int, packed: Int) -> void {
 }
 
 fn dsp-surface-commit(sid: Int) -> void {
-  if sid < 0 || sid >= dsp-surface-count {
+  if dsp-surface-valid(sid) == 0 {
     return
   }
   let base = dsp-surfaces + sid * dsp-surface-size()
@@ -2878,10 +2917,14 @@ fn dsp-handle-msg(obj-id: Int, opcode: Int, arg0: Int, arg1: Int, port: Int) -> 
       dsp-surface-geometry(arg0, arg1)
     } else if opcode == SPDP-SURFACE-COMMIT {
       dsp-surface-commit(arg0)
+    } else if opcode == SPDP-SURFACE-DESTROY {
+      dsp-surface-destroy(arg0)
     }
   } else if obj-id == SPDP-OBJ-SHM {
     if opcode == SPDP-SHM-CREATE-POOL {
       dsp-shm-create-pool(arg0, arg1)
+    } else if opcode == SPDP-SHM-POOL-DESTROY {
+      dsp-shm-destroy-pool(arg0)
     }
   }
   return

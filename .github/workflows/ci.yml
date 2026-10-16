@@ -37,6 +37,7 @@ jobs:
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
         python3 scripts/check-spdp-page-frames.py --in "$IN_BIN"
+        python3 scripts/check-spdp-lifetime.py --in "$IN_BIN"
         python3 scripts/check-display-allocation.py --in "$IN_BIN"
         python3 scripts/check-channel-capacity.py --in "$IN_BIN"
         python3 scripts/check-posix-wait-status.py --in "$IN_BIN"

@@ -1319,13 +1319,15 @@ fn shell(port: Int) -> void {
         serial-nl(port)
       }
     } else if line-eq("dsp") != 0 {
-      serial-write-cstr(port, "  usage: dsp test | display")
+      serial-write-cstr(port, "  usage: dsp test | dsp demo | dsp sci left/right/destroy")
       serial-nl(port)
     } else if line-eq("dsp test") != 0 {
       let rc = dsp-selftest(port)
       serial-nl(port)
     } else if line-eq("dsp sci left") != 0 {
       if dsp-sci-demo(port, 0) == 0 { serial-write-cstr(port, "  dsp: SCI frame proof failed"); serial-nl(port) }
+    } else if line-eq("dsp sci destroy") != 0 {
+      if dsp-sci-demo(port, 2) == 0 { serial-write-cstr(port, "  dsp: SCI frame proof failed"); serial-nl(port) }
     } else if line-eq("dsp sci right") != 0 {
       if dsp-sci-demo(port, 1) == 0 { serial-write-cstr(port, "  dsp: SCI frame proof failed"); serial-nl(port) }
     } else if line-eq("dsp demo") != 0 {
@@ -1494,10 +1496,21 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if fb-ready == 0 { return 0 }
   let image = 0x280000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
-  dsp-init()
+  if phase == 2 {
+    if dsp-surfaces == 0 || dsp-surface-count == 0 { return 0 }
+  } else { dsp-init() }
   let args = "left"
-  if phase != 0 { args = "right" }
+  if phase == 1 { args = "right" }
+  if phase == 2 { args = "destroy" }
   if sci-load-runtime-component(port, image, "spdp-proof", cap-memory() | cap-display(), 1, args) != 42 { return 0 }
+  if phase == 2 {
+    if dsp-drain-page(sci-sync-page, port) != 2 { return 0 }
+    if dsp-surface-valid(0) != 0 || load64(dsp-pools) != 0 || load64(dsp-pool-sizes) != 0 { return 0 }
+    dsp-composite()
+    serial-write-cstr(port, "  dsp: SCI teardown PASS")
+    serial-nl(port)
+    return 1
+  }
   if dsp-adopt-sync-pixels(sci-sync-domain, 0) == 0 { return 0 }
   if dsp-drain-page(sci-sync-page, port) != 4 { return 0 }
   let pool = load64(dsp-pools)

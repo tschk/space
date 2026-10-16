@@ -105,6 +105,24 @@ the 3MiB heap, checks both geometries and old-rectangle removal, and validates
 actual SCI-generated pixels. `check-spdp-page-frames.py` covers malformed frame
 and grant/adoption refusals under all compiler profiles.
 
+### Logical teardown
+
+The existing SURFACE_DESTROY and SHM_POOL_DESTROY requests now retire visible
+state. Surface destruction marks an explicit tombstone and clears attachment,
+geometry and commit state; later requests to that dead slot are ignored. IDs
+are not recycled before `dsp-init`, so this does not solve the existing
+32-surface/session limit. Pool destruction clears the compositor mapping/size
+and detaches only surfaces referring to that pool. Repeated or out-of-range
+destroy requests are harmless. Other live surfaces and pools remain intact.
+
+This is logical teardown, not allocator reclamation: a pool may be a borrowed
+loader-granted page, so the compositor never frees its underlying frame.
+`dsp sci destroy` runs a real SCI producer sending both teardown frames. The
+QEMU proof checks colored pixels before destruction and blue background after,
+including a repeated destroy request. `check-spdp-lifetime.py` executes actual
+handler/state functions under all profiles with dead-slot, invalid-ID,
+other-surface and reattachment controls.
+
 ### Phase B (remaining work)
 - Generalize the bounded loader-granted pixel proof above into per-client
   pool/surface ownership and lifetime management; client physical pointers

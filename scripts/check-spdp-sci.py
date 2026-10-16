@@ -127,6 +127,24 @@ with (out/'qemu.log').open('w') as log:
             assert pixel(other, 80) == bytes((0, 0, 128)), 'old geometry remained visible'
             assert pixel(x-1, 80) == bytes((0, 0, 128)) and pixel(x+64, 80) == bytes((0, 0, 128)), 'surface width mismatch'
             print(f'PASS SCI {word}: four complete frames and exact 64x16 SCI-client pixels (forged cap-info ignored)')
+        for attempt in range(2):
+            start = len(data)
+            serial.sendall(b'dsp sci destroy\n')
+            wait('dsp: SCI teardown PASS', start)
+            time.sleep(.5)
+            path = out/f'destroy-{attempt}.ppm'
+            monitor.sendall(f'screendump {path}\n'.encode())
+            deadline = time.monotonic()+5
+            while (not path.exists() or path.stat().st_size < 1920*1080*3+17) and time.monotonic() < deadline: time.sleep(.05)
+            header = path.read_bytes().split(b'\n', 3)
+            assert header[:3] == [b'P6', b'1920 1080', b'255']
+            pixels = header[3]
+            for x in (40, 400):
+                for py in range(80, 96):
+                    for px in range(x, x+64):
+                        offset = (py*1920+px)*3
+                        assert pixels[offset:offset+3] == bytes((0, 0, 128)), 'destroyed client pixels remained visible'
+            print(f'PASS SCI teardown {attempt}: blue after destroy, harmless repeated request')
     finally:
         (out/'serial.log').write_bytes(data)
         if serial: serial.close()
