@@ -127,35 +127,32 @@ fn sci-resume-input-sync(domain: Int) -> Int {
   return sci-resume-sync-unit(domain, 0, 1)
 }
 
-fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
-  if domain-get-current() != 0 { return -1 }
-  if unit != sci-sync-ring-unit { return -1 }
-  if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return -1 }
+// Shared provenance only; callers separately enforce their exact ring handoff.
+fn sci-sync-provenance-valid(domain: Int, unit: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if unit != 1 && unit != 4 { return 0 }
+  if unit != sci-sync-ring-unit { return 0 }
+  if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
   let record = domain-table + domain * 24
-  if load64(record + 8) != DOMAIN-ACTIVE || load64(record) == 0 { return -1 }
-  if sci-sync-cap < 0 || sci-sync-cap >= cap-count || load64(record + 16) != sci-sync-cap { return -1 }
+  if load64(record + 8) != DOMAIN-ACTIVE || load64(record) == 0 { return 0 }
+  if sci-sync-cap < 0 || sci-sync-cap >= cap-count || load64(record + 16) != sci-sync-cap { return 0 }
   let capability = cap-table-base + sci-sync-cap * 16
-  if sci-sync-object == 0 || load64(capability) != sci-sync-object || load64(capability + 8) != sci-sync-grants { return -1 }
-  if sci-sync-code-start <= 0 || sci-sync-code-end <= sci-sync-code-start || sci-sync-code-end > 0x100000000 { return -1 }
-  if sci-sync-entry < sci-sync-code-start + SCI-V2-HEADER || sci-sync-entry >= sci-sync-code-end { return -1 }
-  if sci-sync-info <= 0 || sci-sync-info > 0x100000000 - 96 || (sci-sync-info & 7) != 0 { return -1 }
+  if sci-sync-object == 0 || load64(capability) != sci-sync-object || load64(capability + 8) != sci-sync-grants { return 0 }
+  if sci-sync-code-start <= 0 || sci-sync-code-end <= sci-sync-code-start || sci-sync-code-end > 0x100000000 { return 0 }
+  if sci-sync-entry < sci-sync-code-start + SCI-V2-HEADER || sci-sync-entry >= sci-sync-code-end { return 0 }
+  if sci-sync-info <= 0 || sci-sync-info > 0x100000000 - 96 || (sci-sync-info & 7) != 0 { return 0 }
   let page = sci-sync-page
-  if page <= 0 || page >= 0x100000000 || (page & 4095) != 0 { return -1 }
-  let capacity = load64(page + 16)
-  let head = load64(page)
-  let tail = load64(page + 8)
-  let word-size = load64(page + 24)
-  if head != tail { return -1 }
-  if unit == 4 {
-    if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
-  } else if unit == 1 {
-    if input-page-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
-  } else { return -1 }
+  if page <= 0 || page >= 0x100000000 || (page & 4095) != 0 { return 0 }
   if (sci-sync-grants & (cap-memory() | cap-display())) == (cap-memory() | cap-display()) {
-    if sci-sync-pixels(domain, sci-sync-pixel-pool) == 0 { return -1 }
+    if sci-sync-pixels(domain, sci-sync-pixel-pool) == 0 { return 0 }
   } else {
-    if sci-sync-pixel-phys != 0 || sci-sync-pixel-size != 0 || sci-sync-pixel-pool != 0 { return -1 }
+    if sci-sync-pixel-phys != 0 || sci-sync-pixel-size != 0 || sci-sync-pixel-pool != 0 { return 0 }
   }
+  return 1
+}
+
+fn sci-sync-enter(domain: Int, args: Int) -> Int {
+  if domain-get-current() != 0 { return -1 }
   let previous = domain-get-current()
   if previous < 0 || previous >= domain-count { return -1 }
   if load64(domain-table + previous * 24 + 8) != DOMAIN-ACTIVE || load64(domain-table + previous * 24) == 0 { return -1 }
@@ -166,6 +163,137 @@ fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
   domain-switch(previous)
   if domain-get-current() != previous { return -1 }
   return result
+}
+
+fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
+  if domain-get-current() != 0 { return -1 }
+  if sci-sync-provenance-valid(domain, unit) == 0 { return -1 }
+  let page = sci-sync-page
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if head != tail { return -1 }
+  if unit == 4 {
+    if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  } else if unit == 1 {
+    if input-page-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  } else { return -1 }
+  return sci-sync-enter(domain, args)
+}
+
+// Exactly two private snapshots for the dedicated synchronous desktop proof.
+// No record pointers, arbitrary endpoint registry or guest-sourced role selector.
+var sci-proof-input: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0]
+var sci-proof-app: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+fn sci-proof-capture(role: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if role != 1 && role != 4 { return 0 }
+  let snapshot = sci-proof-input
+  if role == 4 { snapshot = sci-proof-app }
+  snapshot[0] = 0
+  if sci-sync-provenance-valid(sci-sync-domain, role) == 0 { return 0 }
+  let page = sci-sync-page
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if head != tail { return 0 }
+  if role == 1 {
+    if input-page-header-valid(capacity, head, tail, word-size) == 0 || sci-sync-grants != SCI-INPUT-GRANTS { return 0 }
+  } else {
+    if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 || sci-sync-grants != (cap-memory() | cap-display()) { return 0 }
+  }
+  snapshot[1] = sci-sync-page
+  snapshot[2] = sci-sync-domain
+  snapshot[3] = sci-sync-grants
+  snapshot[4] = sci-sync-pixel-phys
+  snapshot[5] = sci-sync-pixel-size
+  snapshot[6] = sci-sync-pixel-pool
+  snapshot[7] = sci-sync-entry
+  snapshot[8] = sci-sync-code-start
+  snapshot[9] = sci-sync-code-end
+  snapshot[10] = sci-sync-info
+  snapshot[11] = sci-sync-cap
+  snapshot[12] = sci-sync-object
+  snapshot[0] = role
+  return 1
+}
+
+fn sci-proof-restore(role: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if role != 1 && role != 4 { return 0 }
+  let snapshot = sci-proof-input
+  if role == 4 { snapshot = sci-proof-app }
+  if snapshot[0] != role { return 0 }
+  sci-sync-ring-unit = snapshot[0]
+  sci-sync-page = snapshot[1]
+  sci-sync-domain = snapshot[2]
+  sci-sync-grants = snapshot[3]
+  sci-sync-pixel-phys = snapshot[4]
+  sci-sync-pixel-size = snapshot[5]
+  sci-sync-pixel-pool = snapshot[6]
+  sci-sync-entry = snapshot[7]
+  sci-sync-code-start = snapshot[8]
+  sci-sync-code-end = snapshot[9]
+  sci-sync-info = snapshot[10]
+  sci-sync-cap = snapshot[11]
+  sci-sync-object = snapshot[12]
+  if sci-sync-provenance-valid(sci-sync-domain, role) == 0 { snapshot[0] = 0; sci-sync-ring-unit = 0; return 0 }
+  return 1
+}
+
+fn sci-proof-capture-input() -> Int {
+  if domain-get-current() != 0 { return 0 }
+  return sci-proof-capture(1)
+}
+fn sci-proof-capture-app() -> Int {
+  if domain-get-current() != 0 { return 0 }
+  return sci-proof-capture(4)
+}
+fn sci-proof-poll-input() -> Int {
+  if domain-get-current() != 0 { return -1 }
+  if sci-proof-restore(1) == 0 { return -1 }
+  let result = sci-resume-input-sync(sci-sync-domain)
+  // A failed restore may leave execution in the guest domain: do not touch
+  // private state until the kernel domain has actually been restored.
+  if result != 0 && domain-get-current() == 0 { sci-proof-input[0] = 0; sci-sync-ring-unit = 0 }
+  return result
+}
+
+// Retire a failed exchange only from the kernel domain. Failed domain restore
+// leaves private state untouched; guards and the pending ring prevent replay.
+fn sci-proof-fail-app() -> Int {
+  if domain-get-current() != 0 { return -1 }
+  sci-proof-app[0] = 0
+  sci-sync-ring-unit = 0
+  return -1
+}
+
+// The only pending-frame entry: kernel publishes one precise SEAT event itself.
+// Ordinary sci-resume-sync continues to require a completely drained frame ring.
+fn sci-proof-deliver-key(time: Int, key: Int) -> Int {
+  if domain-get-current() != 0 { return -1 }
+  if key < 0 || key > 65535 || time < 0 { return -1 }
+  if sci-proof-restore(4) == 0 { return -1 }
+  let page = sci-sync-page
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 || head != tail { return sci-proof-fail-app() }
+  let consumed = (head + 4) % capacity
+  if chan-page-send-frame(page, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, time, spdp-seat-key(key, 1)) != 1 { return sci-proof-fail-app() }
+  if sci-sync-enter(sci-sync-domain, 0) != 42 { return sci-proof-fail-app() }
+  let after-capacity = load64(page + 16)
+  let after-head = load64(page)
+  let after-tail = load64(page + 8)
+  let after-word-size = load64(page + 24)
+  if chan-page-frame-header-valid(after-capacity, after-head, after-tail, after-word-size) == 0 { return sci-proof-fail-app() }
+  // Exactly one inbound frame consumed, then three response frames published.
+  if after-capacity != capacity || after-head != consumed || after-tail != (consumed + 12) % capacity { return sci-proof-fail-app() }
+  return 42
 }
 
 // Optional APP-API display extension; nongranted launches expose no pixel mapping.

@@ -39,6 +39,8 @@ jobs:
         python3 scripts/check-spdp-page-frames.py --in "$IN_BIN"
         python3 scripts/check-spdp-lifetime.py --in "$IN_BIN"
         python3 scripts/check-sci-resume.py --in "$IN_BIN"
+        python3 scripts/check-sci-seat.py --in "$IN_BIN"
+        python3 scripts/check-spdp-input.py --in "$IN_BIN" --build-dir /tmp/space-spdp-input-ci
         python3 scripts/check-input-sci.py --in "$IN_BIN" --build-dir /tmp/space-input-sci-ci
         python3 scripts/check-display-allocation.py --in "$IN_BIN"
         python3 scripts/check-channel-capacity.py --in "$IN_BIN"

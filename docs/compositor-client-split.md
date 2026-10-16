@@ -209,3 +209,48 @@ and stable page/allocation counters. The isolated three-profile resume gate also
 covers malformed headers, empty/full/wrap behavior and SPDP-role rejection.
 This is one retained input service, not an app input endpoint, scheduler,
 multi-client authority or authenticated seat routing.
+
+### Two-endpoint keyboard-to-client proof
+
+`python3 scripts/check-spdp-input.py --in /path/to/in` builds a separate
+`fixtures/spdp-input/client.in` plus the existing bounded subsequent input poll.
+The dedicated `input app` kernel command retains exactly two private snapshots:
+one input domain/word ring and one client domain/frame ring/pixel grant. Named
+kernel operations capture those known roles; every helper checks domain zero
+before snapshot selection/access. The ordinary current-record API remains and
+ordinary SPDP resume still rejects pending frames. Replacement and failures
+that return to the kernel domain retire the relevant snapshot; this does not
+reclaim domains or frames.
+
+The existing keyboard SEAT opcode now specifies four words:
+`[SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, kernel ticks, key | (state << 32)]`.
+The low 32 bits are the input service's normalized ASCII/control code; the high
+32 bits are state (0 released, 1 pressed). This proof routes actual KEY_DOWN
+only; it does not invent release events or claim evdev keycodes, IME or a
+modifier/repeat stream. The input word ring retains its distinct producer-head,
+consumer-tail orientation.
+
+Delivery is explicitly synchronous and half duplex. The kernel validates the
+client ring drained, publishes one complete seat frame, rebuilds its writable
+descriptor and invokes that retained client. The client consumes exactly that
+frame before writing its pixels and publishing three response frames. The kernel
+validates the expected consumed head and the complete response header/count
+before dispatch/composite. Failed consumption, malformed metadata or failed entry
+retires the client snapshot when the kernel domain is restored: no composite or
+replay. If restoration itself fails, helpers reject further calls in the guest
+domain without writing private snapshot state. After explicit kernel recovery,
+the still-pending exchange is refused and retired without another invocation;
+this proof provides no general domain-fault recovery mechanism. No generic
+pending-ring selector or new transport/endpoint is exposed to the guest.
+
+This fixed proof filters keys other than `a`, `b` and Escape; it is not general
+keyboard routing. Actual QEMU keys `a` then `b` produce distinct asymmetric 64x16 client-written
+pixel patterns. Screenshots verify every surface pixel and blue bounds. Empty
+polls/key releases do not trigger another delivery; Escape returns to the shell.
+Two distinct domain/ring identities, the trusted pixel grant and allocation
+counters remain unchanged after setup. The three-profile `check-sci-seat.py`
+gate exercises the actual snapshot/delivery code with guest-domain, stale-cap,
+dead-domain, pending/malformed-ring, no-consume, overconsume and no-replay controls.
+The old pixel proof and one-service input proof remain separate regressions.
+This is one fixed client recipient, not a focus manager, app isolation boundary,
+scheduler, authenticated multi-client seat or complete desktop environment.

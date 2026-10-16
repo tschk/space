@@ -11,7 +11,7 @@ parser.add_argument('--in', dest='compiler', required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 functions = []
-for filename, names in [('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync', 'sci-resume-sync-unit', 'sci-admit-input-sync', 'sci-resume-input-sync'])]:
+for filename, names in [('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync', 'sci-resume-sync-unit', 'sci-sync-provenance-valid', 'sci-sync-enter', 'sci-admit-input-sync', 'sci-resume-input-sync'])]:
     text = (root/'components'/filename).read_text()
     for name in names:
         start = text.index('fn '+name+'(')

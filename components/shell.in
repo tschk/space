@@ -1318,6 +1318,8 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  hardening FAIL")
         serial-nl(port)
       }
+    } else if line-eq("input app") != 0 {
+      if input-app-proof(port) == 0 { serial-write-cstr(port, "  seat: SCI proof failed"); serial-nl(port) }
     } else if line-eq("input sci") != 0 {
       if input-sci-proof(port) == 0 { serial-write-cstr(port, "  input: SCI proof failed"); serial-nl(port) }
     } else if line-eq("dsp") != 0 {
@@ -1598,6 +1600,70 @@ fn input-sci-proof(port: Int) -> Int {
       received = input-page-recv(page, message)
       if received < 0 { return 0 }
     }
+    pause()
+  }
+  return 0
+}
+
+// Two fixed proof endpoints, synchronous ownership handoff; no seat/focus manager.
+fn input-app-proof(port: Int) -> Int {
+  if fb-ready == 0 || domain-get-current() != 0 { return 0 }
+  if load64(0x280000) != SCI-MAGIC-V2 || load64(0x290000) != SCI-MAGIC-V2 { return 0 }
+  sci-proof-input[0] = 0
+  sci-proof-app[0] = 0
+  dsp-init()
+  let original-domains = domain-count
+  if sci-load-runtime-component(port, 0x280000, "seat-input", SCI-INPUT-GRANTS, 1, 0) != 0 { return 0 }
+  if sci-admit-input-sync(sci-sync-domain) == 0 || sci-proof-capture-input() == 0 { return 0 }
+  let input-domain = sci-sync-domain
+  let input-page = sci-sync-page
+  if sci-load-runtime-component(port, 0x290000, "seat-client", cap-memory() | cap-display(), 1, "init") != 42 { return 0 }
+  let app-domain = sci-sync-domain
+  let app-page = sci-sync-page
+  let pixel = sci-sync-pixel-phys
+  if app-domain == input-domain || app-page == input-page || domain-count != original-domains + 2 { return 0 }
+  if dsp-adopt-sync-pixels(app-domain, 0) == 0 || dsp-drain-page(app-page, port) != 4 { return 0 }
+  if sci-proof-capture-app() == 0 { return 0 }
+  dsp-composite()
+  let message = alloc(8)
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  let delivered = 0
+  serial-write-cstr(port, "  seat: two SCI endpoints ready")
+  serial-nl(port)
+  while true {
+    if sci-proof-poll-input() != 0 { return 0 }
+    let received = input-page-recv(input-page, message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(message)
+      if (event & 255) == INPUT-EVT-KEY-DOWN {
+        let key = (event >> 16) & 65535
+        if key == 27 {
+          if delivered != 2 || input-page-recv(input-page, message) != 0 { return 0 }
+          if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+          if sci-proof-input[2] != input-domain || sci-proof-input[1] != input-page || sci-proof-app[2] != app-domain || sci-proof-app[1] != app-page || sci-proof-app[4] != pixel { return 0 }
+          serial-write-cstr(port, "  seat: exactly two deliveries, stable endpoints/counters PASS")
+          serial-nl(port)
+          return 1
+        }
+        if key == 97 || key == 98 {
+          if sci-proof-deliver-key(ticks, key) != 42 { return 0 }
+          if dsp-drain-page(app-page, port) != 3 { return 0 }
+          dsp-composite()
+          delivered += 1
+          serial-write-cstr(port, "  seat: client pixels updated for key ")
+          serial-write-dec-wide(port, key)
+          serial-nl(port)
+        }
+      }
+      received = input-page-recv(input-page, message)
+      if received < 0 { return 0 }
+    }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    if sci-proof-input[2] != input-domain || sci-proof-input[1] != input-page || sci-proof-app[2] != app-domain || sci-proof-app[1] != app-page || sci-proof-app[4] != pixel { return 0 }
     pause()
   }
   return 0

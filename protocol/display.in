@@ -37,7 +37,12 @@ const SPDP-SEAT-POINTER-ENTER = 0  // arg0: surface_id, arg1: x/y packed
 const SPDP-SEAT-POINTER-LEAVE = 1  // arg0: surface_id
 const SPDP-SEAT-POINTER-MOTION = 2 // arg0: time, arg1: x/y packed
 const SPDP-SEAT-POINTER-BUTTON = 3 // arg0: time, arg1: button/state packed
-const SPDP-SEAT-KEYBOARD-KEY = 4   // arg0: time, arg1: key/state packed
+const SPDP-SEAT-KEYBOARD-KEY = 4   // arg0: kernel ticks; arg1: key low32, state high32
+// Current input service uses normalized ASCII/control codes, not evdev keycodes.
+// State is 0=released, 1=pressed. Only real KEY_DOWN is currently routed.
+fn spdp-seat-key(key: Int, state: Int) -> Int {
+  return (key & 0xFFFFFFFF) | ((state & 0xFFFFFFFF) << 32)
+}
 
 // Shared memory pool: a contiguous buffer allocated by the client and shared
 // with the compositor. The pool is identified by a pool_id (chosen by client).
