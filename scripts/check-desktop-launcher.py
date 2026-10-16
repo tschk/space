@@ -45,6 +45,37 @@ fn main()->Int{{heap[8+24]=9;heap[8+64+24]=42;heap[8+128+24]=7;comp-win-close({c
         report = json.loads(run.stdout)
         (out/f'close-{focus}-{closed}-{profile}.json').write_text(run.stdout)
         assert report.get('success') and report.get('eval_result') == {'Int':42}, report
+# Exercise both actual PS/2 decoders: Ctrl make/break, letters, and nonletters.
+for decoder in ('mouse', 'input'):
+    decoder_text = (root/f'components/{decoder}.in').read_text()
+    functions = []
+    for name in ('ps2-scancode-ascii', 'ps2-kbd-getchar'):
+        begin = decoder_text.index('fn '+name+'(')
+        functions.append(decoder_text[begin:decoder_text.index('\n}', begin)+2])
+    source = """const PS2-DATA=96;
+var ps2-kbd-ctrl:Int=0;
+var ps2-kbd-shift:Int=0;
+var code:Int=0;
+fn ps2-kbd-has-data()->Int{return 1;}
+fn inb(port:Int)->Int{return code;}
+""" + '\n'.join(functions) + """
+fn main()->Int{
+code=0x1D;if ps2-kbd-getchar()!=-1{return 1;}
+code=0x31;if ps2-kbd-getchar()!=14{return 2;}
+code=0x19;if ps2-kbd-getchar()!=16{return 3;}
+code=0x02;if ps2-kbd-getchar()!=49{return 4;}
+code=0x9D;if ps2-kbd-getchar()!=-1{return 5;}
+code=0x31;if ps2-kbd-getchar()!=110{return 6;}
+code=0x19;if ps2-kbd-getchar()!=112{return 7;}
+return 42;}
+"""
+    path = out/f'keyboard-{decoder}.in'
+    path.write_text(source)
+    for profile in ('default', 'lean', 'harden'):
+        run = subprocess.run([a.compiler, 'compile', '--path', str(path), '--target', 'jit', '--profile', profile, '--out', str(out/'keyboard-proof'), '--json'], capture_output=True, text=True, check=True, timeout=30)
+        report = json.loads(run.stdout)
+        (out/f'keyboard-{decoder}-{profile}.json').write_text(run.stdout)
+        assert report.get('success') and report.get('eval_result') == {'Int':42}, report
 serial_path, monitor_path = out/'serial.sock', out/'monitor.sock'
 for path in [serial_path, monitor_path]:
     if path.exists(): path.unlink()
@@ -101,7 +132,32 @@ with (out/'qemu.log').open('w') as qlog:
         wait('space interactive shell')
         serial.sendall(b'desktop\n'); wait('space: compositor frame ready')
         baseline = capture('desktop')
-        command('sendkey tab'); wait('space: launcher opened')
+        # Launcher selection wraps over visible matches and query edits reset it.
+        def choose(keys, title, name, row):
+            start = len(log)
+            command('sendkey tab'); wait('space: launcher opened', start)
+            for item in keys:
+                if item.startswith('ctrl-'): command('sendkey '+item)
+                else: key(item)
+            time.sleep(.8)
+            selected_pixels = capture(name+'-selected')
+            for candidate in range(1 if 'terminal 1' in keys else (2 if 'terminal' in keys else 3)):
+                gold = sum(selected_pixels[(y*1920+x)*3:(y*1920+x)*3+3] == bytes((248,189,56)) for y in range(124+candidate*28, 148+candidate*28) for x in range(620,1000))
+                assert (gold > 40) == (candidate == row), f'wrong selected result row: {name}/{candidate}'
+            start = len(log)
+            command('sendkey ret'); wait('space: launcher focused '+title, start)
+            time.sleep(.8)
+            return capture(name+'-focused')
+        next_focus = choose(['ctrl-n'], 'UTILITIES', 'selection-next', 1)
+        previous_focus = choose(['ctrl-p'], 'TERMINAL 2', 'selection-previous-wrap', 2)
+        choose(['terminal', 'ctrl-n'], 'TERMINAL 2', 'selection-filtered-next', 1)
+        reset_focus = choose(['ctrl-n', 'terminal 1'], 'TERMINAL 1', 'selection-query-reset', 0)
+        def focused_title(pixels):
+            return b''.join(pixels[(y*1920+840)*3:(y*1920+1200)*3] for y in range(28))
+        assert focused_title(next_focus) != focused_title(previous_focus), 'selection did not change focused window'
+        assert focused_title(reset_focus) == focused_title(baseline), 'query edit did not reset selection'
+        start = len(log)
+        command('sendkey tab'); wait('space: launcher opened', start)
         key('util'); time.sleep(.5)
         opened = capture('launcher-util')
         def region(pixels,x0,y0,x1,y1):
@@ -110,16 +166,20 @@ with (out/'qemu.log').open('w') as qlog:
         assert colors[(27,24,24)]>30000, 'launcher panel absent'
         assert colors[(248,189,56)]>40, 'matching result accent absent'
         assert baseline != opened, 'launcher did not change framebuffer'
-        command('sendkey ret'); wait('space: launcher focused UTILITIES')
+        start = len(log)
+        command('sendkey ret'); wait('space: launcher focused UTILITIES', start)
         time.sleep(.8)
         focused = capture('focused-utilities')
         assert focused != opened, 'launcher did not disappear after focus'
         # A failed search stays open; Backspace edits it without leaking into terminal.
         start=len(log); command('sendkey tab'); wait('space: launcher opened', start)
-        key('zzzz'); command('sendkey ret'); unmatched=capture('launcher-no-match')
+        key('zzzz'); command('sendkey ctrl-n'); command('sendkey ctrl-p')
+        command('sendkey ret'); unmatched=capture('launcher-no-match')
+        assert b'space: launcher focused' not in log[start:], 'no-match keyboard selection focused a window'
         assert unmatched != opened, 'query/result state did not render'
         for _ in range(4): command('sendkey backspace')
-        key('terminal 2'); command('sendkey ret'); wait('space: launcher focused TERMINAL 2')
+        key('terminal 2'); start = len(log)
+        command('sendkey ret'); wait('space: launcher focused TERMINAL 2', start)
         before_fetch=capture('focused-terminal-2'); key('fetch'); command('sendkey ret'); time.sleep(.8)
         after_fetch=capture('terminal-2-fetch')
         assert before_fetch != after_fetch, 'focused terminal did not accept input'
@@ -132,8 +192,6 @@ with (out/'qemu.log').open('w') as qlog:
             command('mouse_button 1'); time.sleep(.2); command('mouse_button 0'); time.sleep(.8)
         move(0,525); click()  # First taskbar button: TERMINAL 1.
         pointer_focused=capture('pointer-taskbar-terminal-1')
-        def focused_title(pixels):
-            return b''.join(pixels[(y*1920+840)*3:(y*1920+1200)*3] for y in range(28))
         assert focused_title(pointer_focused) == focused_title(baseline), 'taskbar did not focus TERMINAL 1'
         assert focused_title(pointer_focused) != focused_title(after_fetch), 'taskbar focus remained TERMINAL 2'
         move(-660,-1050); start=len(log); click()
@@ -175,7 +233,7 @@ with (out/'qemu.log').open('w') as qlog:
         capture('dismissed')
         command('sendkey esc'); wait('space: compositor exited')
         serial.sendall(b'halt\n')
-        print(f'PASS: PS/2 launcher focus, search/edit, terminal input, pointer taskbar/topbar, Escape and rendered pixels ({out})')
+        print(f'PASS: PS/2 launcher selection/focus, search/edit, terminal input, pointer taskbar/topbar, Escape and rendered pixels ({out})')
     finally:
         (out/'serial.log').write_bytes(log)
         if monitor:

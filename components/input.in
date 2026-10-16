@@ -882,10 +882,13 @@ fn mouse-right-pressed() -> Int {
   return mouse-buttons & 0x02
 }
 
+var ps2-kbd-ctrl: Int = 0
+
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
+  ps2-kbd-ctrl = 0
   return 0
 }
 
@@ -959,13 +962,17 @@ fn ps2-kbd-getchar() -> Int {
     return -1
   }
   let sc = inb(PS2-DATA)
+  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
   if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
     return -1
   }
   if (sc & 0x80) != 0 {
     return -1
   }
-  return ps2-scancode-ascii(sc)
+  let ch = ps2-scancode-ascii(sc)
+  if ps2-kbd-ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
+  return ch
 }
 
 // --- component entry --------------------------------------------------------

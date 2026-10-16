@@ -220,11 +220,14 @@ fn mouse-right-pressed() -> Int {
 
 var ps2-kbd-shift: Int = 0
 
+var ps2-kbd-ctrl: Int = 0
+
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
   ps2-kbd-shift = 0
+  ps2-kbd-ctrl = 0
   return 0
 }
 
@@ -305,6 +308,8 @@ fn ps2-kbd-getchar() -> Int {
     return -1
   }
   let sc = inb(PS2-DATA)
+  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
   if sc == 0x2A || sc == 0x36 {
     ps2-kbd-shift = 1
     return -1
@@ -320,6 +325,7 @@ fn ps2-kbd-getchar() -> Int {
   if ch < 0 {
     return -1
   }
+  if ps2-kbd-ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
   if ps2-kbd-shift != 0 {
     if ch >= 97 && ch <= 122 {
       return ch - 32
