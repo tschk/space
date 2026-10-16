@@ -28,6 +28,7 @@ const LINUX-SYS-EXECVE = 59
 const LINUX-SYS-EXIT = 60
 const LINUX-SYS-WAIT4 = 61
 const LINUX-SYS-KILL = 62
+const LINUX-SYS-SOCKETPAIR = 53
 const LINUX-SYS-SOCKET = 41
 const LINUX-SYS-CONNECT = 42
 const LINUX-SYS-ACCEPT = 43
@@ -149,6 +150,7 @@ fn posix-sys-stat(path: Int, statbuf: Int) -> Int {
 }
 
 fn posix-sys-fstat(fd: Int, statbuf: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return LINUX-EBADF }
   if posix-fd-valid(fd) == 0 {
     return LINUX-EBADF
   }
@@ -400,6 +402,7 @@ var posix-map-starts:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 var posix-map-ends:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
 fn posix-sys-mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return LINUX-EBADF }
   // Address hints are ignored. Fixed/shared mappings and real permissions are unsupported.
   // prot=0 is the existing Windows compatibility request; prot=3 is read/write.
   if length <= 0 { return LINUX-EINVAL }
@@ -560,6 +563,7 @@ fn posix-dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
   if num == LINUX-SYS-CHDIR {
     return posix-sys-chdir(a0)
   }
+  if num == LINUX-SYS-SOCKETPAIR { return vfs-stream-pair(a0, a1, a2, a3) }
   if num == LINUX-SYS-SOCKET {
     return sock-socket(a0, a1, a2)
   }

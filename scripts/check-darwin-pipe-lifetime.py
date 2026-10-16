@@ -54,6 +54,17 @@ for name in ('vfs-fd-valid', 'vfs-fd-clear', 'vfs-fd-alloc', 'vfs-fd-open-file',
     following = re.search(r'\nfn ', vfs[start + 3:])
     end = start + 3 + following.start() if following else len(vfs)
     functions.append(vfs[start:end])
+# Extract real stream guards/lifetime dependencies; this fixture still creates only tag2 pipes.
+source += '\nconst VFS-O-RDWR=2;\n' + '\n'.join(
+    line for line in vfs.splitlines()
+    if line.startswith(('const VFS-FD-STREAM', 'const VFS-STREAM-', 'var vfs-stream-'))
+) + '\n'
+for name in ('vfs-stream-pair-valid', 'vfs-stream-valid', 'vfs-stream-release',
+             'vfs-stream-retain', 'vfs-stream-publish', 'vfs-stream-dup'):
+    start = vfs.index('fn ' + name + '(')
+    following = re.search(r'\nfn ', vfs[start + 3:])
+    end = start + 3 + following.start() if following else len(vfs)
+    functions.append(vfs[start:end])
 source += '\n'.join(functions) + '''
 fn pipe-seek-preserved(fd:Int)->Int{
  let row=vfs-fd-table+fd*32;

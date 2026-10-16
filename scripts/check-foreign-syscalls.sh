@@ -108,7 +108,7 @@ if [ "$KIND" = file ]; then
 elif [ "$ABI" = windows ]; then
   grep -qxF 'windows: PE validation scenarios 15/15' "$SERIAL_LOG"
   [ "$(grep -cxF 'windows: PE import hello' "$SERIAL_LOG")" = 2 ]
-else
+elif [ "$KIND" = serial ]; then
   [ "$(grep -cxF "$ABI: hardware syscall hello" "$SERIAL_LOG")" = 2 ]
 fi
 grep -qF 'halting on request' "$SERIAL_LOG"
@@ -124,3 +124,5 @@ run_fixture darwin darwin-fileio-macho darwinfileio 'foreign: file I/O exit stat
 run_fixture windows windows-fileio-pe windowsfileio 'foreign: file I/O exit status 42' file
 run_fixture linux linux-fileio-return-elf linuxfileio 'foreign: file I/O exit status 42' file
 run_fixture darwin darwin-fileio-return-macho darwinfileio 'foreign: file I/O exit status 42' file
+
+run_fixture linux linux-unix-stream-elf localstream 'local-stream: exit 42' stream

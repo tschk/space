@@ -470,7 +470,9 @@ fn win-handle-vfd(handle: Int) -> Int {
   if win-handle-type(handle) != WIN-HANDLE-TYPE-FILE {
     return -1
   }
-  return win-handle-value(handle)
+  let fd = win-handle-value(handle)
+  if vfs-stream-valid(fd) != 0 { return -1 }
+  return fd
 }
 
 fn win-handle-free(handle: Int) -> Int {
@@ -510,6 +512,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let vfd = win-handle-value(handle)
+    if vfs-stream-valid(vfd) != 0 { win-set-error(WIN-ERROR-INVALID-HANDLE); return 0 }
     let n = vfs-write(vfd, buf, len)
     if n < 0 {
       win-set-error-rc(n)
@@ -555,6 +558,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let vfd = win-handle-value(handle)
+    if vfs-stream-valid(vfd) != 0 { win-set-error(WIN-ERROR-INVALID-HANDLE); return 0 }
     let n = vfs-read(vfd, buf, len)
     if n < 0 {
       win-set-error-rc(n)
@@ -598,7 +602,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let vfd = win-handle-value(handle)
-    if vfs-fd-valid(vfd) == 0 {
+    if vfs-fd-valid(vfd) == 0 || vfs-stream-valid(vfd) != 0 {
       win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }
@@ -1025,6 +1029,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return WIN-FILE-TYPE-CHAR
     }
     if htype == WIN-HANDLE-TYPE-FILE {
+      if vfs-stream-valid(win-handle-value(handle)) != 0 { win-set-error(WIN-ERROR-INVALID-HANDLE); return WIN-FILE-TYPE-UNKNOWN }
       win-clear-error()
       return WIN-FILE-TYPE-DISK
     }
@@ -1043,7 +1048,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let vfd = win-handle-value(handle)
-    if vfs-fd-valid(vfd) == 0 {
+    if vfs-fd-valid(vfd) == 0 || vfs-stream-valid(vfd) != 0 {
       win-set-error(WIN-ERROR-INVALID-HANDLE)
       return 0
     }

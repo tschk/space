@@ -36,6 +36,7 @@ jobs:
         python3 scripts/check-boot-data-reservation.py --in "$IN_BIN"
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
+        python3 scripts/check-local-stream.py --in "$IN_BIN" --build-dir /tmp/space-local-stream-ci
         python3 scripts/check-spdp-page-frames.py --in "$IN_BIN"
         python3 scripts/check-spdp-lifetime.py --in "$IN_BIN"
         python3 scripts/check-sci-resume.py --in "$IN_BIN"
@@ -50,6 +51,7 @@ jobs:
         python3 scripts/check-ps2-mouse-init.py --in "$IN_BIN"
         IN="$IN_BIN" bash scripts/check-darwin-personality.sh
         IN="$IN_BIN" bash scripts/check-windows-personality.sh
+        IN="$IN_BIN" bash scripts/check-foreign-syscalls.sh
         IN="$IN_BIN" bash scripts/check-runtime-components.sh
         python3 scripts/check-desktop-launcher.py --in "$IN_BIN" --build-dir /tmp/space-desktop-ci
         KERNEL_BIN=/tmp/space-boot/kernel.bin bash scripts/check-qemu-smoke.sh

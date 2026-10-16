@@ -36,6 +36,8 @@ source += '''fn store8(p:Int,v:Int)->Void{if p<32768{memory[p/8]=v;}return;}
 fn store64(p:Int,v:Int)->Void{if p<32768{memory[p/8]=v;}return;}
 fn load64(p:Int)->Int{if p<32768{return memory[p/8];}return 0;}
 fn panic(message:String)->Void{throw 99;}
+// This allocator-only fixture has no valid file descriptors or stream endpoints.
+fn vfs-stream-valid(fd:Int)->Int{return 0;}
 fn posix-fd-valid(fd:Int)->Int{return 0;}
 fn vfs-sparkfs-file-size(p:Int)->Int{return 0;}
 fn volume-rpc-pread(p:Int,b:Int,n:Int,o:Int)->Int{return 0;}

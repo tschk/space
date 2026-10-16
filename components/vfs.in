@@ -40,6 +40,7 @@ fn vfs-fd-table-alloc() -> void {
 }
 
 fn vfs-fd-clear(fd: Int) -> void {
+  if vfs-stream-valid(fd) != 0 { vfs-stream-release(fd) }
   let mapping = vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8
   let record = load64(mapping)
   if record != 0 {
@@ -230,6 +231,7 @@ fn vfs-close(fd: Int) -> Int {
 }
 
 fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return vfs-stream-read(fd, buf, count) }
   if vfs-fd-valid(fd) == 0 {
     return -9
   }
@@ -267,6 +269,7 @@ fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
 }
 
 fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return vfs-stream-write(fd, buf, count) }
   if vfs-fd-valid(fd) == 0 {
     return -9
   }
@@ -300,6 +303,7 @@ fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
 }
 
 fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return -29 }
   if vfs-fd-valid(fd) == 0 {
     return -9
   }
@@ -328,4 +332,159 @@ fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
   }
   vfs-fd-set-offset(fd, new-offset)
   return new-offset
+}
+
+// shortcut: live empty/full streams return EAGAIN; add readiness waits with scheduler support.
+// Pair rows: refs[2], head/count for each receiving side, then two 4096B rings.
+const VFS-FD-STREAM = 3
+const VFS-STREAM-MAX = 4
+const VFS-STREAM-SIZE = 8240
+const VFS-STREAM-CAP = 4096
+var vfs-stream-table: Int = 0
+
+fn vfs-stream-pair-valid(pair: Int) -> Int {
+  if vfs-stream-table == 0 { return 0 }
+  if pair < vfs-stream-table || pair >= vfs-stream-table + VFS-STREAM-MAX * VFS-STREAM-SIZE { return 0 }
+  if (pair - vfs-stream-table) % VFS-STREAM-SIZE == 0 { return 1 }
+  return 0
+}
+
+fn vfs-stream-valid(fd: Int) -> Int {
+  if vfs-fd-table == 0 || fd < 3 || fd >= VFS-MAX-FDS { return 0 }
+  let row = vfs-fd-table + fd * 32
+  if load64(row + 24) != VFS-FD-STREAM { return 0 }
+  let pair = load64(row)
+  let side = load64(row + 8)
+  if vfs-stream-pair-valid(pair) == 0 || side < 0 || side > 1 { return 0 }
+  if load64(pair + side * 8) > 0 { return 1 }
+  return 0
+}
+
+fn vfs-stream-init() -> Void {
+  if vfs-stream-table != 0 { return }
+  vfs-stream-table = alloc(VFS-STREAM-MAX * VFS-STREAM-SIZE)
+  let i = 0
+  while i < VFS-STREAM-MAX * VFS-STREAM-SIZE {
+    store64(vfs-stream-table + i, 0)
+    i = i + 8
+  }
+}
+
+fn vfs-stream-publish(fd: Int, pair: Int, side: Int) -> Void {
+  let row = vfs-fd-table + fd * 32
+  store64(row, pair)
+  store64(row + 8, side)
+  store64(row + 16, VFS-O-RDWR)
+  store64(row + 24, VFS-FD-STREAM)
+}
+
+fn vfs-stream-pair(domain: Int, stype: Int, protocol: Int, result: Int) -> Int {
+  if vfs-fd-table == 0 { return -9 }
+  if domain != 1 { return -97 }
+  if stype != 1 || protocol != 0 { return -22 }
+  if result <= 0 { return -14 }
+  let first = -1
+  let second = -1
+  let fd = 3
+  while fd < VFS-MAX-FDS {
+    if load64(vfs-fd-table + fd * 32) == -1 {
+      if first < 0 { first = fd } else { if second < 0 { second = fd } }
+    }
+    fd = fd + 1
+  }
+  if second < 0 { return -24 }
+  vfs-stream-init()
+  let pair = 0
+  let i = 0
+  while i < VFS-STREAM-MAX {
+    let candidate = vfs-stream-table + i * VFS-STREAM-SIZE
+    if pair == 0 && load64(candidate) == 0 && load64(candidate + 8) == 0 { pair = candidate }
+    i = i + 1
+  }
+  if pair == 0 { return -23 }
+  // No descriptor/output publication before all capacity checks succeed.
+  store64(pair + 16, 0); store64(pair + 24, 0)
+  store64(pair + 32, 0); store64(pair + 40, 0)
+  store64(pair, 1); store64(pair + 8, 1)
+  vfs-stream-publish(first, pair, 0)
+  vfs-stream-publish(second, pair, 1)
+  store32(result, first); store32(result + 4, second)
+  return 0
+}
+
+fn vfs-stream-retain(fd: Int) -> Int {
+  if vfs-stream-valid(fd) == 0 { return -9 }
+  let row = vfs-fd-table + fd * 32
+  let ref = load64(row) + load64(row + 8) * 8
+  store64(ref, load64(ref) + 1)
+  return 0
+}
+
+fn vfs-stream-release(fd: Int) -> Void {
+  let row = vfs-fd-table + fd * 32
+  let ref = load64(row) + load64(row + 8) * 8
+  store64(ref, load64(ref) - 1)
+}
+
+fn vfs-stream-dup(fd: Int) -> Int {
+  if vfs-stream-valid(fd) == 0 { return -9 }
+  let copy = vfs-fd-alloc()
+  if copy < 0 { return -24 }
+  vfs-stream-retain(fd)
+  let row = vfs-fd-table + fd * 32
+  vfs-stream-publish(copy, load64(row), load64(row + 8))
+  return copy
+}
+
+fn vfs-stream-read(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-stream-valid(fd) == 0 { return -9 }
+  if count < 0 { return -22 }
+  if count == 0 { return 0 }
+  if buf <= 0 { return -14 }
+  let row = vfs-fd-table + fd * 32
+  let pair = load64(row)
+  let side = load64(row + 8)
+  let meta = pair + 16 + side * 16
+  let n = load64(meta + 8)
+  if n == 0 {
+    if load64(pair + (1 - side) * 8) == 0 { return 0 }
+    return -11
+  }
+  let take = count
+  if take > n { take = n }
+  let head = load64(meta)
+  let ring = pair + 48 + side * VFS-STREAM-CAP
+  let i = 0
+  while i < take {
+    store8(buf + i, load8(ring + (head + i) % VFS-STREAM-CAP))
+    i = i + 1
+  }
+  store64(meta, (head + take) % VFS-STREAM-CAP)
+  store64(meta + 8, n - take)
+  return take
+}
+
+fn vfs-stream-write(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-stream-valid(fd) == 0 { return -9 }
+  if count < 0 { return -22 }
+  if count == 0 { return 0 }
+  if buf <= 0 { return -14 }
+  let row = vfs-fd-table + fd * 32
+  let pair = load64(row)
+  let peer = 1 - load64(row + 8)
+  if load64(pair + peer * 8) == 0 { return -32 }
+  let meta = pair + 16 + peer * 16
+  let n = load64(meta + 8)
+  if n == VFS-STREAM-CAP { return -11 }
+  let put = count
+  if put > VFS-STREAM-CAP - n { put = VFS-STREAM-CAP - n }
+  let head = load64(meta)
+  let ring = pair + 48 + peer * VFS-STREAM-CAP
+  let i = 0
+  while i < put {
+    store8(ring + (head + n + i) % VFS-STREAM-CAP, load8(buf + i))
+    i = i + 1
+  }
+  store64(meta + 8, n + put)
+  return put
 }

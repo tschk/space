@@ -36,6 +36,15 @@ SCI-owned pixel/seat proofs. `protocol/display.in` is a fixed 32-byte SPDP
 protocol, not the Wayland wire protocol. Current foreign executable fixtures
 also do not provide a general dynamically linked Linux desktop userland.
 
+The first transport prerequisite provides bounded `AF_UNIX/SOCK_STREAM`
+`socketpair` endpoints through the shared VFS and trusted Linux syscall path.
+The existing foreign-syscall QEMU gate exercises fragmented Wayland request
+bytes, full duplex, buffered EOF, descriptor cleanup and shell return. The
+extracted local-stream test covers ring wrap, short writes, alias lifetime,
+capacity failures and file-adapter refusal. Empty/full live streams return
+`EAGAIN` synchronously; readiness waits, descriptor transfer and shared memory
+remain open work. These checks do not run a Wayland server or client.
+
 Port boundaries and acceptance:
 
 1. Establish the userspace/runtime contract for libwayland and labwc: local

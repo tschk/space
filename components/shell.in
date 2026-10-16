@@ -1107,6 +1107,8 @@ fn shell(port: Int) -> void {
       linux-demo(port)
     } else if line-eq("linuxsyscall") != 0 {
       linux-syscall-demo(port)
+    } else if line-eq("localstream") != 0 {
+      foreign-stream-demo(port)
     } else if line-eq("linuxfileio") != 0 {
       foreign-fileio-demo(port, 1)
     } else if line-eq("darwinfileio") != 0 {

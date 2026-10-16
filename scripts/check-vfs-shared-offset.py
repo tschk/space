@@ -4,7 +4,6 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 
@@ -17,8 +16,7 @@ root = Path(__file__).resolve().parents[1]
 def extract(file, name):
     text = (root / "components" / file).read_text()
     start = text.index("fn " + name + "(")
-    following = re.search(r"\nfn ", text[start + 3 :])
-    return text[start : start + 3 + following.start()] if following else text[start:]
+    return text[start : text.index("\n}", start) + 2]
 
 
 source = "\n".join(
@@ -63,6 +61,16 @@ fn darwin-pipe-end(fd:Int)->Int{return 0;}
 fn darwin-pipe-retain(slot:Int,end:Int)->Void{return;}
 fn darwin-pipe-release(slot:Int,end:Int)->Void{return;}
 """
+# Preserve real stream-aware shared VFS branches while testing regular-file controls.
+vfs = (root / "components/vfs.in").read_text()
+source += "\n" + "\n".join(
+    line for line in vfs.splitlines()
+    if line.startswith(("const VFS-FD-STREAM", "const VFS-STREAM-", "var vfs-stream-"))
+) + "\n"
+for name in ["vfs-stream-pair-valid", "vfs-stream-valid", "vfs-stream-release",
+             "vfs-stream-retain", "vfs-stream-publish", "vfs-stream-dup",
+             "vfs-stream-read", "vfs-stream-write"]:
+    source += extract("vfs.in", name) + "\n"
 for name in [
     "vfs-fd-table-alloc",
     "vfs-fd-clear",

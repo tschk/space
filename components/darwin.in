@@ -452,6 +452,17 @@ fn darwin-sys-dup2(oldfd: Int, newfd: Int) -> Int {
   if newfd < 0 || newfd >= VFS-MAX-FDS {
     return DARWIN-EBADF
   }
+  if vfs-stream-valid(oldfd) != 0 {
+    if newfd < 3 { return DARWIN-ENOSYS }
+    vfs-stream-retain(oldfd)
+    let source = vfs-fd-table + oldfd * 32
+    let pair = load64(source)
+    let side = load64(source + 8)
+    if vfs-fd-valid(newfd) != 0 { darwin-sys-close(newfd) }
+    vfs-stream-publish(newfd, pair, side)
+    darwin-fd-cloexec = darwin-fd-cloexec & (0 - 1 - (1 << newfd))
+    return newfd
+  }
   // Retain before replacement; target may share this same open file.
   let record = 0
   if oldfd >= 3 && darwin-fd-is-pipe(oldfd) == 0 {
@@ -515,6 +526,7 @@ fn darwin-sys-getpagesize() -> Int {
 }
 
 fn darwin-sys-fstat(fd: Int, buf: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 { return DARWIN-EBADF }
   if vfs-fd-valid(fd) == 0 {
     return DARWIN-EBADF
   }
@@ -580,6 +592,11 @@ fn darwin-sys-geteuid() -> Int {
 
 // Duplicate descriptor metadata while sharing the regular-file offset record.
 fn darwin-sys-dup(fd: Int) -> Int {
+  if vfs-stream-valid(fd) != 0 {
+    let copy = vfs-stream-dup(fd)
+    if copy >= 0 { darwin-fd-cloexec = darwin-fd-cloexec & (0 - 1 - (1 << copy)) }
+    return copy
+  }
   if vfs-fd-valid(fd) == 0 {
     return DARWIN-EBADF
   }
