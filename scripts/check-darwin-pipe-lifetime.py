@@ -19,7 +19,7 @@ text = (root / 'components/darwin.in').read_text()
 names = ['darwin-pipe-table-init', 'darwin-fd-is-pipe', 'darwin-pipe-slot',
          'darwin-pipe-end', 'darwin-pipe-release', 'darwin-sys-close',
          'darwin-pipe-write', 'darwin-pipe-read', 'darwin-sys-dup',
-         'darwin-sys-dup2', 'darwin-sys-pipe']
+         'darwin-sys-dup2', 'darwin-sys-pipe', 'darwin-sys-lseek']
 if 'fn darwin-pipe-retain(' in text:
     names.append('darwin-pipe-retain')
 functions = []
@@ -37,6 +37,8 @@ var cursor:Int=8;
 var darwin-pipe-table:Int=0;
 var darwin-fd-cloexec:Int=0;
 var vfs-fd-table:Int=0;
+var seek-calls:Int=0;
+fn vfs-lseek(fd:Int,offset:Int,whence:Int)->Int{seek-calls+=1;return 17;}
 fn alloc(n:Int)->Int{let p=cursor;cursor+=n;return p;}
 fn load64(p:Int)->Int{return heap[p];}
 fn store64(p:Int,v:Int)->void{heap[p]=v;}
@@ -53,12 +55,40 @@ for name in ('vfs-fd-valid', 'vfs-fd-clear', 'vfs-fd-alloc', 'vfs-fd-open-file',
     end = start + 3 + following.start() if following else len(vfs)
     functions.append(vfs[start:end])
 source += '\n'.join(functions) + '''
+fn pipe-seek-preserved(fd:Int)->Int{
+ let row=vfs-fd-table+fd*32;
+ let slot=load64(row+8);let end=load64(row+16);
+ let base=darwin-pipe-table+slot*DARWIN-PIPE-SLOT;
+ let buffer=load64(base+DARWIN-PIPE-OFF-BUF);
+ let head=load64(base+DARWIN-PIPE-OFF-HEAD);
+ let count=load64(base+DARWIN-PIPE-OFF-COUNT);
+ let readers=load64(base+DARWIN-PIPE-OFF-ROPEN);
+ let writers=load64(base+DARWIN-PIPE-OFF-WOPEN);
+ let whence=0;
+ while whence<3{
+  if darwin-sys-lseek(fd,42,whence)!=DARWIN-ESPIPE{return 0;}
+  if seek-calls!=0 || load64(row+8)!=slot || load64(row+16)!=end{return 0;}
+  if load64(base+DARWIN-PIPE-OFF-BUF)!=buffer || load64(base+DARWIN-PIPE-OFF-HEAD)!=head{return 0;}
+  if load64(base+DARWIN-PIPE-OFF-COUNT)!=count || load8(buffer+head)!=42{return 0;}
+  if load64(base+DARWIN-PIPE-OFF-ROPEN)!=readers || load64(base+DARWIN-PIPE-OFF-WOPEN)!=writers{return 0;}
+  whence+=1;
+ }
+ return 1;
+}
 fn main()->Int{
  vfs-fd-table-alloc();
  let pair=alloc(8);if darwin-sys-pipe(pair)!=0{return 1;}
  let r=load32(pair);let w=load32(pair+4);let idx=darwin-pipe-slot(r);
  let r2=darwin-sys-dup(r);let w2=darwin-sys-dup(w);
  if r2<0 || w2<0{return 2;}
+ let probe=alloc(1);store8(probe,42);
+ if darwin-pipe-write(w,probe,1)!=1{return 15;}
+ if pipe-seek-preserved(r)!=1 || pipe-seek-preserved(w)!=1 || pipe-seek-preserved(r2)!=1 || pipe-seek-preserved(w2)!=1{return 16;}
+ if darwin-pipe-read(r,probe,1)!=1 || load8(probe)!=42{return 17;}
+ // Non-pipe inputs remain owned by VFS validation/seek handling.
+ if darwin-sys-lseek(99,0,0)!=17 || seek-calls!=1{return 18;}
+ seek-calls=0;
+
  darwin-sys-close(r);darwin-sys-close(w);
  let bytes=alloc(1);store8(bytes,42);
  if darwin-pipe-write(w2,bytes,1)!=1{return 3;}
@@ -96,4 +126,4 @@ with tempfile.TemporaryDirectory(prefix='space-darwin-pipe-') as directory:
         report = json.loads(run.stdout)
         if not report.get('success') or report.get('eval_result') != {'Int': 42}:
             raise SystemExit(f'FAIL {profile}: {run.stdout}\n{run.stderr}')
-        print(f'PASS {profile}: duplicated endpoints, dup2 replacement, final close/reuse')
+        print(f'PASS {profile}: pipe seek refusal/state preservation, duplicated endpoints, dup2 replacement, final close/reuse')

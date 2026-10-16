@@ -539,6 +539,8 @@ fn darwin-sys-fstat(fd: Int, buf: Int) -> Int {
 }
 
 fn darwin-sys-lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  // Pipe descriptor words belong to the pipe translator, not regular-file offsets.
+  if darwin-fd-is-pipe(fd) != 0 { return DARWIN-ESPIPE }
   return vfs-lseek(fd, offset, whence)
 }
 
