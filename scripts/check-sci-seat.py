@@ -11,7 +11,19 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--in", dest="compiler", required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
-functions = []
+loader = (root / "components/sci-loader.in").read_text()
+schema_start = loader.index("struct SciProofSnapshot {")
+schema_end = loader.index("\n}", schema_start) + 2
+snapshot_declarations = (
+    loader[schema_start:schema_end]
+    + "\n"
+    + "\n".join(
+        line
+        for line in loader.splitlines()
+        if line.startswith(("var sci-proof-input:", "var sci-proof-app:"))
+    )
+)
+functions = [snapshot_declarations]
 for filename, names in [
     (
         "components/channel.in",
@@ -63,8 +75,6 @@ var sci-sync-ring-unit:Int=4;var sci-sync-page:Int=0;var sci-sync-domain:Int=0;
 var sci-sync-grants:Int=0;var sci-sync-pixel-phys:Int=0;var sci-sync-pixel-size:Int=0;
 var sci-sync-pixel-pool:Int=0;var sci-sync-entry:Int=0;var sci-sync-code-start:Int=0;
 var sci-sync-code-end:Int=0;var sci-sync-info:Int=0;var sci-sync-cap:Int=-1;var sci-sync-object:Int=0;
-var sci-proof-input:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0];
-var sci-proof-app:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0];
 var current:Int=0;var invoked:Int=0;var mode:Int=0;var fail-switch:Int=0;
 fn load64(p:Int)->Int{return memory[p];}
 fn store64(p:Int,v:Int)->Void{memory[p]=v;return;}
@@ -91,7 +101,7 @@ fn invoke1(entry:Int,info:Int)->Int{
     + "\n".join(functions)
     + """
 fn setup()->Int{
- current=0;invoked=0;mode=0;fail-switch=0;sci-proof-input[0]=0;sci-proof-app[0]=0;
+ current=0;invoked=0;mode=0;fail-switch=0;sci-proof-input.unit=0;sci-proof-app.unit=0;
  store64(domain-table,4096);store64(domain-table+8,1);
  store64(domain-table+24,8192);store64(domain-table+32,1);store64(domain-table+40,0);
  store64(domain-table+48,12288);store64(domain-table+56,1);store64(domain-table+64,1);
@@ -114,7 +124,7 @@ fn main()->Int{
  if setup()!=1{return 1;}
  if sci-proof-poll-input()!=0 || current!=0 || sci-sync-domain!=1 || invoked!=1{return 2;}
  if sci-proof-deliver-key(7,97)!=42 || current!=0 || sci-sync-domain!=2 || invoked!=2{return 3;}
- if sci-proof-input[1]!=4096 || sci-proof-app[1]!=8192 || sci-proof-input[2]!=1 || sci-proof-app[2]!=2{return 4;}
+ if sci-proof-input.page!=4096 || sci-proof-app.page!=8192 || sci-proof-input.domain!=1 || sci-proof-app.domain!=2{return 4;}
  // A seat frame at the last four slots wraps before the three replies.
  if setup()!=1{return 17;}store64(8192,504);store64(8200,504);
  if sci-proof-deliver-key(7,97)!=42 || load64(8192)!=0 || load64(8200)!=12 || invoked!=1{return 18;}
@@ -124,31 +134,31 @@ fn main()->Int{
  if sci-proof-poll-input()!=0 || current!=0 || sci-sync-domain!=1 || invoked!=3{return 6;}
  if setup()!=1{return 7;}current=1;
  if sci-proof-capture(4)!=0 || sci-proof-restore(1)!=0 || sci-proof-fail-app()!=-1 || sci-proof-deliver-key(7,97)!=-1 || sci-proof-poll-input()!=-1{return 8;}
- if sci-proof-app[0]!=4 || sci-proof-input[0]!=1 || invoked!=0 || current!=1{return 9;}
+ if sci-proof-app.unit!=4 || sci-proof-input.unit!=1 || invoked!=0 || current!=1{return 9;}
  if setup()!=1 || sci-proof-capture(2)!=0 || sci-proof-restore(2)!=0{return 10;}
  let failure=1;
  while failure<5 {
    if setup()!=1{return 11;}mode=failure;
-   if sci-proof-deliver-key(7,97)!=-1 || current!=0 || invoked!=1 || sci-proof-app[0]!=0 || sci-sync-ring-unit!=0{return 12;}
+   if sci-proof-deliver-key(7,97)!=-1 || current!=0 || invoked!=1 || sci-proof-app.unit!=0 || sci-sync-ring-unit!=0{return 12;}
    if sci-proof-deliver-key(7,97)!=-1 || invoked!=1{return 13;}
-   if sci-proof-input[0]!=1{return 14;}
+   if sci-proof-input.unit!=1{return 14;}
    failure+=1;
  }
  // Failed entry switch retires safely in the kernel domain without invoking.
  if setup()!=1{return 20;}fail-switch=1;
- if sci-proof-deliver-key(7,97)!=-1 || invoked!=0 || current!=0 || sci-proof-app[0]!=0{return 21;}
+ if sci-proof-deliver-key(7,97)!=-1 || invoked!=0 || current!=0 || sci-proof-app.unit!=0{return 21;}
  if sci-proof-deliver-key(7,97)!=-1 || invoked!=0{return 22;}
  // Failed restore stays in guest: no private retirement writes are permitted.
  if setup()!=1{return 23;}fail-switch=2;
- if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || current!=2 || sci-proof-app[0]!=4 || sci-sync-ring-unit!=4{return 24;}
- if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || sci-proof-app[0]!=4{return 25;}
+ if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || current!=2 || sci-proof-app.unit!=4 || sci-sync-ring-unit!=4{return 24;}
+ if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || sci-proof-app.unit!=4{return 25;}
  // Explicit mock kernel recovery still cannot replay the pending exchange.
  current=0;fail-switch=0;
  if sci-resume-sync(2,0)!=-1 || invoked!=1{return 26;}
- if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || sci-proof-app[0]!=0{return 27;}
+ if sci-proof-deliver-key(7,97)!=-1 || invoked!=1 || sci-proof-app.unit!=0{return 27;}
  // Input restore failure must likewise avoid private writes outside domain zero.
  if setup()!=1{return 28;}fail-switch=2;
- if sci-proof-poll-input()!=-1 || invoked!=1 || current!=1 || sci-proof-input[0]!=1 || sci-sync-ring-unit!=1{return 29;}
+ if sci-proof-poll-input()!=-1 || invoked!=1 || current!=1 || sci-proof-input.unit!=1 || sci-sync-ring-unit!=1{return 29;}
  // Dead domain, capability mismatch, malformed/pending preconditions: no entry.
  let bad=0;
  while bad<5 {

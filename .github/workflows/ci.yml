@@ -11,8 +11,8 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: inauguration
-      # Inauguration 0.9.239: lexical declaration boundaries used by runtime fixtures.
-      inauguration-ref: f5e455ae04ad905f1463160e6e04a4b2d747f5f2
+      # Inauguration 0.9.243: native flat records for retained endpoint snapshots.
+      inauguration-ref: 012508537b9e370c74d160c5a374303e90843304
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot

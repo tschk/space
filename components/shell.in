@@ -1609,8 +1609,8 @@ fn input-sci-proof(port: Int) -> Int {
 fn input-app-proof(port: Int) -> Int {
   if fb-ready == 0 || domain-get-current() != 0 { return 0 }
   if load64(0x280000) != SCI-MAGIC-V2 || load64(0x290000) != SCI-MAGIC-V2 { return 0 }
-  sci-proof-input[0] = 0
-  sci-proof-app[0] = 0
+  sci-proof-input.unit = 0
+  sci-proof-app.unit = 0
   dsp-init()
   let original-domains = domain-count
   if sci-load-runtime-component(port, 0x280000, "seat-input", SCI-INPUT-GRANTS, 1, 0) != 0 { return 0 }
@@ -1644,7 +1644,7 @@ fn input-app-proof(port: Int) -> Int {
         if key == 27 {
           if delivered != 2 || input-page-recv(input-page, message) != 0 { return 0 }
           if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
-          if sci-proof-input[2] != input-domain || sci-proof-input[1] != input-page || sci-proof-app[2] != app-domain || sci-proof-app[1] != app-page || sci-proof-app[4] != pixel { return 0 }
+          if sci-proof-input.domain != input-domain || sci-proof-input.page != input-page || sci-proof-app.domain != app-domain || sci-proof-app.page != app-page || sci-proof-app.pixel_phys != pixel { return 0 }
           serial-write-cstr(port, "  seat: exactly two deliveries, stable endpoints/counters PASS")
           serial-nl(port)
           return 1
@@ -1663,7 +1663,7 @@ fn input-app-proof(port: Int) -> Int {
       if received < 0 { return 0 }
     }
     if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
-    if sci-proof-input[2] != input-domain || sci-proof-input[1] != input-page || sci-proof-app[2] != app-domain || sci-proof-app[1] != app-page || sci-proof-app[4] != pixel { return 0 }
+    if sci-proof-input.domain != input-domain || sci-proof-input.page != input-page || sci-proof-app.domain != app-domain || sci-proof-app.page != app-page || sci-proof-app.pixel_phys != pixel { return 0 }
     pause()
   }
   return 0

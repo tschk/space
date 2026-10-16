@@ -184,15 +184,28 @@ fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
 
 // Exactly two private snapshots for the dedicated synchronous desktop proof.
 // No record pointers, arbitrary endpoint registry or guest-sourced role selector.
-var sci-proof-input: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0]
-var sci-proof-app: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0]
+struct SciProofSnapshot {
+  Int unit
+  Int page
+  Int domain
+  Int grants
+  Int pixel_phys
+  Int pixel_size
+  Int pixel_pool
+  Int entry
+  Int code_start
+  Int code_end
+  Int info
+  Int cap
+  Int object
+}
+var sci-proof-input: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
+var sci-proof-app: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
 
 fn sci-proof-capture(role: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
   if role != 1 && role != 4 { return 0 }
-  let snapshot = sci-proof-input
-  if role == 4 { snapshot = sci-proof-app }
-  snapshot[0] = 0
+  if role == 1 { sci-proof-input.unit = 0 } else { sci-proof-app.unit = 0 }
   if sci-sync-provenance-valid(sci-sync-domain, role) == 0 { return 0 }
   let page = sci-sync-page
   let capacity = load64(page + 16)
@@ -205,42 +218,77 @@ fn sci-proof-capture(role: Int) -> Int {
   } else {
     if chan-page-frame-header-valid(capacity, head, tail, word-size) == 0 || sci-sync-grants != (cap-memory() | cap-display()) { return 0 }
   }
-  snapshot[1] = sci-sync-page
-  snapshot[2] = sci-sync-domain
-  snapshot[3] = sci-sync-grants
-  snapshot[4] = sci-sync-pixel-phys
-  snapshot[5] = sci-sync-pixel-size
-  snapshot[6] = sci-sync-pixel-pool
-  snapshot[7] = sci-sync-entry
-  snapshot[8] = sci-sync-code-start
-  snapshot[9] = sci-sync-code-end
-  snapshot[10] = sci-sync-info
-  snapshot[11] = sci-sync-cap
-  snapshot[12] = sci-sync-object
-  snapshot[0] = role
+  if role == 1 {
+    sci-proof-input.page = sci-sync-page
+    sci-proof-input.domain = sci-sync-domain
+    sci-proof-input.grants = sci-sync-grants
+    sci-proof-input.pixel_phys = sci-sync-pixel-phys
+    sci-proof-input.pixel_size = sci-sync-pixel-size
+    sci-proof-input.pixel_pool = sci-sync-pixel-pool
+    sci-proof-input.entry = sci-sync-entry
+    sci-proof-input.code_start = sci-sync-code-start
+    sci-proof-input.code_end = sci-sync-code-end
+    sci-proof-input.info = sci-sync-info
+    sci-proof-input.cap = sci-sync-cap
+    sci-proof-input.object = sci-sync-object
+    sci-proof-input.unit = role
+  } else {
+    sci-proof-app.page = sci-sync-page
+    sci-proof-app.domain = sci-sync-domain
+    sci-proof-app.grants = sci-sync-grants
+    sci-proof-app.pixel_phys = sci-sync-pixel-phys
+    sci-proof-app.pixel_size = sci-sync-pixel-size
+    sci-proof-app.pixel_pool = sci-sync-pixel-pool
+    sci-proof-app.entry = sci-sync-entry
+    sci-proof-app.code_start = sci-sync-code-start
+    sci-proof-app.code_end = sci-sync-code-end
+    sci-proof-app.info = sci-sync-info
+    sci-proof-app.cap = sci-sync-cap
+    sci-proof-app.object = sci-sync-object
+    sci-proof-app.unit = role
+  }
   return 1
 }
 
 fn sci-proof-restore(role: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
   if role != 1 && role != 4 { return 0 }
-  let snapshot = sci-proof-input
-  if role == 4 { snapshot = sci-proof-app }
-  if snapshot[0] != role { return 0 }
-  sci-sync-ring-unit = snapshot[0]
-  sci-sync-page = snapshot[1]
-  sci-sync-domain = snapshot[2]
-  sci-sync-grants = snapshot[3]
-  sci-sync-pixel-phys = snapshot[4]
-  sci-sync-pixel-size = snapshot[5]
-  sci-sync-pixel-pool = snapshot[6]
-  sci-sync-entry = snapshot[7]
-  sci-sync-code-start = snapshot[8]
-  sci-sync-code-end = snapshot[9]
-  sci-sync-info = snapshot[10]
-  sci-sync-cap = snapshot[11]
-  sci-sync-object = snapshot[12]
-  if sci-sync-provenance-valid(sci-sync-domain, role) == 0 { snapshot[0] = 0; sci-sync-ring-unit = 0; return 0 }
+  if role == 1 {
+    if sci-proof-input.unit != role { return 0 }
+    sci-sync-ring-unit = sci-proof-input.unit
+    sci-sync-page = sci-proof-input.page
+    sci-sync-domain = sci-proof-input.domain
+    sci-sync-grants = sci-proof-input.grants
+    sci-sync-pixel-phys = sci-proof-input.pixel_phys
+    sci-sync-pixel-size = sci-proof-input.pixel_size
+    sci-sync-pixel-pool = sci-proof-input.pixel_pool
+    sci-sync-entry = sci-proof-input.entry
+    sci-sync-code-start = sci-proof-input.code_start
+    sci-sync-code-end = sci-proof-input.code_end
+    sci-sync-info = sci-proof-input.info
+    sci-sync-cap = sci-proof-input.cap
+    sci-sync-object = sci-proof-input.object
+  } else {
+    if sci-proof-app.unit != role { return 0 }
+    sci-sync-ring-unit = sci-proof-app.unit
+    sci-sync-page = sci-proof-app.page
+    sci-sync-domain = sci-proof-app.domain
+    sci-sync-grants = sci-proof-app.grants
+    sci-sync-pixel-phys = sci-proof-app.pixel_phys
+    sci-sync-pixel-size = sci-proof-app.pixel_size
+    sci-sync-pixel-pool = sci-proof-app.pixel_pool
+    sci-sync-entry = sci-proof-app.entry
+    sci-sync-code-start = sci-proof-app.code_start
+    sci-sync-code-end = sci-proof-app.code_end
+    sci-sync-info = sci-proof-app.info
+    sci-sync-cap = sci-proof-app.cap
+    sci-sync-object = sci-proof-app.object
+  }
+  if sci-sync-provenance-valid(sci-sync-domain, role) == 0 {
+    if role == 1 { sci-proof-input.unit = 0 } else { sci-proof-app.unit = 0 }
+    sci-sync-ring-unit = 0
+    return 0
+  }
   return 1
 }
 
@@ -258,7 +306,7 @@ fn sci-proof-poll-input() -> Int {
   let result = sci-resume-input-sync(sci-sync-domain)
   // A failed restore may leave execution in the guest domain: do not touch
   // private state until the kernel domain has actually been restored.
-  if result != 0 && domain-get-current() == 0 { sci-proof-input[0] = 0; sci-sync-ring-unit = 0 }
+  if result != 0 && domain-get-current() == 0 { sci-proof-input.unit = 0; sci-sync-ring-unit = 0 }
   return result
 }
 
@@ -266,7 +314,7 @@ fn sci-proof-poll-input() -> Int {
 // leaves private state untouched; guards and the pending ring prevent replay.
 fn sci-proof-fail-app() -> Int {
   if domain-get-current() != 0 { return -1 }
-  sci-proof-app[0] = 0
+  sci-proof-app.unit = 0
   sci-sync-ring-unit = 0
   return -1
 }

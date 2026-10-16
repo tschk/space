@@ -214,7 +214,8 @@ multi-client authority or authenticated seat routing.
 
 `python3 scripts/check-spdp-input.py --in /path/to/in` builds a separate
 `fixtures/spdp-input/client.in` plus the existing bounded subsequent input poll.
-The dedicated `input app` kernel command retains exactly two private snapshots:
+The dedicated `input app` kernel command retains exactly two private snapshots as
+flat `SciProofSnapshot` records with named fields and static storage:
 one input domain/word ring and one client domain/frame ring/pixel grant. Named
 kernel operations capture those known roles; every helper checks domain zero
 before snapshot selection/access. The ordinary current-record API remains and
