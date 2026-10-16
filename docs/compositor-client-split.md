@@ -74,8 +74,8 @@ captured ring header and publishes/consumes whole four-word frames; malformed
 or partial frames do not advance the head or reach the dispatcher.
 Scheduler-backed CSP channels retain their own layout.
 
-The fixture packager compiles the same source as a static library to obtain
-canonical named capability metadata, verifies unchanged source/protocol hashes,
+The fixture packager reads the canonical named capability metadata emitted
+beside the SCI artifact, verifies unchanged source/protocol hashes,
 then validates exact component/target/entry, names, interfaces and operations.
 It translates the compiler's ordinal SCI mask into Space's fixed memory/display
 mask20, refusing unknown/duplicate/missing rights or an unexpected ordinal mask

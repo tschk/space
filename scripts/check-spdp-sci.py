@@ -27,13 +27,12 @@ subprocess.run(['nasm', '-f', 'bin', str(root/'boot/multiboot.asm'), '-o', str(o
 for source, entry, extra, output in [
     ('kernel/kernel-root.in', 'kernel-entry', ['--emit', 'boot', '--trampoline', str(out/'trampoline.bin'), '--linkage', 'static-lib'], 'kernel.bin'),
     ('fixtures/spdp-sci/client.in', 'client-entry', ['--emit', 'sci', '--base', '0x48000000'], 'client.sci'),
-    ('fixtures/spdp-sci/client.in', 'client-entry', ['--linkage', 'static-lib'], 'client-metadata.o'),
 ]:
     with (out/(output+'.log')).open('w') as log:
         subprocess.run([args.compiler, 'compile', '--path', str(root/source), '--entry', entry, '--target', 'native', '--target-triple', 'x86_64-unknown-none', *extra, '--out', str(out/output)], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
-assert source_hashes() == source_snapshot, 'source/protocol changed between metadata and SCI compilation'
+assert source_hashes() == source_snapshot, 'source/protocol changed during SCI compilation'
 (out/'source-hashes.json').write_text(json.dumps(source_snapshot, indent=2)+'\n')
-metadata_path = out/'client-metadata.component-metadata.json'
+metadata_path = out/'client.component-metadata.json'
 raw = (out/'client.sci').read_bytes()
 metadata = json.loads(metadata_path.read_text())
 packager = root/'scripts/pack-spdp-sci.py'

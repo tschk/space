@@ -2,7 +2,7 @@
 """Bind the pixel-proof SCI's ordinal capability mask to Space's named rights.
 
 This packaging policy is deliberately limited to the checked-in PixelProof.
-The compiler's canonical static-library metadata supplies names and operations.
+The compiler's canonical SCI sidecar supplies names and operations.
 """
 import argparse
 import json
