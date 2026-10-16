@@ -280,7 +280,14 @@ def main() -> int:
     )
     check(
         "guest cap-info does not publish cap-table-base",
-        "cap-table-base" not in loader and "store64(cap-info + 8, 0)" in sci_load,
+        all(
+            "cap-table-base" not in body and f"store64({info} + 8, 0)" in body
+            for body, info in (
+                (sci_load, "cap-info"),
+                (fn_body(loader, "sci-load-runtime-component") or "", "cap-info"),
+                (fn_body(loader, "sci-sync-restore-info") or "", "sci-sync-info"),
+            )
+        ),
     )
     check(
         "kernel stops the preempt scheduler before the serial shell",
