@@ -1318,6 +1318,8 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  hardening FAIL")
         serial-nl(port)
       }
+    } else if line-eq("input sci") != 0 {
+      if input-sci-proof(port) == 0 { serial-write-cstr(port, "  input: SCI proof failed"); serial-nl(port) }
     } else if line-eq("dsp") != 0 {
       serial-write-cstr(port, "  usage: dsp test | dsp demo | dsp sci left/right/destroy")
       serial-nl(port)
@@ -1548,4 +1550,55 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   serial-write-cstr(port, " PASS (SCI client pixels)")
   serial-nl(port)
   return 1
+}
+
+// Dedicated single-service proof. No app endpoint or seat-event delivery.
+fn input-sci-proof(port: Int) -> Int {
+  let image = 0x280000
+  if load64(image) != SCI-MAGIC-V2 { return 0 }
+  if sci-load-runtime-component(port, image, "input-poll-proof", SCI-INPUT-GRANTS, 1, 0) != 0 { return 0 }
+  let domain = sci-sync-domain
+  let page = sci-sync-page
+  if sci-admit-input-sync(domain) == 0 { return 0 }
+  // Ordinary SPDP entry must never accept the input role, even when drained.
+  if sci-resume-sync(domain, 0) != -1 { return 0 }
+  let message = alloc(8)
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  serial-write-cstr(port, "  input: retained SCI ready")
+  serial-nl(port)
+  while true {
+    if sci-resume-input-sync(domain) != 0 { return 0 }
+    if sci-sync-page != page || sci-sync-domain != domain || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    let received = input-page-recv(page, message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(message)
+      if (event & 255) == INPUT-EVT-MOUSE-MOVE {
+        serial-write-cstr(port, "  input: mouse move ")
+        serial-write-dec-wide(port, (event >> 32) & 65535)
+        serial-write-cstr(port, ",")
+        serial-write-dec-wide(port, (event >> 48) & 65535)
+        serial-nl(port)
+      }
+      if (event & 255) == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        serial-write-cstr(port, "  input: key ")
+        serial-write-dec-wide(port, code)
+        serial-nl(port)
+        if code == 27 {
+          if input-page-recv(page, message) != 0 { return 0 }
+          serial-write-cstr(port, "  input: exactly-once, same domain/page, allocation counters unchanged PASS")
+          serial-nl(port)
+          return 1
+        }
+      }
+      received = input-page-recv(page, message)
+      if received < 0 { return 0 }
+    }
+    pause()
+  }
+  return 0
 }

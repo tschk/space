@@ -5,6 +5,8 @@
 // same blocking wait-queue pattern as the kernel-side channels.
 package space.kernel
 
+import "../protocol/input.in"
+
 // Shared page layout (4096 bytes, all Int = 8 bytes):
 // [head(8)][tail(8)][capacity(8)][msg_size(8)]...[msg data ring(4096-32)]
 const CROSS-PAGE-HEADER-SIZE = 32

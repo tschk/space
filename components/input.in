@@ -1,5 +1,7 @@
 package space.input
 
+import "../protocol/input.in"
+
 // Standalone input component for the Space nanokernel.
 // Collects xHCI USB HID keyboard and PS/2 mouse input in an isolated domain and
 // publishes normalized input events over a cross-domain shared page channel.
@@ -24,11 +26,11 @@ interface InputDevice {
 }
 
 // --- cap_info layout (64 bytes) --------------------------------------------
-// [0]   cap_count
-// [8]   cap_table_base
+// [0]   effective capability grants
+// [8]   reserved zero
 // [16]  heap_base  (component-local bump allocator)
 // [24]  heap_size
-// [32]  input_shared_page (physical address of cross-domain channel page)
+// [32]  input_shared_page (component virtual address)
 // [40]  input_domain_id
 // [48]  screen_width  (optional, defaults to INPUT_SCREEN_W)
 // [56]  screen_height (optional, defaults to INPUT_SCREEN_H)
@@ -37,42 +39,6 @@ interface InputDevice {
 const INPUT-COM1 = 0x3F8
 const INPUT-SCREEN-W = 800
 const INPUT-SCREEN-H = 600
-
-// --- event protocol --------------------------------------------------------
-const INPUT-EVT-KEY-DOWN = 1
-const INPUT-EVT-KEY-UP = 2
-const INPUT-EVT-MOUSE-MOVE = 3
-const INPUT-EVT-MOUSE-BUTTON = 4
-
-// One 64-bit event word:
-//   bits 0..7    type   (INPUT_EVT_*)
-//   bits 8..15   flags  (modifiers / buttons)
-//   bits 16..31  code   (ASCII / keycode)
-//   bits 32..47  a      (dx or absolute x)
-//   bits 48..63  b      (dy or absolute y)
-
-fn input-event-key(type: Int, ascii: Int, flags: Int) -> Int {
-  let t = type & 0xFF
-  let f = (flags & 0xFF) << 8
-  let c = (ascii & 0xFFFF) << 16
-  return t | f | c
-}
-
-fn input-event-move(x: Int, y: Int, buttons: Int) -> Int {
-  let t = INPUT-EVT-MOUSE-MOVE
-  let f = (buttons & 0xFF) << 8
-  let a = (x & 0xFFFF) << 32
-  let b = (y & 0xFFFF) << 48
-  return t | f | a | b
-}
-
-fn input-event-button(buttons: Int, x: Int, y: Int) -> Int {
-  let t = INPUT-EVT-MOUSE-BUTTON
-  let f = (buttons & 0xFF) << 8
-  let a = (x & 0xFFFF) << 32
-  let b = (y & 0xFFFF) << 48
-  return t | f | a | b
-}
 
 // --- component-local heap ---------------------------------------------------
 var input-heap-base: Int = 0
@@ -224,20 +190,7 @@ fn input-chan-bind(page: Int) -> void {
 }
 
 fn input-chan-send(page: Int, msg: Int) -> void {
-  if page == 0 {
-    return
-  }
-  let cap = load64(page + 16)
-  let head = load64(page + 0)
-  let tail = load64(page + 8)
-  let next = (head + 1) % cap
-  if next == tail {
-    // channel full: drop the event
-    return
-  }
-  let ring = page + 32
-  store64(ring + head * 8, msg)
-  store64(page + 0, next)
+  input-page-send(page, msg)
   return
 }
 
@@ -865,7 +818,10 @@ fn mouse-poll() -> Int {
     return 0
   }
   let count = 0
-  while mouse-has-data() != 0 {
+  let bytes = 0
+  // Keep each synchronous poll finite; partial packet state survives the budget.
+  while bytes < 32 && mouse-has-data() != 0 {
+    bytes += 1
     let b = inb(PS2-DATA)
     if mouse-process-byte(b) != 0 {
       count = count + 1
@@ -976,7 +932,10 @@ fn ps2-kbd-getchar() -> Int {
 }
 
 // --- component entry --------------------------------------------------------
-fn input-entry(cap-info: Int) -> Int {
+var input-initialized: Int = 0
+var input-previous-buttons: Int = 0
+
+fn input-initialize(cap-info: Int) -> Int {
   let port = INPUT-COM1
   input-serial-cstr(port, "input: component entered")
   input-serial-nl(port)
@@ -1010,30 +969,45 @@ fn input-entry(cap-info: Int) -> Int {
     input-serial-nl(port)
   }
 
-  let prev-buttons = 0
+  input-previous-buttons = 0
+  input-initialized = 1
+  return 0
+}
+
+// Synchronous input-service proof entry. Existing hardware initialization waits
+// run once; only subsequent poll steps are bounded. Decoder/button state persists.
+fn input-poll-entry(cap-info: Int) -> Int {
+  if input-initialized == 0 { input-initialize(cap-info) }
+  let shared = load64(cap-info + 32)
+  if usb-kbd-ready() != 0 {
+    let key = usb-kbd-getchar()
+    if key >= 0 {
+      input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, key, 0))
+    }
+  }
+
+  let pkey = ps2-kbd-getchar()
+  if pkey >= 0 {
+    input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, pkey, 0))
+  }
+
+  let mouse-pkts = mouse-poll()
+  if mouse-pkts != 0 {
+    input-chan-send(shared, input-event-move(mouse-x, mouse-y, mouse-buttons))
+    if mouse-buttons != input-previous-buttons {
+      input-chan-send(shared, input-event-button(mouse-buttons, mouse-x, mouse-y))
+      input-previous-buttons = mouse-buttons
+    }
+  }
+
+  return 0
+}
+
+// Preserve the existing asynchronous boot entry and interrupt wakeup behavior.
+fn input-entry(cap-info: Int) -> Int {
+  input-initialize(cap-info)
   while true {
-    if usb-kbd-ready() != 0 {
-      let key = usb-kbd-getchar()
-      if key >= 0 {
-        input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, key, 0))
-      }
-    }
-
-    let pkey = ps2-kbd-getchar()
-    if pkey >= 0 {
-      input-chan-send(shared, input-event-key(INPUT-EVT-KEY-DOWN, pkey, 0))
-    }
-
-    let mouse-pkts = mouse-poll()
-    if mouse-pkts != 0 {
-      input-chan-send(shared, input-event-move(mouse-x, mouse-y, mouse-buttons))
-      if mouse-buttons != prev-buttons {
-        input-chan-send(shared, input-event-button(mouse-buttons, mouse-x, mouse-y))
-        prev-buttons = mouse-buttons
-      }
-    }
-
-    // comp_invoke_stub enters with cli; sti so timer can return to kernel/shell.
+    input-poll-entry(cap-info)
     sti()
     hlt()
     pause()

@@ -186,3 +186,26 @@ other-surface and reattachment controls.
   `display-standalone.in` (a real SCI component) and fix its wakeup (a PIT-
   driven poll instead of `hlt()`)? Prefer the SCI component, which also
   removes the preempt-stop freeze.
+
+### Retained input service prerequisite
+
+`python3 scripts/check-input-sci.py --in /path/to/in` builds the existing Input
+component with synchronous `input-poll-entry`, loads it once, and drives actual PS/2
+keys through repeated synchronous entries. `input sci` is the dedicated kernel
+proof command; Escape returns to the shell. The existing asynchronous
+`input-entry` still initializes and polls with interrupt wakeup for normal boot.
+The first entry retains the existing hardware initialization waits; subsequent
+poll steps are bounded and retain keyboard modifier/mouse-button state. Its one-word ring keeps the existing input ABI (producer head, consumer
+tail), with captured header validation and drop-on-full behavior. This is distinct
+from the four-word SPDP ring and does not deliver seat events to an app.
+
+Only the kernel proof admits the known input artifact at its fixed load base to
+unit-one reentry. Every new load resets the private role to SPDP; ordinary
+`sci-resume-sync` rejects an admitted input instance. Shared resume validation
+still checks live domain/capability/code provenance, a drained valid ring,
+descriptor reconstruction and domain restoration. Reentry allocates nothing.
+The QEMU gate checks five keys exactly once (including Ctrl release), one domain
+and stable page/allocation counters. The isolated three-profile resume gate also
+covers malformed headers, empty/full/wrap behavior and SPDP-role rejection.
+This is one retained input service, not an app input endpoint, scheduler,
+multi-client authority or authenticated seat routing.

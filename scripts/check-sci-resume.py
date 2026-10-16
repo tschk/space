@@ -11,22 +11,28 @@ parser.add_argument('--in', dest='compiler', required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 functions = []
-for filename, names in [('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync'])]:
+for filename, names in [('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync', 'sci-resume-sync-unit', 'sci-admit-input-sync', 'sci-resume-input-sync'])]:
     text = (root/'components'/filename).read_text()
     for name in names:
         start = text.index('fn '+name+'(')
         functions.append(text[start:text.index('\n}', start)+2])
+text = (root/'protocol/input.in').read_text()
+for name in ('input-page-header-valid', 'input-page-send', 'input-page-recv'):
+    start = text.index('fn '+name+'(')
+    functions.append(text[start:text.index('\n}', start)+2])
 source = 'var memory:[Int]=[' + ','.join(['0']*8192) + '];\n' + '''
 const COMP-HEAP-VIRT=0x80000000;
 const COMP-HEAP-SIZE=0x200000;
 const COMP-SHARED-VIRT=0x70000000;
 const COMP-PIXEL-VIRT=0x70001000;
 const SCI-V2-HEADER=64;
+const SCI-INPUT-GRANTS=3;
 const DOMAIN-ACTIVE=1;
 var domain-count:Int=2;
 var domain-table:Int=1500;
 var cap-count:Int=1;
 var cap-table-base:Int=1904;
+var sci-sync-ring-unit:Int=4;
 var sci-sync-domain:Int=1;
 var sci-sync-grants:Int=20;
 var sci-sync-pixel-phys:Int=8192;
@@ -59,7 +65,7 @@ fn invoke1(entry:Int,info:Int)->Int{
 }
 ''' + '\n'.join(functions) + '''
 fn setup()->Void{
- domain-count=2;cap-count=1;current=0;fail-switch=0;
+ sci-sync-ring-unit=4;domain-count=2;cap-count=1;current=0;fail-switch=0;
  sci-sync-domain=1;sci-sync-grants=20;sci-sync-cap=0;sci-sync-object=77;
  sci-sync-pixel-phys=8192;sci-sync-pixel-size=4096;sci-sync-pixel-pool=0;
  sci-sync-entry=0x48000040;sci-sync-code-start=0x48000000;sci-sync-code-end=0x48001000;
@@ -97,6 +103,43 @@ source += '''
  setup();fail-switch=2;
  if sci-resume-sync(1,55)!=-1 || invoked!=2 || current!=1{return 41;}
  current=0;
+ setup();current=1;
+ if sci-resume-sync-unit(1,55,4)!=-1 || invoked!=2 || current!=1 || load64(1800)!=-1{return 48;}
+ // Admission cannot be requested by the input domain, even with valid provenance.
+ sci-sync-grants=3;store64(cap-table-base+8,3);
+ sci-sync-code-start=0x50000000;sci-sync-code-end=0x50001000;sci-sync-entry=0x50000040;
+ sci-sync-pixel-phys=0;sci-sync-pixel-size=0;store64(4096,1);store64(4104,1);
+ if sci-admit-input-sync(1)!=0 || sci-sync-ring-unit!=4 || invoked!=2 || current!=1 || load64(1800)!=-1{return 49;}
+ current=0;
+ // Unit-one role admission is private and cannot weaken ordinary SPDP entry.
+ setup();sci-sync-grants=3;store64(cap-table-base+8,3);
+ sci-sync-code-start=0x50000000;sci-sync-code-end=0x50001000;sci-sync-entry=0x50000040;
+ sci-sync-pixel-phys=0;sci-sync-pixel-size=0;
+ store64(4096,1);store64(4104,1);
+ if sci-admit-input-sync(1)!=1 || sci-sync-ring-unit!=1{return 50;}
+ if sci-resume-sync(1,55)!=-1 || invoked!=2 || load64(1800)!=-1{return 51;}
+ store64(4112,0);
+ if sci-resume-input-sync(1)!=-1 || invoked!=2 || current!=0{return 52;}
+ setup();
+ if sci-admit-input-sync(1)!=0 || sci-sync-ring-unit!=4{return 53;}
+ // Empty/full/wrap and rejection never consume partial or malformed state.
+ store64(4096,0);store64(4104,0);store64(4112,3);store64(4120,8);store64(2000,777);
+ if input-page-recv(4096,2000)!=0 || load64(2000)!=777{return 54;}
+ if input-page-send(4096,97)!=1 || input-page-send(4096,98)!=1 || input-page-send(4096,99)!=0{return 55;}
+ if input-page-recv(4096,2000)!=1 || load64(2000)!=97{return 56;}
+ if input-page-send(4096,99)!=1 || load64(4096)!=0{return 57;}
+ if input-page-recv(4096,2000)!=1 || load64(2000)!=98{return 58;}
+ if input-page-recv(4096,2000)!=1 || load64(2000)!=99 || input-page-recv(4096,2000)!=0{return 59;}
+ let bad=0;
+ while bad<6 {
+   store64(4096,0);store64(4104,0);store64(4112,3);store64(4120,8);store64(2000,777);
+   if bad==0{store64(4112,0);}if bad==1{store64(4112,509);}if bad==2{store64(4096,-1);}
+   if bad==3{store64(4096,3);}if bad==4{store64(4104,3);}if bad==5{store64(4120,4);}
+   let head=load64(4096);let tail=load64(4104);
+   if input-page-send(4096,42)!=-1 || input-page-recv(4096,2000)!=-1{return 60;}
+   if load64(4096)!=head || load64(4104)!=tail || load64(2000)!=777{return 61;}
+   bad+=1;
+ }
  return 42;
 }
 '''

@@ -1,0 +1,73 @@
+package space.protocol.input
+
+// Existing input event ABI and single-word page ring. Head belongs to producer,
+// tail to consumer; one empty slot distinguishes full from empty.
+// --- event protocol --------------------------------------------------------
+const INPUT-EVT-KEY-DOWN = 1
+const INPUT-EVT-KEY-UP = 2
+const INPUT-EVT-MOUSE-MOVE = 3
+const INPUT-EVT-MOUSE-BUTTON = 4
+
+// One 64-bit event word:
+//   bits 0..7    type   (INPUT_EVT_*)
+//   bits 8..15   flags  (modifiers / buttons)
+//   bits 16..31  code   (ASCII / keycode)
+//   bits 32..47  a      (dx or absolute x)
+//   bits 48..63  b      (dy or absolute y)
+
+fn input-event-key(type: Int, ascii: Int, flags: Int) -> Int {
+  let t = type & 0xFF
+  let f = (flags & 0xFF) << 8
+  let c = (ascii & 0xFFFF) << 16
+  return t | f | c
+}
+
+fn input-event-move(x: Int, y: Int, buttons: Int) -> Int {
+  let t = INPUT-EVT-MOUSE-MOVE
+  let f = (buttons & 0xFF) << 8
+  let a = (x & 0xFFFF) << 32
+  let b = (y & 0xFFFF) << 48
+  return t | f | a | b
+}
+
+fn input-event-button(buttons: Int, x: Int, y: Int) -> Int {
+  let t = INPUT-EVT-MOUSE-BUTTON
+  let f = (buttons & 0xFF) << 8
+  let a = (x & 0xFFFF) << 32
+  let b = (y & 0xFFFF) << 48
+  return t | f | a | b
+}
+
+
+fn input-page-header-valid(capacity: Int, head: Int, tail: Int, word-size: Int) -> Int {
+  if capacity < 2 || capacity > 508 || word-size != 8 { return 0 }
+  if head < 0 || head >= capacity || tail < 0 || tail >= capacity { return 0 }
+  return 1
+}
+
+fn input-page-send(page: Int, message: Int) -> Int {
+  if page == 0 { return -1 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if input-page-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  let next = (head + 1) % capacity
+  if next == tail { return 0 }
+  store64(page + 32 + head * 8, message)
+  store64(page, next)
+  return 1
+}
+
+fn input-page-recv(page: Int, message: Int) -> Int {
+  if page == 0 || message == 0 { return -1 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let word-size = load64(page + 24)
+  if input-page-header-valid(capacity, head, tail, word-size) == 0 { return -1 }
+  if head == tail { return 0 }
+  store64(message, load64(page + 32 + tail * 8))
+  store64(page + 8, (tail + 1) % capacity)
+  return 1
+}
