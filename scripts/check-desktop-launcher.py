@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build without Cargo, then exercise the real compositor through QEMU PS/2 input."""
 import argparse
+import json
 from collections import Counter
 import pathlib
 import socket
@@ -14,6 +15,36 @@ a = p.parse_args()
 root = pathlib.Path(__file__).resolve().parents[1]
 out = pathlib.Path(a.build_dir).resolve()
 out.mkdir(parents=True, exist_ok=True)
+# Exercise actual close logic independently of rendering, including focused-close policy.
+text = (root/'components/display.in').read_text()
+start = text.index('fn comp-win-close(')
+close_function = text[start:text.index('\n}', start)+2]
+for focus, closed, expected in [(1,0,42), (1,1,7), (2,2,42), (0,2,9)]:
+    source = 'var heap:[Int]=[' + ','.join(['0']*256) + '];\n' + f"""
+const COMP-WIN-SIZE=64;
+const COMP-TASKBAR-H=28;
+const COMP-TITLE-BAR-H=28;
+var comp-windows:Int=8;
+var comp-count:Int=3;
+var comp-focused:Int={focus};
+var fb-width:Int=1920;
+fn comp-win-base(i:Int)->Int{{return comp-windows+i*64;}}
+fn load32(p:Int)->Int{{return heap[p];}}
+fn load8(p:Int)->Int{{return heap[p];}}
+fn store8(p:Int,v:Int)->Void{{heap[p]=v;}}
+fn comp-win-clear(i:Int)->Void{{return;}}
+fn comp-dmg-add(a:Int,b:Int,c:Int,d:Int)->Void{{return;}}
+fn comp-win-damage(i:Int)->Void{{return;}}
+{close_function}
+fn main()->Int{{heap[8+24]=9;heap[8+64+24]=42;heap[8+128+24]=7;comp-win-close({closed});if heap[comp-win-base(comp-focused)+24]!={expected}{{return 0;}}return 42;}}
+"""
+    path = out/f'close-{focus}-{closed}.in'
+    path.write_text(source)
+    for profile in ('default','lean','harden'):
+        run = subprocess.run([a.compiler,'compile','--path',str(path),'--target','jit','--profile',profile,'--out',str(out/'close-proof'),'--json'],capture_output=True,text=True,check=True,timeout=30)
+        report = json.loads(run.stdout)
+        (out/f'close-{focus}-{closed}-{profile}.json').write_text(run.stdout)
+        assert report.get('success') and report.get('eval_result') == {'Int':42}, report
 serial_path, monitor_path = out/'serial.sock', out/'monitor.sock'
 for path in [serial_path, monitor_path]:
     if path.exists(): path.unlink()
@@ -125,6 +156,17 @@ with (out/'qemu.log').open('w') as qlog:
         assert b'space: launcher focused' not in log[start:], 'no-match click focused a window'
         no_match=capture('pointer-no-match-dismissed')
         assert focused_title(no_match) == focused_title(utility_pointer), 'no-match click changed focus'
+        # Close lower-index TERMINAL 1 while UTILITIES remains focused.
+        move(242,-78); click()
+        after_close=capture('closed-terminal-1-focus-utilities')
+        def window_count(pixels):
+            return b''.join(pixels[(y*1920+1830)*3:(y*1920+1900)*3] for y in range(28))
+        assert window_count(after_close) != window_count(no_match), 'close click did not remove a window'
+        assert focused_title(after_close) == focused_title(utility_pointer), 'closing earlier window changed focus identity'
+        key('a'); after_key=capture('utilities-key-routing-after-close')
+        def terminal_two(pixels):
+            return b''.join(pixels[(y*1920+1000)*3:(y*1920+1900)*3] for y in range(600,900))
+        assert terminal_two(after_key) == terminal_two(after_close), 'key leaked to TERMINAL 2 after close'
         # First Escape dismisses only the switcher; a second retains desktop exit.
         start=len(log); command('sendkey tab'); wait('space: launcher opened',start)
         start=len(log)

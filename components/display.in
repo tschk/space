@@ -796,7 +796,8 @@ fn comp-win-close(idx: Int) -> void {
   comp-win-clear(comp-count - 1)
   comp-count = comp-count - 1
   comp-dmg-add(0, 0, fb-width, COMP-TASKBAR-H)
-  // Adjust focused index
+  // Shift focus with its window record when an earlier window was removed.
+  if comp-focused > idx { comp-focused = comp-focused - 1 }
   if comp-focused >= comp-count {
     comp-focused = comp-count - 1
   }
