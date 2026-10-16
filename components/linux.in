@@ -190,6 +190,13 @@ fn linux-demo(port: Int) -> void {
 
   let cwdbuf = alloc(64)
   let cwdrc = linux-dispatch(LINUX-SYS-GETCWD, cwdbuf, 64, 0, 0, 0, 0)
+  let cwd-ok = 0
+  if cwdrc == 2 && load8(cwdbuf) == 47 && load8(cwdbuf + 1) == 0 {
+    store8(cwdbuf + 2, 42)
+    if linux-dispatch(LINUX-SYS-GETCWD, cwdbuf + 2, 1, 0, 0, 0, 0) == -34 && load8(cwdbuf + 2) == 42 { cwd-ok = 1 }
+  }
+  if cwd-ok != 0 { serial-write-cstr(port, "linux: getcwd syscall ABI PASS") } else { serial-write-cstr(port, "linux: getcwd syscall ABI FAILED") }
+  serial-nl(port)
   serial-write-cstr(port, "linux: getcwd() = '")
   serial-write-cstr(port, cwdbuf)
   serial-write-cstr(port, "'")

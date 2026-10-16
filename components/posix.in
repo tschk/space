@@ -51,6 +51,7 @@ const LINUX-EBADF = -9
 const LINUX-ENOMEM = -12
 const LINUX-EACCES = -13
 const LINUX-EFAULT = -14
+const LINUX-ERANGE = -34
 const LINUX-EBUSY = -16
 const LINUX-EEXIST = -17
 const LINUX-ENOEXEC = -8
@@ -342,17 +343,25 @@ fn posix-sys-kill(pid: Int, sig: Int) -> Int {
   return 0
 }
 
-fn posix-sys-getcwd(buf: Int, size: Int) -> Int {
+// Shared copy reports Linux-style bytes including NUL; preflight prevents partial writes.
+fn posix-copy-getcwd(buf: Int, size: Int) -> Int {
   let cwd = posix-cwd
+  let length = 0
+  while load8(cwd + length) != 0 { length = length + 1 }
+  if size <= length { return LINUX-ERANGE }
+  if buf == 0 { return LINUX-EFAULT }
   let i = 0
-  while load8(cwd + i) != 0 {
-    if i >= size - 1 {
-      return 0
-    }
+  while i < length {
     store8(buf + i, load8(cwd + i))
     i = i + 1
   }
-  store8(buf + i, 0)
+  store8(buf + length, 0)
+  return length + 1
+}
+
+// Preserve the documented Space-local pointer-return adapter used by Darwin.
+fn posix-sys-getcwd(buf: Int, size: Int) -> Int {
+  if posix-copy-getcwd(buf, size) < 0 { return 0 }
   return buf
 }
 
@@ -475,7 +484,7 @@ fn posix-dispatch(num: Int, a0: Int, a1: Int, a2: Int, a3: Int, a4: Int, a5: Int
     return posix-sys-kill(a0, a1)
   }
   if num == LINUX-SYS-GETCWD {
-    return posix-sys-getcwd(a0, a1)
+    return posix-copy-getcwd(a0, a1)
   }
   if num == LINUX-SYS-CHDIR {
     return posix-sys-chdir(a0)

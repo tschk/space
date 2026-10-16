@@ -140,8 +140,24 @@ start = windows.index("  if num == WIN-CALL-SETFILEPOINTER {")
 end = windows.index("\n  if num == ", start + 3)
 source += "fn windows-seek(a0:Int,a1:Int,a2:Int)->Int{let num=WIN-CALL-SETFILEPOINTER;\n" + windows[start:end] + "\nreturn -99;}\n"
 source = source.replace(" return 42;\n}\n", " return windows-lifetime();\n}\n", 1)
+source += "\nconst LINUX-ERANGE=-34;\nconst LINUX-EFAULT=-14;\nvar posix-cwd:Int=0;\n"
+for name in ["posix-copy-getcwd", "posix-sys-getcwd"]:
+    source += extract("posix.in", name) + "\n"
+source += extract("darwin.in", "darwin-sys-getcwd") + "\n"
+posix = (root / "components/posix.in").read_text()
+start = posix.index("  if num == LINUX-SYS-GETCWD {")
+end = posix.index("\n  if num == ", start + 3)
+source += "const LINUX-SYS-GETCWD=79;\nfn linux-getcwd(a0:Int,a1:Int)->Int{let num=79;\n" + posix[start:end] + "\nreturn -99;}\n"
 source += """
 fn windows-lifetime()->Int{
+ posix-cwd=alloc(2);store8(posix-cwd,47);store8(posix-cwd+1,0);
+ let cwdout=alloc(4);store8(cwdout,7);store8(cwdout+1,8);store8(cwdout+2,9);
+ if linux-getcwd(cwdout,1)!=-34 || load8(cwdout)!=7 || load8(cwdout+1)!=8{return 140;}
+ if linux-getcwd(cwdout,0)!=-34 || linux-getcwd(cwdout,-1)!=-34 || load8(cwdout)!=7{return 141;}
+ if linux-getcwd(0,2)!=-14{return 142;}
+ if linux-getcwd(cwdout,2)!=2 || load8(cwdout)!=47 || load8(cwdout+1)!=0 || load8(cwdout+2)!=9{return 143;}
+ if darwin-sys-getcwd(cwdout,2)!=cwdout || darwin-sys-getcwd(cwdout,1)!=0{return 144;}
+
  vfs-fd-table-alloc();win-handles=alloc(WIN-MAX-HANDLES*WIN-HANDLE-STRIDE);
  let i=0;while i<WIN-MAX-HANDLES{win-handle-set(i,WIN-HANDLE-TYPE-FREE,0);i+=1;}
  win-handle-set(1,WIN-HANDLE-TYPE-CONSOLE,1);

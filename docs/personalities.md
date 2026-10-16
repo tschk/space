@@ -26,6 +26,8 @@ kernel.” It is a thin translator, same idea as `linux.in` → `posix.in`.
 | Darwin (BSD subset) | `darwin.in` | BSD nums → VFS/process; Mach stubs only |
 | Windows (NT-shaped subset) | `windows.in` | handle table → VFS/serial/process; not PE/CSRSS |
 
+Linux syscall79 `getcwd` returns bytes including NUL, with `-34` for insufficient capacity and `-14` for a null destination. The Darwin Space-local adapter retains its pointer/zero return convention.
+
 Windows call numbers are **Space-local**, not real NT syscall numbers:
 
 1. `WriteFile` / NtWriteFile — stdout/stderr → serial; files → VFS

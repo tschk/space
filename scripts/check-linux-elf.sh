@@ -6,7 +6,7 @@ SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-linux-elf}"
-IN="$INAUG_DIR/in-cli/target/release/in"
+IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 SERIAL_BASE="$BUILD_DIR/serial"
 SERIAL_IN="$SERIAL_BASE.in"
 SERIAL_OUT="$SERIAL_BASE.out"
@@ -52,7 +52,7 @@ for _ in $(seq 1 200); do
   sleep 0.1
 done
 grep -qF "space interactive shell" "$SERIAL_LOG" || { echo "shell did not start" >&2; exit 1; }
-printf 'linuxelf\nhalt\n' > "$SERIAL_IN"
+printf 'linux\nlinuxelf\nhalt\n' > "$SERIAL_IN"
 for _ in $(seq 1 100); do
   grep -qF "linux: ELF exec returned 42" "$SERIAL_LOG" 2>/dev/null && break
   sleep 0.1
@@ -60,6 +60,7 @@ done
 kill "$CATPID" 2>/dev/null || true
 wait "$CATPID" 2>/dev/null || true
 rm -f "$SERIAL_IN" "$SERIAL_OUT"
+grep -qF "linux: getcwd syscall ABI PASS" "$SERIAL_LOG"
 grep -qF "posix: execve loading ELF from space-minimal-elf" "$SERIAL_LOG"
 grep -qF "linux: ELF exec returned 42" "$SERIAL_LOG"
 echo "PASS: Linux personality executed minimal ELF"
