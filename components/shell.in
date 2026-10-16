@@ -1492,17 +1492,41 @@ fn dsp-adopt-sync-pixels(domain: Int, pool: Int) -> Int {
   store64(dsp-pool-sizes + pool * 8, 4096)
   return 1
 }
+var dsp-proof-domain: Int = 0
+var dsp-proof-pixel: Int = 0
+var dsp-proof-page: Int = 0
+var dsp-proof-domain-count: Int = 0
+var dsp-proof-cap-count: Int = 0
+var dsp-proof-heap-next: Int = 0
+var dsp-proof-free-list: Int = 0
+
 fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if fb-ready == 0 { return 0 }
   let image = 0x280000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
-  if phase == 2 {
-    if dsp-surfaces == 0 || dsp-surface-count == 0 { return 0 }
+  if phase != 0 {
+    if dsp-surfaces == 0 || dsp-surface-count == 0 || dsp-proof-domain == 0 { return 0 }
   } else { dsp-init() }
   let args = "left"
   if phase == 1 { args = "right" }
   if phase == 2 { args = "destroy" }
-  if sci-load-runtime-component(port, image, "spdp-proof", cap-memory() | cap-display(), 1, args) != 42 { return 0 }
+  if phase == 0 {
+    if sci-load-runtime-component(port, image, "spdp-proof", cap-memory() | cap-display(), 1, args) != 42 { return 0 }
+    dsp-proof-domain = sci-sync-domain
+    dsp-proof-pixel = sci-sync-pixel-phys
+    dsp-proof-page = sci-sync-page
+    dsp-proof-domain-count = domain-count
+    dsp-proof-cap-count = cap-count
+    dsp-proof-heap-next = heap-next
+    dsp-proof-free-list = free-list
+  } else {
+    if sci-sync-domain != dsp-proof-domain || sci-sync-pixel-phys != dsp-proof-pixel || sci-sync-page != dsp-proof-page { return 0 }
+    if sci-resume-sync(dsp-proof-domain, args) != 42 { return 0 }
+    if sci-sync-domain != dsp-proof-domain || sci-sync-pixel-phys != dsp-proof-pixel || sci-sync-page != dsp-proof-page { return 0 }
+    if domain-count != dsp-proof-domain-count || cap-count != dsp-proof-cap-count || heap-next != dsp-proof-heap-next || free-list != dsp-proof-free-list { return 0 }
+    serial-write-cstr(port, "  dsp: same SCI instance, allocation counters unchanged")
+    serial-nl(port)
+  }
   if phase == 2 {
     if dsp-drain-page(sci-sync-page, port) != 2 { return 0 }
     if dsp-surface-valid(0) != 0 || load64(dsp-pools) != 0 || load64(dsp-pool-sizes) != 0 { return 0 }
@@ -1512,7 +1536,9 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
     return 1
   }
   if dsp-adopt-sync-pixels(sci-sync-domain, 0) == 0 { return 0 }
-  if dsp-drain-page(sci-sync-page, port) != 4 { return 0 }
+  let frames = 3
+  if phase == 0 { frames = 4 }
+  if dsp-drain-page(sci-sync-page, port) != frames { return 0 }
   let pool = load64(dsp-pools)
   let size = load64(dsp-pool-sizes)
   if pool == 0 || size != 4096 || dsp-surface-count != 1 { return 0 }

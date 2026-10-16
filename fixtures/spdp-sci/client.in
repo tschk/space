@@ -15,6 +15,8 @@ interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int
 
 fn client-entry(cap-info: Int) -> Int {
   if load64(cap-info) != 20 { return 7 }
+  if load64(cap-info + 8) != 0 || load64(cap-info + 16) != 0x80000000 || load64(cap-info + 24) != 0x200000 { return 10 }
+  if load64(cap-info + 32) != 0x70000000 || load64(cap-info + 48) != 800 || load64(cap-info + 56) != 600 { return 11 }
   let page = load64(cap-info + 32)
   let args = load64(cap-info + 64)
   if args != 0 && load8(args) == 100 {
@@ -25,6 +27,11 @@ fn client-entry(cap-info: Int) -> Int {
   let pixels = load64(cap-info + 72)
   let size = load64(cap-info + 80)
   let pool = load64(cap-info + 88)
+  let state = load64(cap-info + 16)
+  if args == 0 { return 12 }
+  if load8(args) == 108 {
+    store64(state, 0)
+  } else if load8(args) != 114 || load64(state) != 1 { return 13 }
   if pixels == 0 || size != 4096 || pool != 0 { return 6 }
   let y = 0
   while y < 16 {
@@ -38,14 +45,26 @@ fn client-entry(cap-info: Int) -> Int {
     y = y + 1
   }
   // Forge the writable descriptor after use: kernel adoption must ignore it.
+  store64(cap-info, 0)
+  store64(cap-info + 8, -1)
+  store64(cap-info + 16, 0xDEAD0000)
+  store64(cap-info + 24, 1)
+  store64(cap-info + 32, 0xDEAD0000)
+  store64(cap-info + 48, 1)
+  store64(cap-info + 56, 1)
+  store64(cap-info + 64, 0xDEAD0000)
   store64(cap-info + 72, 0xDEAD0000)
   store64(cap-info + 80, 9223372036854775807)
   store64(cap-info + 88, 7)
   store64(cap-info + 40, 63)
   let x = 40
   if args != 0 && load8(args) == 114 { x = 400 }
-  // Surface0/pool0 belong to this reset proof only; no cross-client identity claim.
-  if chan-page-send-frame(page, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0) != 1 { return 1 }
+  // The heap word persists across entry calls in this one instance.
+  // Descriptor pointers were cached before deliberate forgery below.
+  if load64(state) == 0 {
+    if chan-page-send-frame(page, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0) != 1 { return 1 }
+    store64(state, 1)
+  }
   if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 3 }
   if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, (x << 48) | (80 << 32) | (64 << 16) | 16) != 1 { return 4 }
   if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 5 }

@@ -126,7 +126,7 @@ with (out/'qemu.log').open('w') as log:
             other = 400 if x == 40 else 40
             assert pixel(other, 80) == bytes((0, 0, 128)), 'old geometry remained visible'
             assert pixel(x-1, 80) == bytes((0, 0, 128)) and pixel(x+64, 80) == bytes((0, 0, 128)), 'surface width mismatch'
-            print(f'PASS SCI {word}: four complete frames and exact 64x16 SCI-client pixels (forged cap-info ignored)')
+            print(f'PASS SCI {word}: {4 if phase == 0 else 3} complete frames and exact 64x16 SCI-client pixels (forged cap-info restored)')
         for attempt in range(2):
             start = len(data)
             serial.sendall(b'dsp sci destroy\n')
@@ -145,6 +145,10 @@ with (out/'qemu.log').open('w') as log:
                         offset = (py*1920+px)*3
                         assert pixels[offset:offset+3] == bytes((0, 0, 128)), 'destroyed client pixels remained visible'
             print(f'PASS SCI teardown {attempt}: blue after destroy, harmless repeated request')
+        assert data.count(b'SCI: loading spdp-proof') == 1, 'proof reloaded the SCI instance'
+        assert data.count(b'SCI: domain created') == 1, 'proof allocated another domain'
+        assert data.count(b'dsp: same SCI instance, allocation counters unchanged') == 3, 'resume identity/allocation proof missing'
+        print('PASS one SCI instance: stable domain, ring/pixel pages and allocation counters across three reentries')
     finally:
         (out/'serial.log').write_bytes(data)
         if serial: serial.close()

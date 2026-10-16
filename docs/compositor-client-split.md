@@ -68,7 +68,8 @@ Message flow (already defined in `protocol/display.in`):
 
 `dsp sci left` and `dsp sci right`, with `fixtures/spdp-sci/client.in` loaded
 by `scripts/check-spdp-sci.py`, synchronously run a real SCI producer in its
-memory domain. Four complete 32-byte SPDP frames travel through the loader's
+memory domain. Four initial complete 32-byte SPDP frames (three on a resumed
+geometry update) travel through the loader's
 existing ring page and control surface geometry. `chan-page-*` validates a
 captured ring header and publishes/consumes whole four-word frames; malformed
 or partial frames do not advance the head or reach the dispatcher.
@@ -104,6 +105,31 @@ the existing Linux-proof slot at physical `0x280000`, bounds the fixture below
 the 3MiB heap, checks both geometries and old-rectangle removal, and validates
 actual SCI-generated pixels. `check-spdp-page-frames.py` covers malformed frame
 and grant/adoption refusals under all compiler profiles.
+
+### Bounded synchronous instance reuse
+
+The proof loads one SCI v2 instance on `dsp sci left`. Subsequent `right` and
+`destroy` commands reenter that same retained entry/domain with fresh trusted
+argument strings; they do not reload code, mint another capability, or allocate
+another heap/ring/pixel page. Before reentry the kernel validates the active
+domain/PML4, original capability target and exact rights, retained image entry
+bounds, and one captured drained ring header. Malformed or undrained rings are
+rejected without resetting/dropping frames. A new load invalidates this one
+current-instance record; this is not a multi-client registry.
+
+All 96 writable cap-info bytes are reconstructed from private loader state before
+entry, including fresh args and the original heap/ring/pixel mappings. The fixture
+forges descriptors and its args pointer between entries; its persistent heap word
+proves subsequent calls reuse state rather than creating another surface. Existing
+ring head/tail positions are preserved. The kernel checks successful domain entry
+and restores the previous domain after return. Resume itself performs no allocation.
+The QEMU check asserts one loader/domain creation and stable domain/capability/
+heap/free-list counters plus the same ring and pixel physical pages through three
+reentries. `check-sci-resume.py` covers descriptor reconstruction and invalid
+domain/cap/entry/header/pending-frame/switch controls under all profiles.
+
+This remains explicit kernel-driven synchronous reentry, not scheduled execution,
+seat input, multi-client authority, frame reclamation, or hardware-fault recovery.
 
 ### Logical teardown
 
