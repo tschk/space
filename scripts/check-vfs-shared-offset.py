@@ -26,7 +26,7 @@ source = "\n".join(
     for line in (root / "components/darwin.in").read_text().splitlines()
     if line.startswith("const DARWIN-")
 )
-source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\n"
+source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\nconst VFS-O-RDONLY=0;\nconst VFS-O-WRONLY=1;\nconst VFS-O-RDWR=2;\n"
 source += "var heap:[Int]=[" + ",".join(["0"] * 32768) + "];\n"
 source += """
 var cursor:Int=8;
@@ -36,6 +36,8 @@ var volume-ready:Int=1;
 var sf-disk-ready:Int=1;
 var io-result:Int=2;
 var io-offset:Int=-1;
+var io-read-calls:Int=0;
+var io-write-calls:Int=0;
 fn alloc(n:Int)->Int{let p=cursor;cursor+=n;return p;}
 fn load64(p:Int)->Int{return heap[p];}
 fn store64(p:Int,v:Int)->Void{heap[p]=v;}
@@ -44,16 +46,18 @@ fn volume-rpc-open(path:Int,flags:Int)->Int{return 0;}
 fn sf-lookup-path(path:Int)->Int{return 1;}
 fn fs-write-file(path:Int,buf:Int,count:Int)->Int{return 0;}
 fn vfs-sparkfs-file-size(path:Int)->Int{return 100;}
-fn volume-rpc-pread(path:Int,buf:Int,count:Int,offset:Int)->Int{io-offset=offset;return io-result;}
-fn volume-rpc-pwrite(path:Int,buf:Int,count:Int,offset:Int)->Int{io-offset=offset;return io-result;}
-fn sparkfs-pread(path:Int,buf:Int,count:Int,offset:Int)->Int{io-offset=offset;return io-result;}
-fn sparkfs-pwrite(path:Int,buf:Int,count:Int,offset:Int)->Int{io-offset=offset;return io-result;}
+fn volume-rpc-pread(path:Int,buf:Int,count:Int,offset:Int)->Int{io-read-calls+=1;io-offset=offset;if io-result>0{store8(buf,91);}return io-result;}
+fn volume-rpc-pwrite(path:Int,buf:Int,count:Int,offset:Int)->Int{io-write-calls+=1;io-offset=offset;return io-result;}
+fn sparkfs-pread(path:Int,buf:Int,count:Int,offset:Int)->Int{io-read-calls+=1;io-offset=offset;if io-result>0{store8(buf,91);}return io-result;}
+fn sparkfs-pwrite(path:Int,buf:Int,count:Int,offset:Int)->Int{io-write-calls+=1;io-offset=offset;return io-result;}
 fn com1()->Int{return 0;}
 fn serial-read(port:Int)->Int{return 10;}
 fn serial-put(port:Int,value:Int)->Void{return;}
 fn store8(p:Int,value:Int)->Void{heap[p]=value;}
 fn load8(p:Int)->Int{return heap[p];}
 fn darwin-fd-is-pipe(fd:Int)->Int{return 0;}
+fn darwin-pipe-read(fd:Int,buf:Int,count:Int)->Int{return -99;}
+fn darwin-pipe-write(fd:Int,buf:Int,count:Int)->Int{return -99;}
 fn darwin-pipe-slot(fd:Int)->Int{return 0;}
 fn darwin-pipe-end(fd:Int)->Int{return 0;}
 fn darwin-pipe-retain(slot:Int,end:Int)->Void{return;}
@@ -84,6 +88,7 @@ for name in [
     source += extract("darwin.in", name) + "\n"
 source += """
 fn main()->Int{
+ let access-result=access-controls();if access-result!=42{return access-result;}
  vfs-fd-table-alloc();
  let original=vfs-open(99,2);let independent=vfs-open(99,2);
  let copy=darwin-sys-dup(original);
@@ -148,7 +153,52 @@ posix = (root / "components/posix.in").read_text()
 start = posix.index("  if num == LINUX-SYS-GETCWD {")
 end = posix.index("\n  if num == ", start + 3)
 source += "const LINUX-SYS-GETCWD=79;\nfn linux-getcwd(a0:Int,a1:Int)->Int{let num=79;\n" + posix[start:end] + "\nreturn -99;}\n"
+for name in ["darwin-map-open-flags", "darwin-sys-read", "darwin-sys-write"]:
+    source += extract("darwin.in", name) + "\n"
+for name in ["posix-sys-read", "posix-sys-write"]:
+    source += extract("posix.in", name) + "\n"
+for call, function in [("READFILE", "read"), ("WRITEFILE", "write")]:
+    start = windows.index("  if num == WIN-CALL-" + call + " {")
+    end = windows.index("\n  if num == ", start + 3)
+    source += f"fn windows-{function}(a0:Int,a1:Int,a2:Int)->Int{{let port=0;let num=WIN-CALL-{call};\n" + windows[start:end] + "\nreturn -99;}\n"
 source += """
+fn access-controls()->Int{
+ let backend=0;
+ while backend<2{
+  volume-ready=backend;vfs-fd-table-alloc();
+  if darwin-map-open-flags(0)!=0 || darwin-map-open-flags(1)!=1 || darwin-map-open-flags(2)!=2{return 200;}
+  let ro=vfs-open(99,64);let wo=vfs-open(99,65);let rw=vfs-open(99,66);
+  let rocopy=vfs-dup-file(ro);let wocopy=vfs-dup-file(wo);
+  let independent=vfs-open(99,2);
+  if ro<3 || wo<3 || rw<3 || rocopy<3 || wocopy<3 || independent<3{return 201;}
+  if vfs-lseek(ro,9,0)!=9 || vfs-lseek(wo,11,0)!=11{return 202;}
+  let buf=alloc(4);store8(buf,77);store8(buf+1,78);
+  io-result=2;io-offset=-1;io-read-calls=0;io-write-calls=0;
+  if posix-sys-read(wo,buf,2)!=-9 || vfs-read(wocopy,buf,2)!=-9{return 203;}
+  if posix-sys-write(ro,buf,2)!=-9 || vfs-write(rocopy,buf,2)!=-9{return 204;}
+  if darwin-sys-read(wo,buf,2)!=-9 || darwin-sys-write(0,ro,buf,2)!=-9{return 217;}
+  if io-read-calls!=0 || io-write-calls!=0 || io-offset!=-1{return 205;}
+  if load8(buf)!=77 || load8(buf+1)!=78{return 206;}
+  if vfs-fd-offset(ro)!=9 || vfs-fd-offset(rocopy)!=9 || vfs-fd-offset(wo)!=11 || vfs-fd-offset(wocopy)!=11{return 207;}
+  if vfs-read(rocopy,buf,2)!=2 || vfs-fd-offset(ro)!=11 || load8(buf)!=91{return 208;}
+  if vfs-write(wocopy,buf,2)!=2 || vfs-fd-offset(wo)!=13{return 209;}
+  if vfs-read(rw,buf,2)!=2 || vfs-write(rw,buf,2)!=2 || vfs-fd-offset(rw)!=4{return 210;}
+  if vfs-fd-offset(independent)!=0 || vfs-write(independent,buf,2)!=2{return 211;}
+  win-handles=alloc(WIN-MAX-HANDLES*WIN-HANDLE-STRIDE);
+  let h=0;while h<WIN-MAX-HANDLES{win-handle-set(h,WIN-HANDLE-TYPE-FREE,0);h+=1;}
+  let hro=win-handle-alloc(ro);let hwo=win-handle-alloc(wo);let hrw=win-handle-alloc(rw);
+  io-read-calls=0;io-write-calls=0;store8(buf,77);
+  if windows-write(hro,buf,2)!=0 || win-last-error!=WIN-ERROR-INVALID-HANDLE || win-last-status!=WIN-STATUS-INVALID-HANDLE{return 212;}
+  if windows-read(hwo,buf,2)!=0 || win-last-error!=WIN-ERROR-INVALID-HANDLE || win-last-status!=WIN-STATUS-INVALID-HANDLE{return 213;}
+  if io-read-calls!=0 || io-write-calls!=0 || load8(buf)!=77{return 214;}
+  if vfs-fd-offset(ro)!=11 || vfs-fd-offset(wo)!=13{return 215;}
+  if windows-write(hrw,buf,2)!=2 || win-last-error!=0 || win-last-status!=0{return 216;}
+  if vfs-read(0,buf,1)!=1 || load8(buf)!=10 || vfs-write(1,buf,1)!=1 || vfs-write(2,buf,1)!=1{return 218;}
+  backend+=1;
+ }
+ volume-ready=1;
+ return 42;
+}
 fn windows-lifetime()->Int{
  posix-cwd=alloc(2);store8(posix-cwd,47);store8(posix-cwd+1,0);
  let cwdout=alloc(4);store8(cwdout,7);store8(cwdout+1,8);store8(cwdout+2,9);
@@ -236,5 +286,5 @@ with tempfile.TemporaryDirectory(prefix="space-vfs-offset-") as directory:
         if not report.get("success") or report.get("eval_result") != {"Int": 42}:
             raise SystemExit(f"FAIL {profile}: {run.stdout}\n{run.stderr}")
         print(
-            f"PASS {profile}: shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, Windows duplicate lifetime/exhaustion, failures"
+            f"PASS {profile}: shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, Windows duplicate lifetime/exhaustion, failures, access-mode denial/aliases/adapters"
         )

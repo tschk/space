@@ -250,6 +250,7 @@ fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
     return -9
   }
   let base = vfs-fd-table + fd * 32
+  if (load64(base + 16) & 3) == VFS-O-WRONLY { return -9 }
   let path = load64(base + 0)
   let offset = vfs-fd-offset(fd)
   let n = 0
@@ -282,6 +283,7 @@ fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
     return -9
   }
   let base = vfs-fd-table + fd * 32
+  if (load64(base + 16) & 3) == VFS-O-RDONLY { return -9 }
   let path = load64(base + 0)
   let offset = vfs-fd-offset(fd)
   let n = 0
