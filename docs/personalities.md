@@ -198,3 +198,22 @@ separate Mach-O gate covers 22 validation scenarios. Use `INAUGURATION_DIR` to
 select a different compiler checkout. Investigation also found and fixed a
 generic reassigned-binding constant-propagation bug in the sibling compiler;
 the fixture dispatcher compares ABI numbers directly without mutable aliases.
+
+### Personality mapping lifetime
+
+The trusted POSIX compatibility allocator tracks at most 64 live mapping intervals.
+Mappings are page-aligned private eager snapshots; address hints are ignored.
+Flags 0 (legacy private), 2 (private), and 34 (private anonymous) are accepted;
+shared/fixed and other flags are rejected. Protection 0 is the existing Windows
+compatibility request and 3 requests read/write; other protections are rejected.
+These are allocator records, not page-table protection or per-process isolation.
+File snapshots require a valid descriptor and a nonnegative page-aligned offset.
+Anonymous requests use descriptor -1 and offset 0.
+
+Unmap requires a positive page-aligned address and positive length (rounded up),
+and the entire range must still belong to live mapping records. Partial unmap
+splits records when capacity permits; invalid, duplicate, overflowing, or exhausted
+requests fail before heap, record, or frame-list changes. Released pages can be
+reused by the frame allocator; the bump heap does not shrink. Windows stand-ins
+translate allocation/unmap failures to zero and LastError rather than reporting
+success. This does not implement Windows MEM_RELEASE or full POSIX VM semantics.

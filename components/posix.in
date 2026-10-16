@@ -393,13 +393,40 @@ fn posix-sys-brk(addr: Int) -> Int {
   return posix-brk-current
 }
 
+// Trusted personality allocator ownership, not process memory isolation.
+// shortcut: 64 live intervals; replace with process-owned VM records when isolation lands.
+const POSIX-MMAP-SLOTS = 64
+var posix-map-starts:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+var posix-map-ends:[Int]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
 fn posix-sys-mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset: Int) -> Int {
+  // Address hints are ignored. Fixed/shared mappings and real permissions are unsupported.
+  // prot=0 is the existing Windows compatibility request; prot=3 is read/write.
+  if length <= 0 { return LINUX-EINVAL }
+  if prot != 0 && prot != 3 { return LINUX-EINVAL }
+  if flags != 0 && flags != 2 && flags != 34 { return LINUX-EINVAL }
+  if offset < 0 || (offset & 4095) != 0 { return LINUX-EINVAL }
+  if fd == -1 {
+    if offset != 0 { return LINUX-EINVAL }
+  } else {
+    if flags == 34 || fd < 3 || posix-fd-valid(fd) == 0 { return LINUX-EBADF }
+  }
   let aligned = (length + 4095) & -4096
-  let p = alloc(aligned)
+  if aligned < length || aligned <= 0 { return LINUX-ENOMEM }
+  let p = (heap-next + 4095) & -4096
+  if heap-next <= 0 || p < heap-next || p > heap-end || aligned > heap-end - p {
+    return LINUX-ENOMEM
+  }
+  let slot = 0
+  while slot < POSIX-MMAP-SLOTS && posix-map-starts[slot] != 0 { slot += 1 }
+  if slot == POSIX-MMAP-SLOTS { return LINUX-ENOMEM }
+  heap-next = p + aligned
+  posix-map-starts[slot] = p
+  posix-map-ends[slot] = p + aligned
   let i = 0
   while i < aligned {
     store8(p + i, 0)
-    i = i + 1
+    i += 1
   }
   if fd >= 3 && posix-fd-valid(fd) != 0 {
     let base = vfs-fd-table + fd * 32
@@ -424,12 +451,56 @@ fn posix-sys-mmap(addr: Int, length: Int, prot: Int, flags: Int, fd: Int, offset
 }
 
 fn posix-sys-munmap(addr: Int, length: Int) -> Int {
-  let start = addr
-  let end = addr + length
-  let page = (start + 4095) & -4096
+  if addr <= 0 || (addr & 4095) != 0 || length <= 0 { return LINUX-EINVAL }
+  let aligned = (length + 4095) & -4096
+  if aligned < length || aligned <= 0 || addr > heap-end || aligned > heap-end - addr {
+    return LINUX-EINVAL
+  }
+  let end = addr + aligned
+  // Prove full range ownership before changing records or the frame free-list.
+  let cursor = addr
+  while cursor < end {
+    let slot = 0
+    while slot < POSIX-MMAP-SLOTS {
+      if posix-map-starts[slot] <= cursor && cursor < posix-map-ends[slot] { break }
+      slot += 1
+    }
+    if slot == POSIX-MMAP-SLOTS { return LINUX-EINVAL }
+    cursor = posix-map-ends[slot]
+  }
+  let spare = 0
+  while spare < POSIX-MMAP-SLOTS && posix-map-starts[spare] != 0 { spare += 1 }
+  let slot = 0
+  while slot < POSIX-MMAP-SLOTS {
+    let start = posix-map-starts[slot]
+    let limit = posix-map-ends[slot]
+    if start < addr && end < limit && spare == POSIX-MMAP-SLOTS { return LINUX-ENOMEM }
+    slot += 1
+  }
+  slot = 0
+  while slot < POSIX-MMAP-SLOTS {
+    let start = posix-map-starts[slot]
+    let limit = posix-map-ends[slot]
+    if start != 0 && start < end && limit > addr {
+      if start < addr && limit > end {
+        posix-map-ends[slot] = addr
+        posix-map-starts[spare] = end
+        posix-map-ends[spare] = limit
+      } else if start < addr {
+        posix-map-ends[slot] = addr
+      } else if limit > end {
+        posix-map-starts[slot] = end
+      } else {
+        posix-map-starts[slot] = 0
+        posix-map-ends[slot] = 0
+      }
+    }
+    slot += 1
+  }
+  let page = addr
   while page < end {
     frame-free(page)
-    page = page + 4096
+    page += 4096
   }
   return 0
 }

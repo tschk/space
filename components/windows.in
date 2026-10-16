@@ -745,7 +745,7 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
       return 0
     }
     let p = posix-sys-mmap(0, size, 0, 0, -1, 0)
-    if p == 0 {
+    if p <= 0 {
       win-set-error(WIN-ERROR-NOT-ENOUGH-MEMORY)
       return 0
     }
@@ -753,17 +753,26 @@ fn win-dispatch(port: Int, num: Int, a0: Int, a1: Int, a2: Int, a3: Int) -> Int 
     return p
   }
   if num == WIN-CALL-VIRTUALFREE {
-    // a0 addr a1 size. Best-effort munmap stand-in; not real MEM_RELEASE.
+    // a0 addr a1 size. Owned-range munmap stand-in; not real MEM_RELEASE.
     let addr = a0
     let size = a1
     if addr == 0 {
       win-set-error(WIN-ERROR-INVALID-PARAMETER)
       return 0
     }
-    if size < 1 {
+    if size < 0 {
+      win-set-error(WIN-ERROR-INVALID-PARAMETER)
+      return 0
+    }
+    if size == 0 {
       size = 4096
     }
-    posix-sys-munmap(addr, size)
+    let result = posix-sys-munmap(addr, size)
+    if result != 0 {
+      if result == -12 { win-set-error(WIN-ERROR-NOT-ENOUGH-MEMORY) }
+      else { win-set-error(WIN-ERROR-INVALID-PARAMETER) }
+      return 0
+    }
     win-clear-error()
     return 1
   }
