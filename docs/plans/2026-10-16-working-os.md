@@ -13,17 +13,19 @@ Develop Space and Subspace through executable vertical slices, using the existin
 
 1. **Boot and language boundary.** Make raw native-ABI calls explicit without weakening exception propagation for language functions. Consume the generic compiler capability through Space-owned architecture wrappers. Prove boot, shell interaction, and clean return after fixtures with `check-qemu-smoke.sh`, `check-kernel-contracts.sh`, and affected runtime gates.
 2. **Personalities.** Fix demonstrated translator errors and expand executable coverage. First: clearing one Darwin descriptor's CLOEXEC flag must retain another descriptor's flag. Require the isolated regression and `check-darwin-personality.sh`; retain Windows/Linux/foreign-fixture checks. Fixture execution does not imply arbitrary macOS, Windows, or Linux application compatibility.
-3. **Desktop.** Target an upstream Wayland + Budgie session, initially using labwc, with Space-specific runtime and display/input adapters. Keep the existing compositor and SCI-client checks as a boot fallback and regression baseline while the port develops. Retain `tschk/alpenglowed` as an interaction reference for later customization. Prove real Wayland clients and Budgie components on Space before claiming desktop compatibility.
+3. **Desktop.** Build an original desktop tailored to Space, using `tschk/alpenglowed` as an interaction and visual reference. Selectively reuse Wayland/Budgie infrastructure and ideas; a stock Budgie session or a one-to-one clone is not the product target. Prototype the native shell on the existing compositor and SCI-client baseline, then add compatibility through independently verified runtime/display/input adapters. Prove real upstream clients on Space before claiming Wayland compatibility.
 4. **Subspace.** Preserve and review the existing MPU/task/UF2 changes. Bind SCI-E records to the actual linked ARM ELF entry, verify structure and CRC, reject malformed inputs before output, and rerun Bun, SCI-E, and QEMU gates. Keep SCI-E separate from Space's SCI format; no heap, filesystem, or runtime component loader in the MVP.
 5. **Integration and publication.** Primary agent reviews each actual diff, runs appropriate repository gates, and makes logical commits/pushes. Record source revision, compiler selection, and actual proof level. Continue through reproducible correctness and coverage gaps rather than treating a green demo as a complete OS.
 
 References: `architecture.md`, `docs/personalities.md`, `docs/personalities-roadmap.md`, `docs/compositor-client-split.md`, `docs/plans/2026-09-18-dynamic-nanokernel.md`, and Subspace's `docs/vertical-slice.md` and `docs/contracts/`.
 
-## Wayland + Budgie desktop port direction
+## Original Space desktop and reusable infrastructure
 
-Requested direction: reuse the existing desktop stack first, then refactor the
-Space integration and shell incrementally. Keep component domains, capabilities,
-and hardware policy in Space; keep generic compiler changes in Inauguration.
+Direction clarified on 2026-10-19: create a new desktop for Space, rather than
+reproduce Wayland/Budgie or make a stock Budgie session the acceptance target.
+Use Alpenglowed as a reference and reuse upstream plumbing selectively. Keep
+component domains, capabilities, and hardware policy in Space; keep generic
+compiler changes in Inauguration. See the [current handoff](2026-10-19-space-desktop-handoff.md).
 
 Upstream Budgie 10.10 uses Wayland and recommends labwc. Its panel and Raven
 need layer-shell, with additional workspace, toplevel and output protocols.
@@ -68,9 +70,10 @@ Port boundaries and acceptance:
    visible pixels, frame/release callbacks, keyboard/pointer interaction and
    clean teardown. A Linux-hosted reference session is useful development
    evidence but does not satisfy this Space acceptance check.
-4. Add the protocols and session services required by Budgie; bring up its
-   panel/menu and launch a real client. Then customize shell behavior and
-   replace platform adapters incrementally, retaining interoperability tests.
+4. Build the original Space shell and its launcher, workspace, window and
+   notification interactions. Evaluate Budgie components individually rather
+   than requiring its panel/menu. Add selected compatibility protocols and
+   services as real client requirements emerge, retaining interoperability tests.
 
 Licensing must be resolved before importing code: current contributor rules
 require permissive dependencies, while Budgie binaries and labwc are GPL-2.0
