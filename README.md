@@ -19,8 +19,15 @@ process + file + syscall + user. Linux, Darwin, and Windows personalities are
 kernel-linked `.in` translators in the same boot image (`components/linux.in`,
 `darwin.in`, `windows.in`, `posix.in`). They are not isolated processes.
 
-Domains currently clone the 4 GiB identity map and run at CPL0. That is not
-isolation. See [`architecture.md`](architecture.md).
+Kernel-linked service domains clone the 4 GiB identity map and run at CPL0;
+that is not isolation. SCI user guests have a separate CPL3 path. See
+[`architecture.md`](architecture.md) for the exact boundaries.
+
+**Design priority:** hypermodular components and explicit capability/interface
+contracts, with a minimal nanokernel and generic Inauguration → SCI tooling. The
+current root links services as boot scaffolding. The [original desktop design](docs/plans/2026-10-19-command-desktop.md)
+uses simple tiling and a command bar with separate layout, input, compositor and
+application responsibilities. [AGENTS.md](AGENTS.md) records the contributor invariants.
 
 ## Status
 

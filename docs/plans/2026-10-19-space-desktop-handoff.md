@@ -47,3 +47,34 @@ Documentation-only: run `git diff --check`. No OS execution or new desktop behav
 Ran `python3 scripts/check-desktop-launcher.py --in /Users/undivisible/.codex/worktrees/compiler-loop-continuation/inauguration/target/verification/scoped-value320-installed-release-r3/in --build-dir /tmp/space-original-desktop-baseline-20261019`. Kernel built and booted. Keyboard next/previous/filter/reset selection reached expected serial focus markers. The run FAILED at launcher panel pixel assertion (`launcher panel absent`); primary visual inspection of `launcher-util.png` confirmed the bar absent despite the last serial marker saying opened. This needs diagnosis before claiming a clean baseline. QEMU was cleaned up by the runner. Keep this failure receipt; do not weaken the assertion.
 
 Compiler operator focused test has now terminated: 8 passed, 2 failed. The high-bit comparison test incorrectly expects shallow `fold_expr` to recursively fold its children; `item_not` still lacks Invalid evidence and requires investigation. Uncommitted compiler candidate remains unpublished. The live-session note above is historical; do not restart it without checking current state.
+
+## Architecture priority clarified by user
+
+Hypermodularity and respect for the existing nanokernel/compiler/SCI design take
+priority over adding desktop features to the current monolith. `AGENTS.md` now
+records the layer/authority contract, current isolation limitations, native-call
+ABI boundary, desktop module responsibilities and verification requirements.
+Canonical architecture, README, command-desktop and compositor/client documents
+are updated consistently. New action/layout work must be independently testable
+and module-owned, reuse SPDP/channels and retain a path to actual SCI services;
+file extraction alone is not an isolation claim.
+
+## Baseline replay and proposed implementation
+
+Unchanged-kernel replay completed all existing desktop interaction and pixel
+assertions successfully in `/tmp/space-desktop-settle-20261019/`. Four launcher
+samples at 0/1/3/6 seconds each measured 150324 panel pixels and 792 accent
+pixels. The original failure remains preserved; timing is a hypothesis, not a
+proven root cause. No production assertions were removed or reduced.
+
+A modular first-slice proposal is ready, not applied:
+`target/verification/commandbar-proposal/commandbar.delta.patch` SHA256
+`67860e1231e460872ecb127a65bbe6d47ca89d5189ba1dfaf789434e342349ef`.
+Consult the actual `ready.json`/hash before use (the patch SHA should be verified,
+not trusted from prose). Command state/filter/dispatch is in
+`display-commandbar.in`, geometry in `display-layout.in`; display keeps rendering
+and device input. Five actions cover tiling, close/minimize and existing-terminal
+focus. Shared lookup serves keyboard, pointer and rendering. A 54-case checker
+and QEMU extension plan are prepared but unrun. Floating, scrolling columns and
+new terminal/browser component launch remain required later work. Primary must
+review the proposal against updated AGENTS before applying it.

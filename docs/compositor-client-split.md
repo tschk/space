@@ -4,6 +4,18 @@
 - **Date**: 2026-08-13
 - **Scope**: `components/display.in`, `protocol/display.in`, SCI loader / domains
 
+## Shell and layout boundary (2026-10-19)
+
+The original Space desktop uses a command bar and basic niri-like tiling, with
+floating controls and application actions. This is shell/layout policy, not a
+reason to move application state or authority into the compositor or nanokernel.
+Keep command dispatch, layout, input/seat, surface presentation and applications
+modular; see the [command desktop design](plans/2026-10-19-command-desktop.md).
+The existing SPDP and shared-page ownership rules below remain authoritative.
+A future Wayland adapter must translate into these native contracts rather than
+replace them with foreign kernel semantics. Neither source modularization nor a
+kernel-linked window demo establishes isolated SCI desktop services.
+
 ## Problem
 
 Today every compositor window lives in the kernel's address space. The window

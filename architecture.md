@@ -30,6 +30,32 @@ Each layer exists to make the layer above possible.
 
 ---
 
+## Architectural priority and implementation boundary
+
+Space is hypermodular: services own their state and communicate through explicit
+component/interface/capability contracts. The nanokernel supplies minimal hardware
+enforcement and execution/IPC mechanisms; the runtime, drivers, filesystem,
+networking, compatibility personalities and desktop are separable service policy.
+The current full boot root still links many of them together. Its subsystem list
+below records the present image, not the intended trusted-core boundary.
+
+The end-to-end contract is `.in` declarations and code → generic Inauguration
+Core IR/MIR/native emission → SCI plus available metadata → Space packaging and
+loader validation → granted runtime objects/interfaces. The compiler describes
+requirements; Space decides grants and deployment policy; hardware/runtime gates
+must enforce what is claimed. No layer can stand in for another's evidence.
+See [SCI schema](sci-schema.md) for artifact layouts and [AGENTS](AGENTS.md) for
+contributor invariants. Keep assembly restricted to the hardware/ABI capsules the
+language cannot express; generic compiler improvements must not absorb OS policy.
+
+The original desktop follows a separate command model, layout policy,
+compositor/display backend, input/seat routing and application/component boundary.
+A niri-like layout and Raycast-style command bar are the interaction direction;
+Alpenglowed/Rover are references and Wayland/Budgie are optional reusable plumbing.
+The kernel-linked prototype does not establish that these services are isolated.
+See the [command desktop design](docs/plans/2026-10-19-command-desktop.md) and
+[compositor/client contract](docs/compositor-client-split.md).
+
 ## .in
 
 .in is the native language. It describes components, capabilities, objects,
@@ -101,11 +127,13 @@ in [`sci-schema.md`](sci-schema.md).
 
 ---
 
-## Nanokernel
+## Current boot root and nanokernel scaffolding
 
 The nanokernel (`kernel-root.in`) is the root component. It runs in
 long mode after the boot trampoline (`boot/multiboot.asm`) enters
-x86_64. It provides:
+x86_64. The present root links the following mechanisms and services; this is
+an implementation inventory, not a mandate to retain all services in the
+nanokernel:
 
 - **Serial console** — COM1 UART output and interactive shell
 - **Physical memory discovery** — Multiboot1 memory map parsing

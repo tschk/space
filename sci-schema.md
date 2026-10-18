@@ -2,6 +2,31 @@
 
 `SCI` is the native Space component artifact. ELF, PE, Mach-O, and WASM may exist as compiler internals or compatibility-personality payloads, but they are not the native Space loading contract.
 
+## Compiler / packager / runtime authority boundary
+
+Inauguration emits generic code and component metadata. Space owns its concrete
+capability names, grant masks, boot graph, provider policy and native SCI profile.
+The packager must validate and translate declarations into that profile without
+widening authority; the loader validates the actual executable manifest and
+available provider bindings before entry. Sidecar metadata alone does not prove
+runtime enforcement. Do not put Space-specific capability translation into the
+compiler or infer authority from a resolved symbol.
+
+For example, the bounded SCI display producer's packaging validates named memory
+and display rights before translating compiler ordinals into Space's mask. Its
+shared page is granted and adopted through trusted loader provenance, not a
+client-supplied physical pointer. See [compositor/client ownership](docs/compositor-client-split.md).
+This is a bounded implemented path, not a claim that all SCI metadata fields or
+all desktop services already have equivalent enforcement.
+
+Shared code executes with the caller's authority. The current flat symbol
+registry and component-level grants do not establish per-symbol rights or make
+privileged kernel exports safe to call from arbitrary guests. Keep kernel-linked
+CPL0 and user SCI CPL3 behavior distinct; see [architecture](architecture.md).
+Any change to this boundary requires matching generic emitter and Space
+packager/loader tests, including malformed-image, missing-import and denied-grant
+cases. Source/module separation does not by itself create isolated services.
+
 ## Version 0 Fields
 
 The Inauguration compiler emits component metadata as a JSON sidecar

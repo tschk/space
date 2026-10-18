@@ -8,6 +8,24 @@ One summonable bar owns query, results, selected row and confirmation. Results c
 
 Keep the first implementation bounded to existing input support: Tab/topbar summons, Ctrl-N/P navigates and Enter confirms. A future configurable Super+Space binding needs modifier-aware input across PS/2 and USB; do not claim it from ASCII input alone. No shell interpolation or arbitrary command execution is needed for window actions.
 
+## Module and component boundaries
+
+Hypermodularity is an architectural requirement, not a later cleanup. Keep the
+command registry/dispatcher and query state separate from layout policy; layout
+owns stable window identities, focus and geometry, not rendering. The compositor
+owns surface composition/damage/presentation, while the seat routes authorized
+input and applications own their sessions and content. Each module needs explicit
+inputs, state ownership and observable results before it becomes a separate SCI
+service. Do not extend the existing display monolith with unrelated command,
+browser, shell and personality logic.
+
+Use the existing SPDP/channel/shared-page contracts for the service split. Do not
+introduce a competing bus. The bar dispatches bounded actions to the service that
+owns the relevant authority; a search result never grants a capability. Preserve
+SCI loader checks and make declaration-to-grant translation Space packaging
+policy, not compiler knowledge. The kernel-linked prototype remains a stepping
+stone; extracting source files is not proof of isolation.
+
 ## Layout direction
 
 Aim for horizontal columns with a focused column and a viewport that follows focus. Keep a simple floating mode for windows that need free placement. Layout actions are searchable alongside windows: tile, float, focus left/right, close and minimize. The first executable slice can establish shared action dispatch and real tile/float geometry; it must be labeled as groundwork until overflow scrolling and per-window floating state are implemented and tested.
