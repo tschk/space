@@ -2,6 +2,7 @@ package space.display
 
 import "../protocol/display.in"
 import "font.in"
+import "display-commandbar.in"
 
 interface DisplayDevice {
   fn map(phys: Int, size: Int) -> void
@@ -503,12 +504,6 @@ var comp-drag-mode: Int = 0   // index of window being dragged (-1 = none)
 var comp-drag-off-x: Int = 0 // drag offset from window origin to mouse
 var comp-drag-off-y: Int = 0
 var comp-running: Int = 0    // 1 when compositor loop is active
-// Alpenglowed-inspired switcher: bounded ASCII query, existing windows only.
-var comp-launcher-open: Int = 0
-var comp-launcher-query: Int = 0
-var comp-launcher-len: Int = 0
-var comp-launcher-selected: Int = 0
-
 // --- damage-rect state ------------------------------------------------------
 // Pending damage is a single union rect (x0,y0,x1,y1, exclusive x1/y1).
 var comp-dmg-x0: Int = 0
@@ -640,6 +635,7 @@ fn comp-init() -> void {
   comp-drag-mode = -1
   comp-dragging = -1
   comp-running = 0
+  comp-bar-init()
   comp-launcher-open = 0
   comp-launcher-len = 0
   if comp-launcher-query == 0 {
@@ -773,6 +769,9 @@ fn comp-win-close(idx: Int) -> void {
   if idx < 0 || idx >= comp-count {
     return
   }
+  // Window indices shift on close; a held pointer must not drag a stale record.
+  comp-dragging = -1
+  comp-drag-mode = -1
   // Capture the removed window's rect before shifting.
   let rem-x = load32(comp-win-base(idx) + 4)
   let rem-y = load32(comp-win-base(idx) + 8)
@@ -817,8 +816,23 @@ fn comp-win-minimize(idx: Int) -> void {
   }
   let base = comp-win-base(idx)
   let flags = load32(base + 20)
-  store32(base + 20, (flags | COMP-WIN-MINIMIZED | COMP-WIN-DIRTY) & -2)
+  store32(base + 20, (flags | COMP-WIN-MINIMIZED | COMP-WIN-DIRTY) & -4)
+  comp-dragging = -1
+  comp-drag-mode = -1
   comp-win-damage(idx)
+  if comp-focused == idx {
+    comp-focused = -1
+    let i = 0
+    while i < comp-count {
+      let other = load32(comp-win-base(i) + 20)
+      if (other & COMP-WIN-VISIBLE) != 0 && (other & COMP-WIN-MINIMIZED) == 0 {
+        comp-win-focus(i)
+        return
+      }
+      i = i + 1
+    }
+    comp-dmg-add(0, 0, fb-width, COMP-TASKBAR-H)
+  }
   return
 }
 
@@ -1945,135 +1959,27 @@ fn comp-render-taskbar() -> void {
   return
 }
 
-// Match window titles case-insensitively without allocating or shell execution.
-fn comp-launcher-matches(title: Int) -> Int {
-  let i = 0
-  while i < comp-launcher-len {
-    let ch = load8(title + i)
-    if ch >= 65 && ch <= 90 { ch = ch + 32 }
-    let query = load8(comp-launcher-query + i)
-    if query >= 65 && query <= 90 { query = query + 32 }
-    if ch == 0 || ch != query { return 0 }
-    i = i + 1
-  }
-  return 1
-}
-
-fn comp-launcher-at(row: Int) -> Int {
-  let matched = 0
-  let i = 0
-  while i < comp-count {
-    let title = load64(comp-win-base(i) + 24)
-    if title != 0 {
-      if comp-launcher-matches(title) != 0 {
-        if matched == row { return i }
-        matched = matched + 1
-        if matched >= 4 { return -1 }
-      }
-    }
-    i = i + 1
-  }
-  return -1
-}
-
-fn comp-launcher-first() -> Int { return comp-launcher-at(0) }
-
-fn comp-launcher-show(port: Int) -> void {
-  comp-launcher-open = 1
-  comp-launcher-selected = 0
-  comp-launcher-len = 0
-  store8(comp-launcher-query, 0)
-  comp-dmg-full()
-  serial-write-cstr(port, "space: launcher opened")
-  serial-nl(port)
-  return
-}
-
-fn comp-launcher-hide(port: Int) -> void {
-  comp-launcher-open = 0
-  comp-dmg-full()
-  serial-write-cstr(port, "space: launcher dismissed")
-  serial-nl(port)
-  return
-}
-
-fn comp-launcher-focus(port: Int, selected: Int) -> void {
-  comp-win-restore(selected)
-  serial-write-cstr(port, "space: launcher focused ")
-  serial-write-cstr(port, load64(comp-win-base(selected) + 24))
-  serial-nl(port)
-  comp-launcher-hide(port)
-}
-
-fn comp-launcher-key(port: Int, key: Int) -> void {
-  if key == 27 || key == 9 || key == 12 {
-    comp-launcher-hide(port)
-    return
-  }
-  if key == 10 || key == 13 {
-    let selected = comp-launcher-at(comp-launcher-selected)
-    if selected >= 0 {
-      comp-launcher-focus(port, selected)
-    }
-    return
-  }
-  // Ctrl-N/P navigate only the visible matching rows while the launcher is open.
-  if key == 14 || key == 16 {
-    if comp-launcher-first() >= 0 {
-      if key == 14 {
-        comp-launcher-selected = comp-launcher-selected + 1
-        if comp-launcher-at(comp-launcher-selected) < 0 { comp-launcher-selected = 0 }
-      } else {
-        if comp-launcher-selected > 0 {
-          comp-launcher-selected = comp-launcher-selected - 1
-        } else {
-          let row = 1
-          while row < 4 && comp-launcher-at(row) >= 0 { row = row + 1 }
-          comp-launcher-selected = row - 1
-        }
-      }
-    }
-    comp-dmg-add(fb-width / 2 - 360, COMP-TASKBAR-H + 16, fb-width / 2 + 360, COMP-TASKBAR-H + 240)
-    return
-  }
-  if key == 8 || key == 127 {
-    comp-launcher-selected = 0
-    if comp-launcher-len > 0 { comp-launcher-len = comp-launcher-len - 1 }
-  } else if key >= 32 && key <= 126 && comp-launcher-len < 32 {
-    comp-launcher-selected = 0
-    store8(comp-launcher-query + comp-launcher-len, key)
-    comp-launcher-len = comp-launcher-len + 1
-  }
-  store8(comp-launcher-query + comp-launcher-len, 0)
-  comp-dmg-add(fb-width / 2 - 360, COMP-TASKBAR-H + 16, fb-width / 2 + 360, COMP-TASKBAR-H + 240)
-  return
-}
-
 fn comp-render-launcher() -> void {
   let x = fb-width / 2 - 360
   let y = COMP-TASKBAR-H + 16
   fb-fill-rect(x, y, 720, 224, COMP-COLOR-BORDER)
   fb-fill-rect(x + 1, y + 1, 718, 222, COMP-COLOR-PANEL)
-  comp-draw-label-aa(x + 20, y + 14, "SWITCH WINDOW", FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  comp-draw-label-aa(x + 20, y + 14, "SPACE COMMANDS", FB-COLOR-WHITE, COMP-COLOR-PANEL)
   comp-draw-label-aa(x + 20, y + 44, ">", COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
   comp-draw-label-aa(x + 50, y + 44, comp-launcher-query, FB-COLOR-WHITE, COMP-COLOR-PANEL)
   let first = comp-launcher-at(comp-launcher-selected)
   if first < 0 {
-    comp-draw-label-aa(x + 20, y + 88, "NO MATCHING WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+    comp-draw-label-aa(x + 20, y + 88, "NO MATCHING RESULTS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
   } else {
-    let i = 0
     let row = 0
-    while i < comp-count && row < 4 {
-      let title = load64(comp-win-base(i) + 24)
-      if title != 0 {
-        if comp-launcher-matches(title) != 0 {
-          let color = COMP-COLOR-MUTED
-          if i == first { color = COMP-COLOR-ACCENT }
-          comp-draw-label-aa(x + 20, y + 80 + row * 28, title, color, COMP-COLOR-PANEL)
-          row = row + 1
-        }
+    while row < 4 {
+      let candidate = comp-launcher-at(row)
+      if candidate >= 0 {
+        let color = COMP-COLOR-MUTED
+        if row == comp-launcher-selected { color = COMP-COLOR-ACCENT }
+        comp-draw-label-aa(x + 20, y + 80 + row * 28, comp-bar-title(candidate), color, COMP-COLOR-PANEL)
       }
-      i = i + 1
+      row = row + 1
     }
   }
   comp-draw-label-aa(x + 20, y + 198, "CTRL-N/P / ENTER / ESC", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
@@ -2086,7 +1992,7 @@ fn comp-render-topbar() -> void {
   let ty = (COMP-TASKBAR-H - fb-font-scale * 8) / 2
   comp-draw-label-aa(12, ty, "SPACE OS", FB-COLOR-WHITE, COMP-COLOR-PANEL)
   fb-fill-rect(220, 2, 340, COMP-TASKBAR-H - 4, COMP-COLOR-TITLE)
-  comp-draw-label-aa(232, ty, "TAB  SWITCH WINDOW", COMP-COLOR-MUTED, COMP-COLOR-TITLE)
+  comp-draw-label-aa(232, ty, "TAB  COMMANDS", COMP-COLOR-MUTED, COMP-COLOR-TITLE)
   if comp-focused >= 0 && comp-focused < comp-count {
     let title = load64(comp-win-base(comp-focused) + 24)
     if title != 0 {
@@ -2149,20 +2055,10 @@ fn comp-handle-click(mx: Int, my: Int) -> Int {
     // are not window indices. Blank space and outside clicks just dismiss.
     if mx >= x + 20 && mx < x + 700 && my >= y + 80 && my < y + 192 {
       let wanted = (my - y - 80) / 28
-      let row = 0
-      let i = 0
-      while i < comp-count && row < 4 {
-        let title = load64(comp-win-base(i) + 24)
-        if title != 0 {
-          if comp-launcher-matches(title) != 0 {
-            if row == wanted {
-              comp-launcher-focus(com1(), i)
-              return 1
-            }
-            row = row + 1
-          }
-        }
-        i = i + 1
+      let candidate = comp-launcher-at(wanted)
+      if candidate >= 0 {
+        comp-bar-execute(com1(), candidate)
+        return 1
       }
     }
     comp-launcher-hide(com1())
@@ -2221,7 +2117,7 @@ fn comp-handle-click(mx: Int, my: Int) -> Int {
 
 // Handle mouse movement during drag or resize.
 fn comp-handle-drag(mx: Int, my: Int) -> void {
-  if comp-drag-mode < 0 {
+  if comp-drag-mode < 0 || comp-dragging < 0 || comp-dragging >= comp-count {
     return
   }
   let base = comp-win-base(comp-dragging)
@@ -2284,6 +2180,10 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
   if key == 27 {
     return 1
   }
+  // Hidden/removed windows never receive input after layout/window actions.
+  if comp-focused < 0 || comp-focused >= comp-count { return 0 }
+  let flags = load32(comp-win-base(comp-focused) + 20)
+  if (flags & COMP-WIN-VISIBLE) == 0 || (flags & COMP-WIN-MINIMIZED) != 0 { return 0 }
   let role = COMP-ROLE-TEXT
   if comp-focused >= 0 {
     role = load64(comp-win-base(comp-focused) + 40)

@@ -1,0 +1,54 @@
+package space.display
+
+// Layout policy operates on existing compositor geometry; no renderer ownership.
+fn comp-tile-count() -> Int {
+  let count = 0
+  let i = 0
+  while i < comp-count {
+    let flags = load32(comp-win-base(i) + 20)
+    if (flags & COMP-WIN-VISIBLE) != 0 && (flags & COMP-WIN-MINIMIZED) == 0 {
+      count = count + 1
+    }
+    i = i + 1
+  }
+  return count
+}
+
+// Only content height is stored in the record; reserve the title bar explicitly.
+fn comp-tile-ready(count: Int) -> Int {
+  if count <= 0 || count > COMP-MAX-WINDOWS { return 0 }
+  let width = fb-width - 32 - (count - 1) * 16
+  let height = fb-height - COMP-TASKBAR-H * 2 - 32 - COMP-TITLE-BAR-H
+  if width / count < COMP-MIN-WIN-W || height < COMP-MIN-WIN-H { return 0 }
+  return 1
+}
+
+fn comp-tile-windows() -> Int {
+  let count = comp-tile-count()
+  if comp-tile-ready(count) == 0 { return 0 }
+  let width = (fb-width - 32 - (count - 1) * 16) / count
+  let height = fb-height - COMP-TASKBAR-H * 2 - 32 - COMP-TITLE-BAR-H
+  let column = 0
+  let i = 0
+  while i < comp-count {
+    let base = comp-win-base(i)
+    let flags = load32(base + 20)
+    if (flags & COMP-WIN-VISIBLE) != 0 && (flags & COMP-WIN-MINIMIZED) == 0 {
+      comp-win-damage(i)
+      let x = 16 + column * (width + 16)
+      let actual-width = width
+      if column == count - 1 { actual-width = fb-width - 16 - x }
+      store32(base + 4, x)
+      store32(base + 8, COMP-TASKBAR-H + 16)
+      store32(base + 12, actual-width)
+      store32(base + 16, height)
+      store32(base + 20, flags | COMP-WIN-DIRTY)
+      comp-win-damage(i)
+      column = column + 1
+    }
+    i = i + 1
+  }
+  comp-dragging = -1
+  comp-drag-mode = -1
+  return 1
+}

@@ -25,6 +25,18 @@ SERIAL_LOG="$BUILD_DIR/serial.log"
 MONITOR="$BUILD_DIR/qemu-monitor.sock"
 MIN_FPS="${MIN_FPS:-30}"
 
+# Preserve the benchmark's failure status while always stopping our QEMU/reader.
+# With set -e, a failed Python threshold check otherwise skips tail cleanup.
+CATPID=""
+cleanup() {
+  if [ -S "$MONITOR" ]; then
+    printf 'quit\n' | timeout 2 nc -U "$MONITOR" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$CATPID" ]; then kill "$CATPID" 2>/dev/null || true; fi
+  rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
+}
+trap cleanup EXIT
+
 mkdir -p "$BUILD_DIR"
 rm -f "$SERIAL_IN" "$SERIAL_OUT" "$SERIAL_LOG" "$MONITOR"
 
@@ -90,10 +102,3 @@ if fps < min_fps:
     raise SystemExit(f"FAIL: frame rate {fps} fps < {min_fps} minimum")
 print(f"PASS: moving-window stress {fps} fps (min {min_fps})")
 PY
-PASS=$?
-
-printf 'halt\n' > "$SERIAL_IN"
-printf 'quit\n' | nc -U "$MONITOR" >/dev/null 2>&1 || true
-kill "$CATPID" 2>/dev/null || true
-rm -f "$SERIAL_IN" "$SERIAL_OUT" "$MONITOR"
-exit "$PASS"

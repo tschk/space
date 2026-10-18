@@ -27,6 +27,8 @@ const COMP-TITLE-BAR-H=28;
 var comp-windows:Int=8;
 var comp-count:Int=3;
 var comp-focused:Int={focus};
+var comp-dragging:Int=0;
+var comp-drag-mode:Int=1;
 var fb-width:Int=1920;
 fn comp-win-base(i:Int)->Int{{return comp-windows+i*64;}}
 fn load32(p:Int)->Int{{return heap[p];}}
@@ -129,6 +131,15 @@ with (out/'qemu.log').open('w') as qlog:
             assert header[0]==b'P6' and header[1]==b'1920 1080' and header[2]==b'255', header[:3]
             assert len(header[3])==1920*1080*3
             return header[3]
+        def frame_until(name, predicate):
+            deadline = time.monotonic()+15
+            while True:
+                pixels = capture(name)
+                if predicate(pixels): return pixels
+                assert time.monotonic()<deadline, 'frame condition timed out: '+name
+                time.sleep(.1)
+        def panel_visible(pixels):
+            return sum(pixels[(y*1920+x)*3:(y*1920+x)*3+3] == bytes((27,24,24)) for y in range(44,268) for x in range(600,1320)) > 30000
         wait('space interactive shell')
         serial.sendall(b'desktop\n'); wait('space: compositor frame ready')
         baseline = capture('desktop')
@@ -140,16 +151,22 @@ with (out/'qemu.log').open('w') as qlog:
                 if item.startswith('ctrl-'): command('sendkey '+item)
                 else: key(item)
             time.sleep(.8)
-            selected_pixels = capture(name+'-selected')
-            for candidate in range(1 if 'terminal 1' in keys else (2 if 'terminal' in keys else 3)):
+            def selection_ready(pixels):
+                count = 1 if 'terminal 1' in keys else (2 if 'terminal' in keys else 4)
+                for candidate in range(count):
+                    gold = sum(pixels[(y*1920+x)*3:(y*1920+x)*3+3] == bytes((248,189,56)) for y in range(124+candidate*28,148+candidate*28) for x in range(620,1000))
+                    if (gold > 40) != (candidate == row): return False
+                return True
+            selected_pixels = frame_until(name+'-selected', selection_ready)
+            for candidate in range(1 if 'terminal 1' in keys else (2 if 'terminal' in keys else 4)):
                 gold = sum(selected_pixels[(y*1920+x)*3:(y*1920+x)*3+3] == bytes((248,189,56)) for y in range(124+candidate*28, 148+candidate*28) for x in range(620,1000))
                 assert (gold > 40) == (candidate == row), f'wrong selected result row: {name}/{candidate}'
             start = len(log)
             command('sendkey ret'); wait('space: launcher focused '+title, start)
             time.sleep(.8)
-            return capture(name+'-focused')
+            return frame_until(name+'-focused', lambda pixels:not panel_visible(pixels))
         next_focus = choose(['ctrl-n'], 'UTILITIES', 'selection-next', 1)
-        previous_focus = choose(['ctrl-p'], 'TERMINAL 2', 'selection-previous-wrap', 2)
+        previous_focus = choose(['terminal', 'ctrl-p'], 'TERMINAL 2', 'selection-previous-wrap', 1)
         choose(['terminal', 'ctrl-n'], 'TERMINAL 2', 'selection-filtered-next', 1)
         reset_focus = choose(['ctrl-n', 'terminal 1'], 'TERMINAL 1', 'selection-query-reset', 0)
         def focused_title(pixels):
@@ -159,7 +176,7 @@ with (out/'qemu.log').open('w') as qlog:
         start = len(log)
         command('sendkey tab'); wait('space: launcher opened', start)
         key('util'); time.sleep(.5)
-        opened = capture('launcher-util')
+        opened = frame_until('launcher-util', panel_visible)
         def region(pixels,x0,y0,x1,y1):
             return Counter(tuple(pixels[(y*1920+x)*3:(y*1920+x)*3+3]) for y in range(y0,y1) for x in range(x0,x1))
         colors=region(opened,600,44,1320,268)
@@ -169,7 +186,7 @@ with (out/'qemu.log').open('w') as qlog:
         start = len(log)
         command('sendkey ret'); wait('space: launcher focused UTILITIES', start)
         time.sleep(.8)
-        focused = capture('focused-utilities')
+        focused = frame_until('focused-utilities',lambda pixels:not panel_visible(pixels))
         assert focused != opened, 'launcher did not disappear after focus'
         # A failed search stays open; Backspace edits it without leaking into terminal.
         start=len(log); command('sendkey tab'); wait('space: launcher opened', start)
@@ -191,7 +208,7 @@ with (out/'qemu.log').open('w') as qlog:
         def click():
             command('mouse_button 1'); time.sleep(.2); command('mouse_button 0'); time.sleep(.8)
         move(0,525); click()  # First taskbar button: TERMINAL 1.
-        pointer_focused=capture('pointer-taskbar-terminal-1')
+        pointer_focused=frame_until('pointer-taskbar-terminal-1',lambda pixels:focused_title(pixels)==focused_title(baseline))
         assert focused_title(pointer_focused) == focused_title(baseline), 'taskbar did not focus TERMINAL 1'
         assert focused_title(pointer_focused) != focused_title(after_fetch), 'taskbar focus remained TERMINAL 2'
         move(-660,-1050); start=len(log); click()
@@ -200,19 +217,19 @@ with (out/'qemu.log').open('w') as qlog:
         # Filtered first row must select UTILITIES, not window index zero.
         key('util'); move(400,130); start=len(log); click()
         wait('space: launcher focused UTILITIES',start)
-        utility_pointer=capture('pointer-filtered-utilities')
+        utility_pointer=frame_until('pointer-filtered-utilities',lambda pixels:focused_title(pixels)==focused_title(focused) and not panel_visible(pixels))
         assert focused_title(utility_pointer) == focused_title(focused), 'filtered pointer row selected wrong window'
         # Reopen at topbar, then outside-click must dismiss without focus.
         move(-400,-130); start=len(log); click(); wait('space: launcher opened',start)
         move(200,350); start=len(log); click(); wait('space: launcher dismissed',start)
         assert b'space: launcher focused' not in log[start:], 'outside click focused a window'
-        outside=capture('pointer-outside-dismissed')
+        outside=frame_until('pointer-outside-dismissed',lambda pixels:not panel_visible(pixels))
         assert focused_title(outside) == focused_title(utility_pointer), 'outside click changed focus'
         # No-match row cannot accidentally select window zero.
         move(-200,-350); start=len(log); click(); wait('space: launcher opened',start)
         key('zzzz'); move(400,130); start=len(log); click(); wait('space: launcher dismissed',start)
         assert b'space: launcher focused' not in log[start:], 'no-match click focused a window'
-        no_match=capture('pointer-no-match-dismissed')
+        no_match=frame_until('pointer-no-match-dismissed',lambda pixels:not panel_visible(pixels))
         assert focused_title(no_match) == focused_title(utility_pointer), 'no-match click changed focus'
         # Close lower-index TERMINAL 1 while UTILITIES remains focused.
         move(242,-78); click()
@@ -225,6 +242,50 @@ with (out/'qemu.log').open('w') as qlog:
         def terminal_two(pixels):
             return b''.join(pixels[(y*1920+1000)*3:(y*1920+1900)*3] for y in range(600,900))
         assert terminal_two(after_key) == terminal_two(after_close), 'key leaked to TERMINAL 2 after close'
+        def query_key(text):
+            def query_pixels(pixels):
+                return b''.join(pixels[(y*1920+650)*3:(y*1920+1280)*3] for y in range(88,112))
+            for index,char in enumerate(text):
+                before=query_pixels(capture('query-before'))
+                key(char)
+                frame_until('query-step-'+str(index),lambda pixels:query_pixels(pixels)!=before)
+        def action(query, title, pointer=False):
+            start=len(log); command('sendkey tab'); wait('space: launcher opened',start)
+            query_key(query)
+            frame_until('command-'+query.replace(' ','-'), panel_visible)
+            start=len(log)
+            if pointer:
+                # Prior pointer is at original TERMINAL 1 close button (942,77).
+                move(700-942,138-77); click()
+            else: command('sendkey ret')
+            wait('space: command '+title,start)
+            wait('space: launcher dismissed',start)
+            return frame_until('after-'+query.replace(' ','-'), lambda pixels:not panel_visible(pixels))
+        def tiled(pixels):
+            # Two surviving columns: x16..951 and968..1903, y44..1035.
+            desktop=bytes((11,9,9))
+            def pixel(x,y): return pixels[(y*1920+x)*3:(y*1920+x)*3+3]
+            return all(pixel(x,500)==desktop for x in (0,15,955,960,967,1904,1919)) and all(pixel(x,44)!=desktop for x in (16,951,968,1903)) and pixel(500,1036)==desktop
+        tile_enter=action('tile','TILE WINDOWS')
+        frame_until('tile-enter-geometry', tiled)
+        tile_click=action('tile','TILE WINDOWS',True)
+        frame_until('tile-click-geometry', tiled)
+        # Terminal 2 identity survives the earlier index-zero close.
+        restored=action('focus','FOCUS TERMINAL 2')
+        minimized=action('minimize','MINIMIZE FOCUSED')
+        assert minimized != restored, 'minimize did not remove focused surface'
+        restored=action('focus','FOCUS TERMINAL 2')
+        frame_until('restored-terminal-2',lambda pixels: pixels != minimized)
+        before=capture('restored-before-input'); key('fetch'); command('sendkey ret')
+        frame_until('restored-after-input',lambda pixels:pixels != before)
+        action('close','CLOSE FOCUSED')
+        start=len(log); command('sendkey tab'); wait('space: launcher opened',start)
+        query_key('focus'); frame_until('closed-target-query',panel_visible)
+        start=len(log); command('sendkey ret')
+        # Synchronize input processing with a following dismissal, not a fixed sleep.
+        command('sendkey esc'); wait('space: launcher dismissed',start)
+        assert b'space: command FOCUS TERMINAL 2' not in log[start:], 'closed terminal action remained available'
+        assert b'space: launcher focused' not in log[start:], 'closed target selected another window'
         # First Escape dismisses only the switcher; a second retains desktop exit.
         start=len(log); command('sendkey tab'); wait('space: launcher opened',start)
         start=len(log)

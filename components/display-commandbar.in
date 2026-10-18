@@ -1,0 +1,197 @@
+package space.display
+
+import "display-layout.in"
+
+// Bounded command bar: existing windows and explicit compositor actions.
+var comp-launcher-open: Int = 0
+var comp-launcher-query: Int = 0
+var comp-launcher-len: Int = 0
+var comp-launcher-selected: Int = 0
+var comp-bar-titles: Int = 0
+
+// Window rows keep their table index; actions occupy a disjoint bounded range.
+const COMP-BAR-TILE = 16
+const COMP-BAR-CLOSE = 17
+const COMP-BAR-MINIMIZE = 18
+const COMP-BAR-TERM1 = 19
+const COMP-BAR-TERM2 = 20
+const COMP-BAR-END = 21
+
+// Resolve terminal identity from its role/content slot, never a shifting index.
+fn comp-bar-terminal(slot: Int) -> Int {
+  let i = 0
+  while i < comp-count {
+    let base = comp-win-base(i)
+    if load64(base + 24) != 0 && load64(base + 40) == COMP-ROLE-TERMINAL && load64(base + 32) == slot {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+// Static command labels use the existing Int-address ABI of window titles.
+fn comp-bar-set-title(index: Int, title: Int) -> void {
+  store64(comp-bar-titles + index * 8, title)
+  return
+}
+
+// Initialize once per display instance; labels are immutable image data.
+fn comp-bar-init() -> void {
+  if comp-bar-titles != 0 { return }
+  comp-bar-titles = alloc(40)
+  comp-bar-set-title(0, "TILE WINDOWS")
+  comp-bar-set-title(1, "CLOSE FOCUSED")
+  comp-bar-set-title(2, "MINIMIZE FOCUSED")
+  comp-bar-set-title(3, "FOCUS TERMINAL 1")
+  comp-bar-set-title(4, "FOCUS TERMINAL 2")
+  return
+}
+
+fn comp-bar-title(candidate: Int) -> Int {
+  if candidate >= 0 && candidate < comp-count { return load64(comp-win-base(candidate) + 24) }
+  if candidate >= COMP-BAR-TILE && candidate < COMP-BAR-END && comp-bar-titles != 0 {
+    return load64(comp-bar-titles + (candidate - COMP-BAR-TILE) * 8)
+  }
+  return 0
+}
+
+fn comp-bar-enabled(candidate: Int) -> Int {
+  if candidate >= 0 && candidate < comp-count {
+    if load64(comp-win-base(candidate) + 24) != 0 { return 1 }
+    return 0
+  }
+  if candidate == COMP-BAR-TILE { return comp-tile-ready(comp-tile-count()) }
+  if candidate == COMP-BAR-CLOSE || candidate == COMP-BAR-MINIMIZE {
+    if comp-focused >= 0 && comp-focused < comp-count {
+      if (load32(comp-win-base(comp-focused) + 20) & COMP-WIN-VISIBLE) != 0 { return 1 }
+    }
+    return 0
+  }
+  if candidate == COMP-BAR-TERM1 { if comp-bar-terminal(0) >= 0 { return 1 } }
+  if candidate == COMP-BAR-TERM2 { if comp-bar-terminal(1) >= 0 { return 1 } }
+  return 0
+}
+
+fn comp-bar-execute(port: Int, candidate: Int) -> void {
+  if comp-bar-enabled(candidate) == 0 { return }
+  if candidate < COMP-MAX-WINDOWS {
+    comp-launcher-focus(port, candidate)
+    return
+  }
+  if candidate == COMP-BAR-TILE { if comp-tile-windows() == 0 { return } }
+  if candidate == COMP-BAR-CLOSE { comp-win-close(comp-focused) }
+  if candidate == COMP-BAR-MINIMIZE { comp-win-minimize(comp-focused) }
+  if candidate == COMP-BAR-TERM1 { comp-win-restore(comp-bar-terminal(0)) }
+  if candidate == COMP-BAR-TERM2 { comp-win-restore(comp-bar-terminal(1)) }
+  serial-write-cstr(port, "space: command ")
+  serial-write-cstr(port, comp-bar-title(candidate))
+  serial-nl(port)
+  comp-launcher-hide(port)
+  return
+}
+
+// Match window titles case-insensitively without allocating or shell execution.
+fn comp-launcher-matches(title: Int) -> Int {
+  let i = 0
+  while i < comp-launcher-len {
+    let ch = load8(title + i)
+    if ch >= 65 && ch <= 90 { ch = ch + 32 }
+    let query = load8(comp-launcher-query + i)
+    if query >= 65 && query <= 90 { query = query + 32 }
+    if ch == 0 || ch != query { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn comp-launcher-at(row: Int) -> Int {
+  if row < 0 || row >= 4 { return -1 }
+  let matched = 0
+  let candidate = 0
+  while candidate < COMP-BAR-END {
+    if comp-bar-enabled(candidate) != 0 {
+      let title = comp-bar-title(candidate)
+      if title != 0 && comp-launcher-matches(title) != 0 {
+        if matched == row { return candidate }
+        matched = matched + 1
+        if matched >= 4 { return -1 }
+      }
+    }
+    candidate = candidate + 1
+  }
+  return -1
+}
+
+fn comp-launcher-first() -> Int { return comp-launcher-at(0) }
+
+fn comp-launcher-show(port: Int) -> void {
+  comp-launcher-open = 1
+  comp-launcher-selected = 0
+  comp-launcher-len = 0
+  store8(comp-launcher-query, 0)
+  comp-dmg-full()
+  serial-write-cstr(port, "space: launcher opened")
+  serial-nl(port)
+  return
+}
+
+fn comp-launcher-hide(port: Int) -> void {
+  comp-launcher-open = 0
+  comp-dmg-full()
+  serial-write-cstr(port, "space: launcher dismissed")
+  serial-nl(port)
+  return
+}
+
+fn comp-launcher-focus(port: Int, selected: Int) -> void {
+  comp-win-restore(selected)
+  serial-write-cstr(port, "space: launcher focused ")
+  serial-write-cstr(port, load64(comp-win-base(selected) + 24))
+  serial-nl(port)
+  comp-launcher-hide(port)
+}
+
+fn comp-launcher-key(port: Int, key: Int) -> void {
+  if key == 27 || key == 9 || key == 12 {
+    comp-launcher-hide(port)
+    return
+  }
+  if key == 10 || key == 13 {
+    let selected = comp-launcher-at(comp-launcher-selected)
+    if selected >= 0 {
+      comp-bar-execute(port, selected)
+    }
+    return
+  }
+  // Ctrl-N/P navigate only the visible matching rows while the launcher is open.
+  if key == 14 || key == 16 {
+    if comp-launcher-first() >= 0 {
+      if key == 14 {
+        comp-launcher-selected = comp-launcher-selected + 1
+        if comp-launcher-at(comp-launcher-selected) < 0 { comp-launcher-selected = 0 }
+      } else {
+        if comp-launcher-selected > 0 {
+          comp-launcher-selected = comp-launcher-selected - 1
+        } else {
+          let row = 1
+          while row < 4 && comp-launcher-at(row) >= 0 { row = row + 1 }
+          comp-launcher-selected = row - 1
+        }
+      }
+    }
+    comp-dmg-add(fb-width / 2 - 360, COMP-TASKBAR-H + 16, fb-width / 2 + 360, COMP-TASKBAR-H + 240)
+    return
+  }
+  if key == 8 || key == 127 {
+    comp-launcher-selected = 0
+    if comp-launcher-len > 0 { comp-launcher-len = comp-launcher-len - 1 }
+  } else if key >= 32 && key <= 126 && comp-launcher-len < 32 {
+    comp-launcher-selected = 0
+    store8(comp-launcher-query + comp-launcher-len, key)
+    comp-launcher-len = comp-launcher-len + 1
+  }
+  store8(comp-launcher-query + comp-launcher-len, 0)
+  comp-dmg-add(fb-width / 2 - 360, COMP-TASKBAR-H + 16, fb-width / 2 + 360, COMP-TASKBAR-H + 240)
+  return
+}
