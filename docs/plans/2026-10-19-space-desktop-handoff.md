@@ -1,80 +1,180 @@
-# Space desktop handoff — 2026-10-19
+# Space / Subspace / Inauguration handoff — 2026-10-19
 
-## User direction and active goal
+## Start here
 
-Build a new, creative desktop tailored to Space. `tschk/alpenglowed` is the visual and interaction reference. Wayland and Budgie are potential sources of reusable plumbing and ideas, not a one-to-one implementation target or required finished session. This supersedes the earlier stock Wayland + Budgie port target in the working-OS plan.
+Read [the next-agent goal statement](2026-10-19-next-agent-goal.md) and
+[the cross-repository architecture](2026-10-19-three-repository-architecture.md).
+The user's priority is a proper hypermodular OS platform, substantial architecture
+planning, resolution/scaling and multiple genuine typefaces. Build an original
+command desktop inspired by basic niri tiling and Raycast/Rover interactions.
+Evaluate mature compositor/text infrastructure before expanding a from-scratch
+renderer. Do not redefine the destination around the current framebuffer demo.
 
-The active thread goal covers an executable native desktop prototype, selective compatibility integration, preserved boot/personality regressions, generic compiler support when needed, parallel investigation and verified logical commits. Existing commit/push authorization persists. No deployment, release tags or crate publication is authorized by this handoff.
+Space `AGENTS.md`, `architecture.md`, `sci-schema.md` and the existing compositor
+and personality contracts remain authoritative. The
+[display/text architecture](2026-10-19-display-text-architecture.md) specifies
+output transactions, coordinate transforms, typeface roles/fallback/shaping,
+buffer ownership and the service graph. The
+[command desktop plan](2026-10-19-command-desktop.md) defines the shell boundary.
+No compositor dependency, new font asset or private source was imported.
 
-## Verified scope and limitations
+## Current checkouts
 
-Current repository inspection finds a framebuffer desktop, display/input services, fixed-size SPDP messages and initial bounded local stream transport. Read `docs/plans/2026-10-16-working-os.md`, `docs/compositor-client-split.md`, `architecture.md` and repository AGENTS before implementation. Historical QEMU evidence is recorded in the working-OS plan; those tests were not rerun for this handoff. No upstream Wayland client, labwc, GTK or Budgie execution on Space is established. Foreign fixtures do not establish arbitrary Linux/macOS/Windows application compatibility.
+- **Space:** `/Users/undivisible/projects/space`, `main`. Previously published
+  `ccc1f44` defines direction and `f59757a` records the hypermodular contracts.
+  Command-bar checkpoint `fcdbdf2` extracts the modules and carries the verified
+  action/model changes. The expanded architecture accompanies this handoff.
+  Preserve untracked `vendor/`.
+- **Subspace:** `/Users/undivisible/projects/subspace`, existing `master`, clean
+  at inspection; local revision `ea1ac5d` validates system/board IRQ ranges.
+  This checkpoint does not edit or publish Subspace code. Follow its own AGENTS.
+- **Inauguration:** active continuation checkout
+  `/Users/undivisible/.codex/worktrees/compiler-loop-continuation/inauguration`,
+  `main`, last local commit `67d01e15` (0.9.320). Preserve its uncommitted
+  0.9.321 callable work and `in-cli/vendor/`. Do not substitute the separate
+  dirty `/Users/undivisible/projects/inauguration` checkout for editing.
 
-Reference inspection now completed: local Alpenglowed at `2bdb63e0207b91ebf6ccb7b162a0f504b8adf8c7` and an authorized local clone of the private Rover reference at `55a4b8089c12d0b5588c4bf5b1d04325d31e99e1`. Reuse their query/result/selection/action separation as an idea; no code was imported. Rover is a macOS launcher, not an OS compositor. Its WebKit and platform integrations do not run on Space. See `2026-10-19-command-desktop.md` for the clarified niri-like layout and command-bar direction.
+Existing authorization covers logical verified commits/pushes and compiler patch
+bumps, with parallel agents and primary integration. No new branches, tags,
+crate publication, deployment or device flashing. Never use Grok/Oracle. Native
+agents were the available fallback for bounded work; preserve scratch proposals.
 
-## Next executable slices
+## Implemented desktop checkpoint
 
-1. Reference inspection and the command-desktop specification are recorded. Next diagnose the baseline launcher-render failure, then implement shared window/action dispatch; preserve working input and focus behavior.
-2. Prototype one coherent launcher/workspace/window interaction on the existing framebuffer path. Render it under QEMU and exercise keyboard, pointer, focus, dismissal and client launch. Inspect actual output, not just a saved screenshot.
-3. Independently investigate reusable compatibility plumbing: descriptor transfer, shared memory, event waits, library loading and a software display/input backend. Require a real upstream shared-memory Wayland client with pixels, frame/release callbacks, input and clean teardown before claiming support.
-4. Review actual diffs, run affected desktop/SCI/boot/personality gates and publish logical verified changes. Keep OS product policy in Space; compiler changes must remain general in Inauguration. Check dependency licensing before importing code; this handoff adds no upstream dependency.
+`components/display-commandbar.in` owns bounded query/selection, candidate
+availability and one dispatch path for keyboard/pointer. Existing windows precede
+five actions: tile windows, close focused, minimize focused, focus terminal1/2.
+Filtering remains prefix ASCII with four visible rows; typing finds commands
+beyond those rows. Terminal focus restores an existing session; it does not launch
+a new terminal. Browser, floating and scrolling commands are not faked.
 
-## Checkouts and concurrent compiler work
+`components/display-layout.in` owns titlebar-aware horizontal tiling over the
+current window geometry. It validates minimum size before mutation, includes
+margins/gaps/taskbars, preserves content and damages old/new frames. Tiling and
+close/minimize cancel stale drag state. Minimize selects a visible focus or none;
+hidden/out-of-range targets reject key input. The display backend retains drawing
+and input adapters. These modules are still kernel-linked, not isolated services.
 
-Space checkout: `/Users/undivisible/projects/space`. At handoff start it had only untracked `vendor/`; preserve it. This handoff changes documentation only.
+Command labels use an initialized table of immutable image-string addresses and
+a typed setter, matching the existing window-title address ABI. This was necessary
+because direct String returns from an Int function passed boot emission but failed
+standalone SCI verification. Do not undo that distinction or bypass the verifier.
 
-Compiler continuation checkout: `/Users/undivisible/.codex/worktrees/compiler-loop-continuation/inauguration`, branch `main`. Preserve the separate original `/Users/undivisible/projects/inauguration` checkout and untracked `in-cli/vendor/`. Last locally verified commit is `67d01e15` (0.9.320); the preceding compiler handoff records full publication evidence in `target/verification/scoped-value320-published-r1.json`. Do not infer remote state without checking it.
+## Verification evidence
 
-Uncommitted 0.9.321 implements exact Rust function-item/pointer source evidence, alias provenance, general indirect calls, shared source validation and C invoke fixes. It is NOT ready to publish. Source snapshot `nested-alias321-source-r7.json` predates the latest operator guard. Immutable debug-r2 binary SHA256: `432865116c0405c04da65a5b2f29c0cd8106dc30518507038e2335775f671e26`.
+Pinned final compiler:
+`/Users/undivisible/.codex/worktrees/compiler-loop-continuation/inauguration/target/verification/scoped-value320-installed-release-r3/in`,
+SHA256 `432b167183a7ab94d61c1dd26e48dce58324e70aeebd5118a2c7f4f2a9609d04`.
 
-Observed verification:
+- `python3 scripts/check-commandbar.py --in <pinned-in> --out <fresh-dir>`:
+  **72 checks passed**, actual JIT evaluation/native execution across default,
+  lean and harden. Receipt `/tmp/space-command-model-final-r5/results.json`
+  pins source/compiler/runner/generated artifacts. Model adapters intern ASCII
+  pointer bytes into bounded memory; they do not prove the real SCI ABI.
+- `python3 scripts/check-desktop-launcher.py --in <pinned-in> --build-dir <fresh-dir>`:
+  **final fresh-kernel QEMU pass**, receipt
+  `/tmp/space-command-desktop-final-r7/receipt.json`. Tests retain original PS/2,
+  query/focus/no-match, pointer, close/reindex and Escape coverage; add keyboard
+  and pointer tiling, exact frame geometry, minimize/restore, terminal input and
+  stale-action refusal. Primary inspected command-bar and tiled screenshots.
+  Final kernel SHA256 `c9ce3a65b1b698d2ad009dba6f75f3bea2dd065e3e03a2af165c506f37d00b51`.
+- QEMU smoke/hardening **passed** using the pre-label-storage checkpoint kernel;
+  final fresh QEMU boot also passed. Kernel contracts **22 passed**; SPDP contract
+  **41 passed**; SCI metadata contract **57 passed**. Artifacts/logs are
+  `/tmp/space-command-smoke-r1.log`, `/tmp/space-command-spdp-r1.log`,
+  `/tmp/space-command-sci-r1.log` and `/tmp/space-command-contracts-r1.log`.
+- `check-personalities.sh` **passed** with pinned compiler via
+  `/tmp/space-compiler-320-shim`: Windows/Darwin demos, 22 Mach-O refusal/return
+  scenarios, foreign Linux/Darwin/Windows serial/file fixtures and Linux streams.
+  Final-source log `/tmp/space-command-personalities-final-r2.log`; this is scoped
+  regression evidence, not arbitrary app compatibility.
+- Subspace `bun test`: **70 passed, 0 failed**, 317 assertions; log
+  `/tmp/subspace-handoff-bun-test-20261019.log`. Full embedded QEMU/MPU/SCI-E/UF2
+  gates were not rerun in this desktop checkpoint; hardware flashing was not run.
 
-- `nested-alias321-runtime-r3/results.json`: all 60 candidate checks and 22 fresh Rust references passed.
-- `callable321-runtime-r1/results.json`: 84 candidate checks completed against 28 Rust references; 24 failures remain across conditional item joins and dynamic selector calls with zero/one/two arguments, on both JIT/native and all three profiles. Do not weaken those checks.
-- `callable321-focused-r5.json`: codec, scoped, ordinary source context, generics and alias-origin groups passed. C group failed 1/4: generated global function-address initializer precedes the function declaration (`safe_target` undeclared). Scratch repair is ready at `target/verification/callable321-c-declaration-order-proposal/candidate.patch`, SHA256 `7181ec311a23be1f98a6d207a20fd193a40e0fc23fde82f6907a2eb415d9321d`; not integrated or tested.
-- Operator guard scratch patch was reviewed and applied to actual source. It rejects invalid callable scalar operations before integer erasure and uses existing unsigned comparison lowering. Its focused Cargo test (session `85940`) is terminal: 8 passed, 2 failed; log `target/verification/callable321-operator-focused-r1.log`. The high-bit test assumes recursive folding that `fold_expr` does not provide; `item_not` still lacks Invalid proof.
+## Known failures and scope limits
 
-Compiler work is parked for the desktop goal. Generic alias evidence is retained in `target/verification/callable321-generic-alias-origin-r1/results.json`: 18 candidate checks against 6 fresh Rust references confirm unresolved specialization provenance. Dynamic selector diagnosis remains unfinished. Desktop workers are scratch-only: `review_hotfix` investigates the baseline screenshot failure; `harden_init_review` prepares shared command dispatch and bounded tiling; `count_type_review` completed reference inspection. Source modifications while Cargo is compiling are prohibited by the current verification procedure.
+`check-runtime-components.sh` with the final label representation reaches
+`in: missing return value in pci-read32`. An isolated **unchanged HEAD baseline**
+with the same pinned compiler fails identically:
+`/tmp/space-runtime-baseline-320-r1/compile.log`; changed runtime attempt is
+`/tmp/space-command-runtime-r3.log`. The empty imported native stub is a general
+compiler compatibility issue, not proof the runtime components work. Repair it
+with a generic regression in Inauguration before claiming this gate passes.
+Do not copy kernel implementations into standalone components to hide it.
 
-Compiler commands use `AR=$(xcrun --find ar)`, `CARGO_TARGET_DIR=/Users/undivisible/projects/inauguration/in-cli/target`, `CARGO_BUILD_JOBS=1`, `CARGO_NET_OFFLINE=true`. Read compiler AGENTS. Before publication require focused regressions, fmt/check/strict all-target Clippy/full Cargo, source-built `in update`, target matrix, owned-native, default `in test` including exact-source selfhost, protocol check, actual diff inspection and fresh optimized acceptance. Run `in bench` for runtime timing/performance changes. Freeze and hash each candidate; retain failing receipts.
+The damage-rendering gate **fails its unchanged 30 fps threshold on both images**:
+final kernel 100 frames/1387 ticks = 7 fps, unchanged baseline 100 frames/1683
+ticks = 5 fps in sequential runs. Logs are
+`/tmp/space-command-damage-final-r2.log` and
+`/tmp/space-command-damage-baseline-r2.log`. These host runs do not establish an
+improvement or a root cause; both miss the gate. Preserve the threshold and
+investigate compiler/backend/presentation cost before a performance claim.
 
-## Handoff validation
+The benchmark script previously leaked QEMU when its threshold check failed under
+set -e. Its EXIT cleanup is repaired without changing the threshold or failure
+status; both final negative runs exited1 and left no owned test QEMU processes.
+Earlier leak-affected measurements remain in r1 logs and are not the comparison.
 
-Documentation-only: run `git diff --check`. No OS execution or new desktop behavior is claimed by this handoff. The goal remains active.
+Earlier QEMU runs exposed timing-dependent stale captures/dropped paced input.
+The updated runner waits for bounded observable frame/selection/query transitions
+and retains the original assertions. Failed artifacts under
+`/tmp/space-command-desktop-full-r*` and the original baseline are preserved.
+This does not establish a responsive production event/presentation pipeline.
 
-## New baseline evidence after reference inspection
+Still absent: multi-resolution/scale runtime support, multiple real faces,
+Unicode shaping/fallback, stable generation-keyed window handles, floating restore,
+scrolling columns, independently launched terminal sessions, real browser,
+Wayland client execution and fully isolated interactive SCI desktop services.
+See the display/text plan for prioritized evidence, not just feature names.
 
-Ran `python3 scripts/check-desktop-launcher.py --in /Users/undivisible/.codex/worktrees/compiler-loop-continuation/inauguration/target/verification/scoped-value320-installed-release-r3/in --build-dir /tmp/space-original-desktop-baseline-20261019`. Kernel built and booted. Keyboard next/previous/filter/reset selection reached expected serial focus markers. The run FAILED at launcher panel pixel assertion (`launcher panel absent`); primary visual inspection of `launcher-util.png` confirmed the bar absent despite the last serial marker saying opened. This needs diagnosis before claiming a clean baseline. QEMU was cleaned up by the runner. Keep this failure receipt; do not weaken the assertion.
+## Parked compiler work
 
-Compiler operator focused test has now terminated: 8 passed, 2 failed. The high-bit comparison test incorrectly expects shallow `fold_expr` to recursively fold its children; `item_not` still lacks Invalid evidence and requires investigation. Uncommitted compiler candidate remains unpublished. The live-session note above is historical; do not restart it without checking current state.
+0.9.321 remains unpublished and must not be used as the verified OS baseline.
+It adds exact function-item/pointer source facts, alias provenance, indirect calls
+and shared validation/C backend work. Existing receipts live under that checkout's
+`target/verification/`:
 
-## Architecture priority clarified by user
+- `scoped-value320-published-r1.json`: preceding 0.9.320 publication/gates.
+- `nested-alias321-runtime-r3/results.json`: 60 candidate checks +22 references
+  passed with immutable debug-r2.
+- `callable321-runtime-r1/results.json`: 84 checks +28 Rust references; 24 failures
+  remain for conditional joins/dynamic selectors across JIT/native/profiles.
+- `callable321-operator-focused-r1.log`: 8 passed, 2 failed. `item_not` lacks Invalid
+  proof; high-bit test assumes recursive folding that shallow fold_expr lacks.
+- `callable321-generic-alias-origin-r1/results.json`: generic forwarding aliases
+  lose exact specialization origin (18 checks, 6 Rust references).
+- C declaration-order patch remains scratch-only at
+  `callable321-c-declaration-order-proposal/candidate.patch`, SHA256
+  `7181ec311a23be1f98a6d207a20fd193a40e0fc23fde82f6907a2eb415d9321d`.
 
-Hypermodularity and respect for the existing nanokernel/compiler/SCI design take
-priority over adding desktop features to the current monolith. `AGENTS.md` now
-records the layer/authority contract, current isolation limitations, native-call
-ABI boundary, desktop module responsibilities and verification requirements.
-Canonical architecture, README, command-desktop and compositor/client documents
-are updated consistently. New action/layout work must be independently testable
-and module-owned, reuse SPDP/channels and retain a path to actual SCI services;
-file extraction alone is not an isolation claim.
+Collect current source and revalidate receipts before editing. Compiler commands
+use `AR=$(xcrun --find ar)`, target dir
+`/Users/undivisible/projects/inauguration/in-cli/target`, jobs1 and offline Cargo.
+Follow its AGENTS: focused tests, fmt/check/strict Clippy/full Cargo, source-built
+update, matrix/owned-native/default integration/selfhost/protocol and relevant
+benchmark gates before publishing a patch bump. Do not weaken source proofs or
+ordinary language exception propagation to pass OS boot fixtures.
 
-## Baseline replay and proposed implementation
+Final checkpoint receipt: `target/verification/command-desktop-checkpoint-final/receipt.json`
+pins logs and source identities, including known failures. These local artifacts
+may need regeneration on another machine; commands and tests are checked in.
 
-Unchanged-kernel replay completed all existing desktop interaction and pixel
-assertions successfully in `/tmp/space-desktop-settle-20261019/`. Four launcher
-samples at 0/1/3/6 seconds each measured 150324 panel pixels and 792 accent
-pixels. The original failure remains preserved; timing is a hypothesis, not a
-proven root cause. No production assertions were removed or reduced.
+## Next actions for another agent
 
-A modular first-slice proposal is ready, not applied:
-`target/verification/commandbar-proposal/commandbar.delta.patch` SHA256
-`67860e1231e460872ecb127a65bbe6d47ca89d5189ba1dfaf789434e342349ef`.
-Consult the actual `ready.json`/hash before use (the patch SHA should be verified,
-not trusted from prose). Command state/filter/dispatch is in
-`display-commandbar.in`, geometry in `display-layout.in`; display keeps rendering
-and device input. Five actions cover tiling, close/minimize and existing-terminal
-focus. Shared lookup serves keyboard, pointer and rendering. A 54-case checker
-and QEMU extension plan are prepared but unrun. Floating, scrolling columns and
-new terminal/browser component launch remain required later work. Primary must
-review the proposal against updated AGENTS before applying it.
+1. Read the goal/architecture documents and revalidate checkouts, receipts and
+   published revisions. Resolve the recorded compiler/runtime and damage-gate
+   failures as appropriate; keep their baseline evidence intact.
+2. Make the reuse decision with a bounded Space port spike, then implement output
+   mode/work-area/logical-to-pixel contracts and a real multi-typeface text path.
+   Test resolutions/scales, pitch/format, metrics, fallback and rendered input.
+3. Advance the actual SCI surface/seat/client lifecycle and capability boundaries;
+   keep shell, layout, compositor, text, input and app ownership modular.
+4. In Subspace preserve static memory, authoritative .in topology, exclusive
+   peripheral grants, typed ports, MPU denial, fault fail-stop and SCI-E/board
+   boundaries; run its affected gates before any embedded claim/publication.
+5. Repair Inauguration's concrete general correctness gaps and publish only with
+   full compiler gates. Preserve the broad OS goal; this checkpoint is groundwork.
+
+The overall goal remains active. No completion, isolation or compatibility claim
+is implied by this handoff.

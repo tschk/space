@@ -19,6 +19,7 @@ Read the relevant canonical documents before changing a boundary:
 - [`docs/personalities.md`](docs/personalities.md) and [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md): foreign ABI boundaries and executable coverage.
 - [`docs/plans/2026-10-19-command-desktop.md`](docs/plans/2026-10-19-command-desktop.md): original command desktop and acceptance criteria.
 - [`docs/plans/2026-10-16-working-os.md`](docs/plans/2026-10-16-working-os.md): integration work; distinguish historical results from fresh verification.
+- [`docs/plans/2026-10-19-three-repository-architecture.md`](docs/plans/2026-10-19-three-repository-architecture.md): Space/Subspace/Inauguration ownership and end-to-end verification.
 
 These documents describe both destination and current implementation. When they
 disagree, inspect source and runtime evidence, repair the affected documents,
@@ -87,6 +88,13 @@ Architecture wrappers belong in Space; their calling-convention implementation
 and regressions belong generically in Inauguration.
 
 ### Hypermodular desktop contract
+
+**Immediate priority:** resolution/output contracts, logical/pixel scaling and
+multiple real typefaces. Read the [display/text architecture](docs/plans/2026-10-19-display-text-architecture.md)
+before extending the compositor. Evaluate mature rendering/text infrastructure
+before building a new compositor, font parser or shaper from scratch. Keep
+ambitious platform architecture explicit and prove it through executable slices.
+
 
 Build an original Space desktop: a basic niri-like tiling model with a
 Raycast-style bar for window targets, layout/window controls, terminal and

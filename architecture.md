@@ -56,6 +56,14 @@ The kernel-linked prototype does not establish that these services are isolated.
 See the [command desktop design](docs/plans/2026-10-19-command-desktop.md) and
 [compositor/client contract](docs/compositor-client-split.md).
 
+The immediate desktop priority is a real output/scale/text platform, including
+multiple typefaces, before broader window-management features. The
+[display/text architecture](docs/plans/2026-10-19-display-text-architecture.md)
+defines the destination and evidence gates. The
+[three-repository plan](docs/plans/2026-10-19-three-repository-architecture.md)
+relates this work to Subspace's bounded embedded runtime and Inauguration's
+general compiler contract without merging their artifact or policy boundaries.
+
 ## .in
 
 .in is the native language. It describes components, capabilities, objects,

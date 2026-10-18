@@ -28,13 +28,17 @@ contracts, with a minimal nanokernel and generic Inauguration → SCI tooling. T
 current root links services as boot scaffolding. The [original desktop design](docs/plans/2026-10-19-command-desktop.md)
 uses simple tiling and a command bar with separate layout, input, compositor and
 application responsibilities. [AGENTS.md](AGENTS.md) records the contributor invariants.
+Resolution, scaling and multiple typefaces are the [next platform foundations](docs/plans/2026-10-19-display-text-architecture.md).
+See the [cross-repository architecture](docs/plans/2026-10-19-three-repository-architecture.md) for Subspace and Inauguration.
 
 ## Status
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
 under QEMU. Desktop works via shell `desktop` (kernel-linked `components/display.in`
-+ PS/2 `components/mouse.in`). Maintained checks: shell + full runtime
++ PS/2 `components/mouse.in`). Tab opens a bounded command bar for existing
+windows, tiling, close/minimize and terminal focus; command and layout modules
+remain kernel-linked groundwork. Maintained checks: shell + full runtime
 display/input (preempt-stop), SCI loader (`hello`/`uecho`), execve SCI from FS,
 Linux demo / ELF personality, VFS, NVMe volume multi-file + deep soak, UDP/TCP
 data path, DHCP lease, DNS A for dotted names, personalities (Linux/Windows/Darwin).

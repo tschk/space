@@ -2,6 +2,13 @@
 
 User direction, 2026-10-19: a basic niri-like layout controlled through a Raycast-style bar. Layout mode, window controls, terminal and eventually browser belong in that bar. The finished desktop is original Space software, informed by Alpenglowed and the privately supplied Rover reference. A stock Budgie session is not an acceptance criterion.
 
+## Platform foundations take priority
+
+Resolution, scaling, multiple real typefaces and reusable compositor/text
+infrastructure precede broader window-manager features. Follow the
+[display/text platform design](2026-10-19-display-text-architecture.md); this
+command bar is one client/service boundary within that platform.
+
 ## Interaction contract
 
 One summonable bar owns query, results, selected row and confirmation. Results combine live window targets and explicitly registered desktop actions. Keyboard and pointer confirmation pass the same action identifier to one dispatcher. Query editing resets selection; navigation wraps over actual visible results. Empty/no-match confirmation cannot invoke a hidden action. Escape dismisses the bar and preserves the previous live window focus; text typed into the bar never reaches the terminal underneath.
@@ -51,3 +58,24 @@ Native desktop commands are Space-owned and must eventually target capability-ch
 Require actual QEMU input and rendered inspection: select commands by keyboard and pointer; verify equivalent results; tile/float roundtrip geometry and retained terminal content; focus after close/minimize; unmatched search and dismissal; terminal input after a transition; shell return. Extend existing desktop launcher checks rather than replacing their assertions. For scrolling columns, additionally prove overflow, viewport panning and accessible offscreen windows. Preserve affected boot, desktop damage, SCI and personality gates.
 
 Current baseline rerun is not green: launcher-panel pixels were absent after an opened serial marker. See the handoff for the exact command and artifacts. Repair or explain that failure before using it as acceptance for new behavior.
+
+## Implemented groundwork checkpoint
+
+The current checkpoint extracts command state/filtering/dispatch into
+`components/display-commandbar.in` and tiling geometry into
+`components/display-layout.in`. Existing window targets and five bounded actions
+share one lookup: tile, close focused, minimize focused, and focus either existing
+terminal. The display backend retains drawing and device adapters. This remains
+kernel-linked; it is not the SCI service separation described above.
+
+Tiling accounts for taskbars, margins, gaps, title bars and minimum content size,
+and refuses insufficient space before mutation. Layout/close/minimize cancel
+stale drag state; hidden/removed windows reject keyboard input. Command labels use
+the existing raw title-address ABI through an initialized immutable-label table.
+The model checker adapts literal pointers into modeled memory; the real boot/SCI
+checks remain necessary to catch representation/ABI differences.
+
+Floating restore, scrolling columns, new independent terminal sessions, browser
+launch and the output/text architecture remain unfinished. Resolution and multiple
+typefaces now take priority over expanding this command set. See the current
+handoff for exact evidence, including the standalone SCI baseline compiler failure.
