@@ -138,27 +138,54 @@ on Space for the chosen path, preserve fallback boot, and document why alternati
 were rejected. Reuse proven rendering/text code where it fits; do not turn a large
 from-scratch compositor into an unexamined prerequisite for the original shell.
 
+### Evaluated implementation paths (2026-10-19)
+
+| Path | Candidate stack | Portability & runtime requirements | Protocol / text coverage | License & isolation cost | Decision |
+|---|---|---|---|---|---|
+| **Path A: Modular `.in` service extraction over software BGA/Multiboot scanout + bounded font/shaping adapter** | Native `.in` modules (`display-output.in`, `display-text.in`, `display-layout.in`, `display-commandbar.in`, `font.in`) + SPDP 32-byte shared-page channel | Zero libc/POSIX dependency; compiles directly with Inauguration `--target-triple x86_64-unknown-none`; deterministic fixed-arena memory | Validated BGA mode transactions (`1024x768`, `1280x720`, `1920x1080`), rational scale (`2x`/`3x`), dual concurrent typefaces (`Space Term Mono` + proportional `Space UI Sans`), UTF-8 decoding, missing-glyph fallback box, SPDP damage/input | CC0-1.0 / MIT; preserves nanokernel/SCI capability boundaries and 30+ fps bounded damage | **Selected for Slices 1–3** (with explicit `SFNT1` asset validator ready for offline/adapter glyph table ingestion) |
+| **Path B: Port upstream C/Rust compositor & font stack (`wlroots`/`smithay` + `freetype`/`harfbuzz`/`stb_truetype`) via freestanding C/FFI** | Upstream C libraries linked into freestanding image or SCI service | Requires `malloc`/`free`, `libm` floating-point math, C ABI shims, and ~150 KB+ code/tables for TrueType/OpenType hinting & GPOS/GSUB | Full OpenType/TrueType outlines and complex script shaping | MIT / FTL / BSD; linking a C allocator into CPL0 violates nanokernel minimal-TCB rules until isolated in a CPL3 SCI font/compositor service | **Deferred to CPL3 SCI Font/Text Service (Slice 4)**; binary `SFNT1` header/bounds contract implemented now in `text-validate-asset` |
+| **Path C: Upstream Wayland compositor & clients via Linux/Darwin personality runtime** | Stock Wayland compositor + `epoll`/`drm`/`gbm`/`memfd` translation | Requires full POSIX process lifecycle, `mmap` shared fds, Unix domain sockets, DRM/KMS ioctls | Full stock Wayland ecosystem | High TCB and impedance mismatch; violates Space's native component + capability + object model (`AGENTS.md`) | **Rejected** as native desktop foundation (Wayland remains an edge compatibility adapter target for Slice 5) |
+
+### Executable port spike and implemented contracts
+
+1. **`components/display-output.in` (Output, Coordinate & Mode Transaction Contract):**
+   - Owns output identity (`out-id`), monotonic configuration generation (`out-generation`), physical mode (`out-phys-w`, `out-phys-h`, `out-pitch`, `out-bpp`), rational scale (`out-scale-num`, `out-scale-den`), rotation (`out-rotation`), logical dimensions (`out-logical-w`, `out-logical-h`), and work-area geometry (`out-work-x`, `out-work-y`, `out-work-w`, `out-work-h`).
+   - Validates candidate mode changes as an overflow-safe transaction (`out-validate-mode`) against supported modes (`1024×768`, `1280×720`, `1920×1080`, plus portrait logical geometry fixture `768×1024`), 4-byte pitch alignment, minimum logical work-area (`>= 320×200`), and the 16 MiB BGA framebuffer ceiling (`FB-BUFFER-MAX-BYTES = 16777216`). Refuses invalid/overflow modes (`OUT-ERR-DIMENSIONS`, `OUT-ERR-UNSUPPORTED`, `OUT-ERR-PITCH`, `OUT-ERR-OVERFLOW`, `OUT-ERR-SCALE`, `OUT-ERR-WORK-AREA`) while preserving the prior active output state and generation.
+   - Centralizes coordinate transforms (`out-logical-to-phys-x/y`, `out-phys-to-logical-x/y`), outward damage rounding (`out-damage-phys-x0/x1`), shared tile column edges (`out-tile-col-x/w` so adjacent columns never overlap or gap), and window clamping across resolution switches (`out-clamp-windows`).
+   - Switches live QEMU BGA scanout modes at runtime (`out-set-bga-mode`) via `fb mode <w> <h>` and `fb scale <2|3>`.
+
+2. **`components/font.in` and `components/display-text.in` (Dual-Typeface, UTF-8, Cache & Fallback Contract):**
+   - **Two genuinely distinct, permissively distributable faces rendered concurrently:**
+     - **Face 0 (`FONT-FACE-MONO = 0`, `Space Term Mono`):** Public Domain / CC0-1.0 8×8 fixed-width terminal programmer strike (`fb-font` / `fb-font-aa`), constant 8-unit logical advance, seriffed `I`/`1`/`l` and zero-slash for unambiguous terminal cells.
+     - **Face 1 (`FONT-FACE-SANS = 1`, `Space UI Sans`):** MIT / CC0-1.0 original geometric proportional sans-serif strike (`fb-font-sans` / `fb-font-sans-aa` / `fb-font-sans-adv`), variable per-glyph logical advances (`4..8` units: narrow `I`/`i`/`l`/`.`/`:`/`!` at 4 units, compact `1`/`f`/`j`/`r`/`t` at 5–6 units, standard caps/digits at 7 units, wide `M`/`W`/`m`/`w` at 8 units) and distinct sans-serif glyph geometry.
+   - **Role selection & terminal cell invariants:** `text-role-face` maps `TEXT-ROLE-UI-BODY`, `TEXT-ROLE-UI-TITLE`, `TEXT-ROLE-CMD-QUERY`, and `TEXT-ROLE-STATUS` to `FONT-FACE-SANS`, while pinning `TEXT-ROLE-TERM-MONO` to `FONT-FACE-MONO`. Terminal cell metrics (`text-term-cell-w`, `text-term-cell-h`, `text-term-baseline`) remain invariant when UI roles render with `Space UI Sans`.
+   - **Untrusted font asset validation & bounded glyph cache:** `text-validate-asset` validates the 32-byte `SFNT1` binary asset header (`magic == 0x53464E5431`, version `1`, glyph range, table offset/bytes, advance bounds `1..32`, and rejects unsupported color/emoji bitmap flags `TEXT-ERR-COLOR-UNSUPPORTED` instead of misrendering). `display-text.in` maintains a bounded 64-slot glyph advance cache keyed by `(face, codepoint, scale)` with explicit invalidation (`text-cache-invalidate`) on scale transitions.
+   - **UTF-8 decoding, codepoint-boundary hit testing, and missing-glyph fallback:** `text-utf8-decode` decodes 1–4 byte UTF-8 sequences and replaces malformed/overlong sequences with `U+FFFD` (`65533`) while advancing safely. `text-measure-run`, `text-caret-x`, and `text-hit-test-byte` operate on UTF-8 codepoint boundaries and shared shaped advances. Uncovered codepoints (`> 0x7E` or `U+FFFD`) render a deterministic visible fallback box (`text-draw-fallback-box`: bordered hollow frame with inner diagnostic cross) and advance by a deterministic cell width.
+
 ## Delivery sequence and acceptance
 
-1. **Architecture and baseline:** document current ownership and failures, inspect
-   reference implementations, preserve boot/SCI/personality gates, and record an
-   upstream reuse decision with an executable port spike. Current command-bar
-   extraction is groundwork, not a completed compositor.
-2. **Resolution foundation:** eliminate false fixed-resolution labels; introduce a
-   bounded output/work-area contract and test at 1024×768, 1280×720 and 1920×1080,
-   plus a portrait logical geometry fixture and invalid/overflow cases. Prove
-   nontrivial pitch/format handling, clipping, pointer alignment, resize refusal
-   preserving the old state, and reachable controls. State which modes the actual
-   backend can present; model fixtures alone do not prove them.
-3. **Typeface foundation:** measure and render two distinct faces concurrently;
-   verify role selection, terminal cell invariants, baseline/alignment, missing
-   glyphs, bounded assets/cache failure and text-size changes. Include real
-   screenshots and input/caret interaction at two supported scales. Add Unicode
-   shaping/fallback cases as the selected text stack is brought up.
-4. **Native interactive services:** migrate surface/seat ownership beyond the
+1. **Architecture and baseline (Completed 2026-10-19):** documented ownership and
+   baseline failures, repaired Inauguration `0.9.321` general compiler callable/native-stub
+   gaps, restored `check-runtime-components.sh`, `check-spdp-sci.py`, `check-spdp-input.py`,
+   and `check-desktop-damage.sh` (39 fps >= 30 fps threshold), and recorded the
+   3-path reuse evaluation with an executable port spike.
+2. **Resolution foundation (Completed 2026-10-19):** eliminated hardcoded `"1920 x 1080"`
+   labels in `comp-draw-utilities-content`; implemented `components/display-output.in`
+   and verified model + native + JIT + live QEMU BGA mode transitions across `1024×768`,
+   `1280×720`, and `1920×1080`, plus a portrait logical geometry fixture (`768×1024`)
+   and invalid/overflow refusal preserving prior mode and generation (`scripts/check-display-output-text.py`).
+3. **Typeface foundation (Completed 2026-10-19):** implemented concurrent rendering
+   of `Space UI Sans` (proportional) and `Space Term Mono` (fixed-width) in
+   `components/font.in` and `components/display-text.in`; verified role selection,
+   terminal cell invariants, UTF-8 decoding and missing-glyph fallback boxes (`utf8`
+   command in `TERMINAL 1`), untrusted asset/cache validation, scale changes (`2x`
+   100% and `3x` 150%), and rendered QEMU screenshots + input/caret interaction.
+   Full TrueType/OpenType outline rasterization and complex-script shaping remain
+   scoped to the CPL3 SCI font service in Slice 4.
+4. **Native interactive services (Next):** migrate surface/seat ownership beyond the
    bounded SCI proof; verify two clients, independent input, buffer release,
    disconnect cleanup and denied cross-client operations. Preserve boot recovery.
-5. **Original shell and compatibility:** complete tiled columns/viewport and
+5. **Original shell and compatibility (Next):** complete tiled columns/viewport and
    floating roundtrips, command registry/session launch and real browser strategy.
    Add Wayland or other clients through adapters without replacing native policy.
    Test multi-output attach/remove and mixed scale once the backend supports them.

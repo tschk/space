@@ -1,0 +1,468 @@
+package space.display
+
+// ============================================================================
+// Space Multi-Typeface, UTF-8 Shaping/Measurement, and Glyph Cache Contract
+// ============================================================================
+//
+// Separates face identity, font asset validation, role-based theme lookup,
+// UTF-8 decoding, run measurement, caret/hit-testing, bounded glyph caching,
+// and grayscale/bitmap rasterization across Space UI Sans and Space Term Mono.
+// ============================================================================
+
+const TEXT-ROLE-UI-BODY = 0
+const TEXT-ROLE-COMMAND = 1
+const TEXT-ROLE-TERM-MONO = 2
+const TEXT-ROLE-SYMBOLS = 3
+const TEXT-ROLE-FALLBACK = 4
+
+const TEXT-ASSET-MAGIC = 0x53464E54
+const TEXT-ASSET-VERSION = 1
+const TEXT-ASSET-FLAG-MONO = 1
+const TEXT-ASSET-FLAG-PROP = 2
+const TEXT-ASSET-FLAG-COLOR = 4
+const TEXT-ASSET-HEADER-BYTES = 32
+const TEXT-ASSET-MIN-BYTES = 1184
+
+const TEXT-CP-REPLACEMENT = 65533
+const TEXT-CACHE-SLOTS = 64
+
+var text-ui-face: Int = 1
+var text-utf8-bytes: Int = 1
+
+var text-cache-keys: Int = 0
+var text-cache-vals: Int = 0
+var text-cache-gen: Int = 1
+var text-cache-hits: Int = 0
+var text-cache-misses: Int = 0
+var text-cache-evictions: Int = 0
+
+fn text-init() -> void {
+  text-ui-face = FONT-FACE-SANS
+  if text-cache-keys == 0 {
+    text-cache-keys = alloc(TEXT-CACHE-SLOTS * 8)
+    text-cache-vals = alloc(TEXT-CACHE-SLOTS * 8)
+  }
+  text-cache-invalidate()
+  return
+}
+
+fn text-cache-invalidate() -> void {
+  text-cache-gen = text-cache-gen + 1
+  if text-cache-keys == 0 { return }
+  let i = 0
+  while i < TEXT-CACHE-SLOTS {
+    store64(text-cache-keys + i * 8, -1)
+    store64(text-cache-vals + i * 8, 0)
+    i = i + 1
+  }
+  return
+}
+
+// Validate an untrusted font strike asset buffer before use.
+// Refuses null, bad magic/version, unsupported color/emoji strikes,
+// non-128 ASCII table counts, out-of-range metrics, or truncated buffers.
+fn text-validate-asset(asset: Int, byte-len: Int) -> Int {
+  if asset == 0 || byte-len < TEXT-ASSET-MIN-BYTES { return 0 }
+  let magic = load32(asset + 0)
+  let version = load32(asset + 4)
+  let face-id = load32(asset + 8)
+  let flags = load32(asset + 12)
+  let glyphs = load32(asset + 16)
+  let cell-w = load32(asset + 20)
+  let cell-h = load32(asset + 24)
+  let baseline = load32(asset + 28)
+
+  if magic != TEXT-ASSET-MAGIC || version != TEXT-ASSET-VERSION { return 0 }
+  if face-id < 0 || face-id > 1 { return 0 }
+  // Color/emoji strikes are explicitly refused rather than silently misrendered.
+  if (flags & TEXT-ASSET-FLAG-COLOR) != 0 { return 0 }
+  if (flags & (TEXT-ASSET-FLAG-MONO | TEXT-ASSET-FLAG-PROP)) == 0 { return 0 }
+  if glyphs != 128 { return 0 }
+  if cell-w < 4 || cell-w > 16 || cell-h != 8 { return 0 }
+  if baseline <= 0 || baseline > cell-h { return 0 }
+
+  let adv-base = asset + TEXT-ASSET-HEADER-BYTES + 1024
+  let ch = 32
+  while ch < 127 {
+    let adv = load8(adv-base + ch)
+    if adv < 2 || adv > cell-w { return 0 }
+    if (flags & TEXT-ASSET-FLAG-MONO) != 0 && adv != cell-w { return 0 }
+    ch = ch + 1
+  }
+  return 1
+}
+
+// Map a semantic text role to its typeface ID.
+// Terminal and symbol roles are pinned to FONT-FACE-MONO so terminal cell
+// metrics remain invariant when the UI face changes.
+fn text-role-face(role: Int) -> Int {
+  if role == TEXT-ROLE-TERM-MONO || role == TEXT-ROLE-SYMBOLS {
+    return FONT-FACE-MONO
+  }
+  return text-ui-face
+}
+
+fn text-set-ui-face(face: Int) -> Int {
+  if face != FONT-FACE-MONO && face != FONT-FACE-SANS { return 0 }
+  text-ui-face = face
+  text-cache-invalidate()
+  return 1
+}
+
+// Terminal cell metric invariants (independent of text-ui-face).
+fn text-term-cell-w() -> Int {
+  return 8 * fb-font-scale + 2
+}
+
+fn text-term-cell-h() -> Int {
+  return 8 * fb-font-scale + 5
+}
+
+fn text-term-baseline() -> Int {
+  return 7 * fb-font-scale
+}
+
+fn text-face-baseline(face: Int, scale: Int) -> Int {
+  return 7 * scale
+}
+
+fn text-is-supported-cp(cp: Int) -> Int {
+  if cp >= 32 && cp <= 126 { return 1 }
+  return 0
+}
+
+// Compute pixel advance for (face, codepoint, scale).
+fn text-glyph-advance-raw(face: Int, cp: Int, scale: Int) -> Int {
+  if scale <= 0 { scale = 2 }
+  if face == FONT-FACE-MONO {
+    return 8 * scale + 2
+  }
+  if text-is-supported-cp(cp) == 0 {
+    return 7 * scale + 2
+  }
+  if fb-font-sans-adv != 0 {
+    let units = load8(fb-font-sans-adv + cp)
+    if units >= 3 && units <= 8 {
+      return units * scale + 2
+    }
+  }
+  return 7 * scale + 2
+}
+
+// Bounded cache lookup for glyph advance and coverage metadata.
+fn text-glyph-advance(face: Int, cp: Int, scale: Int) -> Int {
+  if scale <= 0 { scale = 2 }
+  let clamped-cp = cp & 0xFFFF
+  let key = ((face & 3) << 24) | ((scale & 7) << 20) | clamped-cp
+  if text-cache-keys != 0 {
+    let slot = (clamped-cp * 17 + face * 31 + scale * 7) & (TEXT-CACHE-SLOTS - 1)
+    let cur-key = load64(text-cache-keys + slot * 8)
+    if cur-key == key {
+      text-cache-hits = text-cache-hits + 1
+      return load64(text-cache-vals + slot * 8)
+    }
+    text-cache-misses = text-cache-misses + 1
+    if cur-key >= 0 {
+      text-cache-evictions = text-cache-evictions + 1
+    }
+    let adv = text-glyph-advance-raw(face, cp, scale)
+    store64(text-cache-keys + slot * 8, key)
+    store64(text-cache-vals + slot * 8, adv)
+    return adv
+  }
+  return text-glyph-advance-raw(face, cp, scale)
+}
+
+// Decode one UTF-8 codepoint at str + idx. Sets text-utf8-bytes (1..4).
+// Malformed, overlong, or truncated sequences return TEXT-CP-REPLACEMENT (0xFFFD)
+// and advance by 1 byte.
+fn text-utf8-decode(str: Int, idx: Int) -> Int {
+  let b0 = load8(str + idx) & 0xFF
+  if b0 == 0 {
+    text-utf8-bytes = 0
+    return 0
+  }
+  if b0 < 0x80 {
+    text-utf8-bytes = 1
+    return b0
+  }
+  // 2-byte sequence: 110xxxxx 10xxxxxx (0xC2..0xDF)
+  if b0 >= 0xC2 && b0 <= 0xDF {
+    let b1 = load8(str + idx + 1) & 0xFF
+    if (b1 & 0xC0) == 0x80 {
+      text-utf8-bytes = 2
+      return ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+    }
+    text-utf8-bytes = 1
+    return TEXT-CP-REPLACEMENT
+  }
+  // 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx (0xE0..0xEF)
+  if b0 >= 0xE0 && b0 <= 0xEF {
+    let b1 = load8(str + idx + 1) & 0xFF
+    let b2 = load8(str + idx + 2) & 0xFF
+    if (b1 & 0xC0) == 0x80 && (b2 & 0xC0) == 0x80 {
+      let cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+      if cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF) {
+        text-utf8-bytes = 3
+        return cp
+      }
+    }
+    text-utf8-bytes = 1
+    return TEXT-CP-REPLACEMENT
+  }
+  // 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (0xF0..0xF4)
+  if b0 >= 0xF0 && b0 <= 0xF4 {
+    let b1 = load8(str + idx + 1) & 0xFF
+    let b2 = load8(str + idx + 2) & 0xFF
+    let b3 = load8(str + idx + 3) & 0xFF
+    if (b1 & 0xC0) == 0x80 && (b2 & 0xC0) == 0x80 && (b3 & 0xC0) == 0x80 {
+      let cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+      if cp >= 0x10000 && cp <= 0x10FFFF {
+        text-utf8-bytes = 4
+        return cp
+      }
+    }
+    text-utf8-bytes = 1
+    return TEXT-CP-REPLACEMENT
+  }
+  text-utf8-bytes = 1
+  return TEXT-CP-REPLACEMENT
+}
+
+// Measure the pixel width of a UTF-8 text run for a role at the current scale.
+// Layout and rendering call the exact same measurement contract.
+fn text-measure-run(role: Int, str: Int, max-bytes: Int) -> Int {
+  if str == 0 || max-bytes <= 0 { return 0 }
+  let face = text-role-face(role)
+  let scale = fb-font-scale
+  let width = 0
+  let idx = 0
+  while idx < max-bytes {
+    let cp = text-utf8-decode(str, idx)
+    if text-utf8-bytes == 0 { return width }
+    width = width + text-glyph-advance(face, cp, scale)
+    idx = idx + text-utf8-bytes
+  }
+  return width
+}
+
+// Compute the caret X offset at a byte boundary within a UTF-8 string.
+fn text-caret-x(role: Int, str: Int, byte-limit: Int) -> Int {
+  if str == 0 || byte-limit <= 0 { return 0 }
+  return text-measure-run(role, str, byte-limit)
+}
+
+// Inverse pointer hit-testing: map a relative pixel X offset to the UTF-8
+// codepoint boundary byte index in `str`.
+fn text-hit-test-byte(role: Int, str: Int, rel-x: Int) -> Int {
+  if str == 0 || rel-x <= 0 { return 0 }
+  let face = text-role-face(role)
+  let scale = fb-font-scale
+  let cx = 0
+  let idx = 0
+  while idx < 128 {
+    let cp = text-utf8-decode(str, idx)
+    if text-utf8-bytes == 0 { return idx }
+    let adv = text-glyph-advance(face, cp, scale)
+    if rel-x < cx + adv / 2 {
+      return idx
+    }
+    cx = cx + adv
+    idx = idx + text-utf8-bytes
+    if rel-x < cx {
+      return idx
+    }
+  }
+  return idx
+}
+
+// Draw a deterministic missing-glyph fallback box (.notdef tofu) at (x, y)
+// for unsupported codepoints or invalid UTF-8 sequences.
+fn text-draw-fallback-box(x: Int, y: Int, scale: Int, color: Int) -> void {
+  if fb-ready == 0 { return }
+  if scale <= 0 { scale = 2 }
+  let bw = 6 * scale
+  let bh = 7 * scale
+  fb-fill-rect(x, y, bw, scale, color)
+  fb-fill-rect(x, y + bh - scale, bw, scale, color)
+  fb-fill-rect(x, y, scale, bh, color)
+  fb-fill-rect(x + bw - scale, y, scale, bh, color)
+  // Inner center mark so the fallback box is unmistakable from 'O' or '0'.
+  fb-fill-rect(x + 2 * scale, y + 3 * scale, 2 * scale, scale, color)
+  return
+}
+
+// Draw one character from the selected typeface with grayscale coverage blending.
+fn text-draw-char-face-aa(face: Int, x: Int, y: Int, cp: Int, color: Int) -> void {
+  if fb-ready == 0 { return }
+  let scale = fb-font-scale
+  if scale <= 0 { scale = 2 }
+  if text-is-supported-cp(cp) == 0 {
+    text-draw-fallback-box(x, y, scale, color)
+    return
+  }
+  let aa-table = fb-font-aa
+  if face == FONT-FACE-SANS && fb-font-sans-aa != 0 {
+    aa-table = fb-font-sans-aa
+  }
+  if aa-table == 0 { return }
+
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
+  let gw = 8 * scale
+  let gh = 8 * scale
+  if rx + gw <= 0 || rx >= fb-width || ry + gh <= 0 || ry >= fb-height {
+    return
+  }
+  if comp-clip-valid != 0 {
+    if rx + gw <= comp-clip-x0 || rx >= comp-clip-x1 || ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 {
+      return
+    }
+  }
+
+  let cr = (color >> 16) & 0xFF
+  let cg = (color >> 8) & 0xFF
+  let cb = color & 0xFF
+  let row = 0
+  let py = ry
+  while row < 8 {
+    let col = 0
+    let px = rx
+    while col < 8 {
+      let cov = load8(aa-table + cp * 64 + row * 8 + col)
+      if cov > 0 {
+        let ia = 255 - cov
+        let sy = 0
+        while sy < scale {
+          let yy = py + sy
+          if yy >= 0 && yy < fb-height {
+            let sx = 0
+            while sx < scale {
+              let xx = px + sx
+              if xx >= 0 && xx < fb-width && comp-clip-test(xx, yy) != 0 {
+                let off = yy * fb-pitch + xx * 4
+                let dst = load32(fb-addr + off)
+                let dr = (dst >> 16) & 0xFF
+                let dg = (dst >> 8) & 0xFF
+                let db = dst & 0xFF
+                let nr = (cr * cov + dr * ia + 255) >> 8
+                let ng = (cg * cov + dg * ia + 255) >> 8
+                let nb = (cb * cov + db * ia + 255) >> 8
+                store32(fb-addr + off, (nr << 16) | (ng << 8) | nb)
+              }
+              sx = sx + 1
+            }
+          }
+          sy = sy + 1
+        }
+      }
+      px = px + scale
+      col = col + 1
+    }
+    py = py + scale
+    row = row + 1
+  }
+  return
+}
+
+// Draw one character from the selected typeface using crisp 1-bit bitmap strokes.
+fn text-draw-char-face(face: Int, x: Int, y: Int, cp: Int, color: Int) -> void {
+  if fb-ready == 0 { return }
+  let scale = fb-font-scale
+  if scale <= 0 { scale = 2 }
+  if text-is-supported-cp(cp) == 0 {
+    text-draw-fallback-box(x, y, scale, color)
+    return
+  }
+  let bmp-table = fb-font
+  if face == FONT-FACE-SANS && fb-font-sans != 0 {
+    bmp-table = fb-font-sans
+  }
+  if bmp-table == 0 { return }
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
+  let gw = 8 * scale
+  let gh = 8 * scale
+  if rx + gw <= 0 || rx >= fb-width || ry + gh <= 0 || ry >= fb-height {
+    return
+  }
+  if comp-clip-valid != 0 {
+    if rx + gw <= comp-clip-x0 || rx >= comp-clip-x1 || ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 {
+      return
+    }
+  }
+  if scale == 2 {
+    if rx >= 0 && rx + 16 <= fb-width && ry >= 0 && ry + 16 <= fb-height {
+      if comp-clip-valid == 0 || (rx >= comp-clip-x0 && rx + 16 <= comp-clip-x1 && ry >= comp-clip-y0 && ry + 16 <= comp-clip-y1) {
+        let color32 = color & 0xFFFFFFFF
+        let color64 = color32 | (color32 << 32)
+        let glyph-base = bmp-table + cp * 8
+        let row = 0
+        let row-addr = fb-addr + ry * fb-pitch + rx * 4
+        while row < 8 {
+          let bits = load8(glyph-base + row)
+          if bits != 0 {
+            let col = 0
+            let pixel-addr = row-addr
+            while col < 8 {
+              if ((bits >> (7 - col)) & 1) != 0 {
+                store64(pixel-addr, color64)
+                store64(pixel-addr + fb-pitch, color64)
+              }
+              pixel-addr = pixel-addr + 8
+              col = col + 1
+            }
+          }
+          row-addr = row-addr + fb-pitch * 2
+          row = row + 1
+        }
+        return
+      }
+    }
+  }
+  let glyph-base = bmp-table + cp * 8
+  let row = 0
+  while row < 8 {
+    let bits = load8(glyph-base + row)
+    if bits != 0 {
+      let col = 0
+      while col < 8 {
+        if ((bits >> (7 - col)) & 1) != 0 {
+          fb-fill-rect(x + col * scale, y + row * scale, scale, scale, color)
+        }
+        col = col + 1
+      }
+    }
+    row = row + 1
+  }
+  return
+}
+
+// Set text scale (2 = 100% / 16px, 3 = 150% / 24px). Refuses out-of-range scales.
+fn text-set-scale(scale: Int) -> Int {
+  if scale < 1 || scale > 4 { return 0 }
+  fb-font-scale = scale
+  if scale == 3 {
+    out-scale-num = 150
+    out-scale-den = 100
+  } else if scale == 2 {
+    out-scale-num = 100
+    out-scale-den = 100
+  } else if scale == 1 {
+    out-scale-num = 50
+    out-scale-den = 100
+  } else {
+    out-scale-num = 200
+    out-scale-den = 100
+  }
+  text-cache-invalidate()
+  if fb-width > 0 && fb-height > 0 {
+    out-logical-w = (fb-width * out-scale-den) / out-scale-num
+    out-logical-h = (fb-height * out-scale-den) / out-scale-num
+    out-work-w = out-logical-w
+    out-work-h = out-logical-h - COMP-TASKBAR-H * 2
+    comp-full-redraw = 1
+    comp-dmg-full()
+  }
+  return 1
+}

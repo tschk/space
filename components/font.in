@@ -1,9 +1,39 @@
 package space.display
 
+// ============================================================================
+// Space Built-in Typeface Catalog (Freestanding Strike Assets)
+// ============================================================================
+//
+// Face 0: Space Term Mono (FONT-FACE-MONO = 0)
+//   Role:      Terminal / Monospace / Symbols (TEXT-ROLE-TERM-MONO, TEXT-ROLE-SYMBOLS)
+//   Metrics:   Fixed 8x8 base grid, constant advance = 8 units, baseline = 7,
+//              cap-height = 7, x-height = 5.
+//   Provenance & License:
+//              IBM PC VGA / Public Domain 8x8 fixed-width bitmap strike.
+//              Dedicated to the public domain (CC0-1.0 Universal).
+//
+// Face 1: Space UI Sans (FONT-FACE-SANS = 1)
+//   Role:      Interface / Body / Command Bar / Window Titles
+//              (TEXT-ROLE-UI-BODY, TEXT-ROLE-COMMAND)
+//   Metrics:   Proportional geometric sans-serif on an 8-row strike, per-glyph
+//              advance = 4..8 base units (stored in fb-font-sans-adv),
+//              baseline = 7, cap-height = 7, x-height = 5.
+//   Provenance & License:
+//              Space original geometric sans-serif proportional strike derived
+//              from public-domain BDF UI proportions. Distributed under MIT /
+//              CC0-1.0 permissive license as part of Space OS.
+// ============================================================================
+
 const FB-FONT-WIDTH = 8
 const FB-FONT-HEIGHT = 8
+const FONT-FACE-MONO = 0
+const FONT-FACE-SANS = 1
+
 var fb-font: Int = 0
 var fb-font-aa: Int = 0
+var fb-font-sans: Int = 0
+var fb-font-sans-adv: Int = 0
+var fb-font-sans-aa: Int = 0
 
 fn fb-font-set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
   let p = fb-font + ch * 8
@@ -18,7 +48,21 @@ fn fb-font-set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6
   return
 }
 
-// Initialize the 8x8 bitmap font with a basic ASCII subset.
+fn fb-font-sans-set(ch: Int, adv: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
+  store8(fb-font-sans-adv + ch, adv)
+  let p = fb-font-sans + ch * 8
+  store8(p + 0, r0)
+  store8(p + 1, r1)
+  store8(p + 2, r2)
+  store8(p + 3, r3)
+  store8(p + 4, r4)
+  store8(p + 5, r5)
+  store8(p + 6, r6)
+  store8(p + 7, r7)
+  return
+}
+
+// Initialize both the 8x8 monospace terminal face and the proportional UI sans face.
 fn fb-font-init() -> void {
   fb-font = alloc(128 * 8)
   let i = 0
@@ -31,6 +75,16 @@ fn fb-font-init() -> void {
   fb-font-set(33, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00)
   // " (34)
   fb-font-set(34, 0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // # (35)
+  fb-font-set(35, 0x66, 0x66, 0xFF, 0xFF, 0x66, 0x66, 0xFF, 0xFF)
+  // $ (36)
+  fb-font-set(36, 0x18, 0x3E, 0x60, 0x3C, 0x06, 0x7C, 0x18, 0x00)
+  // % (37)
+  fb-font-set(37, 0x62, 0x66, 0x0C, 0x18, 0x30, 0x66, 0x46, 0x00)
+  // & (38)
+  fb-font-set(38, 0x38, 0x6C, 0x38, 0x76, 0xDC, 0xCC, 0x76, 0x00)
+  // ' (39)
+  fb-font-set(39, 0x18, 0x18, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00)
   // ( (40)
   fb-font-set(40, 0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00)
   // ) (41)
@@ -70,6 +124,8 @@ fn fb-font-init() -> void {
   fb-font-set(62, 0x60, 0x30, 0x18, 0x0C, 0x18, 0x30, 0x60, 0x00)
   // ? (63)
   fb-font-set(63, 0x3C, 0x66, 0x06, 0x0C, 0x18, 0x00, 0x18, 0x00)
+  // @ (64)
+  fb-font-set(64, 0x3C, 0x66, 0x6E, 0x6E, 0x6E, 0x60, 0x3C, 0x00)
   // A-Z (65-90)
   fb-font-set(65, 0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00)
   fb-font-set(66, 0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00)
@@ -99,11 +155,17 @@ fn fb-font-init() -> void {
   fb-font-set(90, 0x7E, 0x06, 0x0C, 0x18, 0x30, 0x60, 0x7E, 0x00)
   // [ (91)
   fb-font-set(91, 0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00)
+  // \ (92)
+  fb-font-set(92, 0x00, 0x60, 0x70, 0x38, 0x1C, 0x0E, 0x07, 0x03)
   // ] (93)
   fb-font-set(93, 0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00)
+  // ^ (94)
+  fb-font-set(94, 0x18, 0x3C, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00)
   // _ (95)
   fb-font-set(95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF)
-  // a-z (97-122) -- simplified lowercase (same as uppercase for now)
+  // ` (96)
+  fb-font-set(96, 0x30, 0x18, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // a-z (97-122)
   fb-font-set(97, 0x00, 0x00, 0x3C, 0x06, 0x3E, 0x66, 0x3E, 0x00)
   fb-font-set(98, 0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00)
   fb-font-set(99, 0x00, 0x00, 0x3C, 0x60, 0x60, 0x60, 0x3C, 0x00)
@@ -132,37 +194,179 @@ fn fb-font-init() -> void {
   fb-font-set(122, 0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00)
   // { (123)
   fb-font-set(123, 0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00)
-  // } (125)
-  fb-font-set(125, 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00)
   // | (124)
   fb-font-set(124, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00)
+  // } (125)
+  fb-font-set(125, 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00)
   // ~ (126)
   fb-font-set(126, 0x00, 0x00, 0x60, 0x7E, 0x06, 0x00, 0x00, 0x00)
-  // # (35)
-  fb-font-set(35, 0x66, 0x66, 0xFF, 0xFF, 0x66, 0x66, 0xFF, 0xFF)
+
   fb-font-aa-init()
+  fb-font-sans-init()
   return
 }
 
-// Build grayscale coverage masks (8x8 per glyph) from the 1-bit bitmap glyphs.
-// Set cells get full coverage; empty cells adjacent to a set cell get partial
-// coverage (feathering), producing soft edges when blended at 2x scale.
-fn fb-font-aa-init() -> void {
-  fb-font-aa = alloc(128 * 64)
+// Initialize Face 1: Space UI Sans (proportional geometric sans-serif).
+// Glyphs are left-aligned in their proportional advance box (4..8 base units)
+// with clean sans-serif terminals, open counters, and distinct stroke geometry.
+fn fb-font-sans-init() -> void {
+  fb-font-sans = alloc(128 * 8)
+  fb-font-sans-adv = alloc(128)
+  let i = 0
+  while i < 1024 {
+    store8(fb-font-sans + i, 0)
+    i = i + 1
+  }
+  i = 0
+  while i < 128 {
+    store8(fb-font-sans-adv + i, 7)
+    i = i + 1
+  }
+  // Space (32): proportional 4-unit word space
+  fb-font-sans-set(32, 4, 0, 0, 0, 0, 0, 0, 0, 0)
+  // ! (33): narrow 4-unit stem
+  fb-font-sans-set(33, 4, 0x60, 0x60, 0x60, 0x60, 0x40, 0x00, 0x60, 0x00)
+  // " (34)
+  fb-font-sans-set(34, 5, 0xA0, 0xA0, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // # (35)
+  fb-font-sans-set(35, 8, 0x24, 0x7E, 0x24, 0x24, 0x7E, 0x24, 0x00, 0x00)
+  // $ (36)
+  fb-font-sans-set(36, 7, 0x20, 0x78, 0x80, 0x70, 0x08, 0xF0, 0x20, 0x00)
+  // % (37)
+  fb-font-sans-set(37, 8, 0xC4, 0xC8, 0x10, 0x20, 0x46, 0x86, 0x00, 0x00)
+  // & (38)
+  fb-font-sans-set(38, 7, 0x60, 0x90, 0x60, 0xA8, 0x90, 0x68, 0x00, 0x00)
+  // ' (39)
+  fb-font-sans-set(39, 4, 0x60, 0x60, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // ( (40)
+  fb-font-sans-set(40, 5, 0x30, 0x60, 0x60, 0x60, 0x60, 0x60, 0x30, 0x00)
+  // ) (41)
+  fb-font-sans-set(41, 5, 0x60, 0x30, 0x30, 0x30, 0x30, 0x30, 0x60, 0x00)
+  // * (42)
+  fb-font-sans-set(42, 6, 0x00, 0xA8, 0x70, 0xA8, 0x00, 0x00, 0x00, 0x00)
+  // + (43)
+  fb-font-sans-set(43, 6, 0x00, 0x20, 0x20, 0xF8, 0x20, 0x20, 0x00, 0x00)
+  // , (44)
+  fb-font-sans-set(44, 4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x60, 0x40)
+  // - (45)
+  fb-font-sans-set(45, 5, 0x00, 0x00, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00)
+  // . (46)
+  fb-font-sans-set(46, 4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x60, 0x00)
+  // / (47)
+  fb-font-sans-set(47, 6, 0x08, 0x10, 0x20, 0x20, 0x40, 0x80, 0x80, 0x00)
+  // 0-9 (48-57): open geometric sans counters (no slash in 0, no base serif in 1)
+  fb-font-sans-set(48, 7, 0x70, 0x88, 0x88, 0x88, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(49, 5, 0x30, 0x70, 0x30, 0x30, 0x30, 0x30, 0x30, 0x00)
+  fb-font-sans-set(50, 7, 0x70, 0x88, 0x08, 0x30, 0x40, 0x80, 0xF8, 0x00)
+  fb-font-sans-set(51, 7, 0x70, 0x88, 0x08, 0x30, 0x08, 0x88, 0x70, 0x00)
+  fb-font-sans-set(52, 7, 0x10, 0x30, 0x50, 0x90, 0xF8, 0x10, 0x10, 0x00)
+  fb-font-sans-set(53, 7, 0xF8, 0x80, 0xF0, 0x08, 0x08, 0x88, 0x70, 0x00)
+  fb-font-sans-set(54, 7, 0x70, 0x80, 0xF0, 0x88, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(55, 7, 0xF8, 0x08, 0x10, 0x20, 0x40, 0x40, 0x40, 0x00)
+  fb-font-sans-set(56, 7, 0x70, 0x88, 0x88, 0x70, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(57, 7, 0x70, 0x88, 0x88, 0x78, 0x08, 0x88, 0x70, 0x00)
+  // : ; < = > ? @
+  fb-font-sans-set(58, 4, 0x00, 0x60, 0x60, 0x00, 0x00, 0x60, 0x60, 0x00)
+  fb-font-sans-set(59, 4, 0x00, 0x60, 0x60, 0x00, 0x00, 0x60, 0x60, 0x40)
+  fb-font-sans-set(60, 6, 0x10, 0x20, 0x40, 0x80, 0x40, 0x20, 0x10, 0x00)
+  fb-font-sans-set(61, 6, 0x00, 0x00, 0xF0, 0x00, 0xF0, 0x00, 0x00, 0x00)
+  fb-font-sans-set(62, 6, 0x80, 0x40, 0x20, 0x10, 0x20, 0x40, 0x80, 0x00)
+  fb-font-sans-set(63, 6, 0x70, 0x88, 0x08, 0x30, 0x20, 0x00, 0x20, 0x00)
+  fb-font-sans-set(64, 8, 0x7C, 0x82, 0xBA, 0xAA, 0xBA, 0x80, 0x7C, 0x00)
+  // A-Z (65-90): clean geometric sans-serif capitals
+  fb-font-sans-set(65, 7, 0x70, 0x88, 0x88, 0xF8, 0x88, 0x88, 0x88, 0x00)
+  fb-font-sans-set(66, 7, 0xF0, 0x88, 0x88, 0xF0, 0x88, 0x88, 0xF0, 0x00)
+  fb-font-sans-set(67, 7, 0x70, 0x88, 0x80, 0x80, 0x80, 0x88, 0x70, 0x00)
+  fb-font-sans-set(68, 7, 0xF0, 0x88, 0x88, 0x88, 0x88, 0x88, 0xF0, 0x00)
+  fb-font-sans-set(69, 6, 0xF8, 0x80, 0x80, 0xF0, 0x80, 0x80, 0xF8, 0x00)
+  fb-font-sans-set(70, 6, 0xF8, 0x80, 0x80, 0xF0, 0x80, 0x80, 0x80, 0x00)
+  fb-font-sans-set(71, 7, 0x70, 0x88, 0x80, 0x98, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(72, 7, 0x88, 0x88, 0x88, 0xF8, 0x88, 0x88, 0x88, 0x00)
+  // I (73): serverless geometric stem (advance = 4)
+  fb-font-sans-set(73, 4, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x00)
+  fb-font-sans-set(74, 6, 0x10, 0x10, 0x10, 0x10, 0x10, 0x90, 0x60, 0x00)
+  fb-font-sans-set(75, 7, 0x88, 0x90, 0xA0, 0xC0, 0xA0, 0x90, 0x88, 0x00)
+  fb-font-sans-set(76, 6, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xF8, 0x00)
+  fb-font-sans-set(77, 8, 0x82, 0xC6, 0xAA, 0x92, 0x82, 0x82, 0x82, 0x00)
+  fb-font-sans-set(78, 7, 0x88, 0xC8, 0xA8, 0x98, 0x88, 0x88, 0x88, 0x00)
+  fb-font-sans-set(79, 7, 0x70, 0x88, 0x88, 0x88, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(80, 7, 0xF0, 0x88, 0x88, 0xF0, 0x80, 0x80, 0x80, 0x00)
+  fb-font-sans-set(81, 7, 0x70, 0x88, 0x88, 0x88, 0xA8, 0x90, 0x68, 0x00)
+  fb-font-sans-set(82, 7, 0xF0, 0x88, 0x88, 0xF0, 0xA0, 0x90, 0x88, 0x00)
+  fb-font-sans-set(83, 7, 0x78, 0x80, 0x80, 0x70, 0x08, 0x08, 0xF0, 0x00)
+  fb-font-sans-set(84, 7, 0xF8, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00)
+  fb-font-sans-set(85, 7, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(86, 7, 0x88, 0x88, 0x88, 0x88, 0x50, 0x50, 0x20, 0x00)
+  fb-font-sans-set(87, 8, 0x82, 0x82, 0x82, 0x92, 0xAA, 0xC6, 0x82, 0x00)
+  fb-font-sans-set(88, 7, 0x88, 0x50, 0x20, 0x20, 0x20, 0x50, 0x88, 0x00)
+  fb-font-sans-set(89, 7, 0x88, 0x88, 0x50, 0x20, 0x20, 0x20, 0x20, 0x00)
+  fb-font-sans-set(90, 7, 0xF8, 0x08, 0x10, 0x20, 0x40, 0x80, 0xF8, 0x00)
+  // [ \ ] ^ _ `
+  fb-font-sans-set(91, 5, 0x70, 0x40, 0x40, 0x40, 0x40, 0x40, 0x70, 0x00)
+  fb-font-sans-set(92, 6, 0x80, 0x80, 0x40, 0x20, 0x20, 0x10, 0x08, 0x00)
+  fb-font-sans-set(93, 5, 0x70, 0x10, 0x10, 0x10, 0x10, 0x10, 0x70, 0x00)
+  fb-font-sans-set(94, 6, 0x20, 0x50, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00)
+  fb-font-sans-set(95, 7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8)
+  fb-font-sans-set(96, 4, 0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+  // a-z (97-122): modern proportional lowercase
+  fb-font-sans-set(97, 6, 0x00, 0x00, 0x70, 0x08, 0x78, 0x88, 0x78, 0x00)
+  fb-font-sans-set(98, 6, 0x80, 0x80, 0xF0, 0x88, 0x88, 0x88, 0xF0, 0x00)
+  fb-font-sans-set(99, 6, 0x00, 0x00, 0x78, 0x80, 0x80, 0x80, 0x78, 0x00)
+  fb-font-sans-set(100, 6, 0x08, 0x08, 0x78, 0x88, 0x88, 0x88, 0x78, 0x00)
+  fb-font-sans-set(101, 6, 0x00, 0x00, 0x70, 0x88, 0xF8, 0x80, 0x78, 0x00)
+  fb-font-sans-set(102, 5, 0x30, 0x40, 0xF0, 0x40, 0x40, 0x40, 0x40, 0x00)
+  fb-font-sans-set(103, 6, 0x00, 0x00, 0x78, 0x88, 0x88, 0x78, 0x08, 0x70)
+  fb-font-sans-set(104, 6, 0x80, 0x80, 0xF0, 0x88, 0x88, 0x88, 0x88, 0x00)
+  // i (105): narrow 4-unit stem without wide base serif
+  fb-font-sans-set(105, 4, 0x60, 0x00, 0x60, 0x60, 0x60, 0x60, 0x60, 0x00)
+  fb-font-sans-set(106, 5, 0x20, 0x00, 0x20, 0x20, 0x20, 0x20, 0xA0, 0x40)
+  fb-font-sans-set(107, 6, 0x80, 0x80, 0x90, 0xA0, 0xC0, 0xA0, 0x90, 0x00)
+  // l (108): narrow 4-unit stem
+  fb-font-sans-set(108, 4, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x00)
+  fb-font-sans-set(109, 8, 0x00, 0x00, 0xEC, 0x92, 0x92, 0x92, 0x92, 0x00)
+  fb-font-sans-set(110, 6, 0x00, 0x00, 0xF0, 0x88, 0x88, 0x88, 0x88, 0x00)
+  fb-font-sans-set(111, 6, 0x00, 0x00, 0x70, 0x88, 0x88, 0x88, 0x70, 0x00)
+  fb-font-sans-set(112, 6, 0x00, 0x00, 0xF0, 0x88, 0x88, 0xF0, 0x80, 0x80)
+  fb-font-sans-set(113, 6, 0x00, 0x00, 0x78, 0x88, 0x88, 0x78, 0x08, 0x08)
+  fb-font-sans-set(114, 5, 0x00, 0x00, 0xB0, 0xC0, 0x80, 0x80, 0x80, 0x00)
+  fb-font-sans-set(115, 6, 0x00, 0x00, 0x78, 0x80, 0x70, 0x08, 0xF0, 0x00)
+  fb-font-sans-set(116, 5, 0x40, 0x40, 0xF0, 0x40, 0x40, 0x40, 0x30, 0x00)
+  fb-font-sans-set(117, 6, 0x00, 0x00, 0x88, 0x88, 0x88, 0x88, 0x78, 0x00)
+  fb-font-sans-set(118, 6, 0x00, 0x00, 0x88, 0x88, 0x88, 0x50, 0x20, 0x00)
+  fb-font-sans-set(119, 8, 0x00, 0x00, 0x82, 0x92, 0x92, 0xAA, 0x44, 0x00)
+  fb-font-sans-set(120, 6, 0x00, 0x00, 0x88, 0x50, 0x20, 0x50, 0x88, 0x00)
+  fb-font-sans-set(121, 6, 0x00, 0x00, 0x88, 0x88, 0x88, 0x78, 0x08, 0x70)
+  fb-font-sans-set(122, 6, 0x00, 0x00, 0xF8, 0x10, 0x20, 0x40, 0xF8, 0x00)
+  // { | } ~
+  fb-font-sans-set(123, 5, 0x30, 0x40, 0x40, 0x80, 0x40, 0x40, 0x30, 0x00)
+  fb-font-sans-set(124, 4, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x00)
+  fb-font-sans-set(125, 5, 0xC0, 0x20, 0x20, 0x10, 0x20, 0x20, 0xC0, 0x00)
+  fb-font-sans-set(126, 7, 0x00, 0x00, 0x60, 0x98, 0x00, 0x00, 0x00, 0x00)
+
+  fb-font-sans-aa = alloc(128 * 64)
+  fb-build-aa-table(fb-font-sans, fb-font-sans-aa)
+  return
+}
+
+// Build grayscale coverage masks (8x8 per glyph) from a 1-bit 128x8 bitmap table.
+// Set cells get full coverage (255); empty cells adjacent to a set cell get
+// partial coverage (96), producing soft edges when blended.
+fn fb-build-aa-table(bitmap-src: Int, aa-dst: Int) -> void {
   let i = 0
   while i < 128 * 64 {
-    store8(fb-font-aa + i, 0)
+    store8(aa-dst + i, 0)
     i = i + 1
   }
   let ch = 0
   while ch < 128 {
+    let glyph-base = bitmap-src + ch * 8
     let r = 0
     while r < 8 {
-      let bits = fb-glyph8(ch, r)
+      let bits = load8(glyph-base + r)
       let c = 0
       while c < 8 {
         if ((bits >> (7 - c)) & 1) != 0 {
-          store8(fb-font-aa + ch * 64 + r * 8 + c, 255)
+          store8(aa-dst + ch * 64 + r * 8 + c, 255)
         } else {
           let adj = 0
           let dr = -1
@@ -172,7 +376,7 @@ fn fb-font-aa-init() -> void {
               let rr = r + dr
               let cc = c + dc
               if rr >= 0 && rr < 8 && cc >= 0 && cc < 8 {
-                if ((fb-glyph8(ch, rr) >> (7 - cc)) & 1) != 0 {
+                if ((load8(glyph-base + rr) >> (7 - cc)) & 1) != 0 {
                   adj = 1
                 }
               }
@@ -181,7 +385,7 @@ fn fb-font-aa-init() -> void {
             dr = dr + 1
           }
           if adj != 0 {
-            store8(fb-font-aa + ch * 64 + r * 8 + c, 96)
+            store8(aa-dst + ch * 64 + r * 8 + c, 96)
           }
         }
         c = c + 1
@@ -193,534 +397,15 @@ fn fb-font-aa-init() -> void {
   return
 }
 
-fn fb-glyph8(ch: Int, row: Int) -> Int {
-  if ch == 33 && row == 0 { return 0x18 }
-  if ch == 33 && row == 1 { return 0x18 }
-  if ch == 33 && row == 2 { return 0x18 }
-  if ch == 33 && row == 3 { return 0x18 }
-  if ch == 33 && row == 4 { return 0x18 }
-  if ch == 33 && row == 6 { return 0x18 }
-  if ch == 34 && row == 0 { return 0x66 }
-  if ch == 34 && row == 1 { return 0x66 }
-  if ch == 34 && row == 2 { return 0x66 }
-  if ch == 35 && row == 0 { return 0x66 }
-  if ch == 35 && row == 1 { return 0x66 }
-  if ch == 35 && row == 2 { return 0xFF }
-  if ch == 35 && row == 3 { return 0xFF }
-  if ch == 35 && row == 4 { return 0x66 }
-  if ch == 35 && row == 5 { return 0x66 }
-  if ch == 35 && row == 6 { return 0xFF }
-  if ch == 35 && row == 7 { return 0xFF }
-  if ch == 40 && row == 0 { return 0x0C }
-  if ch == 40 && row == 1 { return 0x18 }
-  if ch == 40 && row == 2 { return 0x30 }
-  if ch == 40 && row == 3 { return 0x30 }
-  if ch == 40 && row == 4 { return 0x30 }
-  if ch == 40 && row == 5 { return 0x18 }
-  if ch == 40 && row == 6 { return 0x0C }
-  if ch == 41 && row == 0 { return 0x30 }
-  if ch == 41 && row == 1 { return 0x18 }
-  if ch == 41 && row == 2 { return 0x0C }
-  if ch == 41 && row == 3 { return 0x0C }
-  if ch == 41 && row == 4 { return 0x0C }
-  if ch == 41 && row == 5 { return 0x18 }
-  if ch == 41 && row == 6 { return 0x30 }
-  if ch == 42 && row == 1 { return 0x66 }
-  if ch == 42 && row == 2 { return 0x3C }
-  if ch == 42 && row == 3 { return 0xFF }
-  if ch == 42 && row == 4 { return 0x3C }
-  if ch == 42 && row == 5 { return 0x66 }
-  if ch == 43 && row == 1 { return 0x18 }
-  if ch == 43 && row == 2 { return 0x18 }
-  if ch == 43 && row == 3 { return 0x7E }
-  if ch == 43 && row == 4 { return 0x18 }
-  if ch == 43 && row == 5 { return 0x18 }
-  if ch == 44 && row == 5 { return 0x18 }
-  if ch == 44 && row == 6 { return 0x18 }
-  if ch == 44 && row == 7 { return 0x30 }
-  if ch == 45 && row == 3 { return 0x7E }
-  if ch == 46 && row == 5 { return 0x18 }
-  if ch == 46 && row == 6 { return 0x18 }
-  if ch == 47 && row == 1 { return 0x03 }
-  if ch == 47 && row == 2 { return 0x07 }
-  if ch == 47 && row == 3 { return 0x0E }
-  if ch == 47 && row == 4 { return 0x1C }
-  if ch == 47 && row == 5 { return 0x38 }
-  if ch == 47 && row == 6 { return 0x70 }
-  if ch == 47 && row == 7 { return 0x60 }
-  if ch == 48 && row == 0 { return 0x3C }
-  if ch == 48 && row == 1 { return 0x66 }
-  if ch == 48 && row == 2 { return 0x6E }
-  if ch == 48 && row == 3 { return 0x76 }
-  if ch == 48 && row == 4 { return 0x66 }
-  if ch == 48 && row == 5 { return 0x66 }
-  if ch == 48 && row == 6 { return 0x3C }
-  if ch == 49 && row == 0 { return 0x18 }
-  if ch == 49 && row == 1 { return 0x38 }
-  if ch == 49 && row == 2 { return 0x18 }
-  if ch == 49 && row == 3 { return 0x18 }
-  if ch == 49 && row == 4 { return 0x18 }
-  if ch == 49 && row == 5 { return 0x18 }
-  if ch == 49 && row == 6 { return 0x7E }
-  if ch == 50 && row == 0 { return 0x3C }
-  if ch == 50 && row == 1 { return 0x66 }
-  if ch == 50 && row == 2 { return 0x06 }
-  if ch == 50 && row == 3 { return 0x0C }
-  if ch == 50 && row == 4 { return 0x30 }
-  if ch == 50 && row == 5 { return 0x60 }
-  if ch == 50 && row == 6 { return 0x7E }
-  if ch == 51 && row == 0 { return 0x3C }
-  if ch == 51 && row == 1 { return 0x66 }
-  if ch == 51 && row == 2 { return 0x06 }
-  if ch == 51 && row == 3 { return 0x1C }
-  if ch == 51 && row == 4 { return 0x06 }
-  if ch == 51 && row == 5 { return 0x66 }
-  if ch == 51 && row == 6 { return 0x3C }
-  if ch == 52 && row == 0 { return 0x0E }
-  if ch == 52 && row == 1 { return 0x1E }
-  if ch == 52 && row == 2 { return 0x36 }
-  if ch == 52 && row == 3 { return 0x66 }
-  if ch == 52 && row == 4 { return 0x7F }
-  if ch == 52 && row == 5 { return 0x06 }
-  if ch == 52 && row == 6 { return 0x06 }
-  if ch == 53 && row == 0 { return 0x7E }
-  if ch == 53 && row == 1 { return 0x60 }
-  if ch == 53 && row == 2 { return 0x7C }
-  if ch == 53 && row == 3 { return 0x06 }
-  if ch == 53 && row == 4 { return 0x06 }
-  if ch == 53 && row == 5 { return 0x66 }
-  if ch == 53 && row == 6 { return 0x3C }
-  if ch == 54 && row == 0 { return 0x3C }
-  if ch == 54 && row == 1 { return 0x66 }
-  if ch == 54 && row == 2 { return 0x60 }
-  if ch == 54 && row == 3 { return 0x7C }
-  if ch == 54 && row == 4 { return 0x66 }
-  if ch == 54 && row == 5 { return 0x66 }
-  if ch == 54 && row == 6 { return 0x3C }
-  if ch == 55 && row == 0 { return 0x7E }
-  if ch == 55 && row == 1 { return 0x66 }
-  if ch == 55 && row == 2 { return 0x0C }
-  if ch == 55 && row == 3 { return 0x18 }
-  if ch == 55 && row == 4 { return 0x18 }
-  if ch == 55 && row == 5 { return 0x18 }
-  if ch == 55 && row == 6 { return 0x18 }
-  if ch == 56 && row == 0 { return 0x3C }
-  if ch == 56 && row == 1 { return 0x66 }
-  if ch == 56 && row == 2 { return 0x66 }
-  if ch == 56 && row == 3 { return 0x3C }
-  if ch == 56 && row == 4 { return 0x66 }
-  if ch == 56 && row == 5 { return 0x66 }
-  if ch == 56 && row == 6 { return 0x3C }
-  if ch == 57 && row == 0 { return 0x3C }
-  if ch == 57 && row == 1 { return 0x66 }
-  if ch == 57 && row == 2 { return 0x66 }
-  if ch == 57 && row == 3 { return 0x3E }
-  if ch == 57 && row == 4 { return 0x06 }
-  if ch == 57 && row == 5 { return 0x66 }
-  if ch == 57 && row == 6 { return 0x3C }
-  if ch == 58 && row == 1 { return 0x18 }
-  if ch == 58 && row == 2 { return 0x18 }
-  if ch == 58 && row == 5 { return 0x18 }
-  if ch == 58 && row == 6 { return 0x18 }
-  if ch == 59 && row == 1 { return 0x18 }
-  if ch == 59 && row == 2 { return 0x18 }
-  if ch == 59 && row == 5 { return 0x18 }
-  if ch == 59 && row == 6 { return 0x18 }
-  if ch == 59 && row == 7 { return 0x30 }
-  if ch == 60 && row == 0 { return 0x06 }
-  if ch == 60 && row == 1 { return 0x0C }
-  if ch == 60 && row == 2 { return 0x18 }
-  if ch == 60 && row == 3 { return 0x30 }
-  if ch == 60 && row == 4 { return 0x18 }
-  if ch == 60 && row == 5 { return 0x0C }
-  if ch == 60 && row == 6 { return 0x06 }
-  if ch == 61 && row == 2 { return 0x7E }
-  if ch == 61 && row == 4 { return 0x7E }
-  if ch == 62 && row == 0 { return 0x60 }
-  if ch == 62 && row == 1 { return 0x30 }
-  if ch == 62 && row == 2 { return 0x18 }
-  if ch == 62 && row == 3 { return 0x0C }
-  if ch == 62 && row == 4 { return 0x18 }
-  if ch == 62 && row == 5 { return 0x30 }
-  if ch == 62 && row == 6 { return 0x60 }
-  if ch == 63 && row == 0 { return 0x3C }
-  if ch == 63 && row == 1 { return 0x66 }
-  if ch == 63 && row == 2 { return 0x06 }
-  if ch == 63 && row == 3 { return 0x0C }
-  if ch == 63 && row == 4 { return 0x18 }
-  if ch == 63 && row == 6 { return 0x18 }
-  if ch == 65 && row == 0 { return 0x18 }
-  if ch == 65 && row == 1 { return 0x3C }
-  if ch == 65 && row == 2 { return 0x66 }
-  if ch == 65 && row == 3 { return 0x66 }
-  if ch == 65 && row == 4 { return 0x7E }
-  if ch == 65 && row == 5 { return 0x66 }
-  if ch == 65 && row == 6 { return 0x66 }
-  if ch == 66 && row == 0 { return 0x7C }
-  if ch == 66 && row == 1 { return 0x66 }
-  if ch == 66 && row == 2 { return 0x66 }
-  if ch == 66 && row == 3 { return 0x7C }
-  if ch == 66 && row == 4 { return 0x66 }
-  if ch == 66 && row == 5 { return 0x66 }
-  if ch == 66 && row == 6 { return 0x7C }
-  if ch == 67 && row == 0 { return 0x3C }
-  if ch == 67 && row == 1 { return 0x66 }
-  if ch == 67 && row == 2 { return 0x60 }
-  if ch == 67 && row == 3 { return 0x60 }
-  if ch == 67 && row == 4 { return 0x60 }
-  if ch == 67 && row == 5 { return 0x66 }
-  if ch == 67 && row == 6 { return 0x3C }
-  if ch == 68 && row == 0 { return 0x78 }
-  if ch == 68 && row == 1 { return 0x6C }
-  if ch == 68 && row == 2 { return 0x66 }
-  if ch == 68 && row == 3 { return 0x66 }
-  if ch == 68 && row == 4 { return 0x66 }
-  if ch == 68 && row == 5 { return 0x6C }
-  if ch == 68 && row == 6 { return 0x78 }
-  if ch == 69 && row == 0 { return 0x7E }
-  if ch == 69 && row == 1 { return 0x60 }
-  if ch == 69 && row == 2 { return 0x60 }
-  if ch == 69 && row == 3 { return 0x78 }
-  if ch == 69 && row == 4 { return 0x60 }
-  if ch == 69 && row == 5 { return 0x60 }
-  if ch == 69 && row == 6 { return 0x7E }
-  if ch == 70 && row == 0 { return 0x7E }
-  if ch == 70 && row == 1 { return 0x60 }
-  if ch == 70 && row == 2 { return 0x60 }
-  if ch == 70 && row == 3 { return 0x78 }
-  if ch == 70 && row == 4 { return 0x60 }
-  if ch == 70 && row == 5 { return 0x60 }
-  if ch == 70 && row == 6 { return 0x60 }
-  if ch == 71 && row == 0 { return 0x3C }
-  if ch == 71 && row == 1 { return 0x66 }
-  if ch == 71 && row == 2 { return 0x60 }
-  if ch == 71 && row == 3 { return 0x6E }
-  if ch == 71 && row == 4 { return 0x66 }
-  if ch == 71 && row == 5 { return 0x66 }
-  if ch == 71 && row == 6 { return 0x3C }
-  if ch == 72 && row == 0 { return 0x66 }
-  if ch == 72 && row == 1 { return 0x66 }
-  if ch == 72 && row == 2 { return 0x66 }
-  if ch == 72 && row == 3 { return 0x7E }
-  if ch == 72 && row == 4 { return 0x66 }
-  if ch == 72 && row == 5 { return 0x66 }
-  if ch == 72 && row == 6 { return 0x66 }
-  if ch == 73 && row == 0 { return 0x3C }
-  if ch == 73 && row == 1 { return 0x18 }
-  if ch == 73 && row == 2 { return 0x18 }
-  if ch == 73 && row == 3 { return 0x18 }
-  if ch == 73 && row == 4 { return 0x18 }
-  if ch == 73 && row == 5 { return 0x18 }
-  if ch == 73 && row == 6 { return 0x3C }
-  if ch == 74 && row == 0 { return 0x1E }
-  if ch == 74 && row == 1 { return 0x0C }
-  if ch == 74 && row == 2 { return 0x0C }
-  if ch == 74 && row == 3 { return 0x0C }
-  if ch == 74 && row == 4 { return 0x0C }
-  if ch == 74 && row == 5 { return 0x6C }
-  if ch == 74 && row == 6 { return 0x38 }
-  if ch == 75 && row == 0 { return 0x66 }
-  if ch == 75 && row == 1 { return 0x6C }
-  if ch == 75 && row == 2 { return 0x78 }
-  if ch == 75 && row == 3 { return 0x70 }
-  if ch == 75 && row == 4 { return 0x78 }
-  if ch == 75 && row == 5 { return 0x6C }
-  if ch == 75 && row == 6 { return 0x66 }
-  if ch == 76 && row == 0 { return 0x60 }
-  if ch == 76 && row == 1 { return 0x60 }
-  if ch == 76 && row == 2 { return 0x60 }
-  if ch == 76 && row == 3 { return 0x60 }
-  if ch == 76 && row == 4 { return 0x60 }
-  if ch == 76 && row == 5 { return 0x60 }
-  if ch == 76 && row == 6 { return 0x7E }
-  if ch == 77 && row == 0 { return 0x63 }
-  if ch == 77 && row == 1 { return 0x77 }
-  if ch == 77 && row == 2 { return 0x7F }
-  if ch == 77 && row == 3 { return 0x6B }
-  if ch == 77 && row == 4 { return 0x63 }
-  if ch == 77 && row == 5 { return 0x63 }
-  if ch == 77 && row == 6 { return 0x63 }
-  if ch == 78 && row == 0 { return 0x66 }
-  if ch == 78 && row == 1 { return 0x76 }
-  if ch == 78 && row == 2 { return 0x7E }
-  if ch == 78 && row == 3 { return 0x7E }
-  if ch == 78 && row == 4 { return 0x6E }
-  if ch == 78 && row == 5 { return 0x66 }
-  if ch == 78 && row == 6 { return 0x66 }
-  if ch == 79 && row == 0 { return 0x3C }
-  if ch == 79 && row == 1 { return 0x66 }
-  if ch == 79 && row == 2 { return 0x66 }
-  if ch == 79 && row == 3 { return 0x66 }
-  if ch == 79 && row == 4 { return 0x66 }
-  if ch == 79 && row == 5 { return 0x66 }
-  if ch == 79 && row == 6 { return 0x3C }
-  if ch == 80 && row == 0 { return 0x7C }
-  if ch == 80 && row == 1 { return 0x66 }
-  if ch == 80 && row == 2 { return 0x66 }
-  if ch == 80 && row == 3 { return 0x7C }
-  if ch == 80 && row == 4 { return 0x60 }
-  if ch == 80 && row == 5 { return 0x60 }
-  if ch == 80 && row == 6 { return 0x60 }
-  if ch == 81 && row == 0 { return 0x3C }
-  if ch == 81 && row == 1 { return 0x66 }
-  if ch == 81 && row == 2 { return 0x66 }
-  if ch == 81 && row == 3 { return 0x66 }
-  if ch == 81 && row == 4 { return 0x66 }
-  if ch == 81 && row == 5 { return 0x3C }
-  if ch == 81 && row == 6 { return 0x0E }
-  if ch == 82 && row == 0 { return 0x7C }
-  if ch == 82 && row == 1 { return 0x66 }
-  if ch == 82 && row == 2 { return 0x66 }
-  if ch == 82 && row == 3 { return 0x7C }
-  if ch == 82 && row == 4 { return 0x78 }
-  if ch == 82 && row == 5 { return 0x6C }
-  if ch == 82 && row == 6 { return 0x66 }
-  if ch == 83 && row == 0 { return 0x3C }
-  if ch == 83 && row == 1 { return 0x66 }
-  if ch == 83 && row == 2 { return 0x60 }
-  if ch == 83 && row == 3 { return 0x3C }
-  if ch == 83 && row == 4 { return 0x06 }
-  if ch == 83 && row == 5 { return 0x66 }
-  if ch == 83 && row == 6 { return 0x3C }
-  if ch == 84 && row == 0 { return 0x7E }
-  if ch == 84 && row == 1 { return 0x18 }
-  if ch == 84 && row == 2 { return 0x18 }
-  if ch == 84 && row == 3 { return 0x18 }
-  if ch == 84 && row == 4 { return 0x18 }
-  if ch == 84 && row == 5 { return 0x18 }
-  if ch == 84 && row == 6 { return 0x18 }
-  if ch == 85 && row == 0 { return 0x66 }
-  if ch == 85 && row == 1 { return 0x66 }
-  if ch == 85 && row == 2 { return 0x66 }
-  if ch == 85 && row == 3 { return 0x66 }
-  if ch == 85 && row == 4 { return 0x66 }
-  if ch == 85 && row == 5 { return 0x66 }
-  if ch == 85 && row == 6 { return 0x3C }
-  if ch == 86 && row == 0 { return 0x66 }
-  if ch == 86 && row == 1 { return 0x66 }
-  if ch == 86 && row == 2 { return 0x66 }
-  if ch == 86 && row == 3 { return 0x66 }
-  if ch == 86 && row == 4 { return 0x66 }
-  if ch == 86 && row == 5 { return 0x3C }
-  if ch == 86 && row == 6 { return 0x18 }
-  if ch == 87 && row == 0 { return 0x63 }
-  if ch == 87 && row == 1 { return 0x63 }
-  if ch == 87 && row == 2 { return 0x63 }
-  if ch == 87 && row == 3 { return 0x6B }
-  if ch == 87 && row == 4 { return 0x7F }
-  if ch == 87 && row == 5 { return 0x77 }
-  if ch == 87 && row == 6 { return 0x63 }
-  if ch == 88 && row == 0 { return 0x66 }
-  if ch == 88 && row == 1 { return 0x66 }
-  if ch == 88 && row == 2 { return 0x3C }
-  if ch == 88 && row == 3 { return 0x18 }
-  if ch == 88 && row == 4 { return 0x3C }
-  if ch == 88 && row == 5 { return 0x66 }
-  if ch == 88 && row == 6 { return 0x66 }
-  if ch == 89 && row == 0 { return 0x66 }
-  if ch == 89 && row == 1 { return 0x66 }
-  if ch == 89 && row == 2 { return 0x66 }
-  if ch == 89 && row == 3 { return 0x3C }
-  if ch == 89 && row == 4 { return 0x18 }
-  if ch == 89 && row == 5 { return 0x18 }
-  if ch == 89 && row == 6 { return 0x18 }
-  if ch == 90 && row == 0 { return 0x7E }
-  if ch == 90 && row == 1 { return 0x06 }
-  if ch == 90 && row == 2 { return 0x0C }
-  if ch == 90 && row == 3 { return 0x18 }
-  if ch == 90 && row == 4 { return 0x30 }
-  if ch == 90 && row == 5 { return 0x60 }
-  if ch == 90 && row == 6 { return 0x7E }
-  if ch == 91 && row == 0 { return 0x3C }
-  if ch == 91 && row == 1 { return 0x30 }
-  if ch == 91 && row == 2 { return 0x30 }
-  if ch == 91 && row == 3 { return 0x30 }
-  if ch == 91 && row == 4 { return 0x30 }
-  if ch == 91 && row == 5 { return 0x30 }
-  if ch == 91 && row == 6 { return 0x3C }
-  if ch == 93 && row == 0 { return 0x3C }
-  if ch == 93 && row == 1 { return 0x0C }
-  if ch == 93 && row == 2 { return 0x0C }
-  if ch == 93 && row == 3 { return 0x0C }
-  if ch == 93 && row == 4 { return 0x0C }
-  if ch == 93 && row == 5 { return 0x0C }
-  if ch == 93 && row == 6 { return 0x3C }
-  if ch == 95 && row == 7 { return 0xFF }
-  if ch == 97 && row == 2 { return 0x3C }
-  if ch == 97 && row == 3 { return 0x06 }
-  if ch == 97 && row == 4 { return 0x3E }
-  if ch == 97 && row == 5 { return 0x66 }
-  if ch == 97 && row == 6 { return 0x3E }
-  if ch == 98 && row == 0 { return 0x60 }
-  if ch == 98 && row == 1 { return 0x60 }
-  if ch == 98 && row == 2 { return 0x7C }
-  if ch == 98 && row == 3 { return 0x66 }
-  if ch == 98 && row == 4 { return 0x66 }
-  if ch == 98 && row == 5 { return 0x66 }
-  if ch == 98 && row == 6 { return 0x7C }
-  if ch == 99 && row == 2 { return 0x3C }
-  if ch == 99 && row == 3 { return 0x60 }
-  if ch == 99 && row == 4 { return 0x60 }
-  if ch == 99 && row == 5 { return 0x60 }
-  if ch == 99 && row == 6 { return 0x3C }
-  if ch == 100 && row == 0 { return 0x06 }
-  if ch == 100 && row == 1 { return 0x06 }
-  if ch == 100 && row == 2 { return 0x3E }
-  if ch == 100 && row == 3 { return 0x66 }
-  if ch == 100 && row == 4 { return 0x66 }
-  if ch == 100 && row == 5 { return 0x66 }
-  if ch == 100 && row == 6 { return 0x3E }
-  if ch == 101 && row == 2 { return 0x3C }
-  if ch == 101 && row == 3 { return 0x66 }
-  if ch == 101 && row == 4 { return 0x7E }
-  if ch == 101 && row == 5 { return 0x60 }
-  if ch == 101 && row == 6 { return 0x3C }
-  if ch == 102 && row == 0 { return 0x0E }
-  if ch == 102 && row == 1 { return 0x18 }
-  if ch == 102 && row == 2 { return 0x3E }
-  if ch == 102 && row == 3 { return 0x18 }
-  if ch == 102 && row == 4 { return 0x18 }
-  if ch == 102 && row == 5 { return 0x18 }
-  if ch == 102 && row == 6 { return 0x18 }
-  if ch == 103 && row == 2 { return 0x3E }
-  if ch == 103 && row == 3 { return 0x66 }
-  if ch == 103 && row == 4 { return 0x66 }
-  if ch == 103 && row == 5 { return 0x3E }
-  if ch == 103 && row == 6 { return 0x06 }
-  if ch == 103 && row == 7 { return 0x3C }
-  if ch == 104 && row == 0 { return 0x60 }
-  if ch == 104 && row == 1 { return 0x60 }
-  if ch == 104 && row == 2 { return 0x7C }
-  if ch == 104 && row == 3 { return 0x66 }
-  if ch == 104 && row == 4 { return 0x66 }
-  if ch == 104 && row == 5 { return 0x66 }
-  if ch == 104 && row == 6 { return 0x66 }
-  if ch == 105 && row == 0 { return 0x18 }
-  if ch == 105 && row == 2 { return 0x38 }
-  if ch == 105 && row == 3 { return 0x18 }
-  if ch == 105 && row == 4 { return 0x18 }
-  if ch == 105 && row == 5 { return 0x18 }
-  if ch == 105 && row == 6 { return 0x3C }
-  if ch == 106 && row == 0 { return 0x0C }
-  if ch == 106 && row == 2 { return 0x1C }
-  if ch == 106 && row == 3 { return 0x0C }
-  if ch == 106 && row == 4 { return 0x0C }
-  if ch == 106 && row == 5 { return 0x0C }
-  if ch == 106 && row == 6 { return 0x6C }
-  if ch == 106 && row == 7 { return 0x38 }
-  if ch == 107 && row == 0 { return 0x60 }
-  if ch == 107 && row == 1 { return 0x60 }
-  if ch == 107 && row == 2 { return 0x66 }
-  if ch == 107 && row == 3 { return 0x6C }
-  if ch == 107 && row == 4 { return 0x78 }
-  if ch == 107 && row == 5 { return 0x6C }
-  if ch == 107 && row == 6 { return 0x66 }
-  if ch == 108 && row == 0 { return 0x38 }
-  if ch == 108 && row == 1 { return 0x18 }
-  if ch == 108 && row == 2 { return 0x18 }
-  if ch == 108 && row == 3 { return 0x18 }
-  if ch == 108 && row == 4 { return 0x18 }
-  if ch == 108 && row == 5 { return 0x18 }
-  if ch == 108 && row == 6 { return 0x3C }
-  if ch == 109 && row == 2 { return 0x66 }
-  if ch == 109 && row == 3 { return 0x7F }
-  if ch == 109 && row == 4 { return 0x7F }
-  if ch == 109 && row == 5 { return 0x6B }
-  if ch == 109 && row == 6 { return 0x63 }
-  if ch == 110 && row == 2 { return 0x7C }
-  if ch == 110 && row == 3 { return 0x66 }
-  if ch == 110 && row == 4 { return 0x66 }
-  if ch == 110 && row == 5 { return 0x66 }
-  if ch == 110 && row == 6 { return 0x66 }
-  if ch == 111 && row == 2 { return 0x3C }
-  if ch == 111 && row == 3 { return 0x66 }
-  if ch == 111 && row == 4 { return 0x66 }
-  if ch == 111 && row == 5 { return 0x66 }
-  if ch == 111 && row == 6 { return 0x3C }
-  if ch == 112 && row == 2 { return 0x7C }
-  if ch == 112 && row == 3 { return 0x66 }
-  if ch == 112 && row == 4 { return 0x66 }
-  if ch == 112 && row == 5 { return 0x7C }
-  if ch == 112 && row == 6 { return 0x60 }
-  if ch == 112 && row == 7 { return 0x60 }
-  if ch == 113 && row == 2 { return 0x3E }
-  if ch == 113 && row == 3 { return 0x66 }
-  if ch == 113 && row == 4 { return 0x66 }
-  if ch == 113 && row == 5 { return 0x3E }
-  if ch == 113 && row == 6 { return 0x06 }
-  if ch == 113 && row == 7 { return 0x06 }
-  if ch == 114 && row == 2 { return 0x7C }
-  if ch == 114 && row == 3 { return 0x66 }
-  if ch == 114 && row == 4 { return 0x60 }
-  if ch == 114 && row == 5 { return 0x60 }
-  if ch == 114 && row == 6 { return 0x60 }
-  if ch == 115 && row == 2 { return 0x3E }
-  if ch == 115 && row == 3 { return 0x60 }
-  if ch == 115 && row == 4 { return 0x3C }
-  if ch == 115 && row == 5 { return 0x06 }
-  if ch == 115 && row == 6 { return 0x7C }
-  if ch == 116 && row == 0 { return 0x18 }
-  if ch == 116 && row == 1 { return 0x18 }
-  if ch == 116 && row == 2 { return 0x3E }
-  if ch == 116 && row == 3 { return 0x18 }
-  if ch == 116 && row == 4 { return 0x18 }
-  if ch == 116 && row == 5 { return 0x18 }
-  if ch == 116 && row == 6 { return 0x0E }
-  if ch == 117 && row == 2 { return 0x66 }
-  if ch == 117 && row == 3 { return 0x66 }
-  if ch == 117 && row == 4 { return 0x66 }
-  if ch == 117 && row == 5 { return 0x66 }
-  if ch == 117 && row == 6 { return 0x3E }
-  if ch == 118 && row == 2 { return 0x66 }
-  if ch == 118 && row == 3 { return 0x66 }
-  if ch == 118 && row == 4 { return 0x66 }
-  if ch == 118 && row == 5 { return 0x3C }
-  if ch == 118 && row == 6 { return 0x18 }
-  if ch == 119 && row == 2 { return 0x63 }
-  if ch == 119 && row == 3 { return 0x6B }
-  if ch == 119 && row == 4 { return 0x7F }
-  if ch == 119 && row == 5 { return 0x3F }
-  if ch == 119 && row == 6 { return 0x36 }
-  if ch == 120 && row == 2 { return 0x66 }
-  if ch == 120 && row == 3 { return 0x3C }
-  if ch == 120 && row == 4 { return 0x18 }
-  if ch == 120 && row == 5 { return 0x3C }
-  if ch == 120 && row == 6 { return 0x66 }
-  if ch == 121 && row == 2 { return 0x66 }
-  if ch == 121 && row == 3 { return 0x66 }
-  if ch == 121 && row == 4 { return 0x66 }
-  if ch == 121 && row == 5 { return 0x3E }
-  if ch == 121 && row == 6 { return 0x0C }
-  if ch == 121 && row == 7 { return 0x38 }
-  if ch == 122 && row == 2 { return 0x7E }
-  if ch == 122 && row == 3 { return 0x0C }
-  if ch == 122 && row == 4 { return 0x18 }
-  if ch == 122 && row == 5 { return 0x30 }
-  if ch == 122 && row == 6 { return 0x7E }
-  if ch == 123 && row == 0 { return 0x0E }
-  if ch == 123 && row == 1 { return 0x18 }
-  if ch == 123 && row == 2 { return 0x18 }
-  if ch == 123 && row == 3 { return 0x70 }
-  if ch == 123 && row == 4 { return 0x18 }
-  if ch == 123 && row == 5 { return 0x18 }
-  if ch == 123 && row == 6 { return 0x0E }
-  if ch == 124 && row == 0 { return 0x18 }
-  if ch == 124 && row == 1 { return 0x18 }
-  if ch == 124 && row == 2 { return 0x18 }
-  if ch == 124 && row == 3 { return 0x18 }
-  if ch == 124 && row == 4 { return 0x18 }
-  if ch == 124 && row == 5 { return 0x18 }
-  if ch == 124 && row == 6 { return 0x18 }
-  if ch == 125 && row == 0 { return 0x70 }
-  if ch == 125 && row == 1 { return 0x18 }
-  if ch == 125 && row == 2 { return 0x18 }
-  if ch == 125 && row == 3 { return 0x0E }
-  if ch == 125 && row == 4 { return 0x18 }
-  if ch == 125 && row == 5 { return 0x18 }
-  if ch == 125 && row == 6 { return 0x70 }
-  if ch == 126 && row == 2 { return 0x60 }
-  if ch == 126 && row == 3 { return 0x7E }
-  if ch == 126 && row == 4 { return 0x06 }
-  return 0
+fn fb-font-aa-init() -> void {
+  fb-font-aa = alloc(128 * 64)
+  fb-build-aa-table(fb-font, fb-font-aa)
+  return
 }
 
+fn fb-glyph8(ch: Int, row: Int) -> Int {
+  if fb-font != 0 && ch >= 0 && ch < 128 && row >= 0 && row < 8 {
+    return load8(fb-font + ch * 8 + row)
+  }
+  return 0
+}

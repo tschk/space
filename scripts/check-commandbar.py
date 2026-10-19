@@ -96,6 +96,7 @@ lifecycle = base + """
 var comp-launcher-open:Int=0;
 var comp-drag-off-x:Int=0;
 var comp-drag-off-y:Int=0;
+var comp-surf-sizes:Int=3200;
 var terminal-events:Int=0;
 var last-terminal-slot:Int=-1;
 fn store8(p:Int,v:Int)->Void{heap[p]=v;}
@@ -109,6 +110,7 @@ fn comp-term-push-line(slot:Int,line:Int)->Void{terminal-events=terminal-events+
 fn comp-term-input-of(slot:Int)->Int{return 0;}
 fn comp-term-line-eq(slot:Int,text:Int)->Int{return 0;}
 fn comp-term-seed(slot:Int,text:Int)->Void{return;}
+fn comp-term-set-len(slot:Int,len:Int)->Void{return;}
 fn comp-term-set-mode(slot:Int,mode:Int)->Void{return;}
 fn comp-term-get-mode(slot:Int)->Int{return 0;}
 fn comp-term-append(slot:Int,key:Int)->Void{

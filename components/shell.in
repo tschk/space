@@ -1345,6 +1345,25 @@ fn shell(port: Int) -> void {
       serial-nl(port)
     } else if line-eq("fb") != 0 {
       fb-info(port)
+    } else if line-prefix("fb mode ") >= 0 {
+      let arg1 = line-prefix("fb mode ")
+      let arg2 = next-arg(arg1)
+      let mw = atoi(line + arg1)
+      let mh = 0
+      if arg2 > 0 { mh = atoi(line + arg2) }
+      out-set-bga-mode(port, mw, mh, out-scale-num, out-scale-den)
+    } else if line-prefix("fb scale ") >= 0 {
+      let arg1 = line-prefix("fb scale ")
+      let sc = atoi(line + arg1)
+      if text-set-scale(sc) != 0 {
+        serial-write-cstr(port, "space: text scale ")
+        serial-write-dec-wide(port, sc)
+        serial-nl(port)
+      } else {
+        serial-write-cstr(port, "space: text scale refused ")
+        serial-write-dec-wide(port, sc)
+        serial-nl(port)
+      }
     } else if line-eq("comp") != 0 {
       comp-init()
       let w1 = comp-win-create("Terminal", 40, 40, 320, 200)

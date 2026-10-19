@@ -2,6 +2,8 @@ package space.display
 
 import "../protocol/display.in"
 import "font.in"
+import "display-output.in"
+import "display-text.in"
 import "display-commandbar.in"
 
 interface DisplayDevice {
@@ -143,14 +145,11 @@ fn fb-init(mb-info: Int) -> Int {
     fb-height = load16(mode-info + 20)
     fb-bpp = load8(mode-info + 25)
     fb-addr = load32(mode-info + 40)
-    if fb-bpp != 32 {
+    if out-commit-mode(fb-width, fb-height, fb-bpp, fb-pitch, 100, 100, OUT-TRANSFORM-NORMAL) == 0 {
       return -1
     }
-    if fb-pitch < fb-width * 4 {
-      return -1
-    }
-    fb-size = fb-pitch * fb-height
     fb-font-init()
+    text-init()
     fb-ready = 1
     return 0
   }
@@ -183,13 +182,7 @@ fn fb-init(mb-info: Int) -> Int {
     fb-pitch = virt-w * 4
   }
 
-  if fb-width == 0 || fb-height == 0 {
-    return -1
-  }
-  if fb-bpp != 32 {
-    return -1
-  }
-  if fb-pitch < fb-width * 4 {
+  if out-commit-mode(fb-width, fb-height, fb-bpp, fb-pitch, 100, 100, OUT-TRANSFORM-NORMAL) == 0 {
     return -1
   }
 
@@ -217,11 +210,9 @@ fn fb-init(mb-info: Int) -> Int {
     return -1
   }
 
-  // Calculate framebuffer size.
-  fb-size = fb-pitch * fb-height
-
-  // Initialize the font.
+  // Initialize the font and text subsystem.
   fb-font-init()
+  text-init()
   fb-ready = 1
 
   return 0
@@ -286,13 +277,30 @@ fn fb-fill-rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
     return
   }
 
+  let color32 = color & 0xFFFFFFFF
+  let color64 = color32 | (color32 << 32)
+  let span = x-end - x-start
+  let bytes8 = (span >> 1) * 8
+  let bytes32 = (span >> 3) * 32
+  let odd = span & 1
   let py = y-start
   while py < y-end {
-    let px = x-start
-    let row-addr = fb-addr + py * fb-pitch
-    while px < x-end {
-      store32(row-addr + px * 4, color)
-      px = px + 1
+    let ptr = fb-addr + py * fb-pitch + x-start * 4
+    let end32 = ptr + bytes32
+    let end8 = ptr + bytes8
+    while ptr < end32 {
+      store64(ptr, color64)
+      store64(ptr + 8, color64)
+      store64(ptr + 16, color64)
+      store64(ptr + 24, color64)
+      ptr = ptr + 32
+    }
+    while ptr < end8 {
+      store64(ptr, color64)
+      ptr = ptr + 8
+    }
+    if odd != 0 {
+      store32(ptr, color)
     }
     py = py + 1
   }
@@ -313,22 +321,25 @@ fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
   // Fast path if the whole character (16x16) is within bounds and clip.
   if rx >= 0 && rx + 16 <= fb-width && ry >= 0 && ry + 16 <= fb-height {
     if comp-clip-valid == 0 || (rx >= comp-clip-x0 && rx + 16 <= comp-clip-x1 && ry >= comp-clip-y0 && ry + 16 <= comp-clip-y1) {
+      let color32 = color & 0xFFFFFFFF
+      let color64 = color32 | (color32 << 32)
+      let glyph-base = fb-font + ch * 8
       let row = 0
       let row-addr = fb-addr + ry * fb-pitch + rx * 4
       while row < 8 {
-        let bits = fb-glyph8(ch, row)
-        let col = 0
-        let pixel-addr = row-addr
-        while col < 8 {
-          let bit = (bits >> (7 - col)) & 1
-          if bit != 0 {
-            store32(pixel-addr, color)
-            store32(pixel-addr + 4, color)
-            store32(pixel-addr + fb-pitch, color)
-            store32(pixel-addr + fb-pitch + 4, color)
+        let bits = load8(glyph-base + row)
+        if bits != 0 {
+          let col = 0
+          let pixel-addr = row-addr
+          while col < 8 {
+            let bit = (bits >> (7 - col)) & 1
+            if bit != 0 {
+              store64(pixel-addr, color64)
+              store64(pixel-addr + fb-pitch, color64)
+            }
+            pixel-addr = pixel-addr + 8
+            col = col + 1
           }
-          pixel-addr = pixel-addr + 8
-          col = col + 1
         }
         row-addr = row-addr + fb-pitch * 2
         row = row + 1
@@ -348,12 +359,13 @@ fn fb-draw-char(x: Int, y: Int, ch: Int, color: Int) -> void {
     }
   }
 
+  let glyph-base2 = fb-font + ch * 8
   let row = 0
   let py = y
   while row < 8 {
     let ry2 = py + comp-render-dy
     if ry2 + 1 >= 0 && ry2 < fb-height {
-      let bits = fb-glyph8(ch, row)
+      let bits = load8(glyph-base2 + row)
       let col = 0
       let px = x
       while col < 8 {
@@ -608,6 +620,7 @@ fn comp-win-damage(idx: Int) -> void {
   let wy = load32(base + 8)
   let ww = load32(base + 12)
   let wh = load32(base + 16)
+  store32(base + 20, load32(base + 20) | COMP-WIN-DIRTY)
   comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
   return
 }
@@ -683,8 +696,8 @@ fn comp-win-create(title: Int, x: Int, y: Int, w: Int, h: Int) -> Int {
   store64(base + 32, 0)
   store64(base + 40, COMP-ROLE-TEXT)
   store8(base + 48, 255)
+  store32(base + 52, 0)
   store64(base + 56, 0)
-  store32(comp-surf-sizes + idx * 4, 0)
   comp-count = comp-count + 1
   comp-win-focus(idx)
   return idx
@@ -695,7 +708,9 @@ fn comp-win-set-content(idx: Int, buf: Int) -> void {
   if idx < 0 || idx >= comp-count {
     return
   }
-  store64(comp-win-base(idx) + 32, buf)
+  let base = comp-win-base(idx)
+  store64(base + 32, buf)
+  store32(base + 20, load32(base + 20) | COMP-WIN-DIRTY)
   return
 }
 
@@ -703,7 +718,9 @@ fn comp-win-set-role(idx: Int, role: Int) -> void {
   if idx < 0 || idx >= comp-count {
     return
   }
-  store64(comp-win-base(idx) + 40, role)
+  let base = comp-win-base(idx)
+  store64(base + 40, role)
+  store32(base + 20, load32(base + 20) | COMP-WIN-DIRTY)
   return
 }
 
@@ -943,15 +960,10 @@ fn comp-draw-content-bg(base: Int) -> void {
   fb-fill-rect(x + COMP-BORDER-W, content-y, w - COMP-BORDER-W * 2, h - COMP-BORDER-W, COMP-COLOR-WINDOW)
 }
 
-// Draw an anti-aliased character at (x, y): a 2x-scaled grayscale coverage
-// mask blended into the surface. Slower than the bitmap path; used for chrome
-// (title bars, top bar) where edges should be soft.
-fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
-  if fb-ready == 0 {
+// Fast 2x grayscale coverage blender for an 8x8 AA coverage table.
+fn fb-draw-char-table-aa(aa-table: Int, x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb-ready == 0 || aa-table == 0 {
     return
-  }
-  if ch < 0 || ch >= 128 {
-    ch = 63  // '?'
   }
   let rx = x + comp-render-dx
   let ry = y + comp-render-dy
@@ -973,7 +985,7 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
       let col = 0
       let px = rx
       while col < 8 {
-        let cov = load8(fb-font-aa + ch * 64 + row * 8 + col)
+        let cov = load8(aa-table + ch * 64 + row * 8 + col)
         if cov > 0 {
           let in-clip = 1
           if comp-clip-valid != 0 {
@@ -983,32 +995,32 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
           }
           if in-clip != 0 {
             if px >= 0 && px + 1 < fb-width {
-            let ia = 255 - cov
-            let off00 = py * fb-pitch + px * 4
-            let off01 = off00 + 4
-            let off10 = off00 + fb-pitch
-            let off11 = off10 + 4
-            let d00 = load32(fb-addr + off00)
-            let d01 = load32(fb-addr + off01)
-            let d10 = load32(fb-addr + off10)
-            let d11 = load32(fb-addr + off11)
-            let dr = (d00 >> 16) & 0xFF
-            let dg = (d00 >> 8) & 0xFF
-            let db = d00 & 0xFF
-            store32(fb-addr + off00, (((cr * cov + dr * ia) / 255) << 16) | (((cg * cov + dg * ia) / 255) << 8) | ((cb * cov + db * ia) / 255))
-            let dr = (d01 >> 16) & 0xFF
-            let dg = (d01 >> 8) & 0xFF
-            let db = d01 & 0xFF
-            store32(fb-addr + off01, (((cr * cov + dr * ia) / 255) << 16) | (((cg * cov + dg * ia) / 255) << 8) | ((cb * cov + db * ia) / 255))
-            let dr = (d10 >> 16) & 0xFF
-            let dg = (d10 >> 8) & 0xFF
-            let db = d10 & 0xFF
-            store32(fb-addr + off10, (((cr * cov + dr * ia) / 255) << 16) | (((cg * cov + dg * ia) / 255) << 8) | ((cb * cov + db * ia) / 255))
-            let dr = (d11 >> 16) & 0xFF
-            let dg = (d11 >> 8) & 0xFF
-            let db = d11 & 0xFF
-            store32(fb-addr + off11, (((cr * cov + dr * ia) / 255) << 16) | (((cg * cov + dg * ia) / 255) << 8) | ((cb * cov + db * ia) / 255))
-          }
+              let ia = 255 - cov
+              let off00 = py * fb-pitch + px * 4
+              let off01 = off00 + 4
+              let off10 = off00 + fb-pitch
+              let off11 = off10 + 4
+              let d00 = load32(fb-addr + off00)
+              let d01 = load32(fb-addr + off01)
+              let d10 = load32(fb-addr + off10)
+              let d11 = load32(fb-addr + off11)
+              let dr = (d00 >> 16) & 0xFF
+              let dg = (d00 >> 8) & 0xFF
+              let db = d00 & 0xFF
+              store32(fb-addr + off00, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+              let dr = (d01 >> 16) & 0xFF
+              let dg = (d01 >> 8) & 0xFF
+              let db = d01 & 0xFF
+              store32(fb-addr + off01, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+              let dr = (d10 >> 16) & 0xFF
+              let dg = (d10 >> 8) & 0xFF
+              let db = d10 & 0xFF
+              store32(fb-addr + off10, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+              let dr = (d11 >> 16) & 0xFF
+              let dg = (d11 >> 8) & 0xFF
+              let db = d11 & 0xFF
+              store32(fb-addr + off11, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+            }
           }
         }
         px = px + 2
@@ -1021,48 +1033,136 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
   return
 }
 
-// Draw a label using anti-aliased glyphs (chrome path).
+// Draw an anti-aliased character at (x, y) using the active UI typeface.
+fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb-ready == 0 {
+    return
+  }
+  let face = text-role-face(TEXT-ROLE-UI-BODY)
+  if fb-font-scale == 2 && text-is-supported-cp(ch) != 0 {
+    let aa-table = fb-font-aa
+    if face == FONT-FACE-SANS && fb-font-sans-aa != 0 {
+      aa-table = fb-font-sans-aa
+    }
+    fb-draw-char-table-aa(aa-table, x, y, ch, color)
+    return
+  }
+  text-draw-char-face-aa(face, x, y, ch, color)
+  return
+}
+
+// Draw a label using anti-aliased UI glyphs (Space UI Sans proportional chrome path).
 fn comp-draw-label-aa(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let gh = fb-font-scale * 8 + 2
+  let ry = y + comp-render-dy
+  if ry + gh <= 0 || ry >= fb-height { return }
+  if comp-clip-valid != 0 {
+    if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+  }
+  let face = text-role-face(TEXT-ROLE-UI-BODY)
   let cx = x
   let i = 0
   while i < 96 {
-    let ch = load8(str + i)
-    if ch == 0 {
-      i = 96
-    } else {
-      fb-fill-rect(cx, y, 18, 18, bg)
-      fb-draw-char-aa(cx, y, ch, fg)
-      cx = cx + 18
+    let b0 = load8(str + i) & 0xFF
+    if b0 == 0 {
+      return
     }
-    i = i + 1
+    if b0 < 0x80 {
+      let adv = text-glyph-advance-raw(face, b0, fb-font-scale)
+      fb-fill-rect(cx, y, adv, gh, bg)
+      fb-draw-char-aa(cx, y, b0, fg)
+      cx = cx + adv
+      i = i + 1
+    } else {
+      let cp = text-utf8-decode(str, i)
+      let adv = text-glyph-advance(face, cp, fb-font-scale)
+      fb-fill-rect(cx, y, adv, gh, bg)
+      fb-draw-char-aa(cx, y, cp, fg)
+      cx = cx + adv
+      i = i + text-utf8-bytes
+    }
   }
   return
 }
 
-fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+// Draw a UI body label using Space UI Sans proportional bitmap strokes.
+fn comp-draw-ui-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let gh = fb-font-scale * 8 + 2
+  let ry = y + comp-render-dy
+  if ry + gh <= 0 || ry >= fb-height { return }
+  if comp-clip-valid != 0 {
+    if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+  }
+  let face = text-role-face(TEXT-ROLE-UI-BODY)
   let cx = x
   let i = 0
   while i < 96 {
-    let ch = load8(str + i)
-    if ch == 0 {
-      i = 96
-    } else {
-      fb-fill-rect(cx, y, 18, 18, bg)
-      fb-draw-char(cx, y, ch, fg)
-      cx = cx + 18
+    let b0 = load8(str + i) & 0xFF
+    if b0 == 0 {
+      return
     }
-    i = i + 1
+    if b0 < 0x80 {
+      let adv = text-glyph-advance-raw(face, b0, fb-font-scale)
+      fb-fill-rect(cx, y, adv, gh, bg)
+      text-draw-char-face(face, cx, y, b0, fg)
+      cx = cx + adv
+      i = i + 1
+    } else {
+      let cp = text-utf8-decode(str, i)
+      let adv = text-glyph-advance(face, cp, fb-font-scale)
+      fb-fill-rect(cx, y, adv, gh, bg)
+      text-draw-char-face(face, cx, y, cp, fg)
+      cx = cx + adv
+      i = i + text-utf8-bytes
+    }
+  }
+  return
+}
+
+// Draw a terminal/monospace label using Space Term Mono fixed-cell metrics.
+fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  let gh = fb-font-scale * 8 + 2
+  let ry = y + comp-render-dy
+  if ry + gh <= 0 || ry >= fb-height { return }
+  if comp-clip-valid != 0 {
+    if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+  }
+  let cw = text-term-cell-w()
+  let cx = x
+  let i = 0
+  while i < 96 {
+    let b0 = load8(str + i) & 0xFF
+    if b0 == 0 {
+      return
+    }
+    if b0 < 0x80 {
+      fb-fill-rect(cx, y, cw, gh, bg)
+      text-draw-char-face(FONT-FACE-MONO, cx, y, b0, fg)
+      cx = cx + cw
+      i = i + 1
+    } else {
+      let cp = text-utf8-decode(str, i)
+      fb-fill-rect(cx, y, cw, gh, bg)
+      text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
+      cx = cx + cw
+      i = i + text-utf8-bytes
+    }
   }
   return
 }
 
 fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
+  let cw = text-term-cell-w()
+  let gh = fb-font-scale * 8 + 2
+  let ry = y + comp-render-dy
   let n = value
   let cx = x
   if n == 0 {
-    fb-fill-rect(cx, y, 18, 18, bg)
-    fb-draw-char(cx, y, 48, fg)
-    return cx + 18
+    if ry + gh > 0 && ry < fb-height {
+      fb-fill-rect(cx, y, cw, gh, bg)
+      text-draw-char-face(FONT-FACE-MONO, cx, y, 48, fg)
+    }
+    return cx + cw
   }
   let div = 1
   while n / div >= 10 {
@@ -1071,9 +1171,11 @@ fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
   while div > 0 {
     let q = n / div
     let digit = q - (q / 10) * 10
-    fb-fill-rect(cx, y, 18, 18, bg)
-    fb-draw-char(cx, y, 48 + digit, fg)
-    cx = cx + 18
+    if ry + gh > 0 && ry < fb-height {
+      fb-fill-rect(cx, y, cw, gh, bg)
+      text-draw-char-face(FONT-FACE-MONO, cx, y, 48 + digit, fg)
+    }
+    cx = cx + cw
     div = div / 10
   }
   return cx
@@ -1348,35 +1450,48 @@ fn comp-draw-utilities-content(base: Int) -> void {
   let content-y = y + COMP-TITLE-BAR-H
   let cw = fb-font-scale * 8 + 2
   let lh = cw + 3
+  let sidebar-w = 136
+  let tx-x = x + 160
+  if w < 480 {
+    sidebar-w = 36
+    tx-x = x + 48
+  }
   fb-fill-rect(x, content-y, w, h, COMP-COLOR-SURFACE)
   // Dark sidebar
-  fb-fill-rect(x, content-y, 136, h, COMP-COLOR-DESKTOP)
+  fb-fill-rect(x, content-y, sidebar-w, h, COMP-COLOR-DESKTOP)
   fb-fill-rect(x + 2, content-y + lh + 20, 3, 16, COMP-COLOR-ACCENT)
-  // Content area — dynamic system info
+  // Content area — dynamic output mode, scale, and active typefaces
   let ty = content-y + lh + 4
-  comp-draw-label(x + 160, ty, "DISPLAY", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "DISPLAY", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "1920 x 1080", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  let rx-end = comp-draw-dec(tx-x, ty, fb-width, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(rx-end, ty, " x ", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  let sep-w = text-measure-run(TEXT-ROLE-UI-BODY, " x ", 3)
+  comp-draw-dec(rx-end + sep-w, ty, fb-height, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "32 BPP", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  if fb-font-scale == 3 {
+    comp-draw-ui-label(tx-x, ty, "32 BPP / 150%", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  } else {
+    comp-draw-ui-label(tx-x, ty, "32 BPP / 100%", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  }
   ty = ty + lh + lh / 2
-  comp-draw-label(x + 160, ty, "WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "TYPEFACES", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "BUFFERED", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "SPACE UI SANS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "BORDERLESS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-label(tx-x, ty, "SPACE TERM MONO", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh + lh / 2
-  comp-draw-label(x + 160, ty, "INPUT", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "INPUT", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "MOUSE", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "MOUSE", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "KEYBOARD", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "KEYBOARD", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh + lh / 2
-  comp-draw-label(x + 160, ty, "PANEL", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "PANEL", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "BOTTOM", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "BOTTOM", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh
-  comp-draw-label(x + 160, ty, "CLICK FOCUS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(tx-x, ty, "CLICK FOCUS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   return
 }
 
@@ -1386,15 +1501,15 @@ fn comp-draw-terminal-content(base: Int) -> void {
   let w = load32(base + 12)
   let h = load32(base + 16)
   let content-y = y + COMP-TITLE-BAR-H
-  let cw = fb-font-scale * 8 + 2
-  let lh = cw + 3
+  let cw = text-term-cell-w()
+  let lh = text-term-cell-h()
   let slot = comp-term-slot-of-win(base)
   fb-fill-rect(x, content-y, w, h, COMP-COLOR-TERM-BG)
   fb-fill-rect(x, content-y, w, 28, COMP-COLOR-DESKTOP)
   if slot == 0 {
-    comp-draw-label(x + 12, content-y + 6, "TERMINAL 1", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
+    comp-draw-ui-label(x + 12, content-y + 6, "TERMINAL 1", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
   } else {
-    comp-draw-label(x + 12, content-y + 6, "TERMINAL 2", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
+    comp-draw-ui-label(x + 12, content-y + 6, "TERMINAL 2", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
   }
   let prompt-y = content-y + 40
   // Visible history: last COMP-TERM-VIEW lines, shifted by scroll.
@@ -1421,7 +1536,11 @@ fn comp-draw-terminal-content(base: Int) -> void {
     prompt-y = prompt-y + lh
   }
   comp-draw-label(x + 16, prompt-y, "space> ", FB-COLOR-GREEN, COMP-COLOR-TERM-BG)
-  comp-draw-label(x + 16 + 7 * 18, prompt-y, comp-term-input-of(slot), FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
+  let input-x = x + 16 + 7 * cw
+  let input-buf = comp-term-input-of(slot)
+  comp-draw-label(input-x, prompt-y, input-buf, FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
+  let caret-off = text-caret-x(TEXT-ROLE-TERM-MONO, input-buf, comp-term-get-len(slot))
+  fb-fill-rect(input-x + caret-off, prompt-y + 2, 2 * fb-font-scale, 7 * fb-font-scale, COMP-COLOR-ACCENT)
   return
 }
 
@@ -1543,16 +1662,13 @@ fn comp-composite-alpha(base: Int) -> void {
     while px < x1 {
       let s = load32(row-src + off)
       let d = load32(row-dst + off)
-      let sr = (s >> 16) & 0xFF
-      let sg = (s >> 8) & 0xFF
-      let sb = s & 0xFF
-      let dr = (d >> 16) & 0xFF
-      let dg = (d >> 8) & 0xFF
-      let db = d & 0xFF
-      let nr = (sr * alpha + dr * ia) / 255
-      let ng = (sg * alpha + dg * ia) / 255
-      let nb = (sb * alpha + db * ia) / 255
-      store32(row-dst + off, (nr << 16) | (ng << 8) | nb)
+      let srb = s & 0x00FF00FF
+      let sg = s & 0x0000FF00
+      let drb = d & 0x00FF00FF
+      let dg = d & 0x0000FF00
+      let nrb = ((srb * alpha + drb * ia + 0x00FF00FF) >> 8) & 0x00FF00FF
+      let ng = ((sg * alpha + dg * ia + 0x0000FF00) >> 8) & 0x0000FF00
+      store32(row-dst + off, nrb | ng)
       off = off + 4
       px = px + 1
     }
@@ -1563,7 +1679,7 @@ fn comp-composite-alpha(base: Int) -> void {
 
 // Draw a single window (border + title bar + content). Opaque windows render
 // straight into the current surface; translucent windows render into a
-// per-window surface first, then blend over the composed background.
+// per-window surface when dirty, then blend over the composed background.
 fn comp-render-window(idx: Int) -> void {
   let base = comp-win-base(idx)
   let flags = load32(base + 20)
@@ -1573,45 +1689,48 @@ fn comp-render-window(idx: Int) -> void {
   let alpha = load8(base + 48)
   if alpha >= 255 {
     comp-render-window-frame(base)
-    // Clear dirty flag
     let flags2 = load32(base + 20)
     store32(base + 20, flags2 & -5)
     return
   }
 
-  // Translucent path: render the frame into a per-window surface, then blend.
   let ww = load32(base + 12)
   let wh = load32(base + 16)
   let fh = wh + COMP-TITLE-BAR-H
   let needed = ww * fh * 4
   let surf = load64(base + 56)
-  let have = load32(comp-surf-sizes + idx * 4)
+  let have = load32(base + 52)
+  let need-render = 0
+  if (flags & COMP-WIN-DIRTY) != 0 {
+    need-render = 1
+  }
   if surf == 0 || have < needed {
     surf = alloc(needed)
     store64(base + 56, surf)
-    store32(comp-surf-sizes + idx * 4, needed)
+    store32(base + 52, needed)
+    need-render = 1
   }
   if surf == 0 {
     return
   }
-  let saved-addr = fb-addr
-  let saved-pitch = fb-pitch
-  fb-addr = surf
-  fb-pitch = ww * 4
-  comp-render-dx = 0 - load32(base + 4)
-  comp-render-dy = 0 - load32(base + 8)
-  comp-clip-set(0, 0, ww, fh)
-  comp-render-window-frame(base)
-  comp-clip-clear()
-  comp-render-dx = 0
-  comp-render-dy = 0
-  fb-addr = saved-addr
-  fb-pitch = saved-pitch
+  if need-render != 0 {
+    let saved-addr = fb-addr
+    let saved-pitch = fb-pitch
+    fb-addr = surf
+    fb-pitch = ww * 4
+    comp-render-dx = 0 - load32(base + 4)
+    comp-render-dy = 0 - load32(base + 8)
+    comp-clip-set(0, 0, ww, fh)
+    comp-render-window-frame(base)
+    comp-clip-clear()
+    comp-render-dx = 0
+    comp-render-dy = 0
+    fb-addr = saved-addr
+    fb-pitch = saved-pitch
+  }
 
-  // Blend the surface over the backbuffer within the damage clip.
   comp-clip-set(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
   comp-composite-alpha(base)
-  comp-clip-clear()
 
   // Clear dirty flag
   let flags2 = load32(base + 20)
@@ -1766,22 +1885,34 @@ fn comp-rect-intersects(ax0: Int, ay0: Int, ax1: Int, ay1: Int, bx0: Int, by0: I
 // Blit the damage region of the backbuffer to the real framebuffer.
 fn comp-blit-region(dst: Int, x0: Int, y0: Int, x1: Int, y1: Int) -> void {
   let src = comp-backbuf
+  let n = (x1 - x0) * 4
+  let bytes8 = n & -8
+  let bytes32 = n & -32
   let py = y0
   while py < y1 {
-    let row-src = src + py * fb-pitch + x0 * 4
-    let row-dst = dst + py * fb-pitch + x0 * 4
-    let n = (x1 - x0) * 4
-    let q = n / 8
-    let bi = 0
-    while bi < q {
-      store64(row-dst + bi * 8, load64(row-src + bi * 8))
-      bi = bi + 1
+    let row-off = py * fb-pitch + x0 * 4
+    let sptr = src + row-off
+    let dptr = dst + row-off
+    let send32 = sptr + bytes32
+    let send8 = sptr + bytes8
+    let send = sptr + n
+    while sptr < send32 {
+      store64(dptr, load64(sptr))
+      store64(dptr + 8, load64(sptr + 8))
+      store64(dptr + 16, load64(sptr + 16))
+      store64(dptr + 24, load64(sptr + 24))
+      sptr = sptr + 32
+      dptr = dptr + 32
     }
-    let rem = n - q * 8
-    let ri = 0
-    while ri < rem {
-      store8(row-dst + q * 8 + ri, load8(row-src + q * 8 + ri))
-      ri = ri + 1
+    while sptr < send8 {
+      store64(dptr, load64(sptr))
+      sptr = sptr + 8
+      dptr = dptr + 8
+    }
+    while sptr < send {
+      store8(dptr, load8(sptr))
+      sptr = sptr + 1
+      dptr = dptr + 1
     }
     py = py + 1
   }
@@ -1809,6 +1940,52 @@ fn comp-cursor-after-damage() -> void {
   return
 }
 
+// Fill the desktop background within the pending damage rect, skipping any
+// interior region completely covered by the first intersecting opaque window.
+fn comp-fill-bg-damage() -> void {
+  let dx0 = comp-dmg-x0
+  let dy0 = comp-dmg-y0
+  let dx1 = comp-dmg-x1
+  let dy1 = comp-dmg-y1
+  let i = 0
+  while i < comp-count {
+    let base = comp-win-base(i)
+    let flags = load32(base + 20)
+    if (flags & COMP-WIN-VISIBLE) != 0 && (flags & COMP-WIN-MINIMIZED) == 0 && load8(base + 48) >= 255 {
+      if comp-win-intersects(i, dx0, dy0, dx1, dy1) != 0 {
+        let wx0 = load32(base + 4)
+        let wy0 = load32(base + 8)
+        let wx1 = wx0 + load32(base + 12)
+        let wy1 = wy0 + load32(base + 16) + COMP-TITLE-BAR-H
+        let ox0 = dx0
+        if wx0 > ox0 { ox0 = wx0 }
+        let oy0 = dy0
+        if wy0 > oy0 { oy0 = wy0 }
+        let ox1 = dx1
+        if wx1 < ox1 { ox1 = wx1 }
+        let oy1 = dy1
+        if wy1 < oy1 { oy1 = wy1 }
+        if oy0 > dy0 {
+          fb-fill-rect(dx0, dy0, dx1 - dx0, oy0 - dy0, COMP-COLOR-DESKTOP)
+        }
+        if oy1 < dy1 {
+          fb-fill-rect(dx0, oy1, dx1 - dx0, dy1 - oy1, COMP-COLOR-DESKTOP)
+        }
+        if ox0 > dx0 && oy1 > oy0 {
+          fb-fill-rect(dx0, oy0, ox0 - dx0, oy1 - oy0, COMP-COLOR-DESKTOP)
+        }
+        if ox1 < dx1 && oy1 > oy0 {
+          fb-fill-rect(ox1, oy0, dx1 - ox1, oy1 - oy0, COMP-COLOR-DESKTOP)
+        }
+        return
+      }
+    }
+    i = i + 1
+  }
+  fb-fill-rect(dx0, dy0, dx1 - dx0, dy1 - dy0, COMP-COLOR-DESKTOP)
+  return
+}
+
 // Render the desktop: recompose only the pending damage rect into the
 // backbuffer and blit just that region, then reconcile the cursor on the real
 // framebuffer. With no damage, only the cursor is refreshed.
@@ -1828,8 +2005,8 @@ fn comp-render() -> void {
     comp-render-dy = 0
     comp-clip-set(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1, comp-dmg-y1)
 
-    // Background within damage only.
-    fb-fill-rect(comp-dmg-x0, comp-dmg-y0, comp-dmg-x1 - comp-dmg-x0, comp-dmg-y1 - comp-dmg-y0, COMP-COLOR-DESKTOP)
+    // Background within damage only (skipping opaque window interior).
+    comp-fill-bg-damage()
 
     // Recompose windows intersecting the damage rect, bottom-up.
     let i = 0
@@ -1996,7 +2173,9 @@ fn comp-render-topbar() -> void {
   if comp-focused >= 0 && comp-focused < comp-count {
     let title = load64(comp-win-base(comp-focused) + 24)
     if title != 0 {
-      comp-draw-label-aa(fb-width / 2 - 120, ty, title, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+      let title-x = fb-width / 2 - 120
+      if title-x < 572 { title-x = 572 }
+      comp-draw-label-aa(title-x, ty, title, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
     }
   }
   let count = 0
@@ -2153,6 +2332,8 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
     }
     store32(base + 12, new-w)
     store32(base + 16, new-h)
+    let flags = load32(base + 20)
+    store32(base + 20, flags | COMP-WIN-DIRTY)
   }
   // Damage the new frame rect too (old + new union covers the whole path).
   wx = load32(base + 4)
@@ -2160,8 +2341,6 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
   ww = load32(base + 12)
   wh = load32(base + 16)
   comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
-  let flags = load32(base + 20)
-  store32(base + 20, flags | COMP-WIN-DIRTY)
   return
 }
 
@@ -2199,10 +2378,32 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
       comp-term-backspace(slot)
     } else if key == 13 || key == 10 {
       // Push current input into ring, then clear line.
+      let is-fetch = comp-term-line-eq(slot, "fetch")
+      let is-utf8 = comp-term-line-eq(slot, "utf8")
       comp-term-push-line(slot, comp-term-input-of(slot))
-      if comp-term-line-eq(slot, "fetch") != 0 {
+      if is-fetch != 0 {
         comp-term-seed(slot, "")
         comp-term-set-mode(slot, 2)
+      } else if is-utf8 != 0 {
+        // Push a multi-byte UTF-8 line (U+00E9 + U+20AC) to exercise UTF-8
+        // decoding and missing-glyph fallback box rendering in the terminal.
+        let ubuf = comp-term-input-of(slot)
+        store8(ubuf + 0, 85)   // 'U'
+        store8(ubuf + 1, 84)   // 'T'
+        store8(ubuf + 2, 70)   // 'F'
+        store8(ubuf + 3, 56)   // '8'
+        store8(ubuf + 4, 58)   // ':'
+        store8(ubuf + 5, 32)   // ' '
+        store8(ubuf + 6, 0xC3) // U+00E9 byte 0
+        store8(ubuf + 7, 0xA9) // U+00E9 byte 1
+        store8(ubuf + 8, 32)   // ' '
+        store8(ubuf + 9, 0xE2) // U+20AC byte 0
+        store8(ubuf + 10, 0x82) // U+20AC byte 1
+        store8(ubuf + 11, 0xAC) // U+20AC byte 2
+        store8(ubuf + 12, 0)
+        comp-term-push-line(slot, ubuf)
+        comp-term-seed(slot, "")
+        comp-term-set-mode(slot, 0)
       } else {
         comp-term-seed(slot, "")
         comp-term-set-mode(slot, 0)
@@ -2227,6 +2428,16 @@ fn comp-handle-key(port: Int, key: Int) -> Int {
 // path so the moving-window bench measures the renderer (opaque damage-rect),
 // not the alpha blend cost.
 fn comp-create-default-windows(translucent-util: Int) -> void {
+  let wi = 0
+  while wi < COMP-MAX-WINDOWS {
+    comp-win-clear(wi)
+    store32(comp-surf-sizes + wi * 4, 0)
+    wi = wi + 1
+  }
+  comp-count = 0
+  comp-focused = -1
+  comp-dragging = -1
+  comp-drag-mode = -1
   let top-y = COMP-TASKBAR-H + 20
   let usable-h = fb-height - COMP-TASKBAR-H * 2 - 40 - 8
   let left-w = (fb-width - 64) / 2

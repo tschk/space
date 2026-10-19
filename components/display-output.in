@@ -1,0 +1,315 @@
+package space.display
+
+// ============================================================================
+// Space Output, Work-Area, and Coordinate Transform Contract
+// ============================================================================
+//
+// Owns output identity, configuration generation, mode/pitch/format/scale
+// validation, logical work-area geometry, rational logical<->physical
+// coordinate transforms, outward damage rounding, shared tile-edge rounding,
+// and atomic mode switch / window clamping recovery.
+// ============================================================================
+
+const OUT-MIN-W = 640
+const OUT-MAX-W = 4096
+const OUT-MIN-H = 480
+const OUT-MAX-H = 4096
+const OUT-MAX-PITCH = 32768
+const OUT-MAX-FB-BYTES = 33554432
+
+const OUT-FMT-BGRX8888 = 1
+
+const OUT-TRANSFORM-NORMAL = 0
+const OUT-TRANSFORM-ROT90 = 1
+const OUT-TRANSFORM-ROT180 = 2
+const OUT-TRANSFORM-ROT270 = 3
+
+var out-id: Int = 1
+var out-generation: Int = 0
+var out-format: Int = 1
+var out-transform: Int = 0
+var out-scale-num: Int = 100
+var out-scale-den: Int = 100
+var out-origin-x: Int = 0
+var out-origin-y: Int = 0
+var out-logical-w: Int = 0
+var out-logical-h: Int = 0
+var out-work-x: Int = 0
+var out-work-y: Int = 0
+var out-work-w: Int = 0
+var out-work-h: Int = 0
+// Optional physical dimensions and refresh rate (-1 = unknown on BGA/VBE).
+var out-phys-width-mm: Int = -1
+var out-phys-height-mm: Int = -1
+var out-refresh-mhz: Int = -1
+
+fn out-effective-phys-w(w: Int, h: Int, transform: Int) -> Int {
+  if transform == OUT-TRANSFORM-ROT90 || transform == OUT-TRANSFORM-ROT270 {
+    return h
+  }
+  return w
+}
+
+fn out-effective-phys-h(w: Int, h: Int, transform: Int) -> Int {
+  if transform == OUT-TRANSFORM-ROT90 || transform == OUT-TRANSFORM-ROT270 {
+    return w
+  }
+  return h
+}
+
+// Validate an output mode/scale/transform configuration as a transaction
+// before mutating live scanout or compositor state.
+// Returns 1 if valid, 0 if rejected.
+fn out-validate-mode(w: Int, h: Int, bpp: Int, pitch: Int, scale-num: Int, scale-den: Int, transform: Int) -> Int {
+  if w < OUT-MIN-W || w > OUT-MAX-W { return 0 }
+  if h < OUT-MIN-H || h > OUT-MAX-H { return 0 }
+  if bpp != 32 { return 0 }
+  if pitch < w * 4 || pitch > OUT-MAX-PITCH { return 0 }
+  if (pitch & 3) != 0 { return 0 }
+  // Overflow-safe scanout and backbuffer size check.
+  let total-bytes = pitch * h
+  if total-bytes <= 0 || total-bytes / h != pitch { return 0 }
+  if total-bytes > OUT-MAX-FB-BYTES { return 0 }
+  let tight-bytes = w * h * 4
+  if tight-bytes <= 0 || tight-bytes > OUT-MAX-FB-BYTES { return 0 }
+  // Rational scale bounds: 50% .. 400%.
+  if scale-num <= 0 || scale-den <= 0 { return 0 }
+  if scale-num > scale-den * 4 { return 0 }
+  if scale-num * 2 < scale-den { return 0 }
+  if transform < OUT-TRANSFORM-NORMAL || transform > OUT-TRANSFORM-ROT270 { return 0 }
+
+  let eff-w = out-effective-phys-w(w, h, transform)
+  let eff-h = out-effective-phys-h(w, h, transform)
+  let log-w = (eff-w * scale-den) / scale-num
+  let log-h = (eff-h * scale-den) / scale-num
+  let work-w = log-w
+  let work-h = log-h - COMP-TASKBAR-H * 2
+  if work-w < COMP-MIN-WIN-W + 32 { return 0 }
+  if work-h < COMP-MIN-WIN-H + COMP-TITLE-BAR-H + 32 { return 0 }
+  return 1
+}
+
+// Check whether a surface commit generation matches the active output generation.
+fn out-generation-valid(gen: Int) -> Int {
+  if gen > 0 && gen == out-generation { return 1 }
+  return 0
+}
+
+// Logical-to-physical coordinate transforms (honoring multi-output origin and scale).
+fn out-logical-to-phys-x(lx: Int) -> Int {
+  let rel = lx - out-origin-x
+  return (rel * out-scale-num) / out-scale-den
+}
+
+fn out-logical-to-phys-y(ly: Int) -> Int {
+  let rel = ly - out-origin-y
+  return (rel * out-scale-num) / out-scale-den
+}
+
+// Inverse physical-to-logical transform for pointer hit testing.
+fn out-phys-to-logical-x(px: Int) -> Int {
+  return out-origin-x + (px * out-scale-den) / out-scale-num
+}
+
+fn out-phys-to-logical-y(py: Int) -> Int {
+  return out-origin-y + (py * out-scale-den) / out-scale-num
+}
+
+// Outward-rounded physical damage bounds for fractional scales:
+// start coordinates floor inward toward 0; end coordinates ceil outward.
+fn out-damage-phys-x0(lx0: Int) -> Int {
+  let rel = lx0 - out-origin-x
+  if rel <= 0 { return 0 }
+  return (rel * out-scale-num) / out-scale-den
+}
+
+fn out-damage-phys-y0(ly0: Int) -> Int {
+  let rel = ly0 - out-origin-y
+  if rel <= 0 { return 0 }
+  return (rel * out-scale-num) / out-scale-den
+}
+
+fn out-damage-phys-x1(lx1: Int) -> Int {
+  let rel = lx1 - out-origin-x
+  if rel <= 0 { return 0 }
+  return (rel * out-scale-num + out-scale-den - 1) / out-scale-den
+}
+
+fn out-damage-phys-y1(ly1: Int) -> Int {
+  let rel = ly1 - out-origin-y
+  if rel <= 0 { return 0 }
+  return (rel * out-scale-num + out-scale-den - 1) / out-scale-den
+}
+
+// Centralized shared-edge calculation for tiled columns so adjacent columns
+// never leave fractional gaps or overlap by 1px.
+fn out-tile-col-x(col: Int, count: Int, avail-w: Int, margin: Int, gap: Int) -> Int {
+  if count <= 0 || col <= 0 { return margin }
+  let inner = avail-w - margin * 2 - (count - 1) * gap
+  let prev-right = margin + (col * inner) / count + (col - 1) * gap
+  return prev-right + gap
+}
+
+fn out-tile-col-w(col: Int, count: Int, avail-w: Int, margin: Int, gap: Int) -> Int {
+  if count <= 0 { return 0 }
+  let inner = avail-w - margin * 2 - (count - 1) * gap
+  let x0 = (col * inner) / count
+  let x1 = ((col + 1) * inner) / count
+  return x1 - x0
+}
+
+// Clamp live windows into the current output bounds without losing window
+// identity, focus, or terminal content.
+fn out-clamp-windows() -> void {
+  if comp-windows == 0 || comp-count <= 0 { return }
+  let min-y = COMP-TASKBAR-H
+  let max-bottom = fb-height - COMP-TASKBAR-H
+  let avail-w = fb-width - 32
+  let avail-h = max-bottom - min-y - COMP-TITLE-BAR-H - 16
+  if avail-w < COMP-MIN-WIN-W { avail-w = COMP-MIN-WIN-W }
+  if avail-h < COMP-MIN-WIN-H { avail-h = COMP-MIN-WIN-H }
+
+  let i = 0
+  while i < comp-count {
+    let base = comp-win-base(i)
+    let wx = load32(base + 4)
+    let wy = load32(base + 8)
+    let ww = load32(base + 12)
+    let wh = load32(base + 16)
+    if ww > avail-w { ww = avail-w }
+    if ww < COMP-MIN-WIN-W { ww = COMP-MIN-WIN-W }
+    if wh > avail-h { wh = avail-h }
+    if wh < COMP-MIN-WIN-H { wh = COMP-MIN-WIN-H }
+    if wx + ww > fb-width - 16 { wx = fb-width - 16 - ww }
+    if wx < 16 { wx = 16 }
+    if wy + wh + COMP-TITLE-BAR-H > max-bottom - 8 {
+      wy = max-bottom - 8 - wh - COMP-TITLE-BAR-H
+    }
+    if wy < min-y + 8 { wy = min-y + 8 }
+    store32(base + 4, wx)
+    store32(base + 8, wy)
+    store32(base + 12, ww)
+    store32(base + 16, wh)
+    store32(base + 20, load32(base + 20) | COMP-WIN-DIRTY)
+    i = i + 1
+  }
+  return
+}
+
+// Commit a validated output mode and scale transaction.
+// Returns the new generation (> 0) on success, or 0 on validation failure
+// (preserving the previous configuration and window state unchanged).
+fn out-commit-mode(w: Int, h: Int, bpp: Int, pitch: Int, scale-num: Int, scale-den: Int, transform: Int) -> Int {
+  if out-validate-mode(w, h, bpp, pitch, scale-num, scale-den, transform) == 0 {
+    return 0
+  }
+  fb-width = w
+  fb-height = h
+  fb-bpp = bpp
+  fb-pitch = pitch
+  fb-size = pitch * h
+  out-format = OUT-FMT-BGRX8888
+  out-scale-num = scale-num
+  out-scale-den = scale-den
+  out-transform = transform
+  out-generation = out-generation + 1
+
+  let eff-w = out-effective-phys-w(w, h, transform)
+  let eff-h = out-effective-phys-h(w, h, transform)
+  out-logical-w = (eff-w * scale-den) / scale-num
+  out-logical-h = (eff-h * scale-den) / scale-num
+  out-work-x = out-origin-x
+  out-work-y = out-origin-y + COMP-TASKBAR-H
+  out-work-w = out-logical-w
+  out-work-h = out-logical-h - COMP-TASKBAR-H * 2
+
+  // Synchronize integer raster scale for text (2x at 100%, 3x at >=150%).
+  if scale-num * 100 >= scale-den * 140 {
+    fb-font-scale = 3
+  } else {
+    fb-font-scale = 2
+  }
+
+  // Recompute backbuffer placement at top of heap if compositor is initialized.
+  if comp-windows != 0 {
+    let heap-top = 0x0FFE0000
+    let sz = fb-pitch * fb-height
+    comp-backbuf = heap-top - ((sz + 4095) & -4096)
+    out-clamp-windows()
+    comp-full-redraw = 1
+    comp-dmg-clear()
+    comp-dmg-full()
+  }
+  return out-generation
+}
+
+// Program Bochs VBE hardware registers for a validated resolution and scale,
+// or refuse before touching hardware if validation fails. Recovers previous
+// mode if VBE readback disagrees.
+fn out-set-bga-mode(port: Int, w: Int, h: Int, scale-num: Int, scale-den: Int) -> Int {
+  if out-validate-mode(w, h, 32, w * 4, scale-num, scale-den, out-transform) == 0 {
+    serial-write-cstr(port, "space: output mode refused ")
+    serial-write-dec-wide(port, w)
+    serial-write-cstr(port, "x")
+    serial-write-dec-wide(port, h)
+    serial-nl(port)
+    return 0
+  }
+  let prev-w = fb-width
+  let prev-h = fb-height
+  let prev-pitch = fb-pitch
+  let prev-snum = out-scale-num
+  let prev-sden = out-scale-den
+
+  let vbe-id = vbe-read(0x00)
+  if vbe-id != 0 {
+    vbe-write(0x04, 0x00)
+    vbe-write(0x01, w)
+    vbe-write(0x02, h)
+    vbe-write(0x03, 32)
+    vbe-write(0x04, 0xC1)
+    let rw = vbe-read(0x01)
+    let rh = vbe-read(0x02)
+    let rbpp = vbe-read(0x03)
+    let rpitch = rw * 4
+    let virt-w = vbe-read(0x06)
+    if virt-w != 0 && virt-w * 4 >= rpitch {
+      rpitch = virt-w * 4
+    }
+    if rw != w || rh != h || out-commit-mode(rw, rh, rbpp, rpitch, scale-num, scale-den, out-transform) == 0 {
+      // Recover previous hardware mode.
+      if prev-w > 0 && prev-h > 0 {
+        vbe-write(0x04, 0x00)
+        vbe-write(0x01, prev-w)
+        vbe-write(0x02, prev-h)
+        vbe-write(0x03, 32)
+        vbe-write(0x04, 0xC1)
+        out-commit-mode(prev-w, prev-h, 32, prev-pitch, prev-snum, prev-sden, out-transform)
+      }
+      serial-write-cstr(port, "space: output mode readback failed, recovered")
+      serial-nl(port)
+      return 0
+    }
+  } else {
+    if out-commit-mode(w, h, 32, w * 4, scale-num, scale-den, out-transform) == 0 {
+      return 0
+    }
+  }
+  if mouse-x >= fb-width { mouse-x = fb-width - 1 }
+  if mouse-y >= fb-height { mouse-y = fb-height - 1 }
+  comp-cur-drawn = 0
+  serial-write-cstr(port, "space: output mode ")
+  serial-write-dec-wide(port, fb-width)
+  serial-write-cstr(port, "x")
+  serial-write-dec-wide(port, fb-height)
+  serial-write-cstr(port, " pitch=")
+  serial-write-dec-wide(port, fb-pitch)
+  serial-write-cstr(port, " scale=")
+  serial-write-dec-wide(port, out-scale-num)
+  serial-write-cstr(port, "/")
+  serial-write-dec-wide(port, out-scale-den)
+  serial-write-cstr(port, " gen=")
+  serial-write-dec-wide(port, out-generation)
+  serial-nl(port)
+  return out-generation
+}
