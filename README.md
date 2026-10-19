@@ -14,6 +14,39 @@ Space is a component-based operating system built on a five-layer architecture:
  Nanokernel         ← hardware enforcement layer
 ```
 
+```mermaid
+flowchart TD
+    subgraph Lang["Source Authority (.in)"]
+        IN[".in Component & Interface Declarations\n(capabilities, object schemas, deterministic code)"]
+    end
+
+    subgraph Compiler["Inauguration Compiler (Generic Contract)"]
+        IR["Frontend → Core IR → MIR\n(Capability, Effect & Type Proofs)"]
+        Emit["Freestanding Native Emitter\n(x86_64-unknown-none / thumbv8m.main-none-eabi)"]
+        IR --> Emit
+    end
+
+    subgraph Targets["OS & Embedded Component Contracts"]
+        subgraph SpaceOS["Space (x86_64 Desktop & Server OS)"]
+            SCI["SCI v2 Artifact & Metadata Sidecar\n(Imports/Exports, Grants, Schemas)"]
+            Loader["Space Runtime / Dynamic Linker\n(Grant Subset Check, Symbol Patching)"]
+            Nano["Space Nanokernel\n(CPL0/CPL3 Domains, Page Tables, Channels)"]
+            Desktop["Hypermodular Desktop & Services\n(display-output, display-text, layout, commandbar, SPDP)"]
+            SCI --> Loader --> Nano --> Desktop
+        end
+
+        subgraph SubspaceOS["Subspace (ARMv8-M Embedded OS)"]
+            SCIE["SCI-E Artifact & UF2 Image"]
+            MPU["Static RAM Topology, Typed Ports & PMSAv8 MPU"]
+            SCIE --> MPU
+        end
+    end
+
+    IN --> IR
+    Emit -->|"--emit boot / static-lib"| SCI
+    Emit -->|"thumbv8m.main-none-eabi"| SCIE
+```
+
 The native model is **component + capability + object + execution graph** — not
 process + file + syscall + user. Linux, Darwin, and Windows personalities are
 kernel-linked `.in` translators in the same boot image (`components/linux.in`,
@@ -28,15 +61,53 @@ contracts, with a minimal nanokernel and generic Inauguration → SCI tooling. T
 current root links services as boot scaffolding. The [original desktop design](docs/plans/2026-10-19-command-desktop.md)
 uses simple tiling and a command bar with separate layout, input, compositor and
 application responsibilities. [AGENTS.md](AGENTS.md) records the contributor invariants.
-Resolution, scaling and multiple typefaces are the [next platform foundations](docs/plans/2026-10-19-display-text-architecture.md).
+Resolution, scaling and multiple typefaces are specified and tracked in the
+[display and text architecture](docs/plans/2026-10-19-display-text-architecture.md).
 See the [cross-repository architecture](docs/plans/2026-10-19-three-repository-architecture.md) for Subspace and Inauguration.
+
+### Hypermodular Desktop & Display Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Input["Seat & Input"]
+        PS2["PS/2 Keyboard & Mouse\n(mouse.in / input.in)"]
+    end
+
+    subgraph Shell["Command & Layout Policy"]
+        Bar["Command Bar\n(display-commandbar.in)\nQuery, Filter & Dispatch"]
+        Layout["Tiling & Window Layout\n(display-layout.in)\nColumns, Gaps & Min-Size"]
+    end
+
+    subgraph Text["Typography & Asset Engine"]
+        Fonts["Dual Typefaces (font.in)\n• Space UI Sans (Proportional)\n• Space Term Mono (8x8 Fixed)"]
+        TextEng["Text Engine (display-text.in)\n• SFNT1 Asset Validator\n• 64-Slot Advance Cache\n• UTF-8 Decode & Fallback Box"]
+        Fonts --> TextEng
+    end
+
+    subgraph Output["Compositor & Output Backend"]
+        Out["Output & Scale Contract\n(display-output.in)\n1024x768 / 1280x720 / 1920x1080\nRational Scale (2x 100%, 3x 150%)"]
+        Comp["Compositor & Damage Blitter\n(display.in + SPDP 32B Channel)"]
+        Out --> Comp
+    end
+
+    PS2 --> Comp
+    Comp --> Bar
+    Bar --> Layout
+    Layout --> Comp
+    TextEng --> Comp
+```
 
 ## Status
 
 The nanokernel root, written in `.in` and compiled by
 [Inauguration](https://github.com/tschk/inauguration), enters x86_64 long mode
-under QEMU. Desktop works via shell `desktop` (kernel-linked `components/display.in`
-+ PS/2 `components/mouse.in`). Tab opens a bounded command bar for existing
+under QEMU. Desktop works via shell `desktop` (kernel-linked `components/display.in`,
+`display-output.in`, `display-text.in`, `display-layout.in`, `display-commandbar.in`,
+`font.in`, and PS/2 `components/mouse.in`). `fb mode <w> <h>` and `fb scale <2|3>`
+switch validated BGA resolutions (`1024×768`, `1280×720`, `1920×1080`) and rational
+scales (`100%` / `150%`), while rendering two concurrent typefaces (`Space UI Sans`
+proportional UI chrome and `Space Term Mono` fixed-cell terminal text) with UTF-8
+decoding and deterministic missing-glyph fallback boxes. Tab opens a bounded command bar for existing
 windows, tiling, close/minimize and terminal focus; command and layout modules
 remain kernel-linked groundwork. Maintained checks: shell + full runtime
 display/input (preempt-stop), SCI loader (`hello`/`uecho`), execve SCI from FS,
@@ -118,6 +189,9 @@ bash scripts/check-network.sh         # e1000 ARP/UDP test
 bash scripts/check-terminal-editor.sh # serial editor save test
 bash scripts/check-desktop-visual.sh  # desktop / display visual path
 bash scripts/check-desktop-damage.sh  # moving-window compositor bench
+python3 scripts/check-commandbar.py --in "$HOME/.cargo/bin/in" --out /tmp/space-commandbar  # command bar & layout model/JIT/native gate
+python3 scripts/check-desktop-launcher.py --in "$HOME/.cargo/bin/in"                        # QEMU PS/2 command bar, tiling & pointer gate
+python3 scripts/check-display-output-text.py --in "$HOME/.cargo/bin/in"                     # QEMU BGA modes (1080p/720p/768p), scales & dual-typeface gate
 bash scripts/check-spdp-composite.sh  # SPDP surface-pipeline proof
 bash scripts/check-spdp-protocol.sh    # SPDP wire-format / parser contract
 bash scripts/check-audit-fixes.sh     # kernel-audit hardening assertions
@@ -139,6 +213,11 @@ kernel/
   v86-kernel.in             browser/v86 kernel variant
 components/
   display.in                kernel-linked display (shell `desktop`)
+  display-output.in         output modes, rational scale & coordinate transforms
+  display-text.in           dual-typeface roles, SFNT1 validator, UTF-8 & fallback box
+  display-layout.in         titlebar-aware horizontal tiling policy
+  display-commandbar.in     command bar query, filtering & action dispatch
+  font.in                   Space Term Mono (8x8 fixed) & Space UI Sans (proportional)
   display-standalone.in     standalone display SCI component
   libspace.in               shared-library SCI (dynamic-linking provider)
   mouse.in                  PS/2 mouse input
@@ -151,6 +230,8 @@ boot/
 scripts/
   check-qemu-boot.sh        full boot verification
   check-desktop-visual.sh   desktop / display visual path
+  check-desktop-launcher.py QEMU PS/2 command bar, tiling & pointer checks
+  check-display-output-text.py  output modes, scales, dual typefaces & UTF-8 checks
   check-linux-elf.sh        Linux ELF personality
   check-volume-deep-soak.sh NVMe volume deep soak
   check-fs-dirs.sh          mkdir/rmdir/mv/rm full coverage

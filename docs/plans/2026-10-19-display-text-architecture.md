@@ -45,6 +45,30 @@ provides enforcement and execution/IPC mechanisms. It does not become a desktop,
 a font engine or a foreign graphics kernel. Build with `.in` and general compiler
 capabilities; do not move product policy into Inauguration.
 
+```mermaid
+flowchart TD
+    subgraph ModeTx["Output & Coordinate Transaction (display-output.in)"]
+        Req["Candidate Mode & Scale\n(fb mode <w> <h> / fb scale <2|3>)"]
+        Val["out-validate-mode\n• Supported mode (1024x768, 1280x720, 1920x1080, 768x1024)\n• Pitch % 4 == 0 & Pitch >= W*4\n• Total bytes <= 16 MiB BGA ceiling\n• Work area >= 320x200"]
+        Commit["out-commit-mode & out-clamp-windows\n• Increment out-generation\n• Recompute logical work area\n• Clamp windows & invalidate glyph cache"]
+        Refuse["Refuse Transaction\nPreserve prior mode, pitch, scale & out-generation"]
+        Req --> Val
+        Val -->|"OUT-OK (0)"| Commit
+        Val -->|"OUT-ERR-* (<0)"| Refuse
+    end
+
+    subgraph TextPipe["Dual-Typeface & UTF-8 Text Pipeline (font.in + display-text.in)"]
+        Asset["SFNT1 Asset Validator\n(text-validate-asset)"]
+        Roles["Role-to-Face Selector (text-role-face)\n• UI Body / Title / Command Bar → Space UI Sans (Proportional 4..8u)\n• Terminal Cells → Space Term Mono (Fixed 8u)"]
+        UTF8["UTF-8 Decoder (text-utf8-decode)\n1..4 byte sequences; malformed/overlong → U+FFFD"]
+        Cache["64-Slot Glyph Advance Cache\nKeyed by (face, codepoint, scale)"]
+        Raster["Glyph & Fallback Renderer\n• Covered ASCII: 2x/3x bitmap or grayscale AA coverage\n• Uncovered / U+FFFD: Deterministic fallback box"]
+        Asset --> Roles --> UTF8 --> Cache --> Raster
+    end
+
+    Commit --> Cache
+```
+
 ## Output and coordinate contract
 
 An output description needs stable identity, current/supported pixel modes,

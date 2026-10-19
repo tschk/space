@@ -64,6 +64,52 @@ defines the destination and evidence gates. The
 relates this work to Subspace's bounded embedded runtime and Inauguration's
 general compiler contract without merging their artifact or policy boundaries.
 
+```mermaid
+sequenceDiagram
+    participant Src as .in Component Source
+    participant In as Inauguration Compiler
+    participant Pkg as Space Packager / SCI v2
+    participant Ldr as Space Loader & Dynamic Linker
+    participant Dom as Nanokernel Domain & Page Tables
+
+    Src->>In: capability / import / export / schema declarations
+    In->>Pkg: Machine code + .component-metadata.json
+    Pkg->>Ldr: SCI v2 binary (0x5343490000000001, req_caps, imports/exports)
+    Ldr->>Ldr: Verify magic, bounds, req_caps ⊆ grant_mask
+    Ldr->>Ldr: Resolve imports against kernel/libspace symbol registry
+    alt Unresolved import or excessive capability request
+        Ldr-->>Dom: Refuse load before entry (clean teardown)
+    else Validated CPL3 SCI Guest
+        Ldr->>Dom: domain_create_user() (exclusive U=1 4KiB pages, no identity clone)
+        Dom->>Dom: domain_enter_user() via iretq (CPL3, TSS RSP0 trap return)
+    end
+```
+
+```mermaid
+flowchart TB
+    subgraph CPL3["CPL3 User Domains (Hardware Isolated via Page Tables)"]
+        Guest["SCI User Guest (e.g. test.sci, demo_spdp_client.sci)\nExclusive PML4, U=1 Image/Stack/Ring Pages"]
+    end
+
+    subgraph Shared["Explicit Cross-Domain IPC"]
+        Ring["SPDP 32-Byte Message Ring & Shared Pixel Pages"]
+    end
+
+    subgraph CPL0["CPL0 Kernel & Kernel-Linked Services (Shared 4 GiB Identity Map)"]
+        Trap["Syscall (int 0x80) & Trap Entry\nSwitches to kernel_cr3, checks cap-check(domain)"]
+        Disp["Display & Compositor Modules\n• display.in (Compositor & Damage)\n• display-output.in (Mode & Scale Transactions)\n• display-text.in + font.in (Dual Typefaces & UTF-8)\n• display-layout.in + display-commandbar.in"]
+        Pers["Foreign Personalities (Edge Translators)\nlinux.in / darwin.in / windows.in / posix.in"]
+        Drivers["Kernel-Linked Drivers & Runtime\npci.in / nvme.in / net.in / vfs.in / shell.in"]
+    end
+
+    Guest -->|"int 0x80"| Trap
+    Guest <-->|"Shared Page Ring"| Ring
+    Ring <--> Disp
+    Trap --> Disp
+    Trap --> Pers
+    Trap --> Drivers
+```
+
 ## .in
 
 .in is the native language. It describes components, capabilities, objects,
