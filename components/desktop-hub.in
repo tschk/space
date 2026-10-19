@@ -1,0 +1,83 @@
+package space.kernel
+
+// Desktop & Display Hub ("Desktop Metro Line")
+// Orchestrates USB xHCI/HID, PS/2 mouse & keyboard, VBE framebuffer, compositor, and SPDP server.
+// Stations inside display.in:
+//   - display-output.in (output geometry & scaling)
+//   - display-text.in & font.in (16x16 AA glyph atlases & text shaper)
+//   - display-layout.in (window layout policy)
+//   - display-commandbar.in (command launcher dispatcher)
+//   - display-utilities.in (system inspector panel)
+//   - display-terminal.in (TTY0/TTY1 terminal emulator buffers)
+//   - display-seat.in (cursor & seat input routing)
+//   - display-spdp.in (SPDP 32-byte protocol & shared memory pools)
+import "usb.in"
+import "display.in"
+import "mouse.in"
+
+fn desktop-hub-usb-init(port: Int) -> Int {
+  let usb-rc = xhci-init()
+  if boot-quiet == 0 {
+    if usb-rc == 0 {
+      serial-write-cstr(port, "space: USB xHCI controller initialized")
+      serial-nl(port)
+    } else {
+      serial-write-cstr(port, "space: USB xHCI not found")
+      serial-nl(port)
+    }
+  }
+  return usb-rc
+}
+
+fn desktop-hub-init(port: Int, mb-info: Int, usb-rc: Int) -> void {
+  let fb-rc = fb-init(mb-info)
+  if fb-rc == 0 {
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space: framebuffer initialized")
+      fb-info(port)
+    }
+  } else {
+    if boot-quiet == 0 {
+      serial-write-cstr(port, "space: framebuffer not available (no VBE info)")
+      serial-nl(port)
+    }
+  }
+
+  if fb-ready != 0 {
+    let mouse-rc = mouse-init()
+    if mouse-rc == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 mouse initialized")
+        serial-nl(port)
+      }
+    } else {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 mouse not found")
+        serial-nl(port)
+      }
+    }
+    if ps2-kbd-init() == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: PS/2 keyboard initialized")
+        serial-nl(port)
+      }
+    }
+  }
+
+  if usb-rc == 0 {
+    let kbd-rc = usb-kbd-init()
+    if kbd-rc == 0 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: USB HID keyboard ready")
+        serial-nl(port)
+      }
+    }
+  }
+
+  comp-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: compositor initialized")
+    serial-nl(port)
+  }
+  return
+}

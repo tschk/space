@@ -1,0 +1,32 @@
+package space.kernel
+
+// Personalities Hub ("Personalities Metro Line")
+// Edge translation layer for Linux (POSIX/ELF64), Darwin (Mach-O), and Windows (Win32/PE32+) guests.
+import "linux.in"
+import "darwin.in"
+import "darwin-macho.in"
+import "foreign-exec.in"
+import "windows.in"
+import "windows-pe.in"
+
+fn personality-hub-init(port: Int) -> void {
+  linux-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
+    serial-nl(port)
+  }
+  darwin-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Darwin personality stub registered (Mach/BSD subset demo)")
+    serial-nl(port)
+  }
+  win-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: Windows personality registered (Win32 subset translator)")
+    serial-nl(port)
+  }
+  if volume-ready != 0 {
+    linux-demo(port)
+  }
+  return
+}

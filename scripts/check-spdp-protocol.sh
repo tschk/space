@@ -55,10 +55,11 @@ def main():
     space = os.path.abspath(os.path.join(here, ".."))
     proto_path = os.path.join(space, "protocol", "display.in")
     display_path = os.path.join(space, "components", "display.in")
+    display_spdp_path = os.path.join(space, "components", "display-spdp.in")
     ci_path = os.path.join(space, ".github", "workflows", "ci.yml")
 
     proto = open(proto_path).read()
-    display = open(display_path).read()
+    display = open(display_path).read() + "\n" + open(display_spdp_path).read()
     ci = open(ci_path).read()
     consts = parse_consts(proto)
 

@@ -54,6 +54,29 @@ fn foreign-file-close(fd: Int) -> Int {
   return rc
 }
 
+fn foreign-win32-createfilea(frame: Int) -> Int {
+  let path = load64(frame + 72)
+  let desired-access = load64(frame + 80) & 0xFFFFFFFF
+  let share-mode = load64(frame + 56) & 0xFFFFFFFF
+  let sec-attrs = load64(frame + 48)
+  let call-rsp = load64(frame + 40)
+  // Win32 CreateFileA policy moved from assembly to .in:
+  // GENERIC_READ (0x80000000), FILE_SHARE_READ (1), null lpSecurityAttributes,
+  // OPEN_EXISTING (3), FILE_ATTRIBUTE_NORMAL (0x80), null hTemplateFile.
+  if desired-access != 0x80000000 || share-mode != 1 || sec-attrs != 0 || call-rsp == 0 {
+    return -1
+  }
+  let disposition = load32(call-rsp + 40)
+  let flags-attrs = load32(call-rsp + 48)
+  let template-handle = load64(call-rsp + 56)
+  if disposition != 3 || flags-attrs != 0x80 || template-handle != 0 {
+    return -1
+  }
+  let fd = foreign-file-open(path, 0)
+  if fd < 0 { return -1 }
+  return fd
+}
+
 fn foreign-exec(entry: Int, image: Int, size: Int, mode: Int, storage-cap: Int) -> Int {
   if foreign-mode != 0 {
     return -16
@@ -118,8 +141,7 @@ fn foreign-syscall-dispatch(frame: Int) -> Int {
     return 0
   }
   if foreign-mode == 3 && num == 2 {
-    rc = foreign-file-open(fd, buf)
-    if rc < 0 { rc = -1 }
+    rc = foreign-win32-createfilea(frame)
     store64(frame + 112, rc)
     return 0
   }

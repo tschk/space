@@ -36,7 +36,7 @@ a.out = a.out.resolve()
 a.out.mkdir(parents=True, exist_ok=False)
 root = Path(__file__).resolve().parents[1]
 inputs = [root / "components" / name for name in
-          ("display.in", "display-commandbar.in", "display-layout.in")]
+          ("display.in", "display-commandbar.in", "display-layout.in", "display-seat.in")]
 input_hashes = {str(path.relative_to(root)): sha256(path) for path in inputs}
 text = "\n".join(path.read_text() for path in inputs)
 

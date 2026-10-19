@@ -77,7 +77,7 @@ constants = "\n".join(
 )
 
 harness_base = (
-    "var heap:[Int]=[" + ",".join(["0"] * 32768) + "];\n"
+    "var heap:[Int]=[" + ",".join(["0"] * 98304) + "];\n"
     """
 var fb-addr:Int=0;
 var fb-pitch:Int=7680;
@@ -89,9 +89,11 @@ var fb-ready:Int=1;
 var fb-font-scale:Int=2;
 var fb-font:Int=0;
 var fb-font-aa:Int=0;
+var fb-font-aa16:Int=0;
 var fb-font-sans:Int=0;
 var fb-font-sans-adv:Int=0;
 var fb-font-sans-aa:Int=0;
+var fb-font-sans-aa16:Int=0;
 var comp-backbuf:Int=0;
 var comp-windows:Int=0;
 var comp-surf-sizes:Int=0;
@@ -152,7 +154,9 @@ fn fb-draw-char(x:Int,y:Int,ch:Int,c:Int)->Void{return;}
         for fn_name in (
             "fb-font-set",
             "fb-font-sans-set",
+            "fb-glyph-bit",
             "fb-build-aa-table",
+            "fb-build-aa16-table",
             "fb-font-aa-init",
             "fb-font-sans-init",
             "fb-font-init",

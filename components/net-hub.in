@@ -1,0 +1,13 @@
+package space.kernel
+
+// Network Hub ("Network Metro Line")
+// Orchestrates PCI Intel e1000 NIC, TCP/UDP socket table, DHCP client, and DNS resolver.
+import "net.in"
+import "netstack.in"
+import "dhcp.in"
+import "dns.in"
+
+fn net-hub-init(port: Int) -> void {
+  net-component-start(port)
+  return
+}

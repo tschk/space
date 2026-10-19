@@ -15,6 +15,8 @@ root = Path(__file__).resolve().parents[1]
 
 def function(filename, name):
     text = (root / "components" / filename).read_text()
+    if filename == "display.in":
+        text = text + "\n" + (root / "components" / "display-spdp.in").read_text()
     start = text.index("fn " + name + "(")
     return text[start : text.index("\n}", start) + 2]
 

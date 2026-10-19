@@ -1,0 +1,73 @@
+package space.kernel
+
+// Runtime & SCI Hub ("Runtime/SCI Metro Line")
+// Orchestrates component supervisor, preemptive timer scheduler, SCI loader, boot image discovery, and processes.
+import "supervisor.in"
+import "preempt.in"
+import "sci-loader.in"
+import "../protocol/boot-image.in"
+import "process.in"
+
+fn runtime-hub-early-init(port: Int) -> void {
+  run-supervisor(port)
+  run-scheduler(port)
+  run-channels(port)
+  run-preemptive(port)
+
+  let boot-guest = boot-image-find(BOOT-IMAGE-GUEST)
+  if boot-guest != 0 {
+    sci-load(port, boot-guest)
+  }
+
+  // Register the nanokernel's own services as dynamic-link providers, then
+  // the shared libraries (libspace, appapi), before any importing component
+  // loads.
+  dyn-register-kernel-exports(port)
+  let lib-load = boot-image-find(BOOT-IMAGE-LIB)
+  if lib-load != 0 {
+    sci-register-library(port, lib-load)
+  }
+  let api-load = boot-image-find(BOOT-IMAGE-APP-API)
+  if api-load != 0 {
+    sci-register-library(port, api-load)
+  }
+
+  proc-init(16)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: process table initialized (max 16)")
+    serial-nl(port)
+  }
+
+  if boot-quiet == 0 {
+    proc-selftest()
+  }
+  return
+}
+
+fn runtime-hub-arena-init(port: Int) -> void {
+  load-arena-init(4 * 1024 * 1024)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: load arena reserved (4 MiB) at 0x")
+    serial-write-hex(port, load-arena-base)
+    serial-nl(port)
+  }
+  return
+}
+
+fn runtime-hub-load-components(port: Int) -> void {
+  let display-load = boot-image-find(BOOT-IMAGE-DISPLAY)
+  if display-load != 0 {
+    sci-load-runtime-component(port, display-load, "display", SCI-DISPLAY-GRANTS, 0, 0)
+  }
+
+  let input-load = boot-image-find(BOOT-IMAGE-INPUT)
+  if input-load != 0 {
+    sci-load-runtime-component(port, input-load, "input", SCI-INPUT-GRANTS, 0, 0)
+  }
+
+  let dyn-load = boot-image-find(BOOT-IMAGE-DYN-MOD)
+  if dyn-load != 0 {
+    sci-load-runtime-component(port, dyn-load, "dynmod", SCI-DYN-GRANTS, 0, 0)
+  }
+  return
+}

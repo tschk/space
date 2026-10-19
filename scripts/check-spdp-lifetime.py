@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--in', dest='compiler', required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
-text = (root/'components/display.in').read_text()
+text = (root/'components/display.in').read_text() + '\n' + (root/'components/display-spdp.in').read_text()
 functions = []
 for name in ('dsp-surface-size', 'dsp-create-surface', 'dsp-surface-valid', 'dsp-surface-destroy', 'dsp-shm-destroy-pool', 'dsp-surface-attach', 'dsp-surface-geometry', 'dsp-surface-commit', 'dsp-handle-msg'):
     start = text.index('fn '+name+'(')

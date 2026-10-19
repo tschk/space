@@ -1,0 +1,58 @@
+package space.kernel
+
+// Storage & VFS Hub ("Storage Metro Line")
+// Orchestrates NVMe PCIe block driver, SparkFS (fs2-*), filesystem facade, VFS, and wallclock time.
+import "nvme.in"
+import "fs2-layout.in"
+import "fs2-block.in"
+import "fs2-inode.in"
+import "fs2-dir.in"
+import "fs2-path.in"
+import "fs2-file.in"
+import "filesystem.in"
+import "vfs.in"
+import "../services/time.in"
+
+fn storage-hub-nvme-init(port: Int) -> Int {
+  let nvme-rc = nvme-init()
+  if boot-quiet == 0 {
+    if nvme-rc == 0 {
+      serial-write-cstr(port, "space: NVMe controller initialized")
+      serial-nl(port)
+    } else {
+      serial-write-cstr(port, "space: NVMe not found")
+      serial-nl(port)
+    }
+  }
+  return nvme-rc
+}
+
+fn storage-hub-fs-init(port: Int) -> void {
+  let volume-load-early = boot-image-find(BOOT-IMAGE-VOLUME)
+  if volume-load-early != 0 {
+    sci-volume-rpc(port, volume-load-early)
+  }
+
+  fs-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: filesystem initialized")
+    serial-nl(port)
+  }
+  time-init()
+  if boot-quiet == 0 {
+    if volume-ready != 0 {
+      serial-write-cstr(port, "space: volume SCI is filesystem backend")
+      serial-nl(port)
+    } else if sf-mem-disk != 0 {
+      serial-write-cstr(port, "space: sparkfs mem volume at 0x")
+      serial-write-hex(port, sf-mem-disk)
+      serial-nl(port)
+    } else {
+      serial-write-cstr(port, "space: sparkfs nvme volume")
+      serial-nl(port)
+    }
+  }
+
+  vfs-init()
+  return
+}

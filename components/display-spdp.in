@@ -1,0 +1,377 @@
+package space.display
+
+// ============================================================================
+// Space Display Protocol (SPDP) Server & Shared-Memory Surface Station
+// ============================================================================
+// Handles 32-byte SPDP frames over channel IPC and shared-memory pages.
+// Separated from window-manager and shell policy as part of the Desktop Line.
+
+const DSP-MAX-SURFACES = 32
+const DSP-MAX-POOLS = 8
+
+var dsp-surfaces: Int = 0
+var dsp-surface-count: Int = 0
+var dsp-pools: Int = 0
+var dsp-pool-sizes: Int = 0
+var dsp-mouse-x: Int = 0
+var dsp-mouse-y: Int = 0
+var dsp-running: Int = 0
+var dsp-prev-cx: Int = 0
+var dsp-prev-cy: Int = 0
+var dsp-msg: Int = 0
+
+// Surface record (48 bytes):
+// [0] id, [8] pool_id, [16] buf_offset, [24] w/h packed, [32] x/y, [40] flags
+fn dsp-surface-size() -> Int { return 48 }
+
+fn dsp-init() -> void {
+  dsp-surfaces = alloc(DSP-MAX-SURFACES * dsp-surface-size())
+  dsp-pools = alloc(DSP-MAX-POOLS * 8)
+  dsp-pool-sizes = alloc(DSP-MAX-POOLS * 8)
+  dsp-msg = alloc(SPDP-MSG-SIZE)
+  let i = 0
+  while i < DSP-MAX-POOLS {
+    store64(dsp-pools + i * 8, 0)
+    store64(dsp-pool-sizes + i * 8, 0)
+    i = i + 1
+  }
+  dsp-surface-count = 0
+  dsp-mouse-x = 0
+  dsp-mouse-y = 0
+}
+
+fn dsp-create-surface() -> Int {
+  if dsp-surface-count >= DSP-MAX-SURFACES {
+    return -1
+  }
+  let id = dsp-surface-count
+  let base = dsp-surfaces + id * dsp-surface-size()
+  store64(base + 0, id)
+  store64(base + 8, -1)
+  store64(base + 16, 0)
+  store64(base + 24, 0)
+  store64(base + 32, 0)
+  store64(base + 40, 0)
+  dsp-surface-count = dsp-surface-count + 1
+  return id
+}
+
+fn dsp-selftest(port: Int) -> Int {
+  dsp-init()
+  let sid = dsp-create-surface()
+  if sid < 0 {
+    serial-write-cstr(port, "  dsp self-test failed: no surface")
+    serial-nl(port)
+    return 0
+  }
+  dsp-surface-destroy(sid)
+  if dsp-surface-valid(sid) != 0 { return 0 }
+  serial-write-cstr(port, "  dsp self-test passed")
+  serial-nl(port)
+  return 1
+}
+
+fn dsp-composite() -> void {
+  if fb-ready == 0 {
+    return
+  }
+  fb-fill-rect(0, 0, fb-width, fb-height, 0x00000080)
+
+  let i = 0
+  while i < dsp-surface-count {
+    let base = dsp-surfaces + i * dsp-surface-size()
+    let flags = load64(base + 40)
+    if (flags & 1) != 0 {
+      let pool-id = load64(base + 8)
+      let buf-off = load64(base + 16)
+      let wh = load64(base + 24)
+      let w = (wh >> 16) & 0xFFFF
+      let h = wh & 0xFFFF
+      let xy = load64(base + 32)
+      let sx = (xy >> 16) & 0xFFFF
+      let sy = xy & 0xFFFF
+
+      if w > 0 && h > 0 && pool-id >= 0 && pool-id < DSP-MAX-POOLS {
+        let pool = load64(dsp-pools + pool-id * 8)
+        let pool-size = load64(dsp-pool-sizes + pool-id * 8)
+        let need = buf-off + w * h * 4
+        if pool != 0 && need <= pool-size {
+          let buf = pool + buf-off
+          let src-pitch = w * 4
+          let row = 0
+          while row < h {
+            let dst-y = sy + row
+            if dst-y >= 0 && dst-y < fb-height {
+              let col = 0
+              while col < w {
+                let dst-x = sx + col
+                if dst-x >= 0 && dst-x < fb-width {
+                  let pixel = load32(buf + row * src-pitch + col * 4)
+                  if pixel != 0 {
+                    store32(fb-addr + dst-y * fb-pitch + dst-x * 4, pixel)
+                  }
+                }
+                col = col + 1
+              }
+            }
+            row = row + 1
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+
+  dsp-draw-cursor()
+  return
+}
+
+fn dsp-clear-cursor() -> void {
+  let x = dsp-prev-cx
+  let y = dsp-prev-cy
+  let cs = 8
+  fb-fill-rect(x - cs, y - 1, cs * 2 + 1, 3, 0x00000080)
+  fb-fill-rect(x - 1, y - cs, 3, cs * 2 + 1, 0x00000080)
+  return
+}
+
+fn dsp-draw-cursor() -> void {
+  let cx = 8
+  let cy = 8
+  let x = dsp-mouse-x
+  let y = dsp-mouse-y
+  dsp-clear-cursor()
+  dsp-prev-cx = x
+  dsp-prev-cy = y
+  let i = 0
+  while i < cx * 2 + 1 {
+    let px = x - cx + i
+    if px >= 0 && px < fb-width && y >= 0 && y < fb-height {
+      store32(fb-addr + y * fb-pitch + px * 4, 0x00FFFFFF)
+    }
+    i = i + 1
+  }
+  let j = 0
+  while j < cy * 2 + 1 {
+    let py = y - cy + j
+    if py >= 0 && py < fb-height && x >= 0 && x < fb-width {
+      store32(fb-addr + py * fb-pitch + x * 4, 0x00FFFFFF)
+    }
+    j = j + 1
+  }
+}
+
+fn dsp-drain-page(page: Int, port: Int) -> Int {
+  if chan-page-frame-valid(page) == 0 { return -1 }
+  let count = 0
+  while count < 126 {
+    let result = chan-page-recv-frame(page, dsp-msg)
+    if result < 0 { return -1 }
+    if result == 0 { return count }
+    dsp-handle-msg(load64(dsp-msg), load64(dsp-msg + 8), load64(dsp-msg + 16), load64(dsp-msg + 24), port)
+    count = count + 1
+  }
+  return count
+}
+
+fn dsp-run-page(page: Int, port: Int) -> void {
+  dsp-running = 1
+  serial-write-cstr(port, "  display: server running")
+  serial-nl(port)
+  while dsp-running != 0 {
+    if dsp-drain-page(page, port) < 0 { dsp-running = 0; return }
+    dsp-composite()
+    sti()
+    hlt()
+  }
+}
+
+fn dsp-run(ch: Int, port: Int) -> void {
+  dsp-running = 1
+  serial-write-cstr(port, "  display: server running")
+  serial-nl(port)
+
+  while dsp-running != 0 {
+    mouse-poll()
+    dsp-mouse-x = mouse-x
+    dsp-mouse-y = mouse-y
+
+    while chan-count(ch) > 0 {
+      store64(dsp-msg + 0, chan-recv(ch))
+      store64(dsp-msg + 8, chan-recv(ch))
+      store64(dsp-msg + 16, chan-recv(ch))
+      store64(dsp-msg + 24, chan-recv(ch))
+      let obj-id = load64(dsp-msg + 0)
+      let opcode = load64(dsp-msg + 8)
+      let arg0 = load64(dsp-msg + 16)
+      let arg1 = load64(dsp-msg + 24)
+      dsp-handle-msg(obj-id, opcode, arg0, arg1, port)
+    }
+
+    dsp-composite()
+    sti()
+    hlt()
+  }
+}
+
+fn dsp-shm-create-pool(pool-id: Int, size: Int) -> void {
+  if pool-id < 0 || pool-id >= DSP-MAX-POOLS {
+    return
+  }
+  if size <= 0 { return }
+  if ((size + 15) & -16) < size { return }
+  let p = alloc(size)
+  if p == 0 { return }
+  let offset = 0
+  while offset < size { store8(p + offset, 0); offset = offset + 1 }
+  store64(dsp-pools + pool-id * 8, p)
+  store64(dsp-pool-sizes + pool-id * 8, size)
+  return
+}
+
+fn dsp-demo(port: Int) -> Int {
+  if fb-ready == 0 {
+    serial-write-cstr(port, "  dsp: framebuffer not ready")
+    serial-nl(port)
+    return 0
+  }
+  dsp-init()
+  let sid = dsp-create-surface()
+  if sid < 0 {
+    serial-write-cstr(port, "  dsp: no surface")
+    serial-nl(port)
+    return 0
+  }
+  let pw = 96
+  let ph = 32
+  let pool-size = pw * ph * 4
+  dsp-shm-create-pool(0, pool-size)
+  let pool = load64(dsp-pools + 0)
+  if pool == 0 {
+    serial-write-cstr(port, "  dsp: no pool")
+    serial-nl(port)
+    return 0
+  }
+  let yy = 0
+  while yy < ph {
+    let xx = 0
+    while xx < pw {
+      let color = 0x00FF0000
+      if ((xx / 8) + (yy / 8)) % 2 != 0 {
+        color = 0x0000FF00
+      }
+      store32(pool + (yy * pw + xx) * 4, color)
+      xx = xx + 1
+    }
+    yy = yy + 1
+  }
+  dsp-surface-attach(sid, (0 << 32) | 0)
+  dsp-surface-geometry(sid, (40 << 48) | (80 << 32) | (pw << 16) | ph)
+  dsp-surface-commit(sid)
+  let invalid = dsp-create-surface()
+  if invalid >= 0 {
+    dsp-surface-attach(invalid, pool-size - 4)
+    dsp-surface-geometry(invalid, (400 << 48) | (200 << 32) | (pw << 16) | ph)
+    dsp-surface-commit(invalid)
+  }
+  dsp-composite()
+  serial-write-cstr(port, "  dsp: demo composited surface at 40,80")
+  serial-nl(port)
+  return 1
+}
+
+fn dsp-surface-valid(sid: Int) -> Int {
+  if sid < 0 || sid >= dsp-surface-count { return 0 }
+  if load64(dsp-surfaces + sid * dsp-surface-size()) != sid { return 0 }
+  return 1
+}
+
+fn dsp-surface-destroy(sid: Int) -> void {
+  if dsp-surface-valid(sid) == 0 { return }
+  let base = dsp-surfaces + sid * dsp-surface-size()
+  store64(base, -1)
+  store64(base + 8, -1)
+  store64(base + 16, 0)
+  store64(base + 24, 0)
+  store64(base + 32, 0)
+  store64(base + 40, 0)
+  return
+}
+
+fn dsp-shm-destroy-pool(pool: Int) -> void {
+  if pool < 0 || pool >= DSP-MAX-POOLS { return }
+  store64(dsp-pools + pool * 8, 0)
+  store64(dsp-pool-sizes + pool * 8, 0)
+  let sid = 0
+  while sid < dsp-surface-count {
+    let base = dsp-surfaces + sid * dsp-surface-size()
+    if load64(base + 8) == pool {
+      store64(base + 8, -1)
+      store64(base + 16, 0)
+      store64(base + 40, 0)
+    }
+    sid = sid + 1
+  }
+  return
+}
+
+fn dsp-surface-attach(sid: Int, packed: Int) -> void {
+  if dsp-surface-valid(sid) == 0 {
+    return
+  }
+  let pool-id = (packed >> 32) & 0xFFFFFFFF
+  let offset = packed & 0xFFFFFFFF
+  let base = dsp-surfaces + sid * dsp-surface-size()
+  store64(base + 8, pool-id)
+  store64(base + 16, offset)
+  return
+}
+
+fn dsp-surface-geometry(sid: Int, packed: Int) -> void {
+  if dsp-surface-valid(sid) == 0 {
+    return
+  }
+  let x = (packed >> 48) & 0xFFFF
+  let y = (packed >> 32) & 0xFFFF
+  let w = (packed >> 16) & 0xFFFF
+  let h = packed & 0xFFFF
+  let base = dsp-surfaces + sid * dsp-surface-size()
+  store64(base + 24, (w << 16) | h)
+  store64(base + 32, (x << 16) | y)
+  return
+}
+
+fn dsp-surface-commit(sid: Int) -> void {
+  if dsp-surface-valid(sid) == 0 {
+    return
+  }
+  let base = dsp-surfaces + sid * dsp-surface-size()
+  let flags = load64(base + 40)
+  store64(base + 40, flags | 1)
+  return
+}
+
+fn dsp-handle-msg(obj-id: Int, opcode: Int, arg0: Int, arg1: Int, port: Int) -> void {
+  if obj-id == SPDP-OBJ-COMPOSITOR {
+    if opcode == SPDP-COMPOSITOR-CREATE-SURFACE {
+      dsp-create-surface()
+    }
+  } else if obj-id == SPDP-OBJ-SURFACE {
+    if opcode == SPDP-SURFACE-ATTACH {
+      dsp-surface-attach(arg0, arg1)
+    } else if opcode == SPDP-SURFACE-DAMAGE {
+      dsp-surface-geometry(arg0, arg1)
+    } else if opcode == SPDP-SURFACE-COMMIT {
+      dsp-surface-commit(arg0)
+    } else if opcode == SPDP-SURFACE-DESTROY {
+      dsp-surface-destroy(arg0)
+    }
+  } else if obj-id == SPDP-OBJ-SHM {
+    if opcode == SPDP-SHM-CREATE-POOL {
+      dsp-shm-create-pool(arg0, arg1)
+    } else if opcode == SPDP-SHM-POOL-DESTROY {
+      dsp-shm-destroy-pool(arg0)
+    }
+  }
+  return
+}

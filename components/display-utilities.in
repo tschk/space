@@ -1,0 +1,91 @@
+package space.display
+
+// ============================================================================
+// Space Utilities / System Inspector Station
+// ============================================================================
+// Renders the translucent System Inspector window (DISPLAY, TYPEFACES,
+// INPUT SEAT, SPDP IPC) with a populated navigation sidebar, rule dividers,
+// and smooth 16x16 anti-aliased typography.
+
+fn comp-draw-utilities-content(base: Int) -> void {
+  let x = load32(base + 4)
+  let y = load32(base + 8)
+  let w = load32(base + 12)
+  let h = load32(base + 16)
+  let content-y = y + COMP-TITLE-BAR-H
+  let cw = fb-font-scale * 8 + 2
+  let lh = cw + 4
+  let sidebar-w = 148
+  let tx-x = x + 168
+  if w < 480 {
+    sidebar-w = 36
+    tx-x = x + 48
+  }
+  // Dark navigation sidebar + 1px separator border + right surface base
+  fb-fill-rect(x, content-y, sidebar-w, h, COMP-COLOR-DESKTOP)
+  fb-fill-rect(x + sidebar-w, content-y, 1, h, 0x003F3F46)
+  fb-fill-rect(x + sidebar-w + 1, content-y, w - sidebar-w - 1, h, COMP-COLOR-SURFACE)
+
+  if w >= 480 {
+    if comp-clip-valid == 0 || x + sidebar-w + comp-render-dx > comp-clip-x0 {
+      comp-draw-ui-label(x + 14, content-y + 14, "SYSTEM", COMP-COLOR-MUTED, COMP-COLOR-DESKTOP)
+      // Active navigation pill for DISPLAY
+      let nav-y = content-y + lh + 16
+      fb-fill-rect(x + 8, nav-y, sidebar-w - 16, lh + 6, 0x00242222)
+      fb-fill-rect(x + 8, nav-y + 3, 3, lh, COMP-COLOR-ACCENT)
+      comp-draw-ui-label(x + 18, nav-y + 3, "DISPLAY", FB-COLOR-WHITE, 0x00242222)
+      comp-draw-ui-label(x + 18, nav-y + lh + 12, "FONTS", COMP-COLOR-MUTED, COMP-COLOR-DESKTOP)
+      comp-draw-ui-label(x + 18, nav-y + (lh + 10) * 2, "INPUT", COMP-COLOR-MUTED, COMP-COLOR-DESKTOP)
+      comp-draw-ui-label(x + 18, nav-y + (lh + 10) * 3, "SPDP", COMP-COLOR-MUTED, COMP-COLOR-DESKTOP)
+    }
+  } else {
+    fb-fill-rect(x + 6, content-y + lh + 20, 3, 18, COMP-COLOR-ACCENT)
+  }
+
+  if comp-clip-valid != 0 {
+    if tx-x + comp-render-dx >= comp-clip-x1 {
+      return
+    }
+  }
+
+  let rule-w = w - (tx-x - x) - 20
+  if rule-w < 40 { rule-w = 40 }
+
+  // Section 1: Display output mode & rational scale
+  let ty = content-y + 14
+  comp-draw-ui-label(tx-x, ty, "DISPLAY OUTPUT", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  ty = ty + 4
+  let rx-end = comp-draw-dec-aa(tx-x, ty, fb-width, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-ui-label(rx-end, ty, " x ", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  let sep-w = text-measure-run(TEXT-ROLE-UI-BODY, " x ", 3)
+  comp-draw-dec-aa(rx-end + sep-w, ty, fb-height, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  if fb-font-scale == 3 {
+    comp-draw-ui-label(tx-x, ty, "32 BPP / 150% SCALE", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  } else {
+    comp-draw-ui-label(tx-x, ty, "32 BPP / 100% SCALE", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  }
+
+  // Section 2: Active concurrent typefaces
+  ty = ty + lh + 8
+  comp-draw-ui-label(tx-x, ty, "TYPEFACES", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  ty = ty + 4
+  comp-draw-ui-label(tx-x, ty, "SPACE UI SANS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  comp-draw-label(tx-x, ty, "SPACE TERM MONO", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+
+  // Section 3: Seat & shell contract
+  ty = ty + lh + 8
+  comp-draw-ui-label(tx-x, ty, "INPUT & SHELL", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  ty = ty + 4
+  comp-draw-ui-label(tx-x, ty, "PS/2 + USB HID SEAT", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  ty = ty + lh
+  comp-draw-ui-label(tx-x, ty, "NIRI TILE + COMMAND BAR", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  return
+}

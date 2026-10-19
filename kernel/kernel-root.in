@@ -1,62 +1,33 @@
 package space.kernel
 
-// Raw machine ABI for CPU stubs and SCI component entries.
+// =============================================================================
+// CENTRAL NANOKERNEL HUB ("Space Central Station")
+// =============================================================================
+// Core hardware enforcement & IPC fabric:
 import "../components/native-call.in"
-
-// PCI configuration-space access and bus enumeration.
+import "../components/cpu.in"
 import "../components/pci.in"
-// Cross-domain channel fabric.
 import "../components/channel.in"
-// Intel e1000 NIC driver.
-import "../components/net.in"
-// Minimal socket table over e1000/UDP.
-import "../components/netstack.in"
-// DHCP discover TX helper.
-import "../components/dhcp.in"
-// DNS query TX helper.
-import "../components/dns.in"
-// Memory domain subsystem (Phase 0).
 import "../components/domain.in"
-// NVMe storage driver (PCIe-based, MMIO).
-import "../components/nvme.in"
-// USB xHCI host controller and HID keyboard driver.
-import "../components/usb.in"
-// SparkFS block-structured filesystem.
-import "../components/fs2-layout.in"
-import "../components/fs2-block.in"
-import "../components/fs2-inode.in"
-import "../components/fs2-dir.in"
-import "../components/fs2-path.in"
-import "../components/fs2-file.in"
-import "../components/filesystem.in"
-// Full libc (string, memory, ctype, stdio, stdlib, math, time).
 import "../components/libc.in"
-import "../components/supervisor.in"
-import "../components/preempt.in"
-import "../components/sci-loader.in"
-import "../protocol/boot-image.in"
-// Process abstraction layer (domain + component + thread).
-import "../components/process.in"
-// Linux personality layer (POSIX syscall translation).
-import "../components/linux.in"
-// Darwin personality stub (Mach/BSD subset demo).
-import "../components/darwin.in"
-import "../components/darwin-macho.in"
-import "../components/foreign-exec.in"
-// Windows personality translator (Win32/NT-shaped subset, not full ABI).
-import "../components/windows.in"
-import "../components/windows-pe.in"
-// VBE framebuffer driver (drawing primitives + bitmap font), Wayland-style
-// compositor (window manager + desktop rendering), and SPDP display server.
-import "../components/display.in"
-// PS/2 mouse driver (polling).
-import "../components/mouse.in"
-// Cooperative scheduler (must immediately precede shell.in).
+
+// Spoke Subsystem Hubs ("Metro Lines" radiating from the Central Nanokernel Hub):
+// 1. Network Metro Line (e1000, netstack, DHCP, DNS)
+import "../components/net-hub.in"
+// 2. Storage & VFS Metro Line (NVMe, SparkFS fs2-*, filesystem, VFS, time)
+import "../components/storage-hub.in"
+// 3. Runtime & SCI Metro Line (supervisor, preempt, sci-loader, boot-image, process)
+import "../components/runtime-hub.in"
+// 4. Personalities Metro Line (Linux/POSIX, Darwin/Mach-O, Windows/PE32+, foreign-exec)
+import "../components/personality-hub.in"
+// 5. Desktop & Display Metro Line (USB xHCI/HID, display stations, PS/2 mouse)
+import "../components/desktop-hub.in"
+
+// Cooperative scheduler & interactive serial shell:
 import "../components/sched.in"
-// Interactive serial shell.
 import "../components/shell.in"
 
-// --- decomposed nanokernel subsystems ---------------------------------------
+// Core nanokernel mechanisms & diagnostic stations:
 import "../components/serial.in"
 import "../components/memory.in"
 import "../components/object.in"
@@ -64,9 +35,7 @@ import "../components/interrupts.in"
 import "../components/syscall.in"
 import "../components/syscall-demo.in"
 import "../components/libc-test.in"
-import "../components/vfs.in"
 import "../components/vfs-test.in"
-import "../services/time.in"
 import "../components/editor.in"
 import "../components/diagnostics.in"
 import "../components/determinism.in"
@@ -238,187 +207,21 @@ fn kernel-entry(mb-info: Int) -> Int {
     }
   }
 
-  run-supervisor(port)
-  run-scheduler(port)
-  run-channels(port)
-  run-preemptive(port)
-
-  let boot-guest = boot-image-find(BOOT-IMAGE-GUEST)
-  if boot-guest != 0 {
-    sci-load(port, boot-guest)
-  }
-
-  // Register the nanokernel's own services as dynamic-link providers, then
-  // the shared libraries (libspace, appapi), before any importing component
-  // loads.
-  dyn-register-kernel-exports(port)
-  let lib-load = boot-image-find(BOOT-IMAGE-LIB)
-  if lib-load != 0 {
-    sci-register-library(port, lib-load)
-  }
-  let api-load = boot-image-find(BOOT-IMAGE-APP-API)
-  if api-load != 0 {
-    sci-register-library(port, api-load)
-  }
-
-  proc-init(16)
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: process table initialized (max 16)")
-    serial-nl(port)
-  }
-
-  if boot-quiet == 0 {
-    proc-selftest()
-  }
-
-  net-component-start(port)
-
-  let nvme-rc = nvme-init()
-  if boot-quiet == 0 {
-    if nvme-rc == 0 {
-      serial-write-cstr(port, "space: NVMe controller initialized")
-      serial-nl(port)
-    } else {
-      serial-write-cstr(port, "space: NVMe not found")
-      serial-nl(port)
-    }
-  }
-
-  let usb-rc = xhci-init()
-  if boot-quiet == 0 {
-    if usb-rc == 0 {
-      serial-write-cstr(port, "space: USB xHCI controller initialized")
-      serial-nl(port)
-    } else {
-      serial-write-cstr(port, "space: USB xHCI not found")
-      serial-nl(port)
-    }
-  }
-
-  load-arena-init(4 * 1024 * 1024)
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: load arena reserved (4 MiB) at 0x")
-    serial-write-hex(port, load-arena-base)
-    serial-nl(port)
-  }
-
-  let volume-load-early = boot-image-find(BOOT-IMAGE-VOLUME)
-  if volume-load-early != 0 {
-    sci-volume-rpc(port, volume-load-early)
-  }
-
-  fs-init()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: filesystem initialized")
-    serial-nl(port)
-  }
-  time-init()
-  if boot-quiet == 0 {
-    if volume-ready != 0 {
-      serial-write-cstr(port, "space: volume SCI is filesystem backend")
-      serial-nl(port)
-    } else if sf-mem-disk != 0 {
-      serial-write-cstr(port, "space: sparkfs mem volume at 0x")
-      serial-write-hex(port, sf-mem-disk)
-      serial-nl(port)
-    } else {
-      serial-write-cstr(port, "space: sparkfs nvme volume")
-      serial-nl(port)
-    }
-  }
-
-  vfs-init()
+  // Activate Spoke Hubs ("Metro Lines") from the Central Nanokernel Hub:
+  runtime-hub-early-init(port)
+  net-hub-init(port)
+  storage-hub-nvme-init(port)
+  let usb-rc = desktop-hub-usb-init(port)
+  runtime-hub-arena-init(port)
+  storage-hub-fs-init(port)
   test-sci-loader(port)
-
-
-
-  linux-init()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: Linux personality initialized (POSIX syscall layer)")
-    serial-nl(port)
-  }
-  darwin-init()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: Darwin personality stub registered (Mach/BSD subset demo)")
-    serial-nl(port)
-  }
-  win-init()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: Windows personality registered (Win32 subset translator)")
-    serial-nl(port)
-  }
-  if volume-ready != 0 {
-    linux-demo(port)
-  }
-
-  let fb-rc = fb-init(mb-info)
-  if fb-rc == 0 {
-    if boot-quiet == 0 {
-      serial-write-cstr(port, "space: framebuffer initialized")
-      fb-info(port)
-    }
-  } else {
-    if boot-quiet == 0 {
-      serial-write-cstr(port, "space: framebuffer not available (no VBE info)")
-      serial-nl(port)
-    }
-  }
-
-  if fb-ready != 0 {
-    let mouse-rc = mouse-init()
-    if mouse-rc == 0 {
-      if boot-quiet == 0 {
-        serial-write-cstr(port, "space: PS/2 mouse initialized")
-        serial-nl(port)
-      }
-    } else {
-      if boot-quiet == 0 {
-        serial-write-cstr(port, "space: PS/2 mouse not found")
-        serial-nl(port)
-      }
-    }
-    if ps2-kbd-init() == 0 {
-      if boot-quiet == 0 {
-        serial-write-cstr(port, "space: PS/2 keyboard initialized")
-        serial-nl(port)
-      }
-    }
-  }
-
-  if usb-rc == 0 {
-    let kbd-rc = usb-kbd-init()
-    if kbd-rc == 0 {
-      if boot-quiet == 0 {
-        serial-write-cstr(port, "space: USB HID keyboard ready")
-        serial-nl(port)
-      }
-    }
-  }
-
-  comp-init()
-  if boot-quiet == 0 {
-    serial-write-cstr(port, "space: compositor initialized")
-    serial-nl(port)
-  }
+  personality-hub-init(port)
+  desktop-hub-init(port, mb-info, usb-rc)
 
   // Optional runtime-loaded Display / Input components (probed at fixed
   // physical addresses). If present, they are started in isolated domains.
   preempt-start(port)
-
-  let display-load = boot-image-find(BOOT-IMAGE-DISPLAY)
-  if display-load != 0 {
-    sci-load-runtime-component(port, display-load, "display", SCI-DISPLAY-GRANTS, 0, 0)
-  }
-
-  let input-load = boot-image-find(BOOT-IMAGE-INPUT)
-  if input-load != 0 {
-    sci-load-runtime-component(port, input-load, "input", SCI-INPUT-GRANTS, 0, 0)
-  }
-
-  let dyn-load = boot-image-find(BOOT-IMAGE-DYN-MOD)
-  if dyn-load != 0 {
-    sci-load-runtime-component(port, dyn-load, "dynmod", SCI-DYN-GRANTS, 0, 0)
-  }
+  runtime-hub-load-components(port)
 
   // Let preemptive display/input print boot markers, then stop the timer
   // scheduler so the serial shell owns the CPU (input/display hlt forever).

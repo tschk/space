@@ -31,9 +31,11 @@ const FONT-FACE-SANS = 1
 
 var fb-font: Int = 0
 var fb-font-aa: Int = 0
+var fb-font-aa16: Int = 0
 var fb-font-sans: Int = 0
 var fb-font-sans-adv: Int = 0
 var fb-font-sans-aa: Int = 0
+var fb-font-sans-aa16: Int = 0
 
 fn fb-font-set(ch: Int, r0: Int, r1: Int, r2: Int, r3: Int, r4: Int, r5: Int, r6: Int, r7: Int) -> void {
   let p = fb-font + ch * 8
@@ -345,6 +347,90 @@ fn fb-font-sans-init() -> void {
 
   fb-font-sans-aa = alloc(128 * 64)
   fb-build-aa-table(fb-font-sans, fb-font-sans-aa)
+  fb-font-sans-aa16 = alloc(128 * 256)
+  fb-build-aa16-table(fb-font-sans, fb-font-sans-aa16)
+  return
+}
+
+fn fb-glyph-bit(glyph-base: Int, r: Int, c: Int) -> Int {
+  if r < 0 || r >= 8 || c < 0 || c >= 8 { return 0 }
+  return (load8(glyph-base + r) >> (7 - c)) & 1
+}
+
+// Build 16x16 1x1 physical-pixel subpixel-smoothed coverage masks (256 bytes/glyph)
+// using EPX/Scale2x diagonal reconstruction, outer convex corner rounding, and
+// subtle edge anti-aliasing so 2x text has smooth 1px diagonals and curves.
+fn fb-build-aa16-table(bitmap-src: Int, aa16-dst: Int) -> void {
+  let i = 0
+  while i < 128 * 256 {
+    store8(aa16-dst + i, 0)
+    i = i + 1
+  }
+  let ch = 0
+  while ch < 128 {
+    let glyph-base = bitmap-src + ch * 8
+    let r = 0
+    while r < 8 {
+      let c = 0
+      while c < 8 {
+        let center = fb-glyph-bit(glyph-base, r, c)
+        let sr = 0
+        while sr < 2 {
+          let vr = r - 1
+          let vor = r + 1
+          if sr == 1 {
+            vr = r + 1
+            vor = r - 1
+          }
+          let v = fb-glyph-bit(glyph-base, vr, c)
+          let vo = fb-glyph-bit(glyph-base, vor, c)
+          let sc = 0
+          while sc < 2 {
+            let hc = c - 1
+            let hoc = c + 1
+            if sc == 1 {
+              hc = c + 1
+              hoc = c - 1
+            }
+            let h = fb-glyph-bit(glyph-base, r, hc)
+            let ho = fb-glyph-bit(glyph-base, r, hoc)
+            let d = fb-glyph-bit(glyph-base, vr, hc)
+            let cov = 0
+            if center != 0 {
+              cov = 255
+              if v == 0 && h == 0 && d == 0 && (vo != 0 || ho != 0) {
+                cov = 136
+              }
+            } else {
+              if v != 0 && h != 0 {
+                if d == 0 {
+                  cov = 200
+                } else {
+                  cov = 128
+                }
+              } else if v != 0 || h != 0 {
+                if d != 0 {
+                  cov = 88
+                } else {
+                  cov = 40
+                }
+              } else if d != 0 {
+                cov = 24
+              }
+            }
+            let r16 = r * 2 + sr
+            let c16 = c * 2 + sc
+            store8(aa16-dst + ch * 256 + r16 * 16 + c16, cov)
+            sc = sc + 1
+          }
+          sr = sr + 1
+        }
+        c = c + 1
+      }
+      r = r + 1
+    }
+    ch = ch + 1
+  }
   return
 }
 
@@ -400,6 +486,8 @@ fn fb-build-aa-table(bitmap-src: Int, aa-dst: Int) -> void {
 fn fb-font-aa-init() -> void {
   fb-font-aa = alloc(128 * 64)
   fb-build-aa-table(fb-font, fb-font-aa)
+  fb-font-aa16 = alloc(128 * 256)
+  fb-build-aa16-table(fb-font, fb-font-aa16)
   return
 }
 

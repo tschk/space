@@ -14,15 +14,6 @@ var current-cap: Int = -1
 var cr3-read-stub: Int = 0
 var cr3-write-stub: Int = 0
 
-fn cr3-read() -> Int {
-  return invoke1(cr3-read-stub, 0)
-}
-
-fn cr3-write(pml4: Int) -> void {
-  invoke1(cr3-write-stub, pml4)
-  return
-}
-
 fn domain-set-cap(id: Int, cap-idx: Int) -> void {
   if id < 0 || id >= domain-count {
     return
@@ -66,11 +57,10 @@ fn domain-init() -> void {
   if tss != 0 {
     let kstack = alloc(8192)
     store64(tss + 4, kstack + 8192)
-    let load-tr = load64(0x4108)
-    if load-tr != 0 {
-      invoke1(load-tr, 0)
-    }
+    store64(0x4108, 0)
+    cpu-load-tr(GDT-TSS-SEL)
   }
+  cpu-init-syscall-msrs()
   store64(domain-table + 0, kernel-pml4)
   store64(domain-table + 8, DOMAIN-ACTIVE)
   store64(domain-table + 16, -1)

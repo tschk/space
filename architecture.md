@@ -95,16 +95,18 @@ flowchart TB
         Ring["SPDP 32-Byte Message Ring & Shared Pixel Pages"]
     end
 
-    subgraph CPL0["CPL0 Kernel & Kernel-Linked Services (Shared 4 GiB Identity Map)"]
-        Trap["Syscall (int 0x80) & Trap Entry\nSwitches to kernel_cr3, checks cap-check(domain)"]
-        Disp["Display & Compositor Modules\n• display.in (Compositor & Damage)\n• display-output.in (Mode & Scale Transactions)\n• display-text.in + font.in (Dual Typefaces & UTF-8)\n• display-layout.in + display-commandbar.in"]
-        Pers["Foreign Personalities (Edge Translators)\nlinux.in / darwin.in / windows.in / posix.in"]
-        Drivers["Kernel-Linked Drivers & Runtime\npci.in / nvme.in / net.in / vfs.in / shell.in"]
+    subgraph CPL0["CPL0 Central Nanokernel Hub & Spoke Metro Lines (Shared 4 GiB Identity Map)"]
+        Trap["Syscall (int 0x80 / syscall) & Trap Entry\nSwitches to kernel_cr3, checks cap-check(domain)"]
+        CPU["CPU & MSR Intrinsics (cpu.in)\ncr3-read / cr3-write / ltr / rdmsr / wrmsr64"]
+        Disp["Desktop Metro Line (desktop-hub.in)\n• display.in (Compositor & Damage)\n• display-output.in (Mode & Scale Transactions)\n• display-text.in + font.in (16x16 AA Dual Typefaces & UTF-8)\n• display-layout.in + display-commandbar.in\n• display-utilities.in + display-terminal.in + display-seat.in + display-spdp.in"]
+        Pers["Personalities Metro Line (personality-hub.in)\nforeign-exec.in / linux.in / darwin.in / windows.in / posix.in"]
+        Drivers["Storage, Net & Runtime Metro Lines\nstorage-hub.in / net-hub.in / runtime-hub.in"]
     end
 
-    Guest -->|"int 0x80"| Trap
+    Guest -->|"int 0x80 / syscall"| Trap
     Guest <-->|"Shared Page Ring"| Ring
     Ring <--> Disp
+    Trap --> CPU
     Trap --> Disp
     Trap --> Pers
     Trap --> Drivers

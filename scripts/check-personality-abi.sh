@@ -149,10 +149,13 @@ def main() -> int:
 
     print("[4/4] Personality translators are kernel-linked microservices...")
     kernel = src("kernel/kernel-root.in")
-    check("kernel-root imports linux.in", 'import "../components/linux.in"' in kernel)
-    check("kernel-root imports darwin.in", 'import "../components/darwin.in"' in kernel)
-    check("kernel-root imports windows.in", 'import "../components/windows.in"' in kernel)
-    check("posix.in is pulled in via linux.in, not kernel-root", 'import "../components/posix.in"' not in kernel)
+    phub = src("components/personality-hub.in")
+    combined = kernel + "\n" + phub
+    check("kernel-root imports personality-hub.in", 'import "../components/personality-hub.in"' in kernel)
+    check("personality-hub imports linux.in", 'import "linux.in"' in phub or 'import "../components/linux.in"' in combined)
+    check("personality-hub imports darwin.in", 'import "darwin.in"' in phub or 'import "../components/darwin.in"' in combined)
+    check("personality-hub imports windows.in", 'import "windows.in"' in phub or 'import "../components/windows.in"' in combined)
+    check("posix.in is pulled in via linux.in, not kernel-root", 'import "../components/posix.in"' not in combined and 'import "posix.in"' not in phub)
     check("linux.in imports posix.in", 'import "posix.in"' in linux or 'import "../components/posix.in"' in linux)
 
     print(f"\n=== Results: {passed} passed, {failed} failed ===")

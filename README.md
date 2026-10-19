@@ -65,28 +65,103 @@ Resolution, scaling and multiple typefaces are specified and tracked in the
 [display and text architecture](docs/plans/2026-10-19-display-text-architecture.md).
 See the [cross-repository architecture](docs/plans/2026-10-19-three-repository-architecture.md) for Subspace and Inauguration.
 
+### Radial Mind-Map & Metro-Map Architecture
+
+Space's kernel and services are organized around a **Central Nanokernel Hub (`kernel/kernel-root.in`)** radiating outward into five modular **Metro Lines** (`*-hub.in`), where each station owns a single focused responsibility:
+
+```mermaid
+flowchart TD
+    Center(("(( CENTRAL HUB ))\nNanokernel Core\nkernel-root.in"))
+
+    subgraph CoreRing["Inner Ring: Hardware & Capability Enforcement"]
+        CPU["CPU & MSR Intrinsics\n(cpu.in: cr3, ltr, rdmsr, wrmsr64)"]
+        Dom["Domains & Page Tables\n(domain.in: CPL0 / CPL3 U=1)"]
+        Cap["Objects & Capabilities\n(object.in / syscall.in)"]
+        IPC["Channel & Ring Fabric\n(channel.in / pci.in)"]
+    end
+
+    Center --- CPU
+    Center --- Dom
+    Center --- Cap
+    Center --- IPC
+
+    subgraph LineDesktop["Metro Line 1: Desktop & Display (desktop-hub.in)"]
+        D1["Station 1: Output & Scale\n(display-output.in)"]
+        D2["Station 2: 16x16 AA Typography\n(display-text.in + font.in)"]
+        D3["Station 3: Tiling Layout\n(display-layout.in)"]
+        D4["Station 4: Command Launcher\n(display-commandbar.in)"]
+        D5["Station 5: System Inspector\n(display-utilities.in)"]
+        D6["Station 6: Terminal TTY0/TTY1\n(display-terminal.in)"]
+        D7["Station 7: Seat & Cursor\n(display-seat.in + mouse.in)"]
+        D8["Station 8: SPDP 32B Server\n(display-spdp.in)"]
+        D1 --> D2 --> D3 --> D4 --> D5 --> D6 --> D7 --> D8
+    end
+
+    subgraph LineRuntime["Metro Line 2: Runtime & SCI (runtime-hub.in)"]
+        R1["Station 1: Boot Image Table\n(boot-image.in)"]
+        R2["Station 2: SCI v2 Dynamic Linker\n(sci-loader.in)"]
+        R3["Station 3: Supervisor & Preempt\n(supervisor.in + preempt.in)"]
+        R4["Station 4: Process & Thread Table\n(process.in + sched.in)"]
+        R1 --> R2 --> R3 --> R4
+    end
+
+    subgraph LineStorage["Metro Line 3: Storage & VFS (storage-hub.in)"]
+        S1["Station 1: NVMe PCIe Driver\n(nvme.in)"]
+        S2["Station 2: SparkFS Engine\n(fs2-layout/block/inode/dir/file.in)"]
+        S3["Station 3: VFS & Wallclock\n(vfs.in + services/time.in)"]
+        S1 --> S2 --> S3
+    end
+
+    subgraph LineNet["Metro Line 4: Network Stack (net-hub.in)"]
+        N1["Station 1: Intel e1000 NIC\n(net.in)"]
+        N2["Station 2: TCP/UDP Socket Table\n(netstack.in)"]
+        N3["Station 3: DHCP & DNS Resolver\n(dhcp.in + dns.in)"]
+        N1 --> N2 --> N3
+    end
+
+    subgraph LinePers["Metro Line 5: Edge Personalities (personality-hub.in)"]
+        P1["Station 1: Foreign CPL3 Runner\n(foreign-exec.in)"]
+        P2["Station 2: Linux POSIX / ELF64\n(linux.in + posix.in)"]
+        P3["Station 3: Darwin Mach-O\n(darwin.in + darwin-macho.in)"]
+        P4["Station 4: Windows Win32 / PE32+\n(windows.in + windows-pe.in)"]
+        P1 --> P2 --> P3 --> P4
+    end
+
+    Dom ==> D1
+    Cap ==> R1
+    IPC ==> S1
+    IPC ==> N1
+    Dom ==> P1
+```
+
 ### Hypermodular Desktop & Display Pipeline
 
 ```mermaid
 flowchart LR
-    subgraph Input["Seat & Input"]
-        PS2["PS/2 Keyboard & Mouse\n(mouse.in / input.in)"]
+    subgraph Input["Seat & Input Station"]
+        PS2["PS/2 & USB HID + Cursor\n(display-seat.in / mouse.in / usb.in)"]
     end
 
-    subgraph Shell["Command & Layout Policy"]
+    subgraph Shell["Command & Layout Stations"]
         Bar["Command Bar\n(display-commandbar.in)\nQuery, Filter & Dispatch"]
         Layout["Tiling & Window Layout\n(display-layout.in)\nColumns, Gaps & Min-Size"]
     end
 
-    subgraph Text["Typography & Asset Engine"]
-        Fonts["Dual Typefaces (font.in)\n• Space UI Sans (Proportional)\n• Space Term Mono (8x8 Fixed)"]
+    subgraph Text["Typography & Asset Station"]
+        Fonts["16x16 AA Dual Typefaces (font.in)\n• Space UI Sans (Proportional AA16)\n• Space Term Mono (Fixed AA16)"]
         TextEng["Text Engine (display-text.in)\n• SFNT1 Asset Validator\n• 64-Slot Advance Cache\n• UTF-8 Decode & Fallback Box"]
         Fonts --> TextEng
     end
 
-    subgraph Output["Compositor & Output Backend"]
+    subgraph Panels["Window Surface Stations"]
+        Term["Terminal Sessions\n(display-terminal.in)"]
+        Util["System Inspector\n(display-utilities.in)"]
+        SPDP["SPDP 32B Server\n(display-spdp.in)"]
+    end
+
+    subgraph Output["Compositor & Output Station"]
         Out["Output & Scale Contract\n(display-output.in)\n1024x768 / 1280x720 / 1920x1080\nRational Scale (2x 100%, 3x 150%)"]
-        Comp["Compositor & Damage Blitter\n(display.in + SPDP 32B Channel)"]
+        Comp["Compositor & Damage Blitter\n(display.in)"]
         Out --> Comp
     end
 
@@ -95,6 +170,9 @@ flowchart LR
     Bar --> Layout
     Layout --> Comp
     TextEng --> Comp
+    Term --> Comp
+    Util --> Comp
+    SPDP --> Comp
 ```
 
 ## Status
@@ -208,16 +286,26 @@ Browser demo (Alpenglow-style v86 shell, built with moonshine): see [`docs/v86-w
 
 ```
 kernel/
-  kernel-root.in            nanokernel root component
+  kernel-root.in            central nanokernel hub component
   guest-service.in          SCI guest component example
   v86-kernel.in             browser/v86 kernel variant
 components/
-  display.in                kernel-linked display (shell `desktop`)
+  cpu.in                    x86_64 CPU control & MSR wrappers (cr3, ltr, rdmsr, wrmsr64)
+  desktop-hub.in            Desktop & Display Metro Line hub
+  runtime-hub.in            Runtime & SCI Metro Line hub
+  storage-hub.in            Storage & VFS Metro Line hub
+  net-hub.in                Network Stack Metro Line hub
+  personality-hub.in        Edge Personalities Metro Line hub
+  display.in                kernel-linked compositor & damage engine (shell `desktop`)
   display-output.in         output modes, rational scale & coordinate transforms
   display-text.in           dual-typeface roles, SFNT1 validator, UTF-8 & fallback box
   display-layout.in         titlebar-aware horizontal tiling policy
   display-commandbar.in     command bar query, filtering & action dispatch
-  font.in                   Space Term Mono (8x8 fixed) & Space UI Sans (proportional)
+  display-utilities.in      System Inspector panel (sidebar, display, typeface & seat cards)
+  display-terminal.in       TTY0/TTY1 terminal session buffers & status header strip
+  display-seat.in           cursor bitmap & pointer/keyboard seat routing
+  display-spdp.in           SPDP 32-byte protocol server & shared memory pools
+  font.in                   16x16 AA Space Term Mono & Space UI Sans glyph atlases
   display-standalone.in     standalone display SCI component
   libspace.in               shared-library SCI (dynamic-linking provider)
   mouse.in                  PS/2 mouse input

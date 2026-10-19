@@ -1,0 +1,67 @@
+package space.kernel
+
+// Architecture CPU control and model-specific register contract expressed in .in
+// via Inauguration freestanding x86_64 intrinsics (cr3-read, cr3-write, ltr,
+// lgdt, lidt, invlpg, rdmsr, wrmsr, wrmsr64).
+
+const MSR-EFER = 0xC0000080
+const MSR-STAR = 0xC0000081
+const MSR-LSTAR = 0xC0000082
+const MSR-FMASK = 0xC0000084
+
+const GDT-KERNEL-CS = 0x08
+const GDT-KERNEL-SS = 0x10
+const GDT-TSS-SEL = 0x28
+
+// RFLAGS bits masked on SYSCALL entry: TF (bit 8), IF (bit 9), DF (bit 10).
+const SYSCALL-FMASK-FLAGS = 0x0700
+
+fn cpu-read-cr3() -> Int {
+  return cr3-read()
+}
+
+fn cpu-write-cr3(pml4: Int) -> void {
+  cr3-write(pml4)
+  return
+}
+
+fn cpu-load-tr(selector: Int) -> void {
+  ltr(selector)
+  return
+}
+
+fn cpu-read-msr(msr: Int) -> Int {
+  return rdmsr(msr)
+}
+
+fn cpu-write-msr(msr: Int, lo: Int, hi: Int) -> void {
+  wrmsr(msr, lo, hi)
+  return
+}
+
+fn cpu-write-msr64(msr: Int, val: Int) -> void {
+  wrmsr64(msr, val)
+  return
+}
+
+fn cpu-mem-fill64(dst: Int, val64: Int, qwords: Int) -> void {
+  mem-fill64(dst, val64, qwords)
+  return
+}
+
+fn cpu-mem-copy64(dst: Int, src: Int, qwords: Int) -> void {
+  mem-copy64(dst, src, qwords)
+  return
+}
+
+// Program IA32_STAR, IA32_LSTAR, and IA32_FMASK for the trusted foreign-fixture
+// SYSCALL entry point published by the bootstrap stub at [0x4110].
+fn cpu-init-syscall-msrs() -> void {
+  let syscall-entry = load64(0x4110)
+  if syscall-entry != 0 {
+    wrmsr(MSR-STAR, 0, GDT-KERNEL-CS)
+    wrmsr64(MSR-LSTAR, syscall-entry)
+    wrmsr(MSR-FMASK, SYSCALL-FMASK-FLAGS, 0)
+  }
+  return
+}

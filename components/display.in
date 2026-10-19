@@ -5,6 +5,10 @@ import "font.in"
 import "display-output.in"
 import "display-text.in"
 import "display-commandbar.in"
+import "display-utilities.in"
+import "display-terminal.in"
+import "display-seat.in"
+import "display-spdp.in"
 
 interface DisplayDevice {
   fn map(phys: Int, size: Int) -> void
@@ -280,27 +284,17 @@ fn fb-fill-rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   let color32 = color & 0xFFFFFFFF
   let color64 = color32 | (color32 << 32)
   let span = x-end - x-start
-  let bytes8 = (span >> 1) * 8
-  let bytes32 = (span >> 3) * 32
+  let qwords = span >> 1
   let odd = span & 1
+  let odd-off = qwords * 8
   let py = y-start
   while py < y-end {
     let ptr = fb-addr + py * fb-pitch + x-start * 4
-    let end32 = ptr + bytes32
-    let end8 = ptr + bytes8
-    while ptr < end32 {
-      store64(ptr, color64)
-      store64(ptr + 8, color64)
-      store64(ptr + 16, color64)
-      store64(ptr + 24, color64)
-      ptr = ptr + 32
-    }
-    while ptr < end8 {
-      store64(ptr, color64)
-      ptr = ptr + 8
+    if qwords > 0 {
+      mem-fill64(ptr, color64, qwords)
     }
     if odd != 0 {
-      store32(ptr, color)
+      store32(ptr + odd-off, color)
     }
     py = py + 1
   }
@@ -899,57 +893,6 @@ fn comp-render-background() -> void {
   fb-clear(COMP-COLOR-DESKTOP)
 }
 
-// X11-style arrow cursor bitmap (16x16, top-left hotspot)
-// MSB = leftmost pixel, row-major, 2 bytes per row, 32 bytes total
-var comp-cursor-bits: Int = 0
-
-fn comp-cursor-init() -> void {
-  comp-cursor-bits = alloc(32)
-  store8(comp-cursor-bits + 0, 0x80); store8(comp-cursor-bits + 1, 0x00)
-  store8(comp-cursor-bits + 2, 0xC0); store8(comp-cursor-bits + 3, 0x00)
-  store8(comp-cursor-bits + 4, 0xE0); store8(comp-cursor-bits + 5, 0x00)
-  store8(comp-cursor-bits + 6, 0xF0); store8(comp-cursor-bits + 7, 0x00)
-  store8(comp-cursor-bits + 8, 0xF8); store8(comp-cursor-bits + 9, 0x00)
-  store8(comp-cursor-bits + 10, 0xFC); store8(comp-cursor-bits + 11, 0x00)
-  store8(comp-cursor-bits + 12, 0xFE); store8(comp-cursor-bits + 13, 0x00)
-  store8(comp-cursor-bits + 14, 0xFF); store8(comp-cursor-bits + 15, 0x00)
-  store8(comp-cursor-bits + 16, 0xFF); store8(comp-cursor-bits + 17, 0x80)
-  store8(comp-cursor-bits + 18, 0xFF); store8(comp-cursor-bits + 19, 0xC0)
-  store8(comp-cursor-bits + 20, 0xFF); store8(comp-cursor-bits + 21, 0xE0)
-  store8(comp-cursor-bits + 22, 0xFC); store8(comp-cursor-bits + 23, 0x00)
-  store8(comp-cursor-bits + 24, 0xFC); store8(comp-cursor-bits + 25, 0x60)
-  store8(comp-cursor-bits + 26, 0xFC); store8(comp-cursor-bits + 27, 0x70)
-  store8(comp-cursor-bits + 28, 0xFC); store8(comp-cursor-bits + 29, 0x38)
-  store8(comp-cursor-bits + 30, 0x00); store8(comp-cursor-bits + 31, 0x1C)
-}
-
-// Draw the X11-style arrow cursor (white, no outline — ponytail: outline was 256 extra pixel calls per frame).
-fn comp-render-cursor() -> void {
-  let x = mouse-x
-  let y = mouse-y
-  let row = 0
-  while row < COMP-CURSOR-H {
-    let b0 = load8(comp-cursor-bits + row * 2)
-    let b1 = load8(comp-cursor-bits + row * 2 + 1)
-    let col = 0
-    while col < COMP-CURSOR-W {
-      let bit = 0
-      if col < 8 {
-        bit = (b0 >> (7 - col)) & 1
-      } else {
-        bit = (b1 >> (15 - col)) & 1
-      }
-      if bit != 0 {
-        let px = x + col
-        let py = y + row
-        fb-put-pixel(px, py, FB-COLOR-WHITE)
-      }
-      col = col + 1
-    }
-    row = row + 1
-  }
-}
-
 // Helper: draw content area background
 fn comp-draw-content-bg(base: Int) -> void {
   let x = load32(base + 4)
@@ -960,9 +903,10 @@ fn comp-draw-content-bg(base: Int) -> void {
   fb-fill-rect(x + COMP-BORDER-W, content-y, w - COMP-BORDER-W * 2, h - COMP-BORDER-W, COMP-COLOR-WINDOW)
 }
 
-// Fast 2x grayscale coverage blender for an 8x8 AA coverage table.
-fn fb-draw-char-table-aa(aa-table: Int, x: Int, y: Int, ch: Int, color: Int) -> void {
-  if fb-ready == 0 || aa-table == 0 {
+// True 16x16 1x1 physical-pixel grayscale coverage blender using EPX/Scale2x
+// subpixel-smoothed glyph tables (fb-font-aa16 / fb-font-sans-aa16).
+fn fb-draw-char-table-aa16(aa16-table: Int, x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb-ready == 0 || aa16-table == 0 {
     return
   }
   let rx = x + comp-render-dx
@@ -978,57 +922,116 @@ fn fb-draw-char-table-aa(aa-table: Int, x: Int, y: Int, ch: Int, color: Int) -> 
   let cr = (color >> 16) & 0xFF
   let cg = (color >> 8) & 0xFF
   let cb = color & 0xFF
-  let row = 0
-  let py = ry
-  while row < 8 {
-    if py >= 0 && py + 1 < fb-height {
-      let col = 0
-      let px = rx
-      while col < 8 {
-        let cov = load8(aa-table + ch * 64 + row * 8 + col)
-        if cov > 0 {
-          let in-clip = 1
-          if comp-clip-valid != 0 {
-            if px < comp-clip-x0 || px + 1 >= comp-clip-x1 || py < comp-clip-y0 || py + 1 >= comp-clip-y1 {
-              in-clip = 0
+  let glyph-base = aa16-table + ch * 256
+
+  // Fast path when the 16x16 glyph cell is completely within screen and clip bounds.
+  if rx >= 0 && rx + 16 <= fb-width && ry >= 0 && ry + 16 <= fb-height {
+    if comp-clip-valid == 0 || (rx >= comp-clip-x0 && rx + 16 <= comp-clip-x1 && ry >= comp-clip-y0 && ry + 16 <= comp-clip-y1) {
+      let row-ptr = fb-addr + ry * fb-pitch + rx * 4
+      let r16 = 0
+      while r16 < 16 {
+        let g-row = glyph-base + r16 * 16
+        let w0 = load64(g-row)
+        let w1 = load64(g-row + 8)
+        if (w0 | w1) != 0 {
+          if w0 != 0 {
+            let c0 = 0
+            while w0 != 0 && c0 < 8 {
+              let cov = w0 & 0xFF
+              if cov > 0 {
+                let p0 = row-ptr + c0 * 4
+                if cov >= 255 {
+                  store32(p0, color)
+                } else {
+                  let ia = 255 - cov
+                  let d = load32(p0)
+                  let dr = (d >> 16) & 0xFF
+                  let dg = (d >> 8) & 0xFF
+                  let db = d & 0xFF
+                  store32(p0, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+                }
+              }
+              w0 = (w0 >> 8) & 0x00FFFFFFFFFFFFFF
+              c0 = c0 + 1
             }
           }
-          if in-clip != 0 {
-            if px >= 0 && px + 1 < fb-width {
-              let ia = 255 - cov
-              let off00 = py * fb-pitch + px * 4
-              let off01 = off00 + 4
-              let off10 = off00 + fb-pitch
-              let off11 = off10 + 4
-              let d00 = load32(fb-addr + off00)
-              let d01 = load32(fb-addr + off01)
-              let d10 = load32(fb-addr + off10)
-              let d11 = load32(fb-addr + off11)
-              let dr = (d00 >> 16) & 0xFF
-              let dg = (d00 >> 8) & 0xFF
-              let db = d00 & 0xFF
-              store32(fb-addr + off00, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
-              let dr = (d01 >> 16) & 0xFF
-              let dg = (d01 >> 8) & 0xFF
-              let db = d01 & 0xFF
-              store32(fb-addr + off01, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
-              let dr = (d10 >> 16) & 0xFF
-              let dg = (d10 >> 8) & 0xFF
-              let db = d10 & 0xFF
-              store32(fb-addr + off10, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
-              let dr = (d11 >> 16) & 0xFF
-              let dg = (d11 >> 8) & 0xFF
-              let db = d11 & 0xFF
-              store32(fb-addr + off11, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+          if w1 != 0 {
+            let c1 = 0
+            let base1 = row-ptr + 32
+            while w1 != 0 && c1 < 8 {
+              let cov2 = w1 & 0xFF
+              if cov2 > 0 {
+                let p1 = base1 + c1 * 4
+                if cov2 >= 255 {
+                  store32(p1, color)
+                } else {
+                  let ia2 = 255 - cov2
+                  let d2 = load32(p1)
+                  let dr2 = (d2 >> 16) & 0xFF
+                  let dg2 = (d2 >> 8) & 0xFF
+                  let db2 = d2 & 0xFF
+                  store32(p1, (((cr * cov2 + dr2 * ia2 + 255) >> 8) << 16) | (((cg * cov2 + dg2 * ia2 + 255) >> 8) << 8) | ((cb * cov2 + db2 * ia2 + 255) >> 8))
+                }
+              }
+              w1 = (w1 >> 8) & 0x00FFFFFFFFFFFFFF
+              c1 = c1 + 1
             }
           }
         }
-        px = px + 2
-        col = col + 1
+        row-ptr = row-ptr + fb-pitch
+        r16 = r16 + 1
+      }
+      return
+    }
+  }
+
+  let r16 = 0
+  while r16 < 16 {
+    let py = ry + r16
+    if py >= 0 && py < fb-height {
+      let row-ok = 1
+      if comp-clip-valid != 0 {
+        if py < comp-clip-y0 || py >= comp-clip-y1 {
+          row-ok = 0
+        }
+      }
+      if row-ok != 0 {
+        let g-row2 = glyph-base + r16 * 16
+        if (load64(g-row2) | load64(g-row2 + 8)) != 0 {
+          let row-off = py * fb-pitch
+          let c16 = 0
+          while c16 < 16 {
+            let cov = load8(g-row2 + c16)
+            if cov > 0 {
+              let px = rx + c16
+              if px >= 0 && px < fb-width {
+                let col-ok = 1
+                if comp-clip-valid != 0 {
+                  if px < comp-clip-x0 || px >= comp-clip-x1 {
+                    col-ok = 0
+                  }
+                }
+                if col-ok != 0 {
+                  let off = row-off + px * 4
+                  if cov >= 255 {
+                    store32(fb-addr + off, color)
+                  } else {
+                    let ia = 255 - cov
+                    let d = load32(fb-addr + off)
+                    let dr = (d >> 16) & 0xFF
+                    let dg = (d >> 8) & 0xFF
+                    let db = d & 0xFF
+                    store32(fb-addr + off, (((cr * cov + dr * ia + 255) >> 8) << 16) | (((cg * cov + dg * ia + 255) >> 8) << 8) | ((cb * cov + db * ia + 255) >> 8))
+                  }
+                }
+              }
+            }
+            c16 = c16 + 1
+          }
+        }
       }
     }
-    py = py + 2
-    row = row + 1
+    r16 = r16 + 1
   }
   return
 }
@@ -1039,15 +1042,38 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
     return
   }
   let face = text-role-face(TEXT-ROLE-UI-BODY)
-  if fb-font-scale == 2 && text-is-supported-cp(ch) != 0 {
-    let aa-table = fb-font-aa
-    if face == FONT-FACE-SANS && fb-font-sans-aa != 0 {
-      aa-table = fb-font-sans-aa
-    }
-    fb-draw-char-table-aa(aa-table, x, y, ch, color)
+  if comp-stress != 0 {
+    text-draw-char-face(face, x, y, ch, color)
     return
   }
+  if fb-font-scale == 2 && text-is-supported-cp(ch) != 0 {
+    let aa16-table = fb-font-aa16
+    if face == FONT-FACE-SANS && fb-font-sans-aa16 != 0 {
+      aa16-table = fb-font-sans-aa16
+    }
+    if aa16-table != 0 {
+      fb-draw-char-table-aa16(aa16-table, x, y, ch, color)
+      return
+    }
+  }
   text-draw-char-face-aa(face, x, y, ch, color)
+  return
+}
+
+// Draw an anti-aliased character at (x, y) using Space Term Mono.
+fn fb-draw-char-mono-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
+  if fb-ready == 0 {
+    return
+  }
+  if comp-stress != 0 {
+    text-draw-char-face(FONT-FACE-MONO, x, y, ch, color)
+    return
+  }
+  if fb-font-scale == 2 && text-is-supported-cp(ch) != 0 && fb-font-aa16 != 0 {
+    fb-draw-char-table-aa16(fb-font-aa16, x, y, ch, color)
+    return
+  }
+  text-draw-char-face-aa(FONT-FACE-MONO, x, y, ch, color)
   return
 }
 
@@ -1058,26 +1084,42 @@ fn comp-draw-label-aa(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   if ry + gh <= 0 || ry >= fb-height { return }
   if comp-clip-valid != 0 {
     if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+    if x + comp-render-dx >= comp-clip-x1 { return }
   }
   let face = text-role-face(TEXT-ROLE-UI-BODY)
   let cx = x
   let i = 0
   while i < 96 {
+    if comp-clip-valid != 0 {
+      if cx + comp-render-dx >= comp-clip-x1 { return }
+    }
     let b0 = load8(str + i) & 0xFF
     if b0 == 0 {
       return
     }
     if b0 < 0x80 {
       let adv = text-glyph-advance-raw(face, b0, fb-font-scale)
-      fb-fill-rect(cx, y, adv, gh, bg)
-      fb-draw-char-aa(cx, y, b0, fg)
+      if comp-clip-valid == 0 || cx + adv + comp-render-dx > comp-clip-x0 {
+        if comp-stress == 0 {
+          fb-fill-rect(cx, y, adv, gh, bg)
+          fb-draw-char-aa(cx, y, b0, fg)
+        } else {
+          text-draw-char-face(face, cx, y, b0, fg)
+        }
+      }
       cx = cx + adv
       i = i + 1
     } else {
       let cp = text-utf8-decode(str, i)
       let adv = text-glyph-advance(face, cp, fb-font-scale)
-      fb-fill-rect(cx, y, adv, gh, bg)
-      fb-draw-char-aa(cx, y, cp, fg)
+      if comp-clip-valid == 0 || cx + adv + comp-render-dx > comp-clip-x0 {
+        if comp-stress == 0 {
+          fb-fill-rect(cx, y, adv, gh, bg)
+          fb-draw-char-aa(cx, y, cp, fg)
+        } else {
+          text-draw-char-face(face, cx, y, cp, fg)
+        }
+      }
       cx = cx + adv
       i = i + text-utf8-bytes
     }
@@ -1085,18 +1127,26 @@ fn comp-draw-label-aa(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   return
 }
 
-// Draw a UI body label using Space UI Sans proportional bitmap strokes.
+// Draw a UI body label using Space UI Sans smooth anti-aliased strokes.
 fn comp-draw-ui-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
+  if fb-font-scale == 2 {
+    comp-draw-label-aa(x, y, str, fg, bg)
+    return
+  }
   let gh = fb-font-scale * 8 + 2
   let ry = y + comp-render-dy
   if ry + gh <= 0 || ry >= fb-height { return }
   if comp-clip-valid != 0 {
     if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+    if x + comp-render-dx >= comp-clip-x1 { return }
   }
   let face = text-role-face(TEXT-ROLE-UI-BODY)
   let cx = x
   let i = 0
   while i < 96 {
+    if comp-clip-valid != 0 {
+      if cx + comp-render-dx >= comp-clip-x1 { return }
+    }
     let b0 = load8(str + i) & 0xFF
     if b0 == 0 {
       return
@@ -1126,29 +1176,88 @@ fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
   if ry + gh <= 0 || ry >= fb-height { return }
   if comp-clip-valid != 0 {
     if ry + gh <= comp-clip-y0 || ry >= comp-clip-y1 { return }
+    if x + comp-render-dx >= comp-clip-x1 { return }
   }
   let cw = text-term-cell-w()
   let cx = x
   let i = 0
   while i < 96 {
+    if comp-clip-valid != 0 {
+      if cx + comp-render-dx >= comp-clip-x1 { return }
+    }
     let b0 = load8(str + i) & 0xFF
     if b0 == 0 {
       return
     }
     if b0 < 0x80 {
-      fb-fill-rect(cx, y, cw, gh, bg)
-      text-draw-char-face(FONT-FACE-MONO, cx, y, b0, fg)
+      if comp-clip-valid == 0 || cx + cw + comp-render-dx > comp-clip-x0 {
+        if comp-stress == 0 {
+          fb-fill-rect(cx, y, cw, gh, bg)
+          if fb-font-scale == 2 {
+            fb-draw-char-mono-aa(cx, y, b0, fg)
+          } else {
+            text-draw-char-face(FONT-FACE-MONO, cx, y, b0, fg)
+          }
+        } else if fb-font-scale == 2 {
+          fb-draw-char(cx, y, b0, fg)
+        } else {
+          text-draw-char-face(FONT-FACE-MONO, cx, y, b0, fg)
+        }
+      }
       cx = cx + cw
       i = i + 1
     } else {
       let cp = text-utf8-decode(str, i)
-      fb-fill-rect(cx, y, cw, gh, bg)
-      text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
+      if comp-clip-valid == 0 || cx + cw + comp-render-dx > comp-clip-x0 {
+        if comp-stress == 0 {
+          fb-fill-rect(cx, y, cw, gh, bg)
+          if fb-font-scale == 2 {
+            fb-draw-char-mono-aa(cx, y, cp, fg)
+          } else {
+            text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
+          }
+        } else {
+          text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
+        }
+      }
       cx = cx + cw
       i = i + text-utf8-bytes
     }
   }
   return
+}
+
+// Draw a decimal integer using Space UI Sans proportional anti-aliased digits.
+fn comp-draw-dec-aa(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
+  let face = text-role-face(TEXT-ROLE-UI-BODY)
+  let gh = fb-font-scale * 8 + 2
+  let ry = y + comp-render-dy
+  let n = value
+  let cx = x
+  if n == 0 {
+    let adv0 = text-glyph-advance-raw(face, 48, fb-font-scale)
+    if ry + gh > 0 && ry < fb-height {
+      fb-fill-rect(cx, y, adv0, gh, bg)
+      fb-draw-char-aa(cx, y, 48, fg)
+    }
+    return cx + adv0
+  }
+  let div = 1
+  while n / div >= 10 {
+    div = div * 10
+  }
+  while div > 0 {
+    let q = n / div
+    let digit = q - (q / 10) * 10
+    let adv = text-glyph-advance-raw(face, 48 + digit, fb-font-scale)
+    if ry + gh > 0 && ry < fb-height {
+      fb-fill-rect(cx, y, adv, gh, bg)
+      fb-draw-char-aa(cx, y, 48 + digit, fg)
+    }
+    cx = cx + adv
+    div = div / 10
+  }
+  return cx
 }
 
 fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
@@ -1160,7 +1269,11 @@ fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
   if n == 0 {
     if ry + gh > 0 && ry < fb-height {
       fb-fill-rect(cx, y, cw, gh, bg)
-      text-draw-char-face(FONT-FACE-MONO, cx, y, 48, fg)
+      if fb-font-scale == 2 {
+        fb-draw-char-mono-aa(cx, y, 48, fg)
+      } else {
+        text-draw-char-face(FONT-FACE-MONO, cx, y, 48, fg)
+      }
     }
     return cx + cw
   }
@@ -1173,247 +1286,16 @@ fn comp-draw-dec(x: Int, y: Int, value: Int, fg: Int, bg: Int) -> Int {
     let digit = q - (q / 10) * 10
     if ry + gh > 0 && ry < fb-height {
       fb-fill-rect(cx, y, cw, gh, bg)
-      text-draw-char-face(FONT-FACE-MONO, cx, y, 48 + digit, fg)
+      if fb-font-scale == 2 {
+        fb-draw-char-mono-aa(cx, y, 48 + digit, fg)
+      } else {
+        text-draw-char-face(FONT-FACE-MONO, cx, y, 48 + digit, fg)
+      }
     }
     cx = cx + cw
     div = div / 10
   }
   return cx
-}
-
-const COMP-TERM-SLOTS = 2
-const COMP-TERM-BUF-SIZE = 128
-const COMP-TERM-LINES = 32
-const COMP-TERM-COLS = 80
-const COMP-TERM-VIEW = 10
-// Special key codes (not printable): scroll
-const COMP-KEY-PGUP = 128
-const COMP-KEY-PGDN = 129
-
-// Input line buffers: slot * COMP-TERM-BUF-SIZE
-var comp-term-input: Int = 0
-// Ring of fixed-width lines: slot * LINES * COLS
-var comp-term-ring: Int = 0
-// Per-slot packed state in small arrays (8 bytes each slot)
-var comp-term-len: Int = 0      // input length[slot]
-var comp-term-head: Int = 0     // next ring write index[slot]
-var comp-term-count: Int = 0    // lines stored[slot] (0..LINES)
-var comp-term-scroll: Int = 0   // lines up from bottom[slot]
-var comp-term-mode: Int = 0     // 0 normal, 2 fetch banner[slot]
-
-fn comp-term-input-of(slot: Int) -> Int {
-  return comp-term-input + slot * COMP-TERM-BUF-SIZE
-}
-
-fn comp-term-ring-line(slot: Int, idx: Int) -> Int {
-  let i = idx - (idx / COMP-TERM-LINES) * COMP-TERM-LINES
-  if i < 0 {
-    i = i + COMP-TERM-LINES
-  }
-  return comp-term-ring + (slot * COMP-TERM-LINES + i) * COMP-TERM-COLS
-}
-
-fn comp-term-get-len(slot: Int) -> Int {
-  return load32(comp-term-len + slot * 4)
-}
-
-fn comp-term-set-len(slot: Int, v: Int) -> void {
-  store32(comp-term-len + slot * 4, v)
-  return
-}
-
-fn comp-term-get-head(slot: Int) -> Int {
-  return load32(comp-term-head + slot * 4)
-}
-
-fn comp-term-set-head(slot: Int, v: Int) -> void {
-  store32(comp-term-head + slot * 4, v)
-  return
-}
-
-fn comp-term-get-count(slot: Int) -> Int {
-  return load32(comp-term-count + slot * 4)
-}
-
-fn comp-term-set-count(slot: Int, v: Int) -> void {
-  store32(comp-term-count + slot * 4, v)
-  return
-}
-
-fn comp-term-get-scroll(slot: Int) -> Int {
-  return load32(comp-term-scroll + slot * 4)
-}
-
-fn comp-term-set-scroll(slot: Int, v: Int) -> void {
-  store32(comp-term-scroll + slot * 4, v)
-  return
-}
-
-fn comp-term-get-mode(slot: Int) -> Int {
-  return load32(comp-term-mode + slot * 4)
-}
-
-fn comp-term-set-mode(slot: Int, v: Int) -> void {
-  store32(comp-term-mode + slot * 4, v)
-  return
-}
-
-fn comp-term-clear-line(addr: Int) -> void {
-  let i = 0
-  while i < COMP-TERM-COLS {
-    store8(addr + i, 0)
-    i = i + 1
-  }
-  return
-}
-
-fn comp-term-push-line(slot: Int, src: Int) -> void {
-  let head = comp-term-get-head(slot)
-  let dst = comp-term-ring-line(slot, head)
-  comp-term-clear-line(dst)
-  let i = 0
-  while i < COMP-TERM-COLS - 1 {
-    let ch = load8(src + i)
-    if ch == 0 {
-      i = COMP-TERM-COLS
-    } else {
-      store8(dst + i, ch)
-      i = i + 1
-    }
-  }
-  comp-term-set-head(slot, head + 1)
-  let c = comp-term-get-count(slot)
-  if c < COMP-TERM-LINES {
-    comp-term-set-count(slot, c + 1)
-  }
-  // New output pins view to bottom.
-  comp-term-set-scroll(slot, 0)
-  return
-}
-
-fn comp-term-append(slot: Int, ch: Int) -> void {
-  let len = comp-term-get-len(slot)
-  if len >= COMP-TERM-BUF-SIZE - 1 {
-    return
-  }
-  let buf = comp-term-input-of(slot)
-  store8(buf + len, ch)
-  len = len + 1
-  store8(buf + len, 0)
-  comp-term-set-len(slot, len)
-  return
-}
-
-fn comp-term-init() -> void {
-  if comp-term-input == 0 {
-    comp-term-input = alloc(COMP-TERM-SLOTS * COMP-TERM-BUF-SIZE)
-    comp-term-ring = alloc(COMP-TERM-SLOTS * COMP-TERM-LINES * COMP-TERM-COLS)
-    comp-term-len = alloc(COMP-TERM-SLOTS * 4)
-    comp-term-head = alloc(COMP-TERM-SLOTS * 4)
-    comp-term-count = alloc(COMP-TERM-SLOTS * 4)
-    comp-term-scroll = alloc(COMP-TERM-SLOTS * 4)
-    comp-term-mode = alloc(COMP-TERM-SLOTS * 4)
-  }
-  let s = 0
-  while s < COMP-TERM-SLOTS {
-    comp-term-set-len(s, 0)
-    comp-term-set-head(s, 0)
-    comp-term-set-count(s, 0)
-    comp-term-set-scroll(s, 0)
-    comp-term-set-mode(s, 0)
-    store8(comp-term-input-of(s), 0)
-    let li = 0
-    while li < COMP-TERM-LINES {
-      comp-term-clear-line(comp-term-ring-line(s, li))
-      li = li + 1
-    }
-    s = s + 1
-  }
-  return
-}
-
-fn comp-term-backspace(slot: Int) -> void {
-  let len = comp-term-get-len(slot)
-  if len <= 0 {
-    return
-  }
-  len = len - 1
-  store8(comp-term-input-of(slot) + len, 0)
-  comp-term-set-len(slot, len)
-  return
-}
-
-fn comp-term-seed(slot: Int, src: Int) -> void {
-  let buf = comp-term-input-of(slot)
-  let len = 0
-  let i = 0
-  while i < COMP-TERM-BUF-SIZE - 1 {
-    let ch = load8(src + i)
-    if ch == 0 {
-      i = COMP-TERM-BUF-SIZE
-    } else {
-      store8(buf + len, ch)
-      len = len + 1
-      i = i + 1
-    }
-  }
-  store8(buf + len, 0)
-  comp-term-set-len(slot, len)
-  return
-}
-
-fn comp-term-line-eq(slot: Int, str: Int) -> Int {
-  let buf = comp-term-input-of(slot)
-  let i = 0
-  while i < 64 {
-    let a = load8(buf + i)
-    let b = load8(str + i)
-    if a != b {
-      return 0
-    }
-    if a == 0 {
-      return 1
-    }
-    i = i + 1
-  }
-  return 0
-}
-
-fn comp-term-scroll-by(slot: Int, delta: Int) -> void {
-  let sc = comp-term-get-scroll(slot) + delta
-  if sc < 0 {
-    sc = 0
-  }
-  let max = comp-term-get-count(slot)
-  if max > COMP-TERM-VIEW {
-    max = max - COMP-TERM-VIEW
-  } else {
-    max = 0
-  }
-  if sc > max {
-    sc = max
-  }
-  comp-term-set-scroll(slot, sc)
-  return
-}
-
-fn comp-term-slot-of-win(base: Int) -> Int {
-  let slot = load64(base + 32)
-  if slot < 0 || slot >= COMP-TERM-SLOTS {
-    return 0
-  }
-  return slot
-}
-
-fn comp-term-focused-slot() -> Int {
-  if comp-focused < 0 {
-    return 0
-  }
-  let base = comp-win-base(comp-focused)
-  if load64(base + 40) != COMP-ROLE-TERMINAL {
-    return 0
-  }
-  return comp-term-slot-of-win(base)
 }
 
 // Helper: draw content text (or default placeholder for empty windows)
@@ -1428,7 +1310,6 @@ fn comp-draw-content-text(base: Int) -> void {
   let cw = fb-font-scale * 8 + 2
   let lh = cw + 3
   if content == 0 {
-    // Show window title and instructions
     if title != 0 {
       comp-draw-label(x + 16, content-y + lh + 4, title, COMP-COLOR-TEXT, COMP-COLOR-WINDOW)
     }
@@ -1440,115 +1321,10 @@ fn comp-draw-content-text(base: Int) -> void {
   return
 }
 
-
-
-fn comp-draw-utilities-content(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let h = load32(base + 16)
-  let content-y = y + COMP-TITLE-BAR-H
-  let cw = fb-font-scale * 8 + 2
-  let lh = cw + 3
-  let sidebar-w = 136
-  let tx-x = x + 160
-  if w < 480 {
-    sidebar-w = 36
-    tx-x = x + 48
-  }
-  fb-fill-rect(x, content-y, w, h, COMP-COLOR-SURFACE)
-  // Dark sidebar
-  fb-fill-rect(x, content-y, sidebar-w, h, COMP-COLOR-DESKTOP)
-  fb-fill-rect(x + 2, content-y + lh + 20, 3, 16, COMP-COLOR-ACCENT)
-  // Content area — dynamic output mode, scale, and active typefaces
-  let ty = content-y + lh + 4
-  comp-draw-ui-label(tx-x, ty, "DISPLAY", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  let rx-end = comp-draw-dec(tx-x, ty, fb-width, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  comp-draw-ui-label(rx-end, ty, " x ", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  let sep-w = text-measure-run(TEXT-ROLE-UI-BODY, " x ", 3)
-  comp-draw-dec(rx-end + sep-w, ty, fb-height, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  if fb-font-scale == 3 {
-    comp-draw-ui-label(tx-x, ty, "32 BPP / 150%", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  } else {
-    comp-draw-ui-label(tx-x, ty, "32 BPP / 100%", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  }
-  ty = ty + lh + lh / 2
-  comp-draw-ui-label(tx-x, ty, "TYPEFACES", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-ui-label(tx-x, ty, "SPACE UI SANS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-label(tx-x, ty, "SPACE TERM MONO", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh + lh / 2
-  comp-draw-ui-label(tx-x, ty, "INPUT", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-ui-label(tx-x, ty, "MOUSE", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-ui-label(tx-x, ty, "KEYBOARD", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh + lh / 2
-  comp-draw-ui-label(tx-x, ty, "PANEL", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-ui-label(tx-x, ty, "BOTTOM", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  ty = ty + lh
-  comp-draw-ui-label(tx-x, ty, "CLICK FOCUS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
-  return
-}
-
-fn comp-draw-terminal-content(base: Int) -> void {
-  let x = load32(base + 4)
-  let y = load32(base + 8)
-  let w = load32(base + 12)
-  let h = load32(base + 16)
-  let content-y = y + COMP-TITLE-BAR-H
-  let cw = text-term-cell-w()
-  let lh = text-term-cell-h()
-  let slot = comp-term-slot-of-win(base)
-  fb-fill-rect(x, content-y, w, h, COMP-COLOR-TERM-BG)
-  fb-fill-rect(x, content-y, w, 28, COMP-COLOR-DESKTOP)
-  if slot == 0 {
-    comp-draw-ui-label(x + 12, content-y + 6, "TERMINAL 1", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
-  } else {
-    comp-draw-ui-label(x + 12, content-y + 6, "TERMINAL 2", FB-COLOR-WHITE, COMP-COLOR-DESKTOP)
-  }
-  let prompt-y = content-y + 40
-  // Visible history: last COMP-TERM-VIEW lines, shifted by scroll.
-  let count = comp-term-get-count(slot)
-  let sc = comp-term-get-scroll(slot)
-  let head = comp-term-get-head(slot)
-  let show = count
-  if show > COMP-TERM-VIEW {
-    show = COMP-TERM-VIEW
-  }
-  // Newest line index is head-1. Start at newest - sc - show + 1.
-  let start = head - sc - show
-  let row = 0
-  while row < show {
-    let line = comp-term-ring-line(slot, start + row)
-    comp-draw-label(x + 16, prompt-y + row * lh, line, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    row = row + 1
-  }
-  prompt-y = prompt-y + show * lh + 8
-  if comp-term-get-mode(slot) > 1 {
-    comp-draw-label(x + 16, prompt-y, "SPACEOS", FB-COLOR-CYAN, COMP-COLOR-TERM-BG)
-    comp-draw-label(x + 260, prompt-y, "0.2.", COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    comp-draw-dec(x + 332, prompt-y, SPACE-VERSION-PATCH, COMP-COLOR-TERM-TEXT, COMP-COLOR-TERM-BG)
-    prompt-y = prompt-y + lh
-  }
-  comp-draw-label(x + 16, prompt-y, "space> ", FB-COLOR-GREEN, COMP-COLOR-TERM-BG)
-  let input-x = x + 16 + 7 * cw
-  let input-buf = comp-term-input-of(slot)
-  comp-draw-label(input-x, prompt-y, input-buf, FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
-  let caret-off = text-caret-x(TEXT-ROLE-TERM-MONO, input-buf, comp-term-get-len(slot))
-  fb-fill-rect(input-x + caret-off, prompt-y + 2, 2 * fb-font-scale, 7 * fb-font-scale, COMP-COLOR-ACCENT)
-  return
-}
-
 // Draw a window's frame (border + title bar + buttons + content) into the
 // current fb-addr surface, honoring the active render offset and clip. Used
 // for both the opaque direct path and the per-window alpha surface path.
 fn comp-render-window-frame(base: Int) -> void {
-  // Draw window frame (title bar + border + controls)
   let wx = load32(base + 4)
   let wy = load32(base + 8)
   let ww = load32(base + 12)
@@ -1562,6 +1338,8 @@ fn comp-render-window-frame(base: Int) -> void {
   fb-fill-rect(wx + ww - COMP-BORDER-W, wy + COMP-BORDER-W, COMP-BORDER-W, wfh - COMP-BORDER-W * 2, COMP-COLOR-BORDER)
   if (wflags & COMP-WIN-FOCUSED) != 0 {
     fb-fill-rect(wx + COMP-BORDER-W, wy + COMP-BORDER-W, ww - COMP-BORDER-W * 2, COMP-TITLE-BAR-H, COMP-COLOR-TITLE-ACTIVE)
+    // 2px gold focus indicator bar along top of active titlebar
+    fb-fill-rect(wx + COMP-BORDER-W, wy + COMP-BORDER-W, ww - COMP-BORDER-W * 2, 2, COMP-COLOR-ACCENT)
     if wtitle != 0 {
       comp-draw-label-aa(wx + 12, wy + COMP-BORDER-W + (COMP-TITLE-BAR-H - 18) / 2, wtitle, FB-COLOR-WHITE, COMP-COLOR-TITLE-ACTIVE)
     }
@@ -1592,7 +1370,6 @@ fn comp-render-window-frame(base: Int) -> void {
     wxi = wxi + 1
   }
 
-  // Draw content (role-specific drawers handle their own backgrounds)
   let role = load64(base + 40)
   if role == COMP-ROLE-UTILITIES {
     comp-draw-utilities-content(base)
@@ -1603,7 +1380,6 @@ fn comp-render-window-frame(base: Int) -> void {
     comp-draw-content-text(base)
   }
 
-  // Resize-corner affordance: a small diagonal grip at the bottom-right.
   let grip-x = wx + ww - COMP-BORDER-W - 6
   let grip-y = wy + wfh - COMP-BORDER-W - 6
   let gi = 0
@@ -1886,29 +1662,19 @@ fn comp-rect-intersects(ax0: Int, ay0: Int, ax1: Int, ay1: Int, bx0: Int, by0: I
 fn comp-blit-region(dst: Int, x0: Int, y0: Int, x1: Int, y1: Int) -> void {
   let src = comp-backbuf
   let n = (x1 - x0) * 4
-  let bytes8 = n & -8
-  let bytes32 = n & -32
+  let qwords = n >> 3
+  let bytes8 = qwords * 8
   let py = y0
   while py < y1 {
     let row-off = py * fb-pitch + x0 * 4
     let sptr = src + row-off
     let dptr = dst + row-off
-    let send32 = sptr + bytes32
-    let send8 = sptr + bytes8
+    if qwords > 0 {
+      mem-copy64(dptr, sptr, qwords)
+    }
     let send = sptr + n
-    while sptr < send32 {
-      store64(dptr, load64(sptr))
-      store64(dptr + 8, load64(sptr + 8))
-      store64(dptr + 16, load64(sptr + 16))
-      store64(dptr + 24, load64(sptr + 24))
-      sptr = sptr + 32
-      dptr = dptr + 32
-    }
-    while sptr < send8 {
-      store64(dptr, load64(sptr))
-      sptr = sptr + 8
-      dptr = dptr + 8
-    }
+    sptr = sptr + bytes8
+    dptr = dptr + bytes8
     while sptr < send {
       store8(dptr, load8(sptr))
       sptr = sptr + 1
@@ -2062,13 +1828,7 @@ fn comp-taskbar-btn-width() -> Int {
 }
 
 fn comp-taskbar-label(x: Int, y: Int, title: Int, fg: Int) -> void {
-  let i = 0
-  while i < 12 {
-    let ch = load8(title + i)
-    if ch == 0 { return }
-    fb-draw-char(x + i * (fb-font-scale * 8 + 2), y, ch, fg)
-    i = i + 1
-  }
+  comp-draw-label-aa(x, y, title, fg, COMP-COLOR-PANEL-LINE)
   return
 }
 
@@ -2094,36 +1854,38 @@ fn comp-taskbar-max-btns() -> Int {
 fn comp-render-taskbar() -> void {
   let bar-y = fb-height - COMP-TASKBAR-H
   fb-fill-rect(0, bar-y, fb-width, COMP-TASKBAR-H, COMP-COLOR-PANEL)
-  // Separator line at top of taskbar
   let tx2 = 0
   while tx2 < fb-width {
     fb-put-pixel(tx2, bar-y, COMP-COLOR-PANEL-LINE)
     tx2 = tx2 + 1
   }
-  // Window buttons: highlight the focused one.
   let max-btns = comp-taskbar-max-btns()
   let i2 = 0
   while i2 < comp-count && i2 < max-btns {
     let base = comp-win-base(i2)
     let title = load64(base + 24)
-    let flags3 = load32(base + 20)
     if title != 0 {
       let btn-x = comp-taskbar-btn-x(i2)
+      let btn-w = comp-taskbar-btn-width() - 4
       let focused = 0
       if i2 == comp-focused {
         focused = 1
       }
       let btn-bg = COMP-COLOR-PANEL-LINE
+      let btn-fg = COMP-COLOR-MUTED
       if focused != 0 {
         btn-bg = 0x00333336
+        btn-fg = FB-COLOR-WHITE
       }
-      fb-fill-rect(btn-x, bar-y + 2, comp-taskbar-btn-width() - 4, COMP-TASKBAR-H - 4, btn-bg)
-      comp-taskbar-label(btn-x + 4, bar-y + 5, title, COMP-COLOR-MUTED)
+      fb-fill-rect(btn-x, bar-y + 2, btn-w, COMP-TASKBAR-H - 4, btn-bg)
+      comp-draw-label-aa(btn-x + 10, bar-y + 5, title, btn-fg, btn-bg)
+      if focused != 0 {
+        fb-fill-rect(btn-x + 6, bar-y + COMP-TASKBAR-H - 4, btn-w - 12, 2, COMP-COLOR-ACCENT)
+      }
     }
     i2 = i2 + 1
   }
   if comp-count > max-btns {
-    // Overflow indicator: a small ellipsis at the last button slot.
     let ox = comp-taskbar-btn-x(max-btns)
     fb-fill-rect(ox, bar-y + 2, comp-taskbar-btn-width() - 4, COMP-TASKBAR-H - 4, COMP-COLOR-PANEL-LINE)
     let oi = 0
@@ -2141,9 +1903,19 @@ fn comp-render-launcher() -> void {
   let y = COMP-TASKBAR-H + 16
   fb-fill-rect(x, y, 720, 224, COMP-COLOR-BORDER)
   fb-fill-rect(x + 1, y + 1, 718, 222, COMP-COLOR-PANEL)
+  // 2px gold top accent bar on command modal
+  fb-fill-rect(x + 1, y + 1, 718, 2, COMP-COLOR-ACCENT)
   comp-draw-label-aa(x + 20, y + 14, "SPACE COMMANDS", FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  comp-draw-label-aa(x + 540, y + 14, "NIRI / RAYCAST", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  // Search input outline box
+  fb-fill-rect(x + 16, y + 38, 688, 1, COMP-COLOR-PANEL-LINE)
+  fb-fill-rect(x + 16, y + 66, 688, 1, COMP-COLOR-PANEL-LINE)
   comp-draw-label-aa(x + 20, y + 44, ">", COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
-  comp-draw-label-aa(x + 50, y + 44, comp-launcher-query, FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  if load8(comp-launcher-query) == 0 {
+    comp-draw-label-aa(x + 50, y + 44, "TYPE TO FILTER ACTIONS...", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  } else {
+    comp-draw-label-aa(x + 50, y + 44, comp-launcher-query, FB-COLOR-WHITE, COMP-COLOR-PANEL)
+  }
   let first = comp-launcher-at(comp-launcher-selected)
   if first < 0 {
     comp-draw-label-aa(x + 20, y + 88, "NO MATCHING RESULTS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
@@ -2152,14 +1924,20 @@ fn comp-render-launcher() -> void {
     while row < 4 {
       let candidate = comp-launcher-at(row)
       if candidate >= 0 {
-        let color = COMP-COLOR-MUTED
-        if row == comp-launcher-selected { color = COMP-COLOR-ACCENT }
-        comp-draw-label-aa(x + 20, y + 80 + row * 28, comp-bar-title(candidate), color, COMP-COLOR-PANEL)
+        let ry = y + 80 + row * 28
+        if row == comp-launcher-selected {
+          fb-fill-rect(x + 20, ry + 1, 4, 16, COMP-COLOR-ACCENT)
+          comp-draw-label-aa(x + 30, ry, comp-bar-title(candidate), COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+          comp-draw-label-aa(x + 632, ry, "ENTER", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+        } else {
+          comp-draw-label-aa(x + 30, ry, comp-bar-title(candidate), COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+        }
       }
       row = row + 1
     }
   }
-  comp-draw-label-aa(x + 20, y + 198, "CTRL-N/P / ENTER / ESC", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  fb-fill-rect(x + 16, y + 193, 688, 1, COMP-COLOR-PANEL-LINE)
+  comp-draw-label-aa(x + 20, y + 198, "CTRL-N/P NAVIGATE   ENTER RUN   ESC DISMISS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
   return
 }
 
@@ -2168,7 +1946,7 @@ fn comp-render-topbar() -> void {
   fb-fill-rect(0, COMP-TASKBAR-H - 1, fb-width, 1, COMP-COLOR-PANEL-LINE)
   let ty = (COMP-TASKBAR-H - fb-font-scale * 8) / 2
   comp-draw-label-aa(12, ty, "SPACE OS", FB-COLOR-WHITE, COMP-COLOR-PANEL)
-  fb-fill-rect(220, 2, 340, COMP-TASKBAR-H - 4, COMP-COLOR-TITLE)
+  fb-fill-rect(220, 3, 340, COMP-TASKBAR-H - 6, COMP-COLOR-TITLE)
   comp-draw-label-aa(232, ty, "TAB  COMMANDS", COMP-COLOR-MUTED, COMP-COLOR-TITLE)
   if comp-focused >= 0 && comp-focused < comp-count {
     let title = load64(comp-win-base(comp-focused) + 24)
@@ -2184,242 +1962,11 @@ fn comp-render-topbar() -> void {
     if load64(comp-win-base(i) + 24) != 0 { count = count + 1 }
     i = i + 1
   }
-  comp-draw-label-aa(fb-width - 230, ty, "WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
-  comp-draw-dec(fb-width - 70, ty, count, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
+  comp-draw-label-aa(fb-width - 210, ty, "WINDOWS", COMP-COLOR-MUTED, COMP-COLOR-PANEL)
+  comp-draw-dec-aa(fb-width - 96, ty, count, COMP-COLOR-ACCENT, COMP-COLOR-PANEL)
   return
 }
 
-// Handle a taskbar click — focus/restore the window whose title button was clicked.
-fn comp-handle-taskbar-click(mx: Int) -> Int {
-  let max-btns = comp-taskbar-max-btns()
-  let i2 = 0
-  while i2 < comp-count && i2 < max-btns {
-    let base = comp-win-base(i2)
-    let title = load64(base + 24)
-    let flags3 = load32(base + 20)
-    if title != 0 {
-      let btn-x = comp-taskbar-btn-x(i2)
-      if mx >= btn-x && mx < btn-x + comp-taskbar-btn-width() {
-        if (flags3 & COMP-WIN-MINIMIZED) != 0 {
-          comp-win-restore(i2)
-        } else {
-          comp-win-focus(i2)
-        }
-        return 1
-      }
-    }
-    i2 = i2 + 1
-  }
-  return 0
-}
-
-fn comp-render-taskbar-dot() -> void {
-  let bar-y = fb-height - COMP-TASKBAR-H
-  if mouse-left-pressed() != 0 {
-    fb-fill-rect(fb-width - 30, bar-y + 12, 10, 10, FB-COLOR-GREEN)
-  } else {
-    fb-fill-rect(fb-width - 30, bar-y + 12, 10, 10, FB-COLOR-DARK-GREEN)
-  }
-  return
-}
-
-// --- input handling ---------------------------------------------------------
-
-// Handle a mouse click. Returns 1 if a window was clicked, 0 otherwise.
-fn comp-handle-click(mx: Int, my: Int) -> Int {
-  if comp-launcher-open != 0 {
-    let x = fb-width / 2 - 360
-    let y = COMP-TASKBAR-H + 16
-    // Only the four visible result rows are actionable; filtered row indices
-    // are not window indices. Blank space and outside clicks just dismiss.
-    if mx >= x + 20 && mx < x + 700 && my >= y + 80 && my < y + 192 {
-      let wanted = (my - y - 80) / 28
-      let candidate = comp-launcher-at(wanted)
-      if candidate >= 0 {
-        comp-bar-execute(com1(), candidate)
-        return 1
-      }
-    }
-    comp-launcher-hide(com1())
-    return 1
-  }
-  if my < COMP-TASKBAR-H && mx >= 220 && mx < 560 {
-    comp-launcher-show(com1())
-    return 1
-  }
-  let idx = comp-win-at-point(mx, my)
-  if idx < 0 {
-    // Check taskbar click
-    let bar-y = fb-height - COMP-TASKBAR-H
-    if my >= bar-y && my < fb-height {
-      return comp-handle-taskbar-click(mx)
-    }
-    return 0
-  }
-  // Check close button first (before focusing)
-  let base = comp-win-base(idx)
-  let wx = load32(base + 4)
-  let wy = load32(base + 8)
-  let ww = load32(base + 12)
-  let btn-x = wx + ww - 28
-  let btn-y = wy + 5
-  let btn-w = 22
-  let btn-h = COMP-TITLE-BAR-H - 10
-  // Check minimize button
-  let min-x = wx + ww - 52
-  if mx >= min-x && mx < min-x + btn-w && my >= btn-y && my < btn-y + btn-h {
-    comp-win-minimize(idx)
-    return 1
-  }
-  // Check close button
-  if mx >= btn-x && mx < btn-x + btn-w && my >= btn-y && my < btn-y + btn-h {
-    comp-win-close(idx)
-    return 1
-  }
-  // Focus the window
-  comp-win-focus(idx)
-  // Check if clicking the title bar (for dragging or resizing)
-  if comp-win-in-titlebar(idx, mx, my) != 0 {
-    comp-drag-off-x = mx - wx
-    comp-drag-off-y = my - wy
-    // Check resize zone (bottom-right 8px corner of window)
-    let wh = load32(base + 16)
-    if mx >= wx + ww - 8 && my >= wy + wh + COMP-TITLE-BAR-H - 8 {
-      comp-drag-mode = 2  // resize
-    } else {
-      comp-drag-mode = 1  // move
-    }
-    comp-dragging = idx
-  }
-  return 1
-}
-
-// Handle mouse movement during drag or resize.
-fn comp-handle-drag(mx: Int, my: Int) -> void {
-  if comp-drag-mode < 0 || comp-dragging < 0 || comp-dragging >= comp-count {
-    return
-  }
-  let base = comp-win-base(comp-dragging)
-  let new-x = mx - comp-drag-off-x
-  let new-y = my - comp-drag-off-y
-  let wx = load32(base + 4)
-  let wy = load32(base + 8)
-  let ww = load32(base + 12)
-  let wh = load32(base + 16)
-  // Damage the old frame rect before changing it.
-  comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
-  if comp-drag-mode == 1 {
-    // Move mode
-    if new-x < 0 {
-      store32(base + 4, 0)
-    } else {
-      store32(base + 4, new-x)
-    }
-    if new-y < 0 {
-      store32(base + 8, 0)
-    } else {
-      store32(base + 8, new-y)
-    }
-  } else {
-    // Resize mode
-    let new-w = mx - wx
-    let new-h = my - wy - COMP-TITLE-BAR-H
-    if new-w < COMP-MIN-WIN-W {
-      new-w = COMP-MIN-WIN-W
-    }
-    if new-h < COMP-MIN-WIN-H {
-      new-h = COMP-MIN-WIN-H
-    }
-    store32(base + 12, new-w)
-    store32(base + 16, new-h)
-    let flags = load32(base + 20)
-    store32(base + 20, flags | COMP-WIN-DIRTY)
-  }
-  // Damage the new frame rect too (old + new union covers the whole path).
-  wx = load32(base + 4)
-  wy = load32(base + 8)
-  ww = load32(base + 12)
-  wh = load32(base + 16)
-  comp-dmg-add(wx, wy, wx + ww, wy + wh + COMP-TITLE-BAR-H)
-  return
-}
-
-// Handle a keyboard event (key press). Returns 1 to exit compositor.
-fn comp-handle-key(port: Int, key: Int) -> Int {
-  if comp-launcher-open != 0 {
-    comp-launcher-key(port, key)
-    return 0
-  }
-  // Tab is available on PS/2 and USB; Ctrl-L is also accepted over serial.
-  if key == 9 || key == 12 {
-    comp-launcher-show(port)
-    return 0
-  }
-  // Escape key (27) exits the compositor
-  if key == 27 {
-    return 1
-  }
-  // Hidden/removed windows never receive input after layout/window actions.
-  if comp-focused < 0 || comp-focused >= comp-count { return 0 }
-  let flags = load32(comp-win-base(comp-focused) + 20)
-  if (flags & COMP-WIN-VISIBLE) == 0 || (flags & COMP-WIN-MINIMIZED) != 0 { return 0 }
-  let role = COMP-ROLE-TEXT
-  if comp-focused >= 0 {
-    role = load64(comp-win-base(comp-focused) + 40)
-  }
-  if role == COMP-ROLE-TERMINAL {
-    let slot = comp-term-focused-slot()
-    // Scroll: PgUp/PgDn codes, or Ctrl-P / Ctrl-N (16/14)
-    if key == COMP-KEY-PGUP || key == 16 {
-      comp-term-scroll-by(slot, 4)
-    } else if key == COMP-KEY-PGDN || key == 14 {
-      comp-term-scroll-by(slot, -4)
-    } else if key == 8 || key == 127 {
-      comp-term-backspace(slot)
-    } else if key == 13 || key == 10 {
-      // Push current input into ring, then clear line.
-      let is-fetch = comp-term-line-eq(slot, "fetch")
-      let is-utf8 = comp-term-line-eq(slot, "utf8")
-      comp-term-push-line(slot, comp-term-input-of(slot))
-      if is-fetch != 0 {
-        comp-term-seed(slot, "")
-        comp-term-set-mode(slot, 2)
-      } else if is-utf8 != 0 {
-        // Push a multi-byte UTF-8 line (U+00E9 + U+20AC) to exercise UTF-8
-        // decoding and missing-glyph fallback box rendering in the terminal.
-        let ubuf = comp-term-input-of(slot)
-        store8(ubuf + 0, 85)   // 'U'
-        store8(ubuf + 1, 84)   // 'T'
-        store8(ubuf + 2, 70)   // 'F'
-        store8(ubuf + 3, 56)   // '8'
-        store8(ubuf + 4, 58)   // ':'
-        store8(ubuf + 5, 32)   // ' '
-        store8(ubuf + 6, 0xC3) // U+00E9 byte 0
-        store8(ubuf + 7, 0xA9) // U+00E9 byte 1
-        store8(ubuf + 8, 32)   // ' '
-        store8(ubuf + 9, 0xE2) // U+20AC byte 0
-        store8(ubuf + 10, 0x82) // U+20AC byte 1
-        store8(ubuf + 11, 0xAC) // U+20AC byte 2
-        store8(ubuf + 12, 0)
-        comp-term-push-line(slot, ubuf)
-        comp-term-seed(slot, "")
-        comp-term-set-mode(slot, 0)
-      } else {
-        comp-term-seed(slot, "")
-        comp-term-set-mode(slot, 0)
-      }
-    } else if key >= 32 && key <= 126 {
-      if comp-term-get-mode(slot) == 2 {
-        comp-term-set-mode(slot, 0)
-      }
-      comp-term-append(slot, key)
-    }
-  }
-  if comp-focused >= 0 {
-    comp-win-damage(comp-focused)
-  }
-  return 0
-}
 
 // --- compositor main loop ---------------------------------------------------
 
@@ -2623,420 +2170,5 @@ fn comp-run-bench(port: Int) -> void {
   }
   comp-bench = 0
   comp-stress = 0
-  return
-}
-
-
-// Space Display Server — Wayland-inspired compositor service.
-// Handles SPDP protocol messages over channel IPC. Clients send messages
-// to create surfaces, attach buffers, and receive input events.
-// The server runs on top of the kernel framebuffer.
-
-// Display server state: one surface table, SHM pools, seat state.
-const DSP-MAX-SURFACES = 32
-const DSP-MAX-POOLS = 8
-
-var dsp-surfaces: Int = 0
-var dsp-surface-count: Int = 0
-var dsp-pools: Int = 0
-var dsp-pool-sizes: Int = 0
-var dsp-mouse-x: Int = 0
-var dsp-mouse-y: Int = 0
-var dsp-running: Int = 0
-
-// Surface record (48 bytes):
-// [0] id, [8] pool_id, [16] buf_offset, [24] w/h packed, [32] x/y, [40] flags
-fn dsp-surface-size() -> Int { return 48 }
-
-// Initialize the display server.
-fn dsp-init() -> void {
-  dsp-surfaces = alloc(DSP-MAX-SURFACES * dsp-surface-size())
-  dsp-pools = alloc(DSP-MAX-POOLS * 8)  // array of pool addresses
-  dsp-pool-sizes = alloc(DSP-MAX-POOLS * 8) // array of pool sizes (bytes)
-  dsp-msg = alloc(SPDP-MSG-SIZE)
-  let i = 0
-  while i < DSP-MAX-POOLS {
-    store64(dsp-pools + i * 8, 0)
-    store64(dsp-pool-sizes + i * 8, 0)
-    i = i + 1
-  }
-  dsp-surface-count = 0
-  dsp-mouse-x = 0
-  dsp-mouse-y = 0
-}
-
-// Create a surface. Returns surface_id or -1.
-fn dsp-create-surface() -> Int {
-  if dsp-surface-count >= DSP-MAX-SURFACES {
-    return -1
-  }
-  let id = dsp-surface-count
-  let base = dsp-surfaces + id * dsp-surface-size()
-  store64(base + 0, id)
-  store64(base + 8, -1)   // no pool attached
-  store64(base + 16, 0)   // no buffer offset
-  store64(base + 24, 0)   // w=0, h=0
-  store64(base + 32, 0)   // x=0, y=0
-  store64(base + 40, 0)   // flags=0
-  dsp-surface-count = dsp-surface-count + 1
-  return id
-}
-
-// Create and tear down one surface as a smoke test for `dsp test`.
-fn dsp-selftest(port: Int) -> Int {
-  dsp-init()
-  let sid = dsp-create-surface()
-  if sid < 0 {
-    serial-write-cstr(port, "  dsp self-test failed: no surface")
-    serial-nl(port)
-    return 0
-  }
-  dsp-surface-destroy(sid)
-  if dsp-surface-valid(sid) != 0 { return 0 }
-  serial-write-cstr(port, "  dsp self-test passed")
-  serial-nl(port)
-  return 1
-}
-
-
-// Render all surfaces to the framebuffer.
-fn dsp-composite() -> void {
-  if fb-ready == 0 {
-    return
-  }
-  fb-fill-rect(0, 0, fb-width, fb-height, 0x00000080)
-
-  let i = 0
-  while i < dsp-surface-count {
-    let base = dsp-surfaces + i * dsp-surface-size()
-    let flags = load64(base + 40)
-    if (flags & 1) != 0 {
-    let pool-id = load64(base + 8)
-    let buf-off = load64(base + 16)
-    let wh = load64(base + 24)
-    // Match dsp-surface-geometry: width/x occupy the high half-word.
-    let w = (wh >> 16) & 0xFFFF
-    let h = wh & 0xFFFF
-    let xy = load64(base + 32)
-    let sx = (xy >> 16) & 0xFFFF
-    let sy = xy & 0xFFFF
-
-    if w > 0 && h > 0 && pool-id >= 0 && pool-id < DSP-MAX-POOLS {
-      let pool = load64(dsp-pools + pool-id * 8)
-      // Defensive bounds: the surface's buffer slice must fit inside the pool.
-      let pool-size = load64(dsp-pool-sizes + pool-id * 8)
-      let need = buf-off + w * h * 4
-      if pool != 0 && need <= pool-size {
-      let buf = pool + buf-off
-      let src-pitch = w * 4
-      let row = 0
-      while row < h {
-        let dst-y = sy + row
-        if dst-y >= 0 && dst-y < fb-height {
-          let col = 0
-          while col < w {
-            let dst-x = sx + col
-            if dst-x >= 0 && dst-x < fb-width {
-              let pixel = load32(buf + row * src-pitch + col * 4)
-              if pixel != 0 {
-                store32(fb-addr + dst-y * fb-pitch + dst-x * 4, pixel)
-              }
-            }
-            col = col + 1
-          }
-        }
-        row = row + 1
-      }
-      }
-    }
-    }
-    i = i + 1
-  }
-
-  dsp-draw-cursor()
-  return
-}
-
-var dsp-prev-cx: Int = 0
-var dsp-prev-cy: Int = 0
-
-// Clear old cursor position (overwrite with dark blue).
-fn dsp-clear-cursor() -> void {
-  let x = dsp-prev-cx
-  let y = dsp-prev-cy
-  let cs = 8
-  // Redraw background over old cursor area
-  fb-fill-rect(x - cs, y - 1, cs * 2 + 1, 3, 0x00000080)
-  fb-fill-rect(x - 1, y - cs, 3, cs * 2 + 1, 0x00000080)
-  return
-}
-
-// Draw a simple cross-hair cursor.
-fn dsp-draw-cursor() -> void {
-  let cx = 8
-  let cy = 8
-  let x = dsp-mouse-x
-  let y = dsp-mouse-y
-  // Clear old cursor position
-  dsp-clear-cursor()
-  dsp-prev-cx = x
-  dsp-prev-cy = y
-  // Horizontal line
-  let i = 0
-  while i < cx * 2 + 1 {
-    let px = x - cx + i
-    if px >= 0 && px < fb-width && y >= 0 && y < fb-height {
-      store32(fb-addr + y * fb-pitch + px * 4, 0x00FFFFFF)
-    }
-    i = i + 1
-  }
-  // Vertical line
-  let j = 0
-  while j < cy * 2 + 1 {
-    let py = y - cy + j
-    if py >= 0 && py < fb-height && x >= 0 && x < fb-width {
-      store32(fb-addr + py * fb-pitch + x * 4, 0x00FFFFFF)
-    }
-    j = j + 1
-  }
-}
-
-// Drain complete loader-page frames without touching the CSP channel layout.
-// Bound each pass even if a concurrent producer continues publishing.
-fn dsp-drain-page(page: Int, port: Int) -> Int {
-  if chan-page-frame-valid(page) == 0 { return -1 }
-  let count = 0
-  while count < 126 {
-    let result = chan-page-recv-frame(page, dsp-msg)
-    if result < 0 { return -1 }
-    if result == 0 { return count }
-    dsp-handle-msg(load64(dsp-msg), load64(dsp-msg + 8), load64(dsp-msg + 16), load64(dsp-msg + 24), port)
-    count = count + 1
-  }
-  return count
-}
-
-// Loader-page variant; the scheduler-backed CSP server below is unchanged.
-fn dsp-run-page(page: Int, port: Int) -> void {
-  dsp-running = 1
-  serial-write-cstr(port, "  display: server running")
-  serial-nl(port)
-  while dsp-running != 0 {
-    if dsp-drain-page(page, port) < 0 { dsp-running = 0; return }
-    dsp-composite()
-    sti()
-    hlt()
-  }
-}
-
-// Main display server loop. Reads SPDP messages from the channel and processes
-// them. Runs until the channel is closed or an error occurs.
-fn dsp-run(ch: Int, port: Int) -> void {
-  dsp-running = 1
-  serial-write-cstr(port, "  display: server running")
-  serial-nl(port)
-
-  while dsp-running != 0 {
-    // Poll mouse
-    mouse-poll()
-    dsp-mouse-x = mouse-x
-    dsp-mouse-y = mouse-y
-
-    // Process pending 32-byte messages (non-blocking). The message buffer is
-    // allocated once, outside the loop (was leaking 32 B per iteration).
-    while chan-count(ch) > 0 {
-      store64(dsp-msg + 0, chan-recv(ch))
-      store64(dsp-msg + 8, chan-recv(ch))
-      store64(dsp-msg + 16, chan-recv(ch))
-      store64(dsp-msg + 24, chan-recv(ch))
-      let obj-id = load64(dsp-msg + 0)
-      let opcode = load64(dsp-msg + 8)
-      let arg0 = load64(dsp-msg + 16)
-      let arg1 = load64(dsp-msg + 24)
-      dsp-handle-msg(obj-id, opcode, arg0, arg1, port)
-    }
-
-    // Composite and render
-    dsp-composite()
-
-    // HLT until next event
-    sti()
-    hlt()
-  }
-}
-
-var dsp-msg: Int = 0
-
-fn dsp-shm-create-pool(pool-id: Int, size: Int) -> void {
-  if pool-id < 0 || pool-id >= DSP-MAX-POOLS {
-    return
-  }
-  // Reject nonpositive or wrapping sizes before reaching the allocator.
-  if size <= 0 { return }
-  if ((size + 15) & -16) < size { return }
-  let p = alloc(size)
-  if p == 0 { return }
-  let offset = 0
-  while offset < size { store8(p + offset, 0); offset = offset + 1 }
-  store64(dsp-pools + pool-id * 8, p)
-  store64(dsp-pool-sizes + pool-id * 8, size)
-  return
-}
-
-// Self-contained surface-pipeline proof: creates a surface, fills a client
-// pool buffer with a red/green checker pattern, attaches and commits it, then
-// composites once. Exercises the SPDP attach/commit/composite path without a
-// blocking server loop. Gated by scripts/check-spdp-composite.sh.
-fn dsp-demo(port: Int) -> Int {
-  if fb-ready == 0 {
-    serial-write-cstr(port, "  dsp: framebuffer not ready")
-    serial-nl(port)
-    return 0
-  }
-  dsp-init()
-  let sid = dsp-create-surface()
-  if sid < 0 {
-    serial-write-cstr(port, "  dsp: no surface")
-    serial-nl(port)
-    return 0
-  }
-  // Asymmetric client-owned pool: exposes transposed dimensions/position.
-  let pw = 96
-  let ph = 32
-  let pool-size = pw * ph * 4
-  dsp-shm-create-pool(0, pool-size)
-  let pool = load64(dsp-pools + 0)
-  if pool == 0 {
-    serial-write-cstr(port, "  dsp: no pool")
-    serial-nl(port)
-    return 0
-  }
-  // Red/green 8px checker pattern (client writes its surface memory).
-  let yy = 0
-  while yy < ph {
-    let xx = 0
-    while xx < pw {
-      let color = 0x00FF0000
-      if ((xx / 8) + (yy / 8)) % 2 != 0 {
-        color = 0x0000FF00
-      }
-      store32(pool + (yy * pw + xx) * 4, color)
-      xx = xx + 1
-    }
-    yy = yy + 1
-  }
-  // Attach buffer slice [pool 0, offset 0], place at (40,80), commit.
-  dsp-surface-attach(sid, (0 << 32) | 0)
-  dsp-surface-geometry(sid, (40 << 48) | (80 << 32) | (pw << 16) | ph)
-  dsp-surface-commit(sid)
-  // A committed slice extending beyond the pool must remain invisible.
-  let invalid = dsp-create-surface()
-  if invalid >= 0 {
-    dsp-surface-attach(invalid, pool-size - 4)
-    dsp-surface-geometry(invalid, (400 << 48) | (200 << 32) | (pw << 16) | ph)
-    dsp-surface-commit(invalid)
-  }
-  dsp-composite()
-  serial-write-cstr(port, "  dsp: demo composited surface at 40,80")
-  serial-nl(port)
-  return 1
-}
-
-// A destroyed slot keeps its old index reserved; stale requests cannot revive it.
-fn dsp-surface-valid(sid: Int) -> Int {
-  if sid < 0 || sid >= dsp-surface-count { return 0 }
-  if load64(dsp-surfaces + sid * dsp-surface-size()) != sid { return 0 }
-  return 1
-}
-
-fn dsp-surface-destroy(sid: Int) -> void {
-  if dsp-surface-valid(sid) == 0 { return }
-  let base = dsp-surfaces + sid * dsp-surface-size()
-  store64(base, -1)
-  store64(base + 8, -1)
-  store64(base + 16, 0)
-  store64(base + 24, 0)
-  store64(base + 32, 0)
-  store64(base + 40, 0)
-  return
-}
-
-// Logical unmap only: pools can be borrowed loader pages, never free them here.
-fn dsp-shm-destroy-pool(pool: Int) -> void {
-  if pool < 0 || pool >= DSP-MAX-POOLS { return }
-  store64(dsp-pools + pool * 8, 0)
-  store64(dsp-pool-sizes + pool * 8, 0)
-  let sid = 0
-  while sid < dsp-surface-count {
-    let base = dsp-surfaces + sid * dsp-surface-size()
-    if load64(base + 8) == pool {
-      store64(base + 8, -1)
-      store64(base + 16, 0)
-      store64(base + 40, 0)
-    }
-    sid = sid + 1
-  }
-  return
-}
-
-fn dsp-surface-attach(sid: Int, packed: Int) -> void {
-  if dsp-surface-valid(sid) == 0 {
-    return
-  }
-  let pool-id = (packed >> 32) & 0xFFFFFFFF
-  let offset = packed & 0xFFFFFFFF
-  let base = dsp-surfaces + sid * dsp-surface-size()
-  store64(base + 8, pool-id)
-  store64(base + 16, offset)
-  return
-}
-
-fn dsp-surface-geometry(sid: Int, packed: Int) -> void {
-  if dsp-surface-valid(sid) == 0 {
-    return
-  }
-  let x = (packed >> 48) & 0xFFFF
-  let y = (packed >> 32) & 0xFFFF
-  let w = (packed >> 16) & 0xFFFF
-  let h = packed & 0xFFFF
-  let base = dsp-surfaces + sid * dsp-surface-size()
-  store64(base + 24, (w << 16) | h)
-  store64(base + 32, (x << 16) | y)
-  return
-}
-
-fn dsp-surface-commit(sid: Int) -> void {
-  if dsp-surface-valid(sid) == 0 {
-    return
-  }
-  let base = dsp-surfaces + sid * dsp-surface-size()
-  let flags = load64(base + 40)
-  store64(base + 40, flags | 1)
-  return
-}
-
-// Handle a single SPDP message.
-fn dsp-handle-msg(obj-id: Int, opcode: Int, arg0: Int, arg1: Int, port: Int) -> void {
-  if obj-id == SPDP-OBJ-COMPOSITOR {
-    if opcode == SPDP-COMPOSITOR-CREATE-SURFACE {
-      dsp-create-surface()
-    }
-  } else if obj-id == SPDP-OBJ-SURFACE {
-    if opcode == SPDP-SURFACE-ATTACH {
-      dsp-surface-attach(arg0, arg1)
-    } else if opcode == SPDP-SURFACE-DAMAGE {
-      dsp-surface-geometry(arg0, arg1)
-    } else if opcode == SPDP-SURFACE-COMMIT {
-      dsp-surface-commit(arg0)
-    } else if opcode == SPDP-SURFACE-DESTROY {
-      dsp-surface-destroy(arg0)
-    }
-  } else if obj-id == SPDP-OBJ-SHM {
-    if opcode == SPDP-SHM-CREATE-POOL {
-      dsp-shm-create-pool(arg0, arg1)
-    } else if opcode == SPDP-SHM-POOL-DESTROY {
-      dsp-shm-destroy-pool(arg0)
-    }
-  }
   return
 }

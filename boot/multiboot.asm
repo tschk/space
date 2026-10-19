@@ -133,23 +133,10 @@ long_mode:
     mov gs, ax
     mov rsp, 0x90000
 
-    ; Trusted CPL0 foreign-fixture entry, separate from the native int 0x80 ABI.
-    mov ecx, 0xC0000081              ; STAR kernel CS=0x08, SS=0x10
-    xor eax, eax
-    mov edx, 8
-    wrmsr
-    mov ecx, 0xC0000082              ; LSTAR
-    mov rax, foreign_syscall_entry
-    mov rdx, rax
-    shr rdx, 32
-    wrmsr
-    mov ecx, 0xC0000084              ; FMASK: mask IF, DF and TF on entry
-    mov eax, (1 << 9) | (1 << 10) | (1 << 8)
-    xor edx, edx
-    wrmsr
-    ; Foreign-fixture stubs live at 0x4120+: 0x40E0..0x4118 are the native
-    ; user-mode publications (enter_user, leave_user, kernel_cr3, tss,
-    ; load_tr, guest_active) written later in boot.
+    ; Foreign-fixture stubs live at 0x4110+: 0x40E0..0x4108 and 0x4118 are the
+    ; native user-mode publications. SYSCALL MSRs (STAR/LSTAR/FMASK) are
+    ; programmed in `.in` by cpu-init-syscall-msrs() via Inauguration wrmsr intrinsics.
+    mov qword [0x4110], foreign_syscall_entry
     mov qword [0x4120], foreign_run
     mov qword [0x4128], foreign_writefile
     mov qword [0x4130], foreign_exitprocess
@@ -562,22 +549,11 @@ foreign_fileio_import:
     pop rdi
     ret
 foreign_createfilea:
-    cmp edx, 0x80000000             ; GENERIC_READ, FILE_SHARE_READ only
-    jne .invalid
-    cmp r8d, 1
-    jne .invalid
-    test r9, r9
-    jnz .invalid
-    cmp dword [rsp + 40], 3         ; OPEN_EXISTING
-    jne .invalid
-    cmp dword [rsp + 48], 0x80      ; FILE_ATTRIBUTE_NORMAL
-    jne .invalid
-    cmp qword [rsp + 56], 0
-    jne .invalid
+    lea r10, [rsp]                   ; caller RSP for 5th..7th Win64 args validated in .in
     push rdi
     push rsi
     mov rdi, rcx
-    xor esi, esi
+    mov rsi, rdx
     mov eax, 2
     pushfq
     pop r11
@@ -586,9 +562,6 @@ foreign_createfilea:
 .done:
     pop rsi
     pop rdi
-    ret
-.invalid:
-    mov rax, -1
     ret
 foreign_closehandle:
     push rdi

@@ -14,7 +14,7 @@ functions = []
 for name in ('chan-page-frame-header-valid', 'chan-page-frame-valid', 'chan-page-send-frame', 'chan-page-recv-frame'):
     start = text.index('fn ' + name + '(')
     functions.append(text[start:text.index('\n}', start) + 2])
-display = (Path(__file__).resolve().parent.parent / 'components/display.in').read_text()
+display = (Path(__file__).resolve().parent.parent / 'components/display.in').read_text() + '\n' + (Path(__file__).resolve().parent.parent / 'components/display-spdp.in').read_text()
 start = display.index('fn dsp-drain-page(')
 functions.append(display[start:display.index('\n}', start) + 2])
 for filename, names in [('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
