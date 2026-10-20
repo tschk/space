@@ -3,13 +3,19 @@ package space.kernel
 // =============================================================================
 // CENTRAL NANOKERNEL HUB ("Space Central Station")
 // =============================================================================
-// Core hardware enforcement & IPC fabric:
+// Core hardware enforcement, execution & IPC fabric:
 import "../components/native-call.in"
 import "../components/cpu.in"
 import "../components/pci.in"
 import "../components/channel.in"
 import "../components/domain.in"
 import "../components/libc.in"
+import "../components/serial.in"
+import "../components/memory.in"
+import "../components/object.in"
+import "../components/interrupts.in"
+import "../components/syscall.in"
+import "../components/sched.in"
 
 // Spoke Subsystem Hubs ("Metro Lines" radiating from the Central Nanokernel Hub):
 // 1. Network Metro Line (e1000, netstack, DHCP, DNS)
@@ -22,24 +28,8 @@ import "../components/runtime-hub.in"
 import "../components/personality-hub.in"
 // 5. Desktop & Display Metro Line (USB xHCI/HID, display stations, PS/2 mouse)
 import "../components/desktop-hub.in"
-
-// Cooperative scheduler & interactive serial shell:
-import "../components/sched.in"
-import "../components/shell.in"
-
-// Core nanokernel mechanisms & diagnostic stations:
-import "../components/serial.in"
-import "../components/memory.in"
-import "../components/object.in"
-import "../components/interrupts.in"
-import "../components/syscall.in"
-import "../components/syscall-demo.in"
-import "../components/libc-test.in"
-import "../components/vfs-test.in"
-import "../components/editor.in"
-import "../components/diagnostics.in"
-import "../components/determinism.in"
-import "../components/selftest.in"
+// 6. Diagnostics, Shell & Verification Metro Line (shell, editor, diagnostics, selftests)
+import "../components/diagnostics-hub.in"
 
 
 // The nanokernel root component.

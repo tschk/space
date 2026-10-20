@@ -67,7 +67,7 @@ See the [cross-repository architecture](docs/plans/2026-10-19-three-repository-a
 
 ### Radial Mind-Map & Metro-Map Architecture
 
-Space's kernel and services are organized around a **Central Nanokernel Hub (`kernel/kernel-root.in`)** radiating outward into five modular **Metro Lines** (`*-hub.in`), where each station owns a single focused responsibility:
+Space's kernel and services are organized around a **Central Nanokernel Hub (`kernel/kernel-root.in`)** radiating outward into six modular **Metro Lines** (`*-hub.in`), where each station owns a single focused responsibility:
 
 ```mermaid
 flowchart TD
@@ -127,11 +127,19 @@ flowchart TD
         P1 --> P2 --> P3 --> P4
     end
 
+    subgraph LineDiag["Metro Line 6: Diagnostics & Shell (diagnostics-hub.in)"]
+        G1["Station 1: Interactive Shell & Editor\n(shell.in + editor.in)"]
+        G2["Station 2: System Fetch & Determinism\n(diagnostics.in + determinism.in)"]
+        G3["Station 3: Self-Test & Contract Suites\n(selftest.in + libc-test.in + vfs-test.in)"]
+        G1 --> G2 --> G3
+    end
+
     Dom ==> D1
     Cap ==> R1
     IPC ==> S1
     IPC ==> N1
     Dom ==> P1
+    Cap ==> G1
 ```
 
 ### Hypermodular Desktop & Display Pipeline

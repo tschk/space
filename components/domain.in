@@ -38,11 +38,7 @@ fn domain-init() -> void {
   // globals in low memory and overwrite it. Relocate the kernel PML4 to a
   // heap frame before any kernel code can corrupt the page tables.
   let kernel-pml4 = frame-alloc()
-  let k = 0
-  while k < 512 {
-    store64(kernel-pml4 + k * 8, load64(0x1000 + k * 8))
-    k = k + 1
-  }
+  cpu-mem-copy64(kernel-pml4, 0x1000, 512)
   cr3-read-stub = load64(0x4058)
   cr3-write-stub = load64(0x4060)
   store64(0x4058, 0)
@@ -57,7 +53,6 @@ fn domain-init() -> void {
   if tss != 0 {
     let kstack = alloc(8192)
     store64(tss + 4, kstack + 8192)
-    store64(0x4108, 0)
     cpu-load-tr(GDT-TSS-SEL)
   }
   cpu-init-syscall-msrs()
@@ -145,12 +140,8 @@ fn domain-enter-user(entry: Int, arg: Int, domain: Int) -> Int {
 fn create-shared-domain-pml4() -> Int {
   let dst-pml4 = frame-alloc()
   let dst-pdpt = frame-alloc()
-  let i = 0
-  while i < 512 {
-    store64(dst-pml4 + i * 8, 0)
-    store64(dst-pdpt + i * 8, 0)
-    i = i + 1
-  }
+  cpu-mem-fill64(dst-pml4, 0, 512)
+  cpu-mem-fill64(dst-pdpt, 0, 512)
   let src-pml4 = load64(domain-table)
   let src-pdpt = load64(src-pml4) & -4096
   let j = 0
@@ -173,13 +164,9 @@ fn create-user-domain-pml4() -> Int {
   let dst-pml4 = frame-alloc()
   let dst-pdpt = frame-alloc()
   let dst-pd = frame-alloc()
-  let i = 0
-  while i < 512 {
-    store64(dst-pml4 + i * 8, 0)
-    store64(dst-pdpt + i * 8, 0)
-    store64(dst-pd + i * 8, 0)
-    i = i + 1
-  }
+  cpu-mem-fill64(dst-pml4, 0, 512)
+  cpu-mem-fill64(dst-pdpt, 0, 512)
+  cpu-mem-fill64(dst-pd, 0, 512)
   store64(dst-pml4, dst-pdpt | 7)
   store64(dst-pdpt, dst-pd | 7)
   // Empty PDs for 0–1 GiB and 1–2 GiB. Timer/syscall/exception stubs
@@ -188,11 +175,7 @@ fn create-user-domain-pml4() -> Int {
   // Empty PD for the 1–2 GiB window so domain-map can install 4 KiB PTEs
   // for SCI images at 0x40000000 without cloning the rest of RAM.
   let pd1g = frame-alloc()
-  let n = 0
-  while n < 512 {
-    store64(pd1g + n * 8, 0)
-    n = n + 1
-  }
+  cpu-mem-fill64(pd1g, 0, 512)
   store64(dst-pdpt + 8, pd1g | 7)
   return dst-pml4
 }
@@ -346,11 +329,7 @@ fn domain-page-flags(domain: Int, virt: Int) -> Int {
 fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -> Int {
   let page = frame-alloc()
   if page == 0 { return 0 }
-  let i = 0
-  while i < 512 {
-    store64(page + i * 8, 0)
-    i = i + 1
-  }
+  cpu-mem-fill64(page, 0, 512)
   domain-map-user-data(dom-a, virt-a, page)
   domain-map-user-data(dom-b, virt-b, page)
   return page

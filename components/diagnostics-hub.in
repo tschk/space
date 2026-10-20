@@ -1,0 +1,13 @@
+package space.kernel
+
+// Diagnostics, Shell & Verification Hub ("Diagnostics Metro Line")
+// Orchestrates interactive serial shell, full-screen editor, system fetch diagnostics,
+// and in-kernel verification/self-test stations (syscall demo, libc, VFS, determinism, selftest).
+import "syscall-demo.in"
+import "libc-test.in"
+import "vfs-test.in"
+import "editor.in"
+import "diagnostics.in"
+import "determinism.in"
+import "selftest.in"
+import "shell.in"

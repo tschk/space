@@ -203,9 +203,6 @@ long_mode:
     mov rbx, 0x4100
     mov rax, tss
     mov [rbx], rax
-    mov rbx, 0x4108
-    mov rax, load_tr
-    mov [rbx], rax
     mov rbx, 0x4118
     mov rax, guest_active
     mov [rbx], rax
@@ -676,11 +673,6 @@ leave_user:
     mov rbx, [enter_saved_rbx]
     sti
     jmp qword [enter_saved_rip]
-
-load_tr:
-    mov ax, 0x28
-    ltr ax
-    ret
 
 align 4
 mb_info: dd 0
