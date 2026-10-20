@@ -1194,7 +1194,7 @@ fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
         if comp-stress == 0 {
           fb-fill-rect(cx, y, cw, gh, bg)
           if fb-font-scale == 2 {
-            fb-draw-char-mono-aa(cx, y, b0, fg)
+            fb-draw-char-mono-aa(cx + 1, y, b0, fg)
           } else {
             text-draw-char-face(FONT-FACE-MONO, cx, y, b0, fg)
           }
@@ -1212,7 +1212,7 @@ fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
         if comp-stress == 0 {
           fb-fill-rect(cx, y, cw, gh, bg)
           if fb-font-scale == 2 {
-            fb-draw-char-mono-aa(cx, y, cp, fg)
+            fb-draw-char-mono-aa(cx + 1, y, cp, fg)
           } else {
             text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
           }
