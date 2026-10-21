@@ -107,6 +107,7 @@ def main() -> int:
             ("commandbar", ["python3", "scripts/check-commandbar.py", "--in", in_bin, "--out", str(run_root / "commandbar")], {}),
             ("local-stream", ["python3", "scripts/check-local-stream.py", "--in", in_bin, "--build-dir", str(run_root / "local-stream")], {}),
             ("ps2-mouse-init", ["python3", "scripts/check-ps2-mouse-init.py", "--in", in_bin, "--out", str(run_root / "ps2-mouse")], {}),
+            ("ttf-font-engine", ["python3", "scripts/check-ttf-font.py", "--in", in_bin], {}),
         ]
 
         print(f"=== Wave 1: Running {len(host_tasks)} Host/JIT/Contract Suites across {args.workers} parallel threads ===")

@@ -598,7 +598,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test desktop bench display dsp test comp halt up/down=hist")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test font desktop bench display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -1364,6 +1364,73 @@ fn shell(port: Int) -> void {
         serial-write-dec-wide(port, sc)
         serial-nl(port)
       }
+    } else if line-eq("font") != 0 {
+      serial-write-cstr(port, "space typography: active face=")
+      if text-ui-face == FONT-FACE-TTF {
+        serial-write-cstr(port, "Space TrueType Sans (Scalable Vector)")
+      } else if text-ui-face == FONT-FACE-SANS {
+        serial-write-cstr(port, "Space UI Sans (Proportional)")
+      } else {
+        serial-write-cstr(port, "Space Term Mono (Fixed)")
+      }
+      serial-nl(port)
+      serial-write-cstr(port, "  scale=")
+      serial-write-dec-wide(port, fb-font-scale)
+      serial-write-cstr(port, " (")
+      serial-write-dec-wide(port, out-scale-num)
+      serial-write-cstr(port, "%)")
+      serial-nl(port)
+      serial-write-cstr(port, "  ttf engine: ")
+      if ttf-font-valid != 0 {
+        serial-write-cstr(port, "active, upem=")
+        serial-write-dec-wide(port, ttf-upem)
+        serial-write-cstr(port, ", glyphs=")
+        serial-write-dec-wide(port, ttf-num-glyphs)
+        serial-write-cstr(port, ", format=")
+        if ttf-is-otto != 0 {
+          serial-write-cstr(port, "OpenType CFF (.otf)")
+        } else {
+          serial-write-cstr(port, "TrueType (.ttf)")
+        }
+      } else {
+        serial-write-cstr(port, "not loaded")
+      }
+      serial-nl(port)
+    } else if line-prefix("font face ") >= 0 {
+      let farg = line-prefix("font face ")
+      if str-eq(line + farg, "ttf") != 0 {
+        text-set-ui-face(FONT-FACE-TTF)
+        serial-write-cstr(port, "space: active face set to TrueType Vector")
+      } else if str-eq(line + farg, "sans") != 0 {
+        text-set-ui-face(FONT-FACE-SANS)
+        serial-write-cstr(port, "space: active face set to Space UI Sans")
+      } else if str-eq(line + farg, "mono") != 0 {
+        text-set-ui-face(FONT-FACE-MONO)
+        serial-write-cstr(port, "space: active face set to Space Term Mono")
+      } else {
+        serial-write-cstr(port, "space: unknown face (expected mono, sans, or ttf)")
+      }
+      serial-nl(port)
+      comp-full-redraw = 1
+      comp-dmg-full()
+    } else if line-prefix("font test") >= 0 {
+      let sz = 16
+      let targ = line-prefix("font test ")
+      if targ >= 0 {
+        sz = atoi(line + targ)
+        if sz < 8 || sz > 48 { sz = 16 }
+      }
+      serial-write-cstr(port, "space: rendering TTF banner at ")
+      serial-write-dec-wide(port, sz)
+      serial-write-cstr(port, "px...")
+      serial-nl(port)
+      let test-buf = alloc(64)
+      shell-copy-cstr(test-buf, "Space OS Scalable Typography", 64)
+      ttf-draw-string-aa(40, 200, test-buf, 28, sz, 0x38BDF8)
+      comp-full-redraw = 1
+      comp-dmg-full()
+      serial-write-cstr(port, "space: TTF test render complete")
+      serial-nl(port)
     } else if line-eq("comp") != 0 {
       comp-init()
       let w1 = comp-win-create("Terminal", 40, 40, 320, 200)

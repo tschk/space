@@ -9,6 +9,8 @@ import "display-utilities.in"
 import "display-terminal.in"
 import "display-seat.in"
 import "display-spdp.in"
+import "font-ttf.in"
+import "font-asset-spacesans.in"
 
 interface DisplayDevice {
   fn map(phys: Int, size: Int) -> void
@@ -154,6 +156,8 @@ fn fb-init(mb-info: Int) -> Int {
     }
     fb-font-init()
     text-init()
+    let ttf-raw = space-font-spacesans-init()
+    ttf-load(ttf-raw, SPACE-FONT-SPACESANS-SIZE)
     fb-ready = 1
     return 0
   }
@@ -217,6 +221,8 @@ fn fb-init(mb-info: Int) -> Int {
   // Initialize the font and text subsystem.
   fb-font-init()
   text-init()
+  let ttf-raw = space-font-spacesans-init()
+  ttf-load(ttf-raw, SPACE-FONT-SPACESANS-SIZE)
   fb-ready = 1
 
   return 0

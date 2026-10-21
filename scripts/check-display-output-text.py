@@ -133,6 +133,11 @@ var text-cache-misses:Int=0;
 var text-cache-evictions:Int=0;
 var heap-cursor:Int=256;
 var fallback-draws:Int=0;
+var ttf-font-valid:Int=0;
+var ttf-upem:Int=1000;
+fn ttf-map-char(cp:Int)->Int{return 0;}
+fn ttf-glyph-advance(gid:Int)->Int{return 600;}
+fn ttf-draw-char-aa(x:Int,y:Int,cp:Int,px:Int,c:Int)->Int{return 8;}
 fn alloc(n:Int)->Int{let p=heap-cursor;heap-cursor=heap-cursor+n+16;return p;}
 fn load8(p:Int)->Int{return heap[p]&255;}
 fn load32(p:Int)->Int{return heap[p];}
@@ -364,6 +369,16 @@ fn main()->Int{
   // Out-of-bounds glyph advance refused
   store8(asset + 32 + 1024 + 65, 24);
   if text-validate-asset(asset, 1184) != 0 { return 26; }
+
+  // 6. Direct SFNT (TTF/OTF) container asset validation
+  let sfnt-hdr = alloc(64);
+  store32(sfnt-hdr + 0, 0x00010000);
+  store8(sfnt-hdr + 4, 0);
+  store8(sfnt-hdr + 5, 2);
+  if text-validate-asset(sfnt-hdr, 44) != 1 { return 27; }
+  if text-validate-asset(sfnt-hdr, 30) != 0 { return 28; }
+  store32(sfnt-hdr + 0, 0x12345678);
+  if text-validate-asset(sfnt-hdr, 44) != 0 { return 29; }
 
   return 42;
 }

@@ -157,8 +157,10 @@ flowchart LR
 
     subgraph Text["Typography & Asset Station"]
         Fonts["16x16 AA Dual Typefaces (font.in)\n• Space UI Sans (Proportional AA16)\n• Space Term Mono (Fixed AA16)"]
-        TextEng["Text Engine (display-text.in)\n• SFNT1 Asset Validator\n• 64-Slot Advance Cache\n• UTF-8 Decode & Fallback Box"]
+        TTF["Scalable TTF/OTF Vector Engine (font-ttf.in)\n• SFNT Container (TTF + OTF/CFF)\n• cmap Format 4/0 BMP Resolver\n• Quadratic Bezier Subdivider\n• 4x Supersampled AA Rasterizer"]
+        TextEng["Text Engine (display-text.in)\n• Multi-Face Selector (Mono/Sans/TTF)\n• SFNT/SFNT1 Asset Validator\n• Dynamic Scalable Glyph Cache\n• UTF-8 Decode & Fallback Box"]
         Fonts --> TextEng
+        TTF --> TextEng
     end
 
     subgraph Panels["Window Surface Stations"]
@@ -314,6 +316,8 @@ components/
   display-seat.in           cursor bitmap & pointer/keyboard seat routing
   display-spdp.in           SPDP 32-byte protocol server & shared memory pools
   font.in                   16x16 AA Space Term Mono & Space UI Sans glyph atlases
+  font-ttf.in               freestanding TTF/OTF SFNT parser, Bezier subdivider & AA rasterizer
+  font-asset-spacesans.in   embedded SpaceSans TrueType font asset table
   display-standalone.in     standalone display SCI component
   libspace.in               shared-library SCI (dynamic-linking provider)
   mouse.in                  PS/2 mouse input
@@ -324,6 +328,9 @@ components/
 boot/
   multiboot.asm             x86_64 CPU bring-up (32-bit → long mode)
 scripts/
+  check-parallel.py         35-suite multi-threaded parallel verification runner
+  check-ttf-font.py         TrueType & OpenType font platform verification gate
+  pack-ttf-asset.py         SFNT inspector, verifier & asset generator
   check-qemu-boot.sh        full boot verification
   check-desktop-visual.sh   desktop / display visual path
   check-desktop-launcher.py QEMU PS/2 command bar, tiling & pointer checks

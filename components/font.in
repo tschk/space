@@ -28,6 +28,7 @@ const FB-FONT-WIDTH = 8
 const FB-FONT-HEIGHT = 8
 const FONT-FACE-MONO = 0
 const FONT-FACE-SANS = 1
+const FONT-FACE-TTF = 2
 
 var fb-font: Int = 0
 var fb-font-aa: Int = 0

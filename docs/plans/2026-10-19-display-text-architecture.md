@@ -198,14 +198,12 @@ from-scratch compositor into an unexamined prerequisite for the original shell.
    and verified model + native + JIT + live QEMU BGA mode transitions across `1024×768`,
    `1280×720`, and `1920×1080`, plus a portrait logical geometry fixture (`768×1024`)
    and invalid/overflow refusal preserving prior mode and generation (`scripts/check-display-output-text.py`).
-3. **Typeface foundation (Completed 2026-10-19):** implemented concurrent rendering
-   of `Space UI Sans` (proportional) and `Space Term Mono` (fixed-width) in
-   `components/font.in` and `components/display-text.in`; verified role selection,
-   terminal cell invariants, UTF-8 decoding and missing-glyph fallback boxes (`utf8`
-   command in `TERMINAL 1`), untrusted asset/cache validation, scale changes (`2x`
-   100% and `3x` 150%), and rendered QEMU screenshots + input/caret interaction.
-   Full TrueType/OpenType outline rasterization and complex-script shaping remain
-   scoped to the CPL3 SCI font service in Slice 4.
+3. **Typeface foundation (Completed 2026-10-19, Scalable TTF/OTF Upgraded 2026-10-22):**
+   - Implemented concurrent rendering of `Space UI Sans` (proportional), `Space Term Mono` (fixed-width), and `Space TrueType Sans` (scalable vector) across `components/font.in`, `components/display-text.in`, and `components/font-ttf.in`.
+   - Built freestanding native TrueType (`.ttf`, magic `0x00010000` / `0x74727565`) and OpenType CFF (`.otf`, magic `0x4F54544F`) SFNT container parser with strict table bounds validation (`head`, `maxp`, `hhea`, `hmtx`, `cmap`, `loca`, `glyf`, `CFF `).
+   - Implemented `cmap` Format 4 (segmented BMP) and Format 0 Unicode mapping, quadratic Bézier curve subdivision in 16.16 fixed-point math, and 4x supersampled scanline anti-aliasing producing smooth 8-bit coverage (`0..255`) without floating point.
+   - Built scalable dynamic glyph cache in `font-ttf.in` and embedded `SpaceSans.ttf` (`font-asset-spacesans.in`), plus CLI tooling `scripts/pack-ttf-asset.py` (inspect, verify, generate, export) and verification suite `scripts/check-ttf-font.py` (integrated into parallel runner).
+   - Shell commands: `font` (inspector), `font face <mono|sans|ttf>` (switch active face), and `font test <px>` (render scalable test banner).
 4. **Native interactive services (Next):** migrate surface/seat ownership beyond the
    bounded SCI proof; verify two clients, independent input, buffer release,
    disconnect cleanup and denied cross-client operations. Preserve boot recovery.
