@@ -32,7 +32,7 @@
       "make -j4 -C fluid"
     ],
     "environment": "CPPFLAGS/LDFLAGS point to separately extracted Debian13 X11 development packages; runtime X11/system C++/C libraries remain dynamic. No source patches. Local exact environment in host-reference report.",
-    "byte_reproducibility": "not yet verified from a second clean build"
+    "byte_reproducibility": "Three clean independent source directories produce the exact pinned SHA256; original upstream C/C++/header/Objective-C source bytes verified unchanged against the archive. Local receipts /workspace/real-apps/fltk-1.3.9/reproducibility.json and /workspace/fltk-builder-check/report.json."
   },
   "apps": [
     {

@@ -14,6 +14,21 @@ headers and test display packages were extracted into an owned directory, with
 their package hashes retained in the host report. Build logs include the initial
 missing-library failure and subsequent complete library/application build.
 
+Three clean source directories reproduce the pinned binary byte-for-byte. Each
+build also preserves all712 upstream C/C++/Objective-C source and header files
+checked directly against the acquired archive. The reproduction receipt is
+`/workspace/real-apps/fltk-1.3.9/reproducibility.json`. The checked builder itself
+passes at `/workspace/fltk-builder-check/report.json`:
+
+```sh
+python3 scripts/build-fltk-corpus.py --out /tmp/fltk-build
+```
+
+An X11 development environment is required. `--x11-prefix` selects an explicitly
+owned extracted dependency root, and `--archive` selects a cached archive while
+retaining the checksum check. A different compiler/configuration that changes
+the binary fails the pinned-artifact gate and preserves its logs for review.
+
 The host reference at
 `/workspace/real-apps/fltk-1.3.9/host-reference/report.json` records actual
 software display, pointer and keyboard interaction: open upstream `test/resize.fl`,
