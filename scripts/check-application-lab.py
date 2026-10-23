@@ -43,6 +43,7 @@ def main():
     for name in ['lua', 'busybox', 'sqlite']:
         parser.add_argument('--' + name, type=Path,
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
+    parser.add_argument('--busybox-vfork', type=Path, help='Separate pinned upstream xargs ELF; otherwise cache busybox-vfork or --download builds it')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
                         help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
@@ -64,7 +65,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -174,6 +175,20 @@ def main():
                 path = args.out / (name + '-build') / filename
             app = json.loads((ROOT / ('fixtures/applications/' + version + '.json')).read_text())['apps'][0]
             applications[name] = require_artifact(app, path)
+        # This upstream Kconfig profile has distinct bytes and provenance. Never
+        # replace the completed default BusyBox artifact/case corpus with it.
+        manifest = ROOT / 'fixtures/applications/busybox-1.36.1-vfork.json'
+        cases = ROOT / 'fixtures/applications/busybox-1.36.1-vfork-cases.json'
+        explicit = args.busybox_vfork
+        path = explicit.resolve() if explicit else args.apps_dir / 'busybox-vfork'
+        if not path.exists() and args.download and not explicit:
+            if not run('busybox-vfork-source-build', [sys.executable, ROOT / 'scripts/build-busybox-corpus.py',
+                                                       '--manifest', manifest, '--case-config', cases,
+                                                       '--out', args.out / 'busybox-vfork-build']):
+                raise RuntimeError('BusyBox vfork profile source build failed; evidence retained')
+            path = args.out / 'busybox-vfork-build/busybox'
+        app = json.loads(manifest.read_text())['apps'][0]
+        applications['busybox-vfork'] = require_artifact(app, path)
     except (OSError, RuntimeError, ValueError) as error:
         report.setdefault('artifact_failure', {'reason': str(error)})
         save()
@@ -238,6 +253,20 @@ def main():
             gate = 'linux-vm-' + name + '-' + variant
             check(gate, 'check-linux-vm.py', '--in', args.compiler, '--root', variant,
                   *options, '--out', args.out / gate)
+    for variant in ['standard', 'minimal']:
+        for profile, option in [('shared', '--vfork'), ('deadline', '--vfork-deadline')]:
+            gate = 'linux-vfork-' + profile + '-' + variant
+            check(gate, 'check-linux-vm.py', '--in', args.compiler, '--root', variant,
+                  option, '--out', args.out / gate)
+        gate = 'linux-vfork-fd-' + variant
+        check(gate, 'check-linux-children.py', '--in', args.compiler, '--root', variant,
+              '--vfork-fd-profile', '--out', args.out / gate)
+        gate = 'linux-busybox-vfork-' + variant
+        check(gate, 'check-linux-corpus.py', '--in', args.compiler, '--root', variant,
+              '--application', 'busybox', '--app', applications['busybox-vfork'],
+              '--manifest', ROOT / 'fixtures/applications/busybox-1.36.1-vfork.json',
+              '--case-config', ROOT / 'fixtures/applications/busybox-1.36.1-vfork-cases.json',
+              '--suite', '--input-suite', '--out', args.out / gate)
     check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',
           '--app', applications['darwin'], '--out', args.out / 'darwin-process')
     check('darwin-startup-owner', 'check-darwin-startup-owner.py', '--in', args.compiler,

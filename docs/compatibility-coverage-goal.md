@@ -43,7 +43,11 @@ All28 final migration gates pass from a frozen source, including both-root
 original app/process/pipe regressions and three SQLite NVMe boots. Mandatory
 controls cover failed exec staging, retained teardown, mismatched process-row
 refusal before guest entry, IF restoration and immutable high-source startup
-arguments. Shared-vfork policy is still refused. See
+arguments. Bounded syscall58 vfork is now committed separately:14 final both-root gates
+pass, including47 actual upstream xargs launches per root, blocked-parent/exec
+ordering, shared mappings, failed-exec continuation and retained-owner recovery.
+Arbitrary shared clone/thread flags remain refused. See the [vfork contract](linux-vfork.md)
+and
 [Linux owned VM evidence](linux-owned-vm.md) for exact profiles and counts.
 
 Protected Mach-O supports checked raw Darwin calls and finite typed libSystem

@@ -23,8 +23,10 @@ Windows guest image bytes are identical. See the
 [harness evidence](2026-10-24-lab-harness-repairs.md) and
 [keyboard/editing evidence](2026-10-24-keyboard-editing.md). Separate passing
 receipts never turn that initial integration run into an all-pass result.
-Shared-vfork work is undergoing additional ownership review and real upstream
-checks; it is not yet an accepted integration checkpoint.
+Bounded shared-vfork is now committed in `0c51464` after14 final both-root gates,
+including47 actual upstream xargs launches per root and constructor/publication
+ownership review. See [the vfork contract](../linux-vfork.md). It remains
+separate from the older122-gate integration source.
 
 ## Historical initial execution checkpoint
 

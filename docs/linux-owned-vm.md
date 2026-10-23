@@ -160,7 +160,8 @@ unsupported diagnostic. Its separate reproducible ELF and private manifest
 override are recorded in `/workspace/vm2-vfork-control-src`; this is not passing
 vfork coverage.
 
-Next acceptance requires a genuinely shared native object and Linux companion,
+The separate committed syscall58 checkpoint now meets that next acceptance:
+a genuinely shared native object and Linux companion,
 an explicitly blocked vfork parent, exec detach/failure continuation, typed child
 termination, last-reference quarantine and the original upstream xargs success
 and failed-exec cases. General threads, installed arbitrary signal handlers,
