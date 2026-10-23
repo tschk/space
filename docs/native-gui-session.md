@@ -20,17 +20,28 @@ Type `gui apps` in the serial shell, then use the QEMU display's keyboard/mouse:
   integer expression. Invalid syntax, excessive results and division by zero
   display `err`; editing and Enter recover in the same instance.
 - Click the right surface or press Tab to focus the text field. Type and use
-  Backspace. Tab switches between live clients; clicking outside them changes
-  neither recipient nor content.
+  Backspace. Ctrl-S saves the field to `/gui-note.txt` through its declared file
+  API. The second row reports `saved`, `loaded`, `denied`, `no disk` or `error`.
+  New sessions load the saved bytes. Tab switches between live clients;
+  clicking outside them changes neither recipient nor content.
 - Escape closes the focused application. The other app keeps its content and
   remains interactive. Closing both returns to the shell. `gui apps` opens fresh
   instances and fresh identity tokens again.
 
 These intentionally small clients each have two eight-character lines on a
-64×16 surface. Text is in memory only. They do not save files, provide full
-calculator/editor windows, resize, or run foreign binaries. They use the same
+64×16 surface. The editor persists at most eight bytes in one fixed file; it
+provides no arbitrary filename dialog or general filesystem access. Unsaved edits
+are discarded on close. It does not provide full calculator/editor windows,
+resize, or run foreign binaries. They use the same
 existing typeface implementation as the desktop, with independently owned SCI
 heap/font state and loader-granted pixel/ring pages.
+
+Saving requires an attached NVMe disk with a formatted SparkFS filesystem;
+RAM fallback is refused as durable storage. For a new exclusively owned blank
+64 MiB image, attach it with `-drive file=/path/to/owned.raw,format=raw,if=none,id=owned,cache=writethrough -device nvme,drive=owned,serial=space-gui` and format
+that new volume once from the shell with `format`. Subsequent boots reuse the
+same disk without formatting. Without NVMe the apps remain usable and Ctrl-S
+reports `no disk`.
 
 The bounded session uses synchronous CPL0 clone domains; it does not prove
 hostile-code isolation. Close detaches compositor references and retires tokens.
@@ -43,7 +54,13 @@ The [full application goal](compatibility-coverage-goal.md) remains active.
 ## Build and test contract
 
 Standard image kinds20/21 carry exact named `GuiCalc`/`GuiEditor` artifacts,
-validated by `pack-gui-sci.py`; kind22 carries on-demand seat input. Existing
+validated by `pack-gui-sci.py`; kind22 carries on-demand seat input. The calculator
+requires only named memory/display rights (mask20). The editor explicitly adds
+`GuiNoteFile(read, write)` storage authority (mask52). Packaging rejects a dropped,
+renamed or widened declaration. `gui-note-store.in` checks the current domain's
+storage capability before pointer/FS access, bounds buffers to eight bytes in
+the SCI heap, and accepts only the actual NVMe backend. Its API names one fixed
+file and reuses the existing `fs-read-file`/`fs-write-file` facade. Existing
 kind3 remains asynchronous boot input and is not used for this session. The full
 shell delegates to `gui-session.in`; it contains no application implementation.
 The session requests explicit retained SCI activation, keeping its live endpoints
@@ -63,3 +80,26 @@ the ordinary minimal image and checks refusal. Evidence includes compiler/source
 and image hashes, build/serial logs and screenshots in its build directory.
 The synthetic retained-client proof, native temporary-root app gate and original
 image-variant/application/desktop regressions remain independent checks.
+
+
+The persistence gate creates its own blank disk and exercises five distinct QEMU
+processes; it never writes test text from the host:
+
+```bash
+python scripts/check-gui-note-store.py --in /path/to/source-built/in
+python scripts/check-gui-persistence.py --in /path/to/source-built/in --out /tmp/new-gui-persistence-evidence
+```
+
+It checks actual Ctrl-S saves at the eight-byte limit (a ninth typed character
+is refused), same-boot reopen, independent calculator operation,
+VM reboot/remount, shorter and empty replacement, and exact glyph pixels and disk
+bytes. A deliberately modified negative image strips the editor's storage grant
+after production packaging; load/save then render `denied` and the target inode
+and bytes remain unchanged. That negative image is explicitly outside the named
+production artifact policy. The service guard model also verifies denied, stale,
+out-of-bounds and unavailable-backend cases cause no FS calls or allocations.
+
+Authorized saves may allocate filesystem service cache/metadata. The session
+accepts an allocation-baseline update only when its trusted file-service epoch
+advances once for editor Ctrl-S; ordinary input and domain/capability counters
+remain stable. This is separate from eventual retained SCI backing reclamation.

@@ -1,27 +1,56 @@
 package space.app.gui
 import "gui-widget.in"
 
+interface GuiNoteFile {
+  fn read(buffer: Int, maximum: Int) -> Int
+  fn write(buffer: Int, size: Int) -> Int
+}
+interrupt fn gui-note-read(buffer: Int, maximum: Int) -> Int {}
+interrupt fn gui-note-write(buffer: Int, size: Int) -> Int {}
+
 component GuiEditor {
   target "x86_64-unknown-none"
   capability memory: GuiMemory(map)
   capability display: GuiDisplay(present)
+  capability storage: GuiNoteFile(read, write)
 }
 
-// An eight-character in-memory field. No filesystem/persistence claim.
+// Eight-character persistent field behind a fixed-file capability API.
+fn gui-editor-status(text: Int) -> void {
+  let i = 0
+  while i < 8 {
+    let ch = load8(text + i)
+    store8(0x80000010 + i, ch)
+    i += 1
+    if ch == 0 { while i < 8 { store8(0x80000010 + i, 0); i += 1 }; return }
+  }
+  return
+}
 fn client-entry(info: Int) -> Int {
   if widget-info-valid(info) != 1 { return 1 }
   let args = load64(info + 64)
   if args != 0 && load8(args) == 105 {
     if widget-start(info) != 1 { return 2 }
-    store8(0x80000010, 101); store8(0x80000011, 100); store8(0x80000012, 105); store8(0x80000013, 116)
+    gui-editor-status("edit")
+    let count = gui-note-read(0x80000000, 8)
+    if count >= 0 && count <= 8 { store64(0x80000080, count); gui-editor-status("loaded") }
+    if count == -13 { gui-editor-status("denied") }
+    if count == -27 { gui-editor-status("too long") }
   } else {
     let code = widget-event()
     if code < 0 { return 3 }
     if code == 27 { return widget-close() }
     let length = load64(0x80000080)
-    if code == 8 && length > 0 { length -= 1; store8(0x80000000 + length, 0) }
-    if code >= 32 && code < 127 && length < 8 { store8(0x80000000 + length, code); length += 1 }
+    if code == 8 && length > 0 { length -= 1; store8(0x80000000 + length, 0); gui-editor-status("edit") }
+    if code >= 32 && code < 127 && length < 8 { store8(0x80000000 + length, code); length += 1; gui-editor-status("edit") }
     store64(0x80000080, length)
+    if code == 19 {
+      let result = gui-note-write(0x80000000, length)
+      gui-editor-status("error")
+      if result == 0 { gui-editor-status("saved") }
+      if result == -13 { gui-editor-status("denied") }
+      if result == -19 { gui-editor-status("no disk") }
+    }
   }
   return widget-draw()
 }

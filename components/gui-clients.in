@@ -121,7 +121,7 @@ fn gui-admit(slot: Int) -> Int {
   if domain-get-current() != 0 || gui-records == 0 || slot < 0 || slot > 1 { return 0 }
   let record = gui-records + slot * GUI-RECORD-SIZE
   if load64(record + GUI-TOKEN) != 0 { return 0 }
-  if sci-sync-provenance-valid(sci-sync-domain, 4) == 0 || sci-sync-grants != (cap-memory() | cap-display()) { return 0 }
+  if sci-sync-provenance-valid(sci-sync-domain, 4) == 0 || (sci-sync-grants != (cap-memory() | cap-display()) && sci-sync-grants != (cap-memory() | cap-display() | cap-storage())) { return 0 }
   let other = gui-records + (1 - slot) * GUI-RECORD-SIZE
   if load64(other + GUI-TOKEN) != 0 {
     if load64(other + 8) == sci-sync-page || load64(other + 16) == sci-sync-domain || load64(other + 32) == sci-sync-pixel-phys { return 0 }

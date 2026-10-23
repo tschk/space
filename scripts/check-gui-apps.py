@@ -157,6 +157,22 @@ for mutate in (
         pass
     else:
         raise AssertionError("native GUI packaging accepted a malformed declaration")
+editor_metadata = json.loads((out / "right.component-metadata.json").read_text())
+raw_editor = (out / "right.sci").read_bytes()
+for mutate in (
+    lambda m: m["capabilities_required"].pop(),
+    lambda m: m["capabilities_required"][2].update(args=["write"]),
+    lambda m: m.update(component="space.app.gui/GuiCalc"),
+):
+    malformed = copy.deepcopy(editor_metadata)
+    mutate(malformed)
+    malformed["capabilities_exported"] = copy.deepcopy(malformed["capabilities_required"])
+    try:
+        module.translate(raw_editor, malformed)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("native GUI policy silently dropped or widened storage authority")
 image = bytearray((out / "kernel.bin").read_bytes())
 assert len(image) < 0x180000, "retain kernel/injected image separation"
 for physical, blob in [(0x280000, input_image), (0x290000, client_image), (0x2A0000, right_image)]:

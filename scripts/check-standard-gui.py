@@ -60,7 +60,7 @@ standard, minimal = image_kinds(images / "standard.bin"), image_kinds(images / "
 assert all(kind in standard and kind not in minimal for kind in (20, 21, 22))
 assert 3 not in standard, "on-demand GUI seat must not auto-start as boot input"
 assert struct.unpack_from("<Q", standard[20], 8)[0] == 20
-assert struct.unpack_from("<Q", standard[21], 8)[0] == 20
+assert struct.unpack_from("<Q", standard[21], 8)[0] == 52
 assert struct.unpack_from("<Q", standard[22], 8)[0] == 3
 serial_path, monitor_path = out / "serial.sock", out / "monitor.sock"
 for path in (serial_path, monitor_path):
@@ -162,7 +162,7 @@ with (out / "qemu.log").open("w") as log:
                         assert actual == color, (name, slot, x, y, actual, color)
 
         count = 0
-        codes = {"ret": 10, "backspace": 8, "shift-8": 42, "shift-equal": 43, "slash": 47, "esc": 27, "tab": 9}
+        codes = {"ret": 10, "backspace": 8, "shift-8": 42, "shift-equal": 43, "slash": 47, "esc": 27, "tab": 9, "ctrl-s": 19}
         def key(value):
             global count
             count += 1
@@ -192,6 +192,8 @@ with (out / "qemu.log").open("w") as log:
         for value in ("n", "o", "t", "e", "backspace", "e", "s"):
             key(value)
         pixels("edited-notes", [("6*7", "42"), ("notes", "edit")])
+        key("ctrl-s")
+        pixels("save-without-nvme-refused", [("6*7", "42"), ("notes", "no disk")])
         key("esc")
         pixels("editor-closed", [("6*7", "42"), None])
         for value in ("backspace", "8", "ret"):
@@ -203,7 +205,7 @@ with (out / "qemu.log").open("w") as log:
         for value in ("backspace", "backspace", "backspace", "6", "shift-equal", "7", "ret"):
             key(value)
         pixels("answer-13-recovered", [("6+7", "13"), None])
-        assert count == 30
+        assert count == 31
         assert b"gui: both applications closed" not in data
         key("esc")
         wait("gui: both applications closed; stable session counters; returning to shell")

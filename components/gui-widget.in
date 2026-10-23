@@ -19,7 +19,7 @@ fn alloc(size: Int) -> Int {
 }
 
 fn widget-info-valid(info: Int) -> Int {
-  if load64(info) != 20 || load64(info + 8) != 0 { return 0 }
+  if (load64(info) != 20 && load64(info) != 52) || load64(info + 8) != 0 { return 0 }
   if load64(info + 16) != 0x80000000 || load64(info + 32) != 0x70000000 || load64(info + 72) != 0x70001000 || load64(info + 80) != 4096 || load64(info + 88) != 0 { return 0 }
   return 1
 }

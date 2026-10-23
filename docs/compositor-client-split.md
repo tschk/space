@@ -328,12 +328,13 @@ state in its own heap and writes only its granted pixel page. It introduces no
 new font parser or shaper. The calculator accepts an eight-character single
 binary integer expression with `+`, `-`, `*` or `/`, computes on Enter and renders
 its answer or a bounded error. The editor accepts eight printable characters and
-Backspace in an in-memory field. These are small native apps, with no save/reopen,
-full notes application, foreign application or CPL3 isolation claim.
+Backspace; it now declares a separate fixed-file storage capability for Ctrl-S
+and startup reopen. These are small native apps, with no full notes application,
+foreign application or CPL3 isolation claim.
 
 `scripts/pack-gui-sci.py` has an explicit two-identity policy, validating exact
-`GuiMemory(map)` / `GuiDisplay(present)` metadata before reusing the checked SCI
-ordinal/envelope translation. Unknown identities, entry points, interfaces,
+`GuiMemory(map)` / `GuiDisplay(present)` metadata and the editor's explicit
+`GuiNoteFile(read, write)` authority before SCI ordinal/envelope translation. Unknown identities, entry points, interfaces,
 operations and mismatched export metadata are negative packaging cases.
 
 `scripts/check-gui-apps.py` uses a separate temporary-root orchestration; it keeps
@@ -387,3 +388,18 @@ when the current monotonic tables cannot fit a session.
 `check-standard-gui.py` exercises the distributable build, including same-boot
 close/reopen and minimal-image refusal. See [native GUI session usage and limits](native-gui-session.md).
 This product entry point is independent of the temporary-root proof orchestration.
+
+
+### Native GUI persistence
+
+The editor's exact artifact mask is now52 (memory4, display16, storage32), while
+the calculator and synthetic clients remain20. The session explicitly grants the
+editor's declared profile; manager admission accepts only those two exact pixel
+profiles. No existing client receives storage implicitly. The standard-only
+`gui-note-store.in` service exposes a bounded eight-byte `/gui-note.txt` contract
+through the existing filesystem facade. Current-domain/capability checks precede
+pointer access, filesystem calls and allocation, and a real NVMe backend is
+required. `check-gui-persistence.py` drives Ctrl-S with actual PS/2 events and
+verifies save/reopen, VM reboot/remount, shortening, empty save, independent
+calculator survival and missing-storage-grant refusal without target inode/byte
+mutation. See [native GUI usage](native-gui-session.md) for limits and commands.
