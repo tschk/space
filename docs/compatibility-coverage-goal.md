@@ -44,6 +44,15 @@ execution bound and explicit unknown-directory refusal. Windows strict507/read52
 NVMe boots pass after register sanitization. Original macOS/Windows jq remain
 explicitly refused and unexecuted; general dyld/UCRT/framework support is open.
 
+The separate high-address Darwin mapper now consumes the generic native owned
+address-space object. Its finite three-import fixture passes318 actual CPL3
+entries and147 forced setup refusals over21 measured cycles, including exact
+RO/NX faults, real deadlines, source/plan checks and retained-owner recovery.
+The original pinned macOS jq still refuses-38 at `__DefaultRuneLocale` before
+native VM creation; it has zero executed entries. See the
+[mapper checkpoint](plans/2026-10-24-darwin-owned-mapper.md). Original Darwin
+applications and framework/GUI support remain required full-goal work.
+
 All11 native CLI scenarios pass. Native notes persists edited bytes across three
 NVMe boots. Filesystem repairs now pass actual57391-byte multi-block, sparse,
 partial-overwrite, truncate, reclaim and remount checks, plus24-byte filename
@@ -72,8 +81,8 @@ real pointer/edit/resize checks,129 resource/ABA sessions and five NVMe boots,
 including server canvas views above4GiB. Low-memory refusal/recovery also passes, and this profile is now the product
 default (`cf2ccbb`). Final real tests pass129 sessions, six output/scale modes
 and saved-text resize plus five NVMe boots from one435-file snapshot. Broader
-desktop quality and default protected native launch remain open; the reviewed
-opt-in CPL3 runtime and client proofs are recorded below.
+desktop quality remains open. The current protected default described above
+supersedes this historical trusted-profile checkpoint.
 
 Source-built Inauguration0.9.324 passes its required compiler checks, including
 119 conformance cases and Linux differential62 agreements/27 explicit refusals
@@ -87,9 +96,9 @@ those gates. That subsequent52-gate run now passes in full at
 unchanged source/compiler/application artifacts. Its435-file scoped snapshot
 explicitly excludes newer CPU/context, native HPET, Windows environment/QPC and
 Linux child-process work; their separate proofs do not retroactively extend it.
-General foreign GUI applications, default protected native launch, full
+General foreign GUI applications, full
 desktop text/layout behavior and the rest of the acceptance matrix below remain
-open. The opt-in native client proofs below do not claim default integration.
+open. The current default integration has separate later receipts.
 
 
 ## New slices and integration work

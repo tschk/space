@@ -358,3 +358,16 @@ Actual Space syscall58 refusal remains a failed baseline, not vfork coverage.
 The next application lab revision adds default desktop, Unicode and native VM
 gates to the prior completed83. It must run from a new committed archive; these
 focused checkpoints do not retroactively widen `/workspace/lab83/report.json`.
+
+The high-address Darwin mapper separately passes318 actual CPL3 entries and147
+forced setup refusals in21 measured cycles at
+`/workspace/dmapped-final2/report.json`. It uses the native owned address-space
+object, checked stopped-service copies and public release-commit projections;
+there is no second mapper ledger. It proves high startup addresses/chained
+fixups/BSS, exact hardware RO/NX faults, real IRQ termination, grant revocation,
+source/plan immutability and retained-binding versus detached-VM recovery.
+Earlier complete default/lean/harden versions also pass. The raw provider remains
+private to trusted callers and is refused through actual SCI import ingress.
+The original pinned macOS jq still refuses-38 before native object creation;
+original Darwin app entries remain zero. The finite fixture and snapshot-only
+failure controls are detailed in the [mapper plan](2026-10-24-darwin-owned-mapper.md).
