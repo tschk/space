@@ -36,6 +36,7 @@ fn linux-process-schedule-finish(row: Int, kind: Int, status: Int, detail: Int) 
   if load64(row + LPS-PARENT) != 0 {
     if linux-process-child-discard(row) != 0 { return -5 }
   }
+  linux-process-vfork-release(row)
   store64(row + LPS-STATUS,LINUX-STATE-ZOMBIE)
   return 0
 }
@@ -187,10 +188,19 @@ fn linux-process-family-run(root: Int) -> Int {
             store64(context + 112,result)
             linux-process-schedule-trace(row,operation,result)
             if linux-process-cleanup-failed == 0 { store64(row + LPS-STATUS,LINUX-STATE-READY) }
+          } else if operation == 8 {
+            store64(row + LPS-PENDING,0)
+            let child = linux-process-vfork-child(row)
+            let result = child
+            if child > 0 { result = load64(child + LPS-PID);preferred = child }
+            store64(context + 112,result)
+            linux-process-schedule-trace(row,operation,result)
+            if child <= 0 && linux-process-cleanup-failed == 0 { store64(row + LPS-STATUS,LINUX-STATE-READY) }
           } else if operation == 2 {
             store64(row + LPS-PENDING,0)
             let result = linux-process-exec-replace(row)
             if result != 0 { store64(context + 112,result) }
+            else { linux-process-vfork-release(row) }
             linux-process-schedule-trace(row,operation,result)
             if linux-process-cleanup-failed == 0 { store64(row + LPS-STATUS,LINUX-STATE-READY);preferred = row }
           } else if operation == 6 {

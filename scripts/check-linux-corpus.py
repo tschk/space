@@ -15,6 +15,7 @@ parser.add_argument('--in', dest='compiler', required=True)
 parser.add_argument('--app', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
 parser.add_argument('--application', choices=['jq','lua','busybox','sqlite'], default='jq')
+parser.add_argument('--manifest', type=Path, help='explicit pinned application profile manifest (recorded separately)')
 parser.add_argument('--case-config', type=Path, help='explicit three-argument application corpus JSON')
 parser.add_argument('--filter','--expression', dest='filter')
 parser.add_argument('--expected')
@@ -35,6 +36,7 @@ if args.out.exists() and any(args.out.iterdir()):
     parser.error('--out must be new or empty')
 version={'jq':'jq-1.8.1','lua':'lua-5.4.7','busybox':'busybox-1.36.1','sqlite':'sqlite-3.46.1'}[args.application]
 config_bytes=args.case_config.read_bytes() if args.case_config else None
+manifest_bytes=args.manifest.read_bytes() if args.manifest else None
 # Compile a recorded source snapshot: simultaneous repository work must not
 # change dependency bytes halfway through a build or its provenance report.
 live_root=ROOT
@@ -61,7 +63,11 @@ for relative, data in captured.items():
     target.chmod(0o444)
     receipt[str(relative)]=hashlib.sha256(data).hexdigest()
 (ROOT/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
-manifest = json.loads((ROOT/f'fixtures/applications/{version}.json').read_text())
+if manifest_bytes is not None:
+    (args.out/'application-manifest.json').write_bytes(manifest_bytes)
+else:
+    manifest_bytes=(ROOT/f'fixtures/applications/{version}.json').read_bytes()
+manifest = json.loads(manifest_bytes)
 width_host=subprocess.run([sys.executable,str(ROOT/'fixtures/linux-process/int-width-host.py')],capture_output=True,text=True,check=True,timeout=15)
 (args.out/'int-width-host.json').write_text(width_host.stdout)
 guest_name='/'+args.application
@@ -340,7 +346,7 @@ with (args.out/'qemu.log').open('w') as log:
         actual_activations=len(cases)+warmup_activations+args.repeat*(1+warmup_activations)+1
         report={'space_status':'passed' if all(case['passed'] for case in results) and regression else 'failed',
                 'environment':{'LC_ALL':'C','HOME':'/'},'working_directory':'/','umask':'022','source_receipt':str(ROOT/'receipt.json'),'source_receipt_sha256':hashlib.sha256((ROOT/'receipt.json').read_bytes()).hexdigest(),
-                'root':args.root,'application':version+' unmodified static Linux ELF','application_sha256':app['sha256'],
+                'root':args.root,'application':version+' unmodified static Linux ELF','application_sha256':app['sha256'],'application_manifest_sha256':hashlib.sha256(manifest_bytes).hexdigest(),
                 'reference':cases,'infinite_reference':infinite_reference, 'space':{'cases':results,'repeat_cleanup_and_denial_passed':regression,
                 'repeat_count':args.repeat,'external_wall_timeout_seconds':wall_timeout,'external_wall_timeout_hit':wall_timeout_hit,'qemu_elapsed_seconds':qemu_elapsed,'actual_application_activations':actual_activations,'file_transition_warmup_activations':warmup_activations,'guest_budget_ticks':args.budget_ticks,'guest_irq_cancellation_passed':'linux-real-app: actual guest IRQ cancellation passed' in text,'other_domain_same_va_sentinel_passed':'linux-real-app: other domain same-VA sentinel passed' in text,'hardware_faults_per_cycle':7,'caller_fs_canary':4194304,'caller_gs_canary':4194304,'qemu_command':qcommand,'kernel_sha256':hashlib.sha256((args.out/'kernel.bin').read_bytes()).hexdigest()},
                 'personality_sha256':hashlib.sha256((ROOT/'components/linux-process.in').read_bytes()).hexdigest(),

@@ -2,6 +2,10 @@
 ; native descriptors, leaving exactly five duplicate slots after our six ends.
 bits 64
 global _start
+%define FORK_SYSCALL 56
+%ifdef VFORK
+ %define FORK_SYSCALL 58
+%endif
 %macro expect 1
  cmp rax,%1
  jne fail
@@ -40,7 +44,7 @@ spin:
 %endif
  lea r10,[rel child_tid]
  xor r8d,r8d
- call 56,0x1200011,0,0
+ call FORK_SYSCALL,0x1200011,0,0
  expect -24
 %ifdef ADMISSION_RETRY
  inc dword[rel attempts]
@@ -48,7 +52,7 @@ spin:
  jb attempt
  lea r10,[rel child_tid]
  xor r8d,r8d
- call 56,0x1200011,0,0
+ call FORK_SYSCALL,0x1200011,0,0
  expect -11
 %endif
  cmp dword[rel child_tid],0x12345678
@@ -103,7 +107,7 @@ verify:
  expect 0
  lea r10,[rel child_tid]
  xor r8d,r8d
- call 56,0x1200011,0,0
+ call FORK_SYSCALL,0x1200011,0,0
  test rax,rax
  js fail
  jz child

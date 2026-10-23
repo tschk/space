@@ -437,6 +437,10 @@ fn linux-process-dispatch(frame: Int) -> Int {
   }
   else if number == 13 { result = linux-process-pipe-sigaction(first,second,third,fourth) }
   else if number == 14 { result = linux-process-signal-mask-call(linux-process-int32(first),second,third,fourth) }
+  else if number == 58 {
+    result = linux-process-vfork-request()
+    if result == 0 { resume = 2 }
+  }
   else if number == 56 || number == 57 {
     let flags = first
     let stack = second

@@ -124,10 +124,21 @@ fn linux-process-vm-drop(token: Int, binding: Int) -> Int {
   let constructor = user-space-constructor-owned(token,authority)
   if constructor == 1 { user-space-release(token,authority) }
   if user-space-phase(token,authority) == USER-SPACE-QUARANTINED {
+    // This process detach has committed. A peer binding now owns the retained
+    // quarantine; do not strand a second row waiting for already-retired refs.
+    if user-space-refs(token,authority) > 0 {
+      if user-space-constructor-owned(token,authority) == 0 { return 0 }
+      return -5
+    }
     if user-space-refs(token,authority) != 0 { return -5 }
     if user-space-recover(token,authority) != 0 { return -5 }
   }
-  if user-space-phase(token,authority) != -6 { return -5 }
+  // A detached process may leave independently counted peer bindings alive.
+  // The constructor is object-owned and commits release exactly once above.
+  if user-space-phase(token,authority) != -6 {
+    if user-space-constructor-owned(token,authority) == 0 && user-space-refs(token,authority) > 0 { return 0 }
+    return -5
+  }
   cpu-mem-fill64(row,0,8)
   return 0
 }

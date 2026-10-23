@@ -80,9 +80,24 @@
     }
   ],
   "coverage_goal": {
-    "status": "host planning profile only; Linux vfork not implemented",
-    "runtime_goal": "Real vfork shared native memory, child self-exec detach, genuine failed-exec continuation and wait; no success until native migration and actual runtime acceptance.",
+    "status": "bounded syscall58 shared-VM vfork/self-exec/failed-exec acceptance passed on both roots; overall goal OPEN",
+    "runtime_goal": "Preserve counted shared VM bindings, blocked parent until committed exec or typed termination, failed-exec continuation, peer survival and quarantine/recovery; broader clone/thread and arbitrary executable profiles remain open.",
     "historical_refusal": "/workspace/linux-busybox-vfork-before2/report.json",
-    "documentation": "docs/plans/2026-10-24-native-user-vm-vfork.md"
+    "documentation": "docs/linux-vfork.md",
+    "proofs": {
+      "standard": "/workspace/vfork4-upstream-standard/report.json",
+      "minimal": "/workspace/vfork4-upstream-minimal/report.json"
+    },
+    "ownership_proofs": {
+      "standard": "/workspace/vfork4-shared-standard/report.json",
+      "minimal": "/workspace/vfork4-shared-minimal/report.json"
+    },
+    "deadline_proofs": {
+      "standard": "/workspace/vfork4-deadline-standard/report.json",
+      "minimal": "/workspace/vfork4-deadline-minimal/report.json"
+    },
+    "measured_application_launches_per_root": 47,
+    "accepted_case_count": 3,
+    "acceptance_manifest_sha256_before_status_update": "429e3c5bab985f84d2c4be8c2e2df6b54b65f3d63f09c17dc1fbc5ddc73fbb06"
   }
 }

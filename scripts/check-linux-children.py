@@ -60,12 +60,16 @@ def main():
     parser.add_argument('--repeat', type=int, default=21)
     parser.add_argument('--case', dest='selected', action='append', choices=[case[0] for case in CASES],
                         help='Run an explicitly reported subset; repeat for multiple cases (default: full suite)')
+    parser.add_argument('--vfork-fd-profile', action='store_true', help='separate bounded vfork partial-descriptor rollback and32 preparation-admission profile')
     parser.add_argument('--host-only', action='store_true', help='Run only declared host contracts; explicitly does not certify Space')
     parser.add_argument('--budget-carry-negative-control', action='store_true',
                         help='Only with --case cumulative-irq-budget: omit carry in isolated source snapshot; must finish42')
     args = parser.parse_args()
     args.out = args.out.resolve()
     args.compiler = args.compiler.resolve()
+    if args.vfork_fd_profile:
+        require(args.selected is None and not args.budget_carry_negative_control,'vfork FD profile is separate from existing case selection')
+        args.selected=['partial-fd-copy-rollback','retry-admission-bound']
     cases = [case for case in CASES if args.selected is None or case[0] in args.selected]
     require(not args.budget_carry_negative_control or args.selected == ['cumulative-irq-budget'],
             'budget negative control requires exactly --case cumulative-irq-budget')
@@ -74,7 +78,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     report = dict(status='running', goal_status='OPEN', root=args.root, repeat=args.repeat,
                   category='synthetic ordinary Linux ABI probes; not upstream applications',
-                  space_status='not-run', selected_cases=[case[0] for case in cases],
+                  space_status='not-run', vfork_fd_profile=args.vfork_fd_profile, selected_cases=[case[0] for case in cases],
                   full_suite=len(cases) == len(CASES), artifacts=[], executions=[])
     report['budget_carry_negative_control'] = args.budget_carry_negative_control
     qemu = None
@@ -123,7 +127,7 @@ def main():
         with (args.out / 'build.log').open('w') as log:
             for index, (name, filename, define, expected, file_case) in enumerate(cases):
                 obj, binary = args.out / (name + '.o'), args.out / name
-                commands = [['nasm', '-f', 'elf64', *(['-D' + define] if define else []),
+                commands = [['nasm', '-f', 'elf64', *(['-DVFORK'] if args.vfork_fd_profile else []), *(['-D' + define] if define else []),
                              *(['-DADMISSION_RETRY'] if define == 'CUMULATIVE_IRQ' else []),
                              str(snapshot / 'fixtures/linux-children' / filename), '-o', str(obj)],
                             ['ld', '-static', '-z', 'noexecstack', '-o', str(binary), str(obj)]]
@@ -215,7 +219,7 @@ def main():
             row = report['artifacts'][index % len(cases)]
             require(int(activation) == index and int(case) == row['index'] and int(status) == row['expected_space_exit'], 'incorrect actual parent execution')
             if row['name'] != 'exec-refusals':
-                require('linux-process: syscall 56\n' in body, row['name'] + ': actual clone path absent')
+                require(('linux-process: syscall 58\n' if args.vfork_fd_profile else 'linux-process: syscall 56\n') in body, row['name'] + ': actual clone/vfork path absent')
                 if row['expected_space_exit'] != 124:
                     require('linux-process: syscall 61\n' in body, row['name'] + ': actual wait path absent')
             if row['name'] in ['exec-self', 'file-exec-descriptors', 'exec-refusals', 'bounded-profile-refusals']:

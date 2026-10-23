@@ -9,6 +9,10 @@ both-root evidence and failure recovery. CPU context suspension, page-table enfo
 generic native mechanisms. Synthetic ELF fixtures are separate from upstream
 BusyBox application coverage.
 
+The separate syscall58 shared-VM profile and its parent-blocking contract are
+documented in [bounded vfork](linux-vfork.md). The copied-fork contract below
+continues to give children private mutable memory.
+
 ## Implemented boundary
 
 The scheduler prefers a new child until it blocks or finishes, then can run its

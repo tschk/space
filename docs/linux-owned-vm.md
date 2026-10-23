@@ -150,8 +150,10 @@ snapshot, not acceptance evidence.
 
 ## Remaining goal
 
-Phase 2 is ready for review before any shared-VM policy is enabled. Vfork remains
-ENOSYS, as does clone with shared-VM/vfork flags. The fresh upstream xargs probe
+Phase2 was reviewed and committed as d9d1db9. The following vfork-refusal
+evidence describes that historical copied-process checkpoint. The new bounded
+syscall58 slice is documented separately in [the vfork contract](linux-vfork.md);
+shared-VM clone flags remain refused. The earlier upstream xargs probe
 `/workspace/vm2-vfork-refusal/report.json` deliberately remains failed: echo
 passes, real syscall58 returns -38, both xargs requests exit126 with the genuine
 unsupported diagnostic. Its separate reproducible ELF and private manifest

@@ -211,3 +211,59 @@ fn linux-process-cleanup-recover() -> Int {
   if result == 0 { linux-process-cleanup-failed = 0 }
   return result
 }
+
+// vfork suspends the parent CPU, sharing the sole native VM and Linux break
+// companion. Descriptor tables retain independent bindings to shared objects.
+fn linux-process-vfork-request() -> Int {
+  if linux-process-current-record == 0 { return -38 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if load64(linux-process-current-record + LPS-DEPTH) + 1 >= LINUX-STATE-DEPTH || linux-process-child-slot() == 0 { return -11 }
+  if linux-process-preparations >= LINUX-PROCESS-PREPARATION-MAX { return -11 }
+  linux-process-preparations = linux-process-preparations + 1
+  store64(linux-process-current-record + LPS-PENDING,8)
+  return 0
+}
+
+fn linux-process-vfork-child(parent: Int) -> Int {
+  let child = linux-process-child-slot()
+  if child == 0 { return -11 }
+  linux-process-state-inherit(parent,child)
+  let token = load64(parent + LPS-VM-OBJECT)
+  let domain = load64(parent + LPS-DOMAIN)
+  let pid = linux-process-state-register(child,load64(parent + LPS-PID),domain,load64(parent + LPS-DEPTH) + 1)
+  if pid < 0 { store64(child + LPS-VM-OBJECT,0);store64(child + LPS-STATUS,LINUX-STATE-FREE);return pid }
+  let result = linux-process-state-copy-files(parent,child)
+  if result == 0 {
+    let binding = user-space-clone-binding(load64(parent + LPS-VM-BINDING),load64(parent + LPS-AUTHORITY),load64(child + LPS-USER-CONTEXT),768)
+    if binding <= 0 { result = linux-process-vm-error(binding) }
+    else { store64(child + LPS-VM-OBJECT,token);store64(child + LPS-VM-BINDING,binding) }
+  }
+  if result != 0 {
+    // No child VM ownership was acquired until a binding was published. Never
+    // consume the shared object's constructor for failed descriptor preparation.
+    if load64(child + LPS-VM-BINDING) == 0 { store64(child + LPS-VM-OBJECT,0);store64(child + LPS-DOMAIN,0);store64(child + LPS-PAGES,0) }
+    let cleanup = linux-process-child-discard(child)
+    if cleanup == 0 { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
+    if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
+    if cleanup != 0 { return -5 }
+    if result == -5 { return linux-process-state-refuse(parent) }
+    return result
+  }
+  store64(child + LPS-CLEAR-TID,0)
+  store64(child + LPS-STATUS,LINUX-STATE-READY)
+  store64(parent + LPS-IO-FD,pid)
+  store64(parent + LPS-STATUS,LINUX-STATE-VFORK-WAIT)
+  return child
+}
+
+fn linux-process-vfork-release(child: Int) -> void {
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-VFORK-WAIT && load64(row + LPS-IO-FD) == load64(child + LPS-PID) && load64(row + LPS-PID) == load64(child + LPS-PARENT) {
+      store64(row + LPS-IO-FD,0)
+      store64(row + LPS-STATUS,LINUX-STATE-READY)
+    }
+    i = i + 1
+  }
+}

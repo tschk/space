@@ -1,8 +1,9 @@
 # Native owned address spaces and bounded Linux vfork
 
-Status: native owned-address-space mechanism committed; Linux migration passed
-its copied-process/application regressions and awaits review. Vfork remains
-unimplemented. The migration evidence is in [the Linux contract](../linux-owned-vm.md).
+Status: native owned-address-space mechanism and Linux copied-process migration
+are committed. Bounded syscall58 shared-VM vfork is implemented with actual
+upstream and ownership proofs, awaiting review; see [the vfork contract](../linux-vfork.md).
+The migration evidence is in [the Linux contract](../linux-owned-vm.md).
 The mechanism's current
 API and proof boundaries are documented in [the native contract](../user-address-space.md).
 The completed copied-fork/blocking-pipe corpus remains unchanged. This follows
