@@ -1,4 +1,5 @@
 package space.kernel
+import "user-context.in"
 
 // Scoped synchronous CPL3 activation policy. The assembly timer capsule
 // confirms user CS, preserves registers/FPU and performs CR3/context handoff.

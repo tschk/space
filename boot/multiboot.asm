@@ -135,6 +135,7 @@ long_mode:
     mov rsp, 0x90000
     fninit
     ldmxcsr [initial_mxcsr]
+    fxsave64 [kernel_fx_state]       ; initialize architectural MXCSR_MASK before .in
 
     ; Foreign-fixture stubs live at 0x4110+: 0x40E0..0x4108 and 0x4118 are the
     ; native user-mode publications. SYSCALL MSRs (STAR/LSTAR/FMASK) are
@@ -156,6 +157,8 @@ long_mode:
     mov qword [0x4188], exc_19
     mov qword [0x4190], enter_user_interruptible
     mov qword [0x4198], runtime_rflags
+    mov qword [0x41A8], enter_user_context
+    mov qword [0x41B8], 0             ; scoped kernel user-context observer
 
     ; Publish the ISR stub addresses so the `.in` kernel can install them in
     ; its IDT. The kernel publishes its dispatcher at [0x4000]; the stubs read
@@ -316,35 +319,60 @@ exc_19:
     push 19         ; SIMD floating-point exception
     jmp exc_common
 exc_common:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rax, cr3
+    mov r11, rsp
+    and rsp, -16
+    sub rsp, 592
+    mov [rsp + 64], rax
+    mov [rsp + 72], r11
+    fxsave64 [rsp + 80]
     mov rax, [kernel_cr3]
     test rax, rax
     jz .handler
     mov cr3, rax
 .handler:
-    mov rdi, [rsp]       ; vector
-    mov rsi, [rsp + 8]   ; error code
-    mov rdx, [rsp + 16]  ; faulting RIP
-    mov rcx, [rsp + 24]  ; faulting CS, supplied by the CPU
+    mov rdi, [r11 + 120]
+    mov rsi, [r11 + 128]
+    mov rdx, [r11 + 136]
+    mov rcx, [r11 + 144]
     cmp qword [guest_active], 0
     je .policy
     test cl, 3
     jz .policy
-    fxrstor64 [kernel_fx_state]     ; discard faulting guest x87/MXCSR conditions
+    fxrstor64 [kernel_fx_state]
 .policy:
-    mov r11, rsp
-    and rsp, -16
-    sub rsp, 80                      ; .in argument scratch plus private frame pointer
-    mov [rsp + 64], r11
     mov rax, [0x4050]
-    cld                            ; a user fault may arrive with DF set
+    cld
     call rax
-    mov r11, [rsp + 64]
-    mov rcx, [r11 + 24]
+    mov r11, [rsp + 72]
+    mov rcx, [r11 + 144]
     and ecx, 3
     cmp ecx, 3
     jne .hang
     cmp qword [guest_active], 0
     je .hang
+    mov rdi, r11
+    lea rsi, [rsp + 80]
+    mov edx, 2
+    mov rcx, [r11 + 120]
+    mov r8, [r11 + 128]
+    mov r9, rax
+    call user_context_capture
     mov rdi, rax
     jmp leave_user
 .hang:
@@ -381,22 +409,7 @@ isr_timer_preempt:
     mov rax, [0x4028]            ; schedule_tick, published by the .in kernel
     call rax
     mov rsp, rax                 ; switch to the selected task's saved context
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    iretq
+    jmp user_pop_frame
 
 ; Synchronous CPL3 timer cancellation. No task/scheduler selection occurs here.
 isr_user_timer:
@@ -431,6 +444,13 @@ isr_user_timer:
     call rax
     test rax, rax
     jz .resume
+    mov rdi, [rsp + 72]
+    lea rsi, [rsp + 80]
+    mov edx, 3
+    xor ecx, ecx
+    xor r8d, r8d
+    mov r9, rax
+    call user_context_capture
     mov rdi, rax
     jmp leave_user
 .resume:
@@ -438,22 +458,7 @@ isr_user_timer:
     mov rax, [rsp + 64]
     mov rsp, [rsp + 72]
     mov cr3, rax
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    iretq
+    jmp user_pop_frame
 
 ; --- syscall gate (int 0x80) -------------------------------------------------
 ; Saves all GP registers into a frame on the stack, passes a pointer to that
@@ -512,6 +517,17 @@ isr_syscall:
     cmp qword [user_syscall_continue], 1
     je .restore
     mov rdi, [rsp + 72]
+    lea rsi, [rsp + 80]
+    mov edx, 1
+    cmp qword [user_syscall_continue], 2
+    jne .stop_kind
+    mov edx, 4
+.stop_kind:
+    xor ecx, ecx
+    xor r8d, r8d
+    mov r9, [rdi + 112]
+    call user_context_capture
+    mov rdi, [rsp + 72]
     mov rdi, [rdi + 112]
     jmp leave_user
 .restore:
@@ -519,22 +535,7 @@ isr_syscall:
     mov rax, [rsp + 64]
     mov rsp, [rsp + 72]
     mov cr3, rax
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    iretq
+    jmp user_pop_frame
 
 ; syscall_write_demo(buf, len) -> Int
 ; rdi = buf address, rsi = length (passed via invoke2 from .in code).
@@ -821,6 +822,13 @@ enter_user_strict:
     mov eax, 0x2
     jmp enter_user_common
 
+enter_user_context:
+    cmp qword [guest_active], 0
+    jne enter_user_common.busy
+    mov rax, [rdi]
+    mov [user_context_pointer], rax
+    mov eax, 0x202
+    jmp enter_user_common
 enter_user_interruptible:
     mov eax, 0x202
 enter_user_common:
@@ -863,6 +871,8 @@ enter_user_common:
     mov [enter_saved_r15], r15
     mov [enter_saved_rsp], rsp
     mov qword [guest_active], 1
+    cmp qword [user_context_pointer], 0
+    jne .context
     mov r8, [rdi]
     mov r9, [rdi + 8]
     mov rdx, [rdi + 16]
@@ -906,14 +916,66 @@ enter_user_common:
     xor r15d, r15d
 .ready:
     iretq
+.context:
+    mov r8, [rdi + 8]
+    mov rsi, [user_context_pointer]
+    mov rsp, [tss + 4]
+    sub rsp, 160
+    mov rdi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov rsi, [user_context_pointer]
+    fxrstor64 [rsi + 160]
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov cr3, r8
+    jmp user_pop_frame
 .busy:
     mov rax, -16
+    ret
+
+user_pop_frame:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    iretq
+
+; Notify kernel policy only after the guest register/FX image is saved and
+; kernel CR3/FPU restored. The callback cannot replace the hardware frame.
+user_context_capture:
+    cmp qword [user_context_pointer], 0
+    je .done
+    sub rsp, 88
+    mov [rsp + 64], rax
+    mov rax, [0x41B8]
+    test rax, rax
+    jz .return
+    call rax
+.return:
+    mov rax, [rsp + 64]
+    add rsp, 88
+.done:
     ret
 
 leave_user:
     cli
     mov rax, rdi
     mov qword [guest_active], 0
+    mov qword [user_context_pointer], 0
     mov rcx, [kernel_cr3]
     test rcx, rcx
     jz .stack
@@ -994,9 +1056,10 @@ enter_saved_rflags: dq 0
 runtime_saved_rsp: dq 0
 user_syscall_rsp: dq 0
 user_syscall_continue: dq 0
+user_context_pointer: dq 0
 initial_mxcsr: dd 0x1F80
-align 16
-kernel_fx_state: times 512 db 0
+; Supervisor-only low hardware-state page; accessed only on kernel CR3.
+kernel_fx_state equ 0x4200
 
 align 16
 tss:

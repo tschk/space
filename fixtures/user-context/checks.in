@@ -1,0 +1,87 @@
+package space.fixture
+// Invoked immediately after domain-init, before any enter_user path can warm
+// the relocated kernel FXSAVE area. Reserved MXCSR cannot reach FXRSTOR.
+fn user-context-cold-check(port:Int)->void{
+ let mask=load32(0x421c);
+ if (mask&-65536)!=0 || (mask&0xffbf)!=0xffbf{panic("context cold MXCSR mask uninitialized");}
+ let domain=domain-create-user();let stack=frame-alloc();let context=alloc(768);
+ domain-map-user-code(domain,0x42000000,0x280000);domain-map-user-data(domain,0x43000000,stack);
+ if user-context-init(context,768,domain,0x42000000,0,0x43000ff0)!=0{panic("context cold init");}
+ store64(context+184,0x80000000);
+ if user-context-valid(context)!=0 || user-context-resume(context,2)!=-1{panic("context cold reserved MXCSR admitted");}
+ if domain-destroy-user(domain)!=0{panic("context cold teardown");}frame-free(stack);
+ serial-write-cstr(port,"context: cold initialized CPU mask reserved MXCSR refusal PASS");serial-nl(port);
+}
+fn context-hook(frame:Int)->Int{
+ let number=load64(frame+112);
+ if number==800{store64(frame+112,84);return 2;}
+ if number==801{store64(frame+112,load64(frame+72));return 0;}
+ panic("context unexpected syscall");return 0;
+}
+fn context-scope-check(port:Int,kind:Int,context:Int,cap:Int,pic:Int,flags:Int,fs:Int,gs:Int,fxbefore:Int,fxafter:Int)->void{
+ let expected=0x5746554354583132;
+ if kind==1 && load64(context+720)==43{expected=0x4348494c44465831;}
+ if load64(context+560)!=expected{panic("context guest FX capture");}
+ if load64(context+688)!=kind || domain-current!=0 || cr3-read()!=load64(domain-table) || current-cap!=cap || inb(0x21)!=pic || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=context-hook{panic("context supervisor ownership restore");}
+ if (invoke1(load64(0x4198),0)&512)!=(flags&512) || rdmsr(0xC0000100)!=fs || rdmsr(0xC0000101)!=gs{panic("context supervisor IRQ TLS restore");}
+ let ignored=invoke1(0x280900,fxafter);let i=0;
+ while i<512{if load8(fxbefore+i)!=load8(fxafter+i){serial-write-dec-wide(port,i);panic("context kernel FX restore");}i=i+1;}
+}
+fn user-context-check(port:Int)->void{
+ let image=boot-image-find(254);
+ if image==0 || dyn-resolve-idx("user-context-resume")!=-1 || dyn-resolve-idx("serial-write-cstr")<0{panic("private context image or registry precondition");}
+ let before-heap=heap-next;let before-caps=cap-count;let before-domains=domain-count;let before-live=runtime-instance-live;
+ if sci-load-runtime-component(port,image,"private-context",1,1,0)!=-1 || heap-next!=before-heap || cap-count!=before-caps || domain-count!=before-domains || runtime-instance-live!=before-live{panic("private context import admitted or allocated");}
+ serial-write-cstr(port,"context: valid SCI private CPU import refused before lifecycle PASS");serial-nl(port);
+ let parent=domain-create-user();let child=domain-create-user();
+ let stack=frame-alloc();let child-stack=frame-alloc();let tls=frame-alloc();let child-tls=frame-alloc();
+ store64(tls,0x12345678);store64(child-tls,0x12345678);
+ domain-map-user-code(parent,0x42000000,0x280000);domain-map-user-data(parent,0x43000000,stack);domain-map-user-data(parent,0x44000000,tls);
+ domain-map-user-code(child,0x42000000,0x280000);domain-map-user-data(child,0x43000000,child-stack);domain-map-user-data(child,0x44000000,child-tls);
+ let context=alloc(768);let cloned=alloc(768);let fxbefore=alloc(512);let fxafter=alloc(512);
+ let oldhook=domain-user-syscall-hook;domain-user-syscall-hook=context-hook;
+ let oldfs=rdmsr(0xC0000100);let oldgs=rdmsr(0xC0000101);
+ wrmsr64(0xC0000100,tls);wrmsr64(0xC0000101,child-tls);
+ let cap=current-cap;let pic=inb(0x21);let flags=invoke1(load64(0x4198),0);
+ let ignored=invoke1(0x280800,fxbefore);
+ let cycle=0;let heap=0;
+ while cycle<10{
+  if user-context-init(context,768,parent,0x42000000,0,0x43000ff0)!=0 || user-context-set-tls(context,0x44000000,0x44000000)!=0{panic("context init");}
+  if user-context-resume(context,100)!=4 || load64(context+720)!=84 || load64(context+112)!=84 || load64(context+104)!=0x1122334455667788 || load64(context+24)!=0x123456789abcdef0 || load64(context+96)!=load64(context+120) || load64(context+32)!=load64(context+136) || load64(context+672)!=0x44000000 || load64(context+680)!=0x44000000{panic("context actual suspend registers");}
+  context-scope-check(port,4,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  let i=0;while i<4096{store8(child-stack+i,load8(stack+i));i=i+1;}
+  if user-context-clone(cloned,768,context,child)!=0 || load64(cloned+112)!=0{panic("context clone");}
+  if user-context-resume(cloned,100)!=1 || load64(cloned+720)!=43 || load64(cloned+104)!=0x4348494c44465831{panic("context child execution or private GP state");}
+  context-scope-check(port,1,cloned,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  if user-context-resume(context,100)!=1 || load64(context+720)!=42{panic("context parent continuation");}
+  context-scope-check(port,1,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  if user-context-resume(context,100)!=-1{panic("context terminal resume accepted");}
+  if user-context-init(context,768,parent,0x42000000,1,0x43000ff0)!=0 || user-context-resume(context,100)!=2 || load64(context+696)!=6 || load64(context+704)!=0 || load64(context+720)!=134 || load64(context+104)!=0x1122334455667788{panic("context fault capture");}
+  context-scope-check(port,2,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  if user-context-init(context,768,parent,0x42000000,2,0x43000ff0)!=0 || user-context-resume(context,2)!=3 || load64(context+720)!=124 || load64(context+104)!=0x1122334455667788{panic("context deadline capture");}
+  context-scope-check(port,3,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  if user-context-init(context,768,parent,0x42000000,3,0x43000ff0)!=0 || user-context-resume(context,100)!=2 || load64(context+696)!=14 || load64(context+704)!=5 || load64(context+720)!=142 || load64(context+104)!=0x1122334455667788{panic("context page fault error capture");}
+  context-scope-check(port,2,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
+  if cycle==0{heap=heap-next;}else{if heap-next!=heap{panic("context repeated allocation");}}
+  cycle=cycle+1;
+ }
+ // A caller with IRQ0 masked and IF0 still receives a bounded guest run,
+ // then gets its exact interrupt policy and observer publication back.
+ cli();outb(0x21,pic|1);let observer=load64(0x41b8);store64(0x41b8,0x1234);
+ if user-context-init(context,768,parent,0x42000000,2,0x43000ff0)!=0 || user-context-resume(context,2)!=3 || load64(0x41b8)!=0x1234{panic("context IF0 deadline observer restore");}
+ context-scope-check(port,3,context,cap,pic|1,flags&-513,tls,child-tls,fxbefore,fxafter);
+ store64(0x41b8,observer);outb(0x21,pic);if (flags&512)!=0{sti();}
+ // Malformed restored CPU state must refuse before IRET/FXRSTOR.
+ if user-context-init(context,768,parent,0x42000000,0,0x43000ff0)!=0{panic("context negative init");}
+ store64(context+136,0x3202);if user-context-resume(context,100)!=-1{panic("context IOPL admitted");}store64(context+136,0x202);
+ store64(context+184,0x80000000);if user-context-resume(context,100)!=-1{panic("context MXCSR admitted");}store64(context+184,0x1f80);
+ store64(context+120,0x100042000000);if user-context-resume(context,100)!=-1{panic("context unmapped RIP admitted");}
+ store64(context+120,0x1000000042000000);if user-context-resume(context,100)!=-1{panic("context noncanonical RIP admitted");}store64(context+120,0x42000000);
+ store64(context+144,0x1000000043000ff0);if user-context-resume(context,100)!=-1{panic("context noncanonical RSP admitted");}store64(context+144,0x43000ff0);
+ store64(context+128,8);if user-context-resume(context,100)!=-1{panic("context kernel CS admitted");}store64(context+128,0x1b);
+ if user-context-set-tls(context,0x100000,0)!=-1{panic("context kernel TLS admitted");}
+ wrmsr64(0xC0000100,oldfs);wrmsr64(0xC0000101,oldgs);domain-user-syscall-hook=oldhook;
+ if domain-destroy-user(parent)!=0 || domain-destroy-user(child)!=0{panic("context domain teardown");}
+ frame-free(stack);frame-free(child-stack);frame-free(tls);frame-free(child-tls);
+ serial-write-cstr(port,"context: actual suspend clone resume GP FX TLS exit fault deadline and supervisor restore PASS");serial-nl(port);
+}
