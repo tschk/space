@@ -1,0 +1,16 @@
+package space.fixture
+component PrivateImport {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ export entry: PrivateEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface PrivateEntry { fn private-entry(info:Int)->Int }
+interrupt fn fs-range-release-file(mount:Int,inode:Int)->void{}
+interrupt fn serial-write-cstr(port:Int,text:Int)->void{}
+fn private-entry(info:Int)->Int{
+ serial-write-cstr(0x3f8,"INVALID private range entry");
+ fs-range-release-file(0,1);return 0;
+}

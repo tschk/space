@@ -110,6 +110,9 @@ fn lifecycle-start(port:Int)->void{
  if sci-load-runtime-component-implementation(port,denied-image,"private-import",1,1,0)!=-1{panic("lifecycle private import accepted");}
  if sci-load-runtime-component-implementation(port,boot-image-find(253),"private-foreign-import",1,1,0)!=-1{panic("lifecycle private foreign import accepted");}
  if sci-load-runtime-component-implementation(port,boot-image-find(256),"private-startup-import",1,1,0)!=-1{panic("lifecycle private startup import accepted");}
+ if sci-load-runtime-component-implementation(port,boot-image-find(257),"private-range-import",1,1,0)!=-1{panic("lifecycle private range import accepted");}
+ if sci-load-runtime-component-implementation(port,boot-image-find(258),"private-parameters-import",1,1,0)!=-1{panic("lifecycle private parameters import accepted");}
+ if sci-load-runtime-component-implementation(port,boot-image-find(259),"private-command-import",1,1,0)!=-1{panic("lifecycle private command import accepted");}
  if runtime-instance-live!=0{panic("lifecycle refused import retained state");}
  if sci-load-runtime-component-implementation(port,boot-image-find(252),"allocator-control",1,1,0)!=42{panic("lifecycle allocator ABI");}
  if sci-load-runtime-component-implementation(port,boot-image-find(254),"fresh-global-first",1,1,0)!=1 || sci-load-runtime-component-implementation(port,boot-image-find(254),"fresh-global-second",1,1,0)!=1{panic("ephemeral initialized globals shared");}
@@ -127,7 +130,7 @@ assert source.count('  shell(port)')==1
 source=source.replace('  shell(port)','  lifecycle-start(port)\n  shell(port)')
 (out/'kernel.in').write_text(source)
 run([a.compiler,'compile','--path',out/'kernel.in','--entry','kernel-entry','--emit','boot','--trampoline',out/'build/trampoline.bin','--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',out/'kernel.bin'],'kernel.log')
-for source,entry,base,name in [('private-startup-import.in','private-entry','0x79000000','private-startup-import'),('global-state.in','fresh-entry','0x7b000000','global-state'),('allocation.in','failure-entry','0x7d000000','allocation'),('private-import.in','private-entry','0x7e000000','private-import'),('allocator.in','allocator-entry','0x7f000000','allocator'),('private-foreign-import.in','private-entry','0x7c000000','private-foreign-import')]:
+for source,entry,base,name in [('private-range-import.in','private-entry','0x78000000','private-range-import'),('private-parameters-import.in','private-entry','0x77000000','private-parameters-import'),('private-command-import.in','private-entry','0x76000000','private-command-import'),('private-startup-import.in','private-entry','0x79000000','private-startup-import'),('global-state.in','fresh-entry','0x7b000000','global-state'),('allocation.in','failure-entry','0x7d000000','allocation'),('private-import.in','private-entry','0x7e000000','private-import'),('allocator.in','allocator-entry','0x7f000000','allocator'),('private-foreign-import.in','private-entry','0x7c000000','private-foreign-import')]:
  run([a.compiler,'compile','--path',root/'fixtures/runtime-failure'/source,'--entry',entry,'--target','native','--target-triple','x86_64-unknown-none','--emit','sci','--base',base,'--out',out/f'{name}.sci'],name+'.log')
 image=(out/'build/standard.bin').read_bytes();table=struct.unpack_from('<Q',image,0xf00)[0]-0x100000
 magic,count=struct.unpack_from('<QQ',image,table);assert magic==0x5350414345424f4f
@@ -135,14 +138,14 @@ specs=[]
 for index in range(count):
  kind,physical,size,_=struct.unpack_from('<QQQQ',image,table+16+index*32)
  path=out/f'kind-{kind}.sci';path.write_bytes(image[physical-0x100000:physical-0x100000+size]);specs.append(f'{kind}:{path}')
-specs += [f'256:{out}/private-startup-import.sci',f'254:{out}/global-state.sci',f'250:{out}/allocation.sci',f'251:{out}/private-import.sci',f'252:{out}/allocator.sci',f'253:{out}/private-foreign-import.sci']
+specs += [f'257:{out}/private-range-import.sci',f'258:{out}/private-parameters-import.sci',f'259:{out}/private-command-import.sci',f'256:{out}/private-startup-import.sci',f'254:{out}/global-state.sci',f'250:{out}/allocation.sci',f'251:{out}/private-import.sci',f'252:{out}/allocator.sci',f'253:{out}/private-foreign-import.sci']
 run(['python3',root/'scripts/pack-sci-image.py',out/'kernel.bin',out/'combined.bin',*specs],'pack.log')
 result=subprocess.run([sys.executable,str(root/'scripts/check-native-applications.py'),'--image',str(out/'combined.bin'),'--out',str(out/'applications'),'--repeat-cycles',str(a.cycles),'--allow-boot-denial'],cwd=root)
 serial=(out/'applications/serial.log').read_bytes();observations=re.findall(rb'lifecycle: observed ([0-9]+) aborts ([0-9]+)',serial)
 report={'status':'failed','compiler_sha256':hashlib.sha256(a.compiler.read_bytes()).hexdigest(),'image_sha256':hashlib.sha256((out/'combined.bin').read_bytes()).hexdigest(),'cycles':a.cycles,'driver_status':result.returncode,'observations':len(observations),'last_observation':[int(v) for v in observations[-1]] if observations else None,'original_source_sha256':hashlib.sha256((root/'components/sci-loader.in').read_bytes()).hexdigest(),'instrumented_loader_sha256':hashlib.sha256(loader.encode()).hexdigest()}
 report['registry_capacity_refusals']=serial.count(b'SCI: DENIED export registry capacity')
 report['registry_exact_fit_verified']=b'lifecycle: registry capacity refusal and exact-fit provider PASS' in serial
-report['private_import_refused_before_entry']=b'DENIED unresolved import runtime-instance-cap' in serial and b'DENIED unresolved import darwin-protected-run' in serial and b'DENIED unresolved import windows-startup-entry' in serial and b'INVALID' not in serial
+report['private_import_refused_before_entry']=b'DENIED unresolved import runtime-instance-cap' in serial and b'DENIED unresolved import darwin-protected-run' in serial and b'DENIED unresolved import windows-startup-entry' in serial and b'DENIED unresolved import fs-range-release-file' in serial and b'DENIED unresolved import windows-parameters-dispatch' in serial and b'DENIED unresolved import windows-command-run' in serial and b'INVALID' not in serial
 report['allocator_abi_verified']=b'SCI: allocator-control exited 0x000000000000002a' in serial
 report['fresh_initialized_globals_verified']=b'lifecycle: fresh initialized globals PASS' in serial
 report['resource_invariants']=['heap-next','free-frame count','domain-count','cap-count','object-arena high water','export-count','clone ownership','revoked generic capability denial']
