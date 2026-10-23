@@ -429,3 +429,25 @@ backends:21 RAM observations and63 across three NVMe boots. Authority revocation
 after the first admitted read now causes immediate refusal before further
 provider I/O. The previous provider fails the same exact read-count assertion;
 the output-atomicity and metadata/resource witnesses remain unchanged.
+
+`d9d1db9` commits the reviewed Linux migration to the shared native address-space
+object. All34 owned source/fixture/doc paths match the handoff hashes, and all28
+final report hashes/statuses verify at `/workspace/vm3-handoff.json`. Both roots
+pass jq81/Lua222/SQLite146/BusyBox100 original activations,53 original child and
+122 large-pipeline activations, plus unchanged506 child/308 blocking fixture
+launches. SQLite also passes15 actual calls across three NVMe boots.
+
+The new ordinary/stage controls each pass23 roots plus two direct invariant
+entries:22 repeated main launches plus one genuine high-source startup. Actual
+cross-paired process records refuse save/load and guest entry without changing
+the selected VM or references; IF0/IF1 restore. Setup-copy errors refuse before
+startup success. Constructor controls are explicit modified-provider checks and
+claim zero guest entries. The native provider alone owns backing, mappings,
+context references and release. Vfork remains refused until the next bounded
+shared-object/blocked-parent lifecycle is actually implemented and proven.
+
+The next integrated revision contains122 gates: the previous105 plus seven
+mapper/path/directory gates, six Linux migration/control gates and four original
+application corpora on the minimal root. It must run from a fresh committed
+checkout with its own manifest; no earlier lab receipt is widened by these
+focused results.

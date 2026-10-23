@@ -37,6 +37,15 @@ independent host database integrity checks after commit/update/rollback.
 General process scheduling, crash atomicity and the broader database acceptance
 rows remain open.
 
+Copied Linux processes now use the shared native `UserAddressSpace` mechanism
+(`d9d1db9`); the foreign edge has no backing-frame ledger or raw physical I/O.
+All28 final migration gates pass from a frozen source, including both-root
+original app/process/pipe regressions and three SQLite NVMe boots. Mandatory
+controls cover failed exec staging, retained teardown, mismatched process-row
+refusal before guest entry, IF restoration and immutable high-source startup
+arguments. Shared-vfork policy is still refused. See
+[Linux owned VM evidence](linux-owned-vm.md) for exact profiles and counts.
+
 Protected Mach-O supports checked raw Darwin calls and finite typed libSystem
 imports, including a separate eleven-service allocator revision. Protected PE
 has a composed43-name KERNEL32 service profile while retaining the32-import

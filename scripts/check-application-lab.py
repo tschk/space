@@ -47,8 +47,8 @@ def main():
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
                         help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
     args = parser.parse_args()
-    if not 1 <= args.pipeline_wall_timeout <= 7200:
-        parser.error('--pipeline-wall-timeout must be in1..7200 seconds')
+    if not 1 <= args.pipeline_wall_timeout <= 3600:
+        parser.error('--pipeline-wall-timeout must be in 1..3600 seconds')
     args.compiler = args.compiler.resolve()
     args.out = args.out.resolve()
     args.apps_dir = args.apps_dir.resolve()
@@ -204,6 +204,13 @@ def main():
           '--wall-timeout', '600', '--out', args.out / 'linux-sqlite-files', timeout=660)
     check('linux-sqlite-nvme', 'check-linux-persistence.py', '--in', args.compiler,
           '--app', applications['sqlite'], '--out', args.out / 'linux-sqlite-nvme')
+    for application in ['jq', 'lua', 'busybox', 'sqlite']:
+        name = 'linux-' + application + '-minimal'
+        check(name, 'check-linux-corpus.py', '--in', args.compiler, '--root', 'minimal',
+              '--application', application,
+              '--app', applications['linux' if application == 'jq' else application],
+              '--suite', '--input-suite', '--wall-timeout', '600',
+              '--out', args.out / name, timeout=660)
     for variant in ['standard', 'minimal']:
         # Keep native pipe contracts and copied-process application scenarios distinct.
         check('linux-pipes-' + variant, 'check-linux-pipes.py', '--in', args.compiler,
@@ -225,6 +232,12 @@ def main():
     for variant in ['standard', 'minimal']:
         check('compiler-linux-' + variant, 'check-inauguration-linux.py', '--in', args.compiler,
               '--root', variant, '--out', args.out / ('compiler-linux-' + variant))
+    for variant in ['standard', 'minimal']:
+        for name, options in [('owned', []), ('exec-capacity', ['--stage-capacity']),
+                              ('constructor', ['--constructor-control'])]:
+            gate = 'linux-vm-' + name + '-' + variant
+            check(gate, 'check-linux-vm.py', '--in', args.compiler, '--root', variant,
+                  *options, '--out', args.out / gate)
     check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',
           '--app', applications['darwin'], '--out', args.out / 'darwin-process')
     check('darwin-startup-owner', 'check-darwin-startup-owner.py', '--in', args.compiler,
