@@ -170,3 +170,7 @@ a deliberate startup/TLS framework plan; they do not justify skipping callbacks
 or inventing success. Only five currently implemented import names intersect
 the original jq import set: `CloseHandle`, `GetCurrentProcessId`, `GetLastError`,
 `GetStdHandle` and `WriteFile`.
+
+A separate bounded [TEB/static TLS startup profile](../windows-startup-checks.md)
+now exercises private GS state and real CPL3 callbacks. The two profiles above
+retain their existing TLS refusal; original Windows jq still does not execute.

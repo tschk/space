@@ -102,7 +102,7 @@ fn windows-application-structure-entry(image: Int, size: Int) -> Int {
   return base + entry
 }
 
-fn windows-application-entry(image: Int, size: Int) -> Int {
+fn windows-application-entry-mode(image: Int, size: Int, startup: Int) -> Int {
   let validated = windows-application-structure-entry(image, size)
   if validated < 0 { return validated }
   let opt = image + 152
@@ -110,7 +110,7 @@ fn windows-application-entry(image: Int, size: Int) -> Int {
   let entry = validated - base
   let i = 0
   while i < 16 {
-    if i != 1 && i != 12 && load64(opt + 112 + i * 8) != 0 { return -8 }
+    if i != 1 && i != 12 && (i != 9 || startup == 0) && load64(opt + 112 + i * 8) != 0 { return -8 }
     i = i + 1
   }
   let imp = load32(opt + 120)
@@ -151,4 +151,8 @@ fn windows-application-entry(image: Int, size: Int) -> Int {
     if iat-dir != iat || iat-bytes != (i + 1) * 8 { return -8 }
   }
   return base + entry
+}
+
+fn windows-application-entry(image: Int, size: Int) -> Int {
+  return windows-application-entry-mode(image, size, 0)
 }

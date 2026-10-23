@@ -1,6 +1,7 @@
 package space.kernel
 
 import "windows-pe-application.in"
+import "windows-pe-startup.in"
 
 // Bounded protected PE32+ profile. Foreign payload policy stays at this edge;
 // the native domain runtime owns page-table entry and teardown.
@@ -438,13 +439,14 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let entry = -8
   if profile == 0 { entry = windows-protected-entry(image, size) }
   else if profile == 1 { entry = windows-application-entry(image, size) }
+  else if profile == 2 { entry = windows-startup-entry(image, size) }
   if entry < 0 { return entry }
   if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
   if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
   if storage >= 0 && cap-check(storage, cap-storage()) == 0 { return -13 }
   if load64(0x4160) == 0 { return -38 }
   let needed = 80
-  if profile == 1 { needed = windows-application-pages(image) + 80 }
+  if profile >= 1 { needed = windows-application-pages(image) + 80 }
   let available = (heap-end - ((heap-next + 4095) & -4096)) / 4096
   let free = free-list
   while free != 0 && available < needed { available = available + 1; free = load64(free) }
@@ -474,7 +476,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let headers = windows-protected-frame(base)
   let i = 0
   let header-bytes = 512
-  if profile == 1 { header-bytes = load32(image + 212) }
+  if profile >= 1 { header-bytes = load32(image + 212) }
   while i < header-bytes { store8(headers + i, load8(image + i)); i = i + 1 }
   domain-map-user-readonly(domain, base, headers)
   let section = 0
@@ -484,7 +486,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     let bytes = load32(p + 16)
     let off = load32(p + 20)
     let vm = load32(p + 8)
-    if profile == 1 && bytes > vm { vm = bytes }
+    if profile >= 1 && bytes > vm { vm = bytes }
     let done = 0
     while done < vm {
       let frame = windows-protected-frame(va + done)
@@ -492,7 +494,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
       if n > 4096 { n = 4096 }
       i = 0
       while i < n { store8(frame + i, load8(image + off + done + i)); i = i + 1 }
-      if profile == 1 {
+      if profile >= 1 {
         let flags = load32(p + 36)
         if (flags & 0x20000000) != 0 { domain-map-user-code(domain, va + done, frame) }
         else if (flags & 0x80000000) != 0 { domain-map-user-data(domain, va + done, frame) }
@@ -525,7 +527,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     if lookup == 0 { lookup = iat }
     while i < 32 && load64(image + windows-protected-rva(image, size, lookup + i * 8, 8)) != 0 {
       let index = i
-      if profile == 1 { index = windows-application-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 1 { index = windows-application-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       store64(windows-protected-physical(base + iat + i * 8), WINDOWS-PROTECTED-STUB + index * 32); i = i + 1
     }
   }
@@ -536,8 +538,18 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     domain-map-user-data(domain, 0x4F000000 + i * 4096, frame)
     i = i + 1
   }
+  let caller-fs = rdmsr(0xC0000100)
+  let caller-gs = rdmsr(0xC0000101)
+  wrmsr64(0xC0000100, 0)
+  wrmsr64(0xC0000101, 0)
+  if profile == 2 {
+    entry = windows-startup-prepare(image, size, stub, domain, entry)
+    wrmsr64(0xC0000101, WINDOWS-STARTUP-TEB)
+  }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FF8, windows-protected-context, windows-protected-budget)
+  wrmsr64(0xC0000100, caller-fs)
+  wrmsr64(0xC0000101, caller-gs)
   domain-user-syscall-hook = 0
   windows-protected-files-release()
   if domain-destroy-user(domain) != 0 { return -5 }

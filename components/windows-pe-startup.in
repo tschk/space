@@ -1,0 +1,120 @@
+package space.kernel
+
+// Explicit single-threaded startup profile. No ntdll/UCRT, dynamic TLS, DLL
+// loading or general PEB/TEB service contract is implied by these owned pages.
+const WINDOWS-STARTUP-TEB = 0x4E000000
+
+fn windows-startup-memory(image: Int, rva: Int, bytes: Int, writable: Int) -> Int {
+  let i = 0
+  while i < posix-load16(image + 134) {
+    let p = image + 392 + i * 40
+    let va = load32(p + 12)
+    let extent = load32(p + 8)
+    if load32(p + 16) > extent { extent = load32(p + 16) }
+    if rva >= va && rva - va <= extent && bytes <= extent - (rva - va) {
+      if writable == 0 || (load32(p + 36) & 0x80000000) != 0 { return 1 }
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn windows-startup-directory(image: Int, size: Int) -> Int {
+  let rva = load32(image + 336)
+  if rva == 0 && load32(image + 340) == 0 { return 0 }
+  if rva == 0 || load32(image + 340) != 40 { return -8 }
+  let off = windows-protected-rva(image, size, rva, 40)
+  if off < 0 { return -8 }
+  return image + off
+}
+
+fn windows-startup-entry(image: Int, size: Int) -> Int {
+  let entry = windows-application-entry-mode(image, size, 1)
+  if entry < 0 { return entry }
+  let d = windows-startup-directory(image, size)
+  if d <= 0 { if d < 0 { return -8 }; return entry }
+  let base = load64(image + 176)
+  let start = load64(d)
+  let end = load64(d + 8)
+  let index = load64(d + 16)
+  let callbacks = load64(d + 24)
+  let zero = load32(d + 32)
+  let chars = load32(d + 36)
+  // One page aligns every admitted TLS template (alignment <=4096).
+  if (chars & (0xFFFFFFFF ^ 0xF00000)) != 0 || (chars >> 20) > 13 { return -8 }
+  if end < start || end - start > 4096 || zero > 4096 - (end - start) { return -8 }
+  if start != 0 || end != 0 {
+    if start < base || windows-protected-rva(image, size, start - base, end - start) < 0 { return -8 }
+  }
+  if index < base || (index & 3) != 0 || windows-startup-memory(image, index - base, 4, 1) == 0 { return -8 }
+  if callbacks != 0 {
+    if callbacks < base || (callbacks & 7) != 0 { return -8 }
+    let i = 0
+    while i <= 8 {
+      let off = windows-protected-rva(image, size, callbacks - base + i * 8, 8)
+      if off < 0 { return -8 }
+      let target = load64(image + off)
+      if target == 0 { return entry }
+      if i == 8 || target < base || windows-application-section-flags(image, target - base, 1) != 0x60000020 { return -8 }
+      i = i + 1
+    }
+  }
+  return entry
+}
+
+fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry: Int) -> Int {
+  let n = 0
+  while n < 4 {
+    let frame = windows-protected-frame(WINDOWS-STARTUP-TEB + n * 4096)
+    domain-map-user-data(domain, WINDOWS-STARTUP-TEB + n * 4096, frame)
+    n = n + 1
+  }
+  let teb = windows-protected-physical(WINDOWS-STARTUP-TEB)
+  let peb = windows-protected-physical(WINDOWS-STARTUP-TEB + 4096)
+  let vector = windows-protected-physical(WINDOWS-STARTUP-TEB + 8192)
+  let tls = windows-protected-physical(WINDOWS-STARTUP-TEB + 12288)
+  let base = load64(image + 176)
+  store64(teb, -1);store64(teb + 8, 0x4F004000);store64(teb + 16, 0x4F000000)
+  store64(teb + 48, WINDOWS-STARTUP-TEB)
+  store64(teb + 64, domain);store64(teb + 72, 1)
+  store64(teb + 88, WINDOWS-STARTUP-TEB + 8192)
+  store64(teb + 96, WINDOWS-STARTUP-TEB + 4096)
+  store64(peb + 16, base)
+  store64(vector, WINDOWS-STARTUP-TEB + 12288)
+  let d = windows-startup-directory(image, size)
+  if d == 0 { return entry }
+  windows-protected-store32(load64(d + 16), 0)
+  let bytes = load64(d + 8) - load64(d)
+  if bytes > 0 {
+    let off = windows-protected-rva(image, size, load64(d) - base, bytes)
+    n = 0
+    while n < bytes { store8(tls + n, load8(image + off + n)); n = n + 1 }
+  }
+  // Each CALL executes at CPL3. Initial RSP%16=8; reserve 32-byte shadow
+  // space plus alignment, reused only after each callback has returned.
+  let p = stub + 512
+  store32(p, 0x28EC8348);p = p + 4
+  let callbacks = load64(d + 24)
+  n = 0
+  if callbacks != 0 {
+    let off = windows-protected-rva(image, size, callbacks - base, 8)
+    // Each pointer was admitted independently; arrays may cross file sections.
+    while n < 8 {
+      off = windows-protected-rva(image, size, callbacks - base + n * 8, 8)
+      let target = load64(image + off)
+      if target == 0 { break }
+      store16(p, 0xB948);store64(p + 2, base);p = p + 10
+      store8(p, 0xBA);store32(p + 1, 1);p = p + 5
+      store8(p, 0x45);store8(p + 1, 0x31);store8(p + 2, 0xC0);p = p + 3
+      store16(p, 0xB848);store64(p + 2, target);store16(p + 10, 0xD0FF);p = p + 12
+      n = n + 1
+    }
+  }
+  store16(p, 0xB848);store64(p + 2, entry);store16(p + 10, 0xD0FF);p = p + 12
+  store32(p, 0x28C48348);store8(p + 4, 0xC3)
+  return WINDOWS-PROTECTED-STUB + 512
+}
+
+fn windows-startup-run(image: Int, size: Int, authority: Int, storage: Int) -> Int {
+  return windows-protected-run-profile(image, size, authority, storage, 2)
+}
