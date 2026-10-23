@@ -44,6 +44,7 @@ for directory in ['components','kernel','protocol','services','fixtures']:
     source_files += list((live_root/directory).rglob('*.in'))
 source_files += list((live_root/'fixtures/applications').glob('*.json'))
 source_files += list((live_root/'fixtures/linux-process').glob('*.asm'))
+source_files += list((live_root/'fixtures/linux-vm').rglob('*.asm'))
 source_files += [live_root/'fixtures/linux-process/int-width-host.py']
 source_files += [live_root/'boot/multiboot.asm',Path(__file__).resolve(),live_root/'scripts/check-linux-real-app.py']
 for attempt in range(3):
@@ -188,6 +189,9 @@ source+='''
 fn linux-real-app-test(port:Int)->void{
  let image=0x10000000;let size=APP_SIZE;
  let fixture=alloc(4096);let frame=alloc(128);
+ // Reuse the already owned fixture page for bounded native loader staging;
+ // direct adapter negatives must not lazily allocate a new test-only cache.
+ linux-fixture-buffer=fixture;
  let witness-domain=domain-create-user();let witness-frame=frame-alloc();
  if witness-domain<=0{panic("Linux isolation witness domain");}
  store64(witness-frame,0x0654321ABCDEF123);

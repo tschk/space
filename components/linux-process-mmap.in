@@ -4,8 +4,8 @@ const LINUX-PROCESS-MMAP-BASE = 0x30000000
 const LINUX-PROCESS-MMAP-LIMIT = 0x31000000
 
 // Private anonymous data mappings only: no executable, fixed, file-backed or
-// shared mappings. Backing frames use the same execution ledger and teardown
-// as ELF, stack and brk, and are zeroed by the native frame allocator.
+// shared mappings. The native VM object owns zeroed backing and teardown for
+// these mappings alongside ELF, stack and brk.
 fn linux-process-mmap(address: Int, length: Int, protection: Int, flags: Int, fd: Int, offset: Int) -> Int {
   if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if address != 0 || length <= 0 || length > LINUX-PROCESS-MMAP-LIMIT - LINUX-PROCESS-MMAP-BASE { return -22 }

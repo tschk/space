@@ -3,7 +3,7 @@ package space.kernel
 // Bounded Linux process records. Native context/page-table mechanisms remain
 // separate; these rows own foreign process identity, descriptors and policy.
 // Cached buffers live for the component;
-// domains, backing frames and descriptor references have activation lifetimes.
+// native VM objects/bindings and descriptor references have activation lifetimes.
 const LINUX-STATE-MAX = 8
 const LINUX-STATE-BYTES = 512
 const LINUX-STATE-DEPTH = 4
@@ -87,6 +87,9 @@ const LPS-IO-FD = 456
 const LPS-IO-BUFFER = 464
 const LPS-IO-COUNT = 472
 const LPS-IO-DONE = 480
+const LPS-VM-BINDING = 488
+const LPS-SPARE-VM = 496
+const LPS-SPARE-BINDING = 504
 
 var linux-process-states: Int = 0
 var linux-process-current-record: Int = 0
@@ -141,10 +144,9 @@ fn linux-process-state-pool-init() -> void {
   let i = 0
   while i < LINUX-STATE-MAX {
     let row = linux-process-states + i * LINUX-STATE-BYTES
-    store64(row + LPS-LEDGER,alloc(LINUX-PROCESS-MAX-PAGES * 24))
     store64(row + LPS-KERNEL-CONTEXT,alloc(48))
-    store64(row + LPS-SPARE-LEDGER,alloc(LINUX-PROCESS-MAX-PAGES * 24))
     store64(row + LPS-SPARE-CONTEXT,(alloc(831) + 63) & -64)
+    linux-process-state-zero(load64(row + LPS-SPARE-CONTEXT),768)
     store64(row + LPS-FILES,alloc(VFS-MAX-FDS * 8))
     store64(row + LPS-PATHS,alloc(VFS-MAX-FDS * 256))
     store64(row + LPS-BUFFER,alloc(4096))
@@ -168,7 +170,7 @@ fn linux-process-state-pool-init() -> void {
 // identity, activate a CPU domain, or manufacture a successful clone result.
 fn linux-process-state-use-cache(row: Int) -> Int {
   if linux-process-state-valid(row) == 0 { return -22 }
-  linux-process-ledger = load64(row + LPS-LEDGER)
+  linux-process-ledger = 0
   linux-process-context = load64(row + LPS-KERNEL-CONTEXT)
   linux-process-files = load64(row + LPS-FILES)
   linux-process-file-paths = load64(row + LPS-PATHS)
@@ -181,8 +183,15 @@ fn linux-process-state-use-cache(row: Int) -> Int {
 
 fn linux-process-state-save(row: Int) -> Int {
   if linux-process-state-valid(row) == 0 { return -22 }
+  if linux-process-current-record != row { return -5 }
+  if linux-process-vm > 0 {
+    let status = linux-process-vm-sync()
+    if status != 0 { return status }
+  } else if linux-process-binding != 0 || linux-process-domain != 0 || linux-process-pages != 0 { return -5 }
+  store64(row + LPS-VM-OBJECT,linux-process-vm)
+  store64(row + LPS-VM-BINDING,linux-process-binding)
   store64(row + LPS-DOMAIN,linux-process-domain)
-  store64(row + LPS-LEDGER,linux-process-ledger)
+  store64(row + LPS-LEDGER,0)
   store64(row + LPS-PAGES,linux-process-pages)
   store64(row + LPS-AUTHORITY,linux-process-authority)
   store64(row + LPS-EXE,linux-process-exe)
@@ -214,13 +223,20 @@ fn linux-process-state-save(row: Int) -> Int {
 
 fn linux-process-state-load(row: Int) -> Int {
   if linux-process-state-valid(row) == 0 { return -22 }
-  linux-process-domain = load64(row + LPS-DOMAIN)
-  linux-process-ledger = load64(row + LPS-LEDGER)
-  linux-process-pages = load64(row + LPS-PAGES)
-  linux-process-authority = load64(row + LPS-AUTHORITY)
+  let token = load64(row + LPS-VM-OBJECT)
+  let binding = load64(row + LPS-VM-BINDING)
+  // Validate/select the authoritative pair before changing any selected view.
+  if token > 0 {
+    let status = linux-process-vm-use(token,binding)
+    if status != 0 { return status }
+  } else {
+    if token != 0 || binding != 0 || load64(row + LPS-DOMAIN) != 0 || load64(row + LPS-PAGES) != 0 { return -5 }
+    linux-process-vm = 0;linux-process-binding = 0;linux-process-domain = 0
+    linux-process-pages = 0;linux-process-ledger = 0
+    linux-process-authority = load64(row + LPS-AUTHORITY)
+    linux-process-brk = LINUX-PROCESS-BRK-BASE;linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE
+  }
   linux-process-exe = load64(row + LPS-EXE)
-  linux-process-brk = load64(row + LPS-BRK)
-  linux-process-brk-mapped = load64(row + LPS-BRK-MAPPED)
   linux-process-clear-tid = load64(row + LPS-CLEAR-TID)
   linux-process-stdout-open = load64(row + LPS-STDOUT)
   linux-process-stderr-open = load64(row + LPS-STDERR)
@@ -246,6 +262,21 @@ fn linux-process-state-load(row: Int) -> Int {
   linux-process-current-pid = load64(row + LPS-PID)
   linux-process-active = 1
   return 0
+}
+
+// Close the whole owned job on an uncertain adapter association. Preserve every
+// identity for repair; never invalidate or detach a possibly unrelated binding.
+fn linux-process-state-refuse(row: Int) -> Int {
+  linux-process-cleanup-failed = 1
+  linux-process-active = 0
+  let i = 0
+  while i < LINUX-STATE-MAX && linux-process-states != 0 {
+    let owned = linux-process-states + i * LINUX-STATE-BYTES
+    let phase = load64(owned + LPS-STATUS)
+    if phase != LINUX-STATE-FREE && phase != LINUX-STATE-REAPED { store64(owned + LPS-STATUS,LINUX-STATE-QUARANTINED) }
+    i = i + 1
+  }
+  return -5
 }
 
 fn linux-process-state-id() -> Int {
@@ -290,43 +321,22 @@ fn linux-process-state-find-child(parent: Int, pid: Int) -> Int {
   return first
 }
 
-// Copy backing pages into a separately owned native domain. All page mappings
-// are rebuilt with the original effective protections; no writable user page
-// is shared by a fork. The source row remains stopped throughout this operation.
+// Native owned copying preserves page permissions and independent backing.
+// The source execution remains genuinely suspended throughout preparation.
 fn linux-process-state-copy-pages(source: Int, target: Int) -> Int {
   if linux-process-state-valid(source) == 0 || linux-process-state-valid(target) == 0 || source == target { return -22 }
-  let pages = load64(source + LPS-PAGES)
-  let domain = load64(target + LPS-DOMAIN)
-  if pages < 0 || pages > LINUX-PROCESS-MAX-PAGES || domain <= 0 || domain >= domain-count { return -22 }
-  if (domain-user-owned & (1 << domain)) == 0 || load64(target + LPS-PAGES) != 0 { return -22 }
-  // Include worst-case table growth and keep a conservative 1MiB reserve.
-  // Cached/free frames may improve availability, but are not assumed here.
+  // Preserve the admitted external ELF's lifetime against the bump arena.
+  // These are loader bounds, not ownership of native backing or a second ledger.
+  let pages = user-space-pages(load64(source + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))
+  if pages < 0 { return -5 }
   let reserve = pages * 8192 + 0x100000
   if heap-end - heap-next < reserve { return -12 }
   let image = load64(source + LPS-IMAGE)
   let size = load64(source + LPS-IMAGE-SIZE)
   if image < heap-next + reserve && image + size > heap-next { return -12 }
-  let i = 0
-  while i < pages {
-    let src = load64(source + LPS-LEDGER) + i * 24
-    let dest = load64(target + LPS-LEDGER) + i * 24
-    let va = load64(src)
-    let prot = load64(src + 16)
-    if (va & 4095) != 0 || (prot != 4 && prot != 5 && prot != 6) { return -22 }
-    let frame = frame-alloc()
-    linux-process-state-copy(frame,load64(src + 8),4096)
-    store64(dest,va);store64(dest + 8,frame);store64(dest + 16,prot)
-    store64(target + LPS-PAGES,i + 1)
-    if prot == 5 { domain-map-user-code(domain,va,frame) }
-    else if prot == 4 { domain-map-user-readonly(domain,va,frame) }
-    else { domain-map-user-data(domain,va,frame) }
-    let actual = domain-page-flags(domain,va)
-    if (actual & 5) != 5 || (prot == 6 && (actual & 2) == 0) || (prot != 6 && (actual & 2) != 0) { return -5 }
-    if prot == 5 { if (actual & PAGE-NX) != 0 { return -5 } }
-    else if (actual & PAGE-NX) == 0 { return -5 }
-    i = i + 1
-  }
-  return 0
+  let status = linux-process-vm-copy(load64(target + LPS-VM-OBJECT),load64(source + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))
+  if status == 0 { store64(target + LPS-PAGES,user-space-pages(load64(target + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))) }
+  return status
 }
 
 // Duplicate native references while retaining shared open-file descriptions.
@@ -381,33 +391,28 @@ fn linux-process-state-copy-files(source: Int, target: Int) -> Int {
   return 0
 }
 
-// Revoke page tables before freeing any backing frame. This helper also handles
-// partial failed preparation; it never frees another record's copied backing.
+// Native release owns revocation/freeing. Retain the object/binding identities
+// on uncertain teardown, including partial failed preparation.
 fn linux-process-state-drop-primary(row: Int) -> Int {
   if linux-process-state-valid(row) == 0 { return -22 }
-  let domain = load64(row + LPS-DOMAIN)
-  store64(load64(row + LPS-USER-CONTEXT) + 736,0)
-  if domain > 0 {
-    if domain-destroy-user(domain) != 0 {
+  let token = load64(row + LPS-VM-OBJECT)
+  let binding = load64(row + LPS-VM-BINDING)
+  if token > 0 {
+    let status = linux-process-vm-drop(token,binding)
+    if status != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-VM-BINDING,0) }
       linux-process-cleanup-failed = 1
       store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
       return -5
     }
-    store64(row + LPS-DOMAIN,0)
   }
-  let i = 0
-  while i < load64(row + LPS-PAGES) {
-    let page = load64(row + LPS-LEDGER) + i * 24
-    frame-free(load64(page + 8))
-    store64(page,0);store64(page + 8,0);store64(page + 16,0)
-    i = i + 1
-  }
-  store64(row + LPS-PAGES,0)
+  store64(row + LPS-VM-OBJECT,0);store64(row + LPS-VM-BINDING,0)
+  store64(row + LPS-DOMAIN,0);store64(row + LPS-PAGES,0)
   return 0
 }
 
 fn linux-process-state-cache-field(offset: Int) -> Int {
-  if offset == LPS-LEDGER || offset == LPS-FILES || offset == LPS-PATHS || offset == LPS-BUFFER || offset == LPS-IDENTITIES || offset == LPS-PIPE-FDFLAGS || offset == LPS-KERNEL-CONTEXT || offset == LPS-USER-CONTEXT || offset == LPS-ARGV || offset == LPS-ENV || offset == LPS-ARG-BUFFER || offset == LPS-ENV-BUFFER || offset == LPS-FD-FLAGS || offset == LPS-SPARE-LEDGER || offset == LPS-SPARE-CONTEXT { return 1 }
+  if offset == LPS-FILES || offset == LPS-PATHS || offset == LPS-BUFFER || offset == LPS-IDENTITIES || offset == LPS-PIPE-FDFLAGS || offset == LPS-KERNEL-CONTEXT || offset == LPS-USER-CONTEXT || offset == LPS-ARGV || offset == LPS-ENV || offset == LPS-ARG-BUFFER || offset == LPS-ENV-BUFFER || offset == LPS-FD-FLAGS || offset == LPS-SPARE-CONTEXT { return 1 }
   return 0
 }
 
@@ -421,6 +426,8 @@ fn linux-process-state-inherit(source: Int, target: Int) -> Int {
   store64(target + LPS-PID,0)
   store64(target + LPS-DOMAIN,0)
   store64(target + LPS-PAGES,0)
+  store64(target + LPS-VM-OBJECT,0);store64(target + LPS-VM-BINDING,0)
+  store64(target + LPS-SPARE-VM,0);store64(target + LPS-SPARE-BINDING,0)
   store64(target + LPS-STATUS,LINUX-STATE-PREPARING)
   store64(target + LPS-CLEAR-TID,0)
   store64(target + LPS-SIGNAL-PENDING,0)
@@ -436,6 +443,8 @@ fn linux-process-state-inherit(source: Int, target: Int) -> Int {
 }
 
 fn linux-process-state-reset() -> void {
+  linux-process-memory-failed = 0
+  linux-process-startup = 0;linux-process-startup-error = 0
   linux-process-copy-rollback-refs = 0
   linux-process-copy-rollbacks = 0
   linux-process-preparations = 0
@@ -463,23 +472,17 @@ fn linux-process-state-reset() -> void {
 fn linux-process-state-drop-pages(row: Int) -> Int {
   let result = linux-process-state-drop-primary(row)
   if result != 0 { return result }
-  let domain = load64(row + LPS-SPARE-DOMAIN)
-  if domain > 0 {
-    store64(load64(row + LPS-SPARE-CONTEXT) + 736,0)
-    if domain-destroy-user(domain) != 0 {
+  let token = load64(row + LPS-SPARE-VM)
+  let binding = load64(row + LPS-SPARE-BINDING)
+  if token > 0 {
+    if linux-process-vm-drop(token,binding) != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-SPARE-BINDING,0) }
       linux-process-cleanup-failed = 1
       store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
       return -5
     }
-    store64(row + LPS-SPARE-DOMAIN,0)
-    let i = 0
-    while i < load64(row + LPS-SPARE-PAGES) {
-      let page = load64(row + LPS-SPARE-LEDGER) + i * 24
-      frame-free(load64(page + 8))
-      store64(page,0);store64(page + 8,0);store64(page + 16,0)
-      i = i + 1
-    }
-    store64(row + LPS-SPARE-PAGES,0)
   }
+  store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+  store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
   return 0
 }

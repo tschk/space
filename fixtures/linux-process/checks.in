@@ -1,4 +1,5 @@
 package space.kernel
+import "../linux-vm/direct.in"
 var linux-check-file-path: Int = 0
 
 fn linux-check(expect: Int, actual: Int) -> void {
@@ -308,12 +309,7 @@ fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocab
   linux-check(0x400000,rdmsr(0xC0000101))
   wrmsr64(0xC0000101,saved-gs)
 
-  linux-process-domain = domain-create-user()
-  linux-process-active = 1
-  linux-process-authority = authority
-  linux-process-pages = 0
-  linux-process-map-page(0x20000000, 6)
-  linux-process-map-page(0x20001000, 5)
+  linux-fixture-begin(revocable)
   linux-check-anonymous()
   linux-check-file-denials(fixture,revocable)
   linux-process-stdout-open = 1
@@ -330,7 +326,7 @@ fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocab
   linux-check(-13, linux-process-run(image,size,"/jq","-nc","0",revocable))
   store64(cap-slot, target)
   store64(cap-slot + 8, cap-memory() | cap-serial() | cap-storage())
-  linux-process-authority = authority
+  linux-process-authority = revocable
   linux-check(-13, linux-process-mprotect(0x20001000,4096,3))
   linux-check(-22, linux-process-mprotect(0x20000001,4096,1))
   linux-check(-14, linux-process-random(0x20001000,8))

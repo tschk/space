@@ -115,7 +115,7 @@ fn linux-process-child-clear-tid() -> void {
 }
 
 fn linux-process-child-discard(row: Int) -> Int {
-  linux-process-state-load(row)
+  if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) }
   linux-process-child-clear-tid()
   // Close native references while the record's domain/family identity remains
   // valid, then revoke mappings and reclaim its owned backing frames.
@@ -129,8 +129,14 @@ fn linux-process-child-copy(parent: Int) -> Int {
   let child = linux-process-child-slot()
   if child == 0 { return -11 }
   linux-process-state-inherit(parent,child)
-  let domain = domain-create-user()
-  if domain <= 0 { store64(child + LPS-STATUS,LINUX-STATE-FREE);return -12 }
+  let token = linux-process-vm-create(load64(parent + LPS-AUTHORITY))
+  store64(child + LPS-VM-OBJECT,linux-process-vm-created)
+  if token <= 0 {
+    if linux-process-vm-created > 0 { linux-process-cleanup-failed = 1;store64(child + LPS-STATUS,LINUX-STATE-QUARANTINED) }
+    else { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
+    return token
+  }
+  let domain = user-space-domain(token,load64(parent + LPS-AUTHORITY))
   store64(child + LPS-DOMAIN,domain)
   let pid = linux-process-state-register(child,load64(parent + LPS-PID),domain,load64(parent + LPS-DEPTH) + 1)
   if pid < 0 {
@@ -143,14 +149,19 @@ fn linux-process-child-copy(parent: Int) -> Int {
   let result = linux-process-state-copy-pages(parent,child)
   if result == 0 { result = linux-process-state-copy-files(parent,child) }
   if result == 0 { result = user-context-clone(load64(child + LPS-USER-CONTEXT),768,load64(parent + LPS-USER-CONTEXT),domain) }
+  if result == 0 {
+    let binding = user-space-attach(token,load64(parent + LPS-AUTHORITY),load64(child + LPS-USER-CONTEXT))
+    if binding <= 0 { store64(load64(child + LPS-USER-CONTEXT) + 736,0);result = linux-process-vm-error(binding) }
+    else { store64(child + LPS-VM-BINDING,binding) }
+  }
   if result != 0 {
     let cleanup = linux-process-child-discard(child)
     if cleanup == 0 { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
-    linux-process-state-load(parent)
+    if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
     if cleanup != 0 { return -5 }
     return result
   }
-  linux-process-state-load(child)
+  if linux-process-state-load(child) != 0 { return linux-process-state-refuse(child) }
   let flags = load64(parent + LPS-CLONE-FLAGS)
   let tid = load64(parent + LPS-CHILD-TID)
   if (flags & 0x1000000) != 0 {
@@ -158,9 +169,9 @@ fn linux-process-child-copy(parent: Int) -> Int {
     while i < 4 { linux-process-store8(tid + i,(pid >> (i * 8)) & 255);i = i + 1 }
   }
   if (flags & 0x200000) != 0 { linux-process-clear-tid = tid }
-  linux-process-state-save(child)
+  if linux-process-state-save(child) != 0 { return linux-process-state-refuse(child) }
   store64(child + LPS-STATUS,LINUX-STATE-READY)
-  linux-process-state-load(parent)
+  if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
   return child
 }
 
@@ -189,6 +200,7 @@ fn linux-process-cleanup-recover() -> Int {
   }
   linux-process-domain = 0
   linux-process-pages = 0
+  linux-process-vm = 0;linux-process-binding = 0
   linux-process-active = 0
   linux-process-authority = -1
   linux-process-exe = 0

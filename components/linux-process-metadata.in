@@ -45,6 +45,7 @@ fn linux-process-file-copy-stat(buffer: Int) -> Int {
 }
 
 fn linux-process-file-stat-at(directory: Int, path: Int, buffer: Int, flags: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if (flags & 0x1100) != flags { return -22 }
   if linux-process-range(buffer,144,1) == 0 || linux-process-range(path,1,0) == 0 { return -14 }
   if linux-process-read8(path) == 0 && (flags & 0x1000) != 0 {
@@ -91,6 +92,7 @@ fn linux-process-file-load64(address: Int) -> Int {
 fn linux-process-file-lock(fd: Int, command: Int, record: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if vfs-discard-valid(host) != 0 { return -38 }
   if command != 6 { return -38 }
   if linux-process-range(record,32,0) == 0 { return -14 }

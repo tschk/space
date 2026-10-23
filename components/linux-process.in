@@ -1,4 +1,5 @@
 package space.kernel
+import "linux-process-vm.in"
 import "linux-process-files.in"
 import "linux-process-mmap.in"
 import "linux-process-metadata.in"
@@ -10,7 +11,7 @@ import "linux-process-schedule.in"
 
 // Bounded static ELF process family with cooperative, single-CPU execution.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
-// remain native mechanisms with explicit per-record backing ownership.
+// remain native mechanisms with counted object/binding ownership.
 const LINUX-PROCESS-MAX-PAGES = 4096
 const LINUX-PROCESS-STACK-BASE = 0x4F000000
 const LINUX-PROCESS-STACK-SIZE = 0x100000
@@ -32,38 +33,31 @@ var linux-process-trace: Int = 0
 var linux-process-authority: Int = -1
 var linux-process-exe: Int = 0
 var linux-process-budget-ticks: Int = 100
+var linux-process-staging-context: Int = 0
 
 fn linux-process-load16(address: Int) -> Int {
   return load8(address) | (load8(address + 1) << 8)
 }
 
 fn linux-process-page-index(address: Int) -> Int {
-  let page = address & -4096
-  let i = 0
-  while i < linux-process-pages {
-    if load64(linux-process-ledger + i * 24) == page { return i }
-    i = i + 1
-  }
+  if address < 65536 || address >= 0x800000000000 { return -1 }
+  if (domain-page-flags(linux-process-domain,address) & 5) == 5 { return 0 }
   return -1
-}
-
-fn linux-process-physical(address: Int, writable: Int) -> Int {
-  let index = linux-process-page-index(address)
-  if index < 0 { return 0 }
-  let row = linux-process-ledger + index * 24
-  let prot = load64(row + 16)
-  if (prot & 4) == 0 || (writable != 0 && (prot & 2) == 0) { return 0 }
-  return load64(row + 8) + (address & 4095)
 }
 
 fn linux-process-range(address: Int, length: Int, writable: Int) -> Int {
   if address <= 0 || length < 0 || length > 0x1000000 || address > 0x7FFFFFFF - length { return 0 }
   if length == 0 { return 1 }
-  let page = address & -4096
-  let end = address + length
-  while page < end {
-    if linux-process-physical(page, writable) == 0 { return 0 }
-    page = page + 4096
+  let permission = USER-SPACE-READ
+  if writable != 0 { permission = USER-SPACE-WRITE }
+  let done = 0
+  while done < length {
+    let count = length - done
+    if count > 65536 { count = 65536 }
+    let status = user-space-borrow-begin(linux-process-binding,linux-process-authority,address + done,count,permission)
+    if status != 0 { if status == -5 { linux-process-memory-failed = 1 } return 0 }
+    if user-space-borrow-end(linux-process-binding,linux-process-authority) != 0 { return 0 }
+    done = done + count
   }
   return 1
 }
@@ -79,21 +73,18 @@ fn linux-process-string-valid(address: Int) -> Int {
 }
 
 fn linux-process-read8(address: Int) -> Int {
-  return load8(linux-process-physical(address, 0))
+  if linux-process-copy-in(address,linux-process-vm-scalar,1) != 0 { return 0 }
+  return load8(linux-process-vm-scalar)
 }
 
 fn linux-process-store8(address: Int, value: Int) -> void {
-  store8(linux-process-physical(address, 1), value)
-  return
+  store8(linux-process-vm-scalar,value)
+  linux-process-copy-out(address,linux-process-vm-scalar,1)
 }
 
 fn linux-process-store64(address: Int, value: Int) -> void {
-  let i = 0
-  while i < 8 {
-    linux-process-store8(address + i, (value >> (i * 8)) & 255)
-    i = i + 1
-  }
-  return
+  store64(linux-process-vm-scalar,value)
+  linux-process-copy-out(address,linux-process-vm-scalar,8)
 }
 
 fn linux-process-read32(address: Int) -> Int {
@@ -119,18 +110,10 @@ fn linux-process-string-is(address: Int, text: Int) -> Int {
 }
 
 fn linux-process-map-page(address: Int, prot: Int) -> Int {
-  if linux-process-pages >= LINUX-PROCESS-MAX-PAGES || (address & 4095) != 0 { return -12 }
-  if linux-process-page-index(address) >= 0 { return -22 }
-  let frame = frame-alloc()
-  let row = linux-process-ledger + linux-process-pages * 24
-  store64(row, address)
-  store64(row + 8, frame)
-  store64(row + 16, prot)
-  linux-process-pages = linux-process-pages + 1
-  if prot == 5 { domain-map-user-code(linux-process-domain, address, frame) }
-  else if prot == 4 { domain-map-user-readonly(linux-process-domain, address, frame) }
-  else { domain-map-user-data(linux-process-domain, address, frame) }
-  return frame
+  let result = linux-process-vm-map(address,prot)
+  if result != 0 { return result }
+  // This helper returns success, never a physical backing address.
+  return 1
 }
 
 fn linux-process-elf-entry(image: Int, size: Int) -> Int {
@@ -199,16 +182,19 @@ fn linux-process-map-elf(image: Int) -> Int {
       let page = va & -4096
       let end = (va + memory + 4095) & -4096
       while page < end {
-        let frame = linux-process-map-page(page, load32(p + 4))
-        if frame <= 0 { return -12 }
+        let mapped = linux-process-map-page(page,load32(p + 4))
+        if mapped <= 0 { return mapped }
+        cpu-mem-fill64(linux-process-vm-buffer,0,512)
         let j = 0
         while j < 4096 {
           let current = page + j
           if current >= va && current - va < file {
-            store8(frame + j, load8(image + off + current - va))
+            store8(linux-process-vm-buffer + j,load8(image + off + current - va))
           }
           j = j + 1
         }
+        let populated = linux-process-vm-populate(page,linux-process-vm-buffer,4096)
+        if populated != 0 { return populated }
         page = page + 4096
       }
     }
@@ -217,14 +203,18 @@ fn linux-process-map-elf(image: Int) -> Int {
   return 0
 }
 
-fn linux-process-stack-string(address: Int, text: Int) -> void {
+fn linux-process-stack-string(address: Int, text: Int) -> Int {
+  // Trusted C strings may live in immutable loader payloads above the arena.
+  // Copy through our owned buffer; never widen native kernel-buffer policy.
   let i = 0
-  while load8(text + i) != 0 {
-    linux-process-store8(address + i, load8(text + i))
+  while i < 4096 {
+    let value = load8(text + i)
+    store8(linux-process-vm-buffer + i,value)
     i = i + 1
+    if value == 0 { return linux-process-copy-out(address,linux-process-vm-buffer,i) }
   }
-  linux-process-store8(address + i, 0)
-  return
+  if linux-process-startup != 0 && linux-process-startup-error == 0 { linux-process-startup-error = -7 }
+  return -7
 }
 
 fn linux-process-random(buffer: Int, length: Int) -> Int {
@@ -241,22 +231,25 @@ fn linux-process-random(buffer: Int, length: Int) -> Int {
     }
     let n = length - done
     if n > 8 { n = 8 }
-    let i = 0
-    while i < n {
-      linux-process-store8(buffer + done + i, load8(linux-process-context + 32 + i))
-      i = i + 1
-    }
+    if linux-process-copy-out(buffer + done,linux-process-context + 32,n) != 0 { return -14 }
     done = done + n
   }
   return done
 }
 
 fn linux-process-stack(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int {
+  linux-process-startup = 1;linux-process-startup-error = 0
+  return linux-process-startup-result(linux-process-stack-build(image,arg0,arg1,arg2))
+}
+
+fn linux-process-stack-build(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int {
   let page = LINUX-PROCESS-STACK-BASE
   while page < LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE {
     if linux-process-map-page(page, 6) <= 0 { return -12 }
     page = page + 4096
   }
+  let attach = linux-process-vm-attach(linux-process-staging-context,load64(image + 24),LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 16)
+  if attach <= 0 { return attach }
   let strings = LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 4096
   linux-process-stack-string(strings, arg0)
   linux-process-stack-string(strings + 256, arg1)
@@ -301,15 +294,9 @@ fn linux-process-stack(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int {
 }
 
 fn linux-process-remove-page(page: Int) -> Int {
-  let index = linux-process-page-index(page)
-  if index < 0 || domain-unmap-user(linux-process-domain,page) != 0 { return -1 }
-  let row = linux-process-ledger + index * 24
-  frame-free(load64(row + 8))
-  linux-process-pages = linux-process-pages - 1
-  let last = linux-process-ledger + linux-process-pages * 24
-  store64(row,load64(last)); store64(row + 8,load64(last + 8)); store64(row + 16,load64(last + 16))
-  store64(last,0); store64(last + 8,0); store64(last + 16,0)
-  return 0
+  let result = user-space-unmap(linux-process-vm,linux-process-authority,page)
+  if result != 0 { return linux-process-vm-error(result) }
+  return linux-process-vm-sync()
 }
 
 fn linux-process-brk-call(request: Int) -> Int {
@@ -324,12 +311,15 @@ fn linux-process-brk-call(request: Int) -> Int {
   while linux-process-brk-mapped < end {
     if linux-process-map-page(linux-process-brk-mapped, 6) <= 0 { return linux-process-brk }
     linux-process-brk-mapped = linux-process-brk-mapped + 4096
+    store64(linux-process-vm-row(linux-process-vm) + 24,linux-process-brk-mapped)
   }
   while linux-process-brk-mapped > end {
     let page = linux-process-brk-mapped - 4096
     if linux-process-remove-page(page) != 0 { return linux-process-brk }
     linux-process-brk-mapped = page
+    store64(linux-process-vm-row(linux-process-vm) + 24,page)
   }
+  store64(linux-process-vm-row(linux-process-vm) + 16,request)
   linux-process-brk = request
   return request
 }
@@ -345,18 +335,15 @@ fn linux-process-mprotect(address: Int, length: Int, protection: Int) -> Int {
     let idx = linux-process-page-index(page)
     if idx < 0 { return -12 }
     // Never turn an executable page writable.
-    if (load64(linux-process-ledger + idx * 24 + 16) & 1) != 0 { return -13 }
+    if (domain-page-flags(linux-process-domain,page) & PAGE-NX) == 0 { return -13 }
     page = page + 4096
   }
   page = address
   while page < end {
-    let idx = linux-process-page-index(page)
-    let row = linux-process-ledger + idx * 24
-    let prot = 4
-    if protection == 3 { prot = 6 }
-    store64(row + 16, prot)
-    if prot == 4 { domain-map-user-readonly(linux-process-domain, page, load64(row + 8)) }
-    else { domain-map-user-data(linux-process-domain, page, load64(row + 8)) }
+    let permission = USER-SPACE-READ
+    if protection == 3 { permission = USER-SPACE-WRITE }
+    let result = user-space-protect(linux-process-vm,linux-process-authority,page,permission)
+    if result != 0 { return linux-process-vm-error(result) }
     page = page + 4096
   }
   return 0
@@ -384,6 +371,11 @@ fn linux-process-int32(value: Int) -> Int {
 }
 
 fn linux-process-dispatch(frame: Int) -> Int {
+  let mutation = linux-process-int32(load64(frame + 112))
+  if user-context-active != 0 && (mutation == 9 || mutation == 10 || mutation == 11 || mutation == 12) {
+    store64(linux-process-current-record + LPS-PENDING,6)
+    return 2
+  }
   if linux-process-work-take() == 0 {
     store64(frame + 112,LINUX-PROCESS-STATUS-POLICY)
     return 0
@@ -546,10 +538,19 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else if second < 0 || third < 0 || third > 65536 { result = -22 }
     else if linux-process-range(second, third, 0) == 0 { result = -14 }
     else {
-      let i = 0
-      while i < third { serial-put(com1(), linux-process-read8(second + i)); i = i + 1 }
-      linux-process-output-bytes = linux-process-output-bytes + third
+      let done = 0
       result = third
+      while done < third && result >= 0 {
+        let count = third - done
+        if count > 4096 { count = 4096 }
+        if linux-process-copy-in(second + done,linux-process-file-buffer,count) != 0 { result = -14 }
+        else {
+          let i = 0
+          while i < count { serial-put(com1(),load8(linux-process-file-buffer + i));i = i + 1 }
+          done = done + count
+        }
+      }
+      linux-process-output-bytes = linux-process-output-bytes + done
     }
   } else if number == 3 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-close(first) }
@@ -570,6 +571,11 @@ fn linux-process-dispatch(frame: Int) -> Int {
   else if number == 39 || number == 186 { result = linux-process-state-id() }
   if linux-process-current-record != 0 && load64(linux-process-current-record + LPS-PENDING) >= 3 { resume = 2 }
   if linux-process-signal-deliver() != 0 { result = 128 + linux-process-pipe-signal;resume = 0 }
+  // An ownership invariant is not a guest EFAULT. Capture the CPU before any
+  // further guest instruction; native resume quarantines after the real stop.
+  if linux-process-memory-failed != 0 && linux-process-current-record != 0 {
+    store64(linux-process-current-record + LPS-PENDING,7);result = -5;resume = 2
+  }
   if linux-process-trace != 0 {
     if resume == 2 {
       serial-write-cstr(com1(), "linux-process: suspended "); serial-write-dec-wide(com1(),load64(linux-process-current-record + LPS-PENDING));serial-nl(com1())
@@ -584,36 +590,17 @@ fn linux-process-dispatch(frame: Int) -> Int {
 }
 
 fn linux-process-release() -> Int {
-  if linux-process-current-record != 0 {
-    linux-process-state-save(linux-process-current-record)
-    store64(load64(linux-process-current-record + LPS-USER-CONTEXT) + 736,0)
-  }
-  if domain-destroy-user(linux-process-domain) != 0 {
-    linux-process-cleanup-failed = 1
-    if linux-process-current-record != 0 { store64(linux-process-current-record + LPS-STATUS,LINUX-STATE-QUARANTINED) }
-    linux-process-active = 0
-    return -1
-  }
-  let i = 0
-  while i < linux-process-pages {
-    frame-free(load64(linux-process-ledger + i * 24 + 8))
-    store64(linux-process-ledger + i * 24, 0)
-    store64(linux-process-ledger + i * 24 + 8, 0)
-    store64(linux-process-ledger + i * 24 + 16, 0)
-    i = i + 1
-  }
-  linux-process-pages = 0
-  if linux-process-current-record != 0 {
-    store64(linux-process-current-record + LPS-DOMAIN,0)
-    store64(linux-process-current-record + LPS-PAGES,0)
-  }
+  let row = linux-process-current-record
+  if row == 0 { return -5 }
+  if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) }
+  if linux-process-state-save(row) != 0 { return linux-process-state-refuse(row) }
   linux-process-files-release()
   linux-process-pipes-release()
-  if linux-process-current-record != 0 && load64(linux-process-current-record + LPS-SPARE-DOMAIN) == 0 { store64(linux-process-current-record + LPS-STATUS,LINUX-STATE-REAPED) }
-  linux-process-domain = 0
-  linux-process-active = 0
-  linux-process-authority = -1
-  linux-process-exe = 0
+  if linux-process-state-drop-pages(row) != 0 { linux-process-active = 0;return -5 }
+  store64(row + LPS-STATUS,LINUX-STATE-REAPED)
+  linux-process-domain = 0;linux-process-pages = 0
+  linux-process-vm = 0;linux-process-binding = 0
+  linux-process-active = 0;linux-process-authority = -1;linux-process-exe = 0
   return 0
 }
 
@@ -637,8 +624,21 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   if image < heap-next + 0x2000000 && image + size > heap-next { return -22 }
   linux-process-state-reset()
   linux-process-state-use-cache(linux-process-states)
-  linux-process-domain = domain-create-user()
-  if linux-process-domain <= 0 { linux-process-domain = 0; return -12 }
+  linux-process-authority = authority
+  let vm = linux-process-vm-create(authority)
+  if vm <= 0 {
+    if linux-process-vm-created > 0 {
+      store64(linux-process-states + LPS-VM-OBJECT,linux-process-vm-created)
+      store64(linux-process-states + LPS-AUTHORITY,authority)
+      store64(linux-process-states + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      linux-process-cleanup-failed = 1
+    }
+    return vm
+  }
+  store64(linux-process-states + LPS-VM-OBJECT,vm)
+  store64(linux-process-states + LPS-AUTHORITY,authority)
+  store64(linux-process-states + LPS-STATUS,LINUX-STATE-PREPARING)
+  if linux-process-vm-use(vm,0) != 0 { return linux-process-state-refuse(linux-process-states) }
   linux-process-active = 1
   let root-row = linux-process-states
   let pid = linux-process-state-register(root-row,0,linux-process-domain,0)
@@ -672,19 +672,23 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   let status = linux-process-files-init(input)
   if status == 0 { status = linux-process-map-elf(image) }
   let stack = 0
-  if status == 0 { stack = linux-process-stack(image, arg0, arg1, arg2); if stack < 0 { status = stack } }
+  linux-process-staging-context = load64(root-row + LPS-USER-CONTEXT)
+  if status == 0 { stack = linux-process-stack(image,arg0,arg1,arg2);if stack < 0 { status = stack } }
+  if status == 0 { store64(linux-process-staging-context + 144,stack) }
   let fs = rdmsr(0xC0000100)
   let gs = rdmsr(0xC0000101)
   if status == 0 {
     // The caller's thread pointer is privileged execution state, not part of
     // a new Linux process. glibc installs its own TLS through ARCH_SET_FS.
-    wrmsr64(0xC0000100,0)
-    wrmsr64(0xC0000101,0)
-    domain-user-syscall-hook = linux-process-dispatch
-    linux-process-state-save(root-row)
-    status = user-context-init(load64(root-row + LPS-USER-CONTEXT),768,linux-process-domain,entry,0,stack)
-    if status == 0 { status = linux-process-family-resume(root-row) }
-    domain-user-syscall-hook = 0
+    status = linux-process-state-save(root-row)
+    if status != 0 { status = linux-process-state-refuse(root-row) }
+    else {
+      wrmsr64(0xC0000100,0)
+      wrmsr64(0xC0000101,0)
+      domain-user-syscall-hook = linux-process-dispatch
+      status = linux-process-family-resume(root-row)
+      domain-user-syscall-hook = 0
+    }
   }
   wrmsr64(0xC0000100, fs)
   wrmsr64(0xC0000101, gs)

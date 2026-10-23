@@ -76,12 +76,7 @@ fn pipe-check-case(port:Int,id:Int,image:Int,size:Int,expected:Int,signal:Int,me
  pipe-check-count=pipe-check-count+1;
 }
 fn pipe-check-negatives()->void {
- linux-process-domain=domain-create-user();linux-process-active=1;
- linux-process-authority=pipe-check-authority;linux-process-pages=0;
- linux-process-stdout-open=1;linux-process-stderr-open=1;
- linux-check(0,linux-process-files-init(-1));linux-process-pipes-init();
- if linux-process-map-page(0x20000000,6)<=0{panic("pipe writable mapping");}
- if linux-process-map-page(0x20001000,5)<=0{panic("pipe readonly mapping");}
+ linux-fixture-begin(pipe-check-revocable);
  linux-process-store64(0x20000000,0x12345678ABCDEF01);
  let heap=heap-next;let native=pipe-check-native-count();
  linux-check(-14,linux-process-pipe-create(0x20000FFC,0));
@@ -112,7 +107,7 @@ fn pipe-check-negatives()->void {
  linux-check(-13,linux-process-pipe-dup(reader,-1,0,0));
  linux-check(0,linux-process-pipe-close(reader));linux-check(0,linux-process-pipe-close(writer));
  store64(caprow,target);store64(caprow+8,cap-memory());
- linux-process-authority=pipe-check-authority;
+ linux-process-authority=pipe-check-revocable;
  // The unrelated native pair consumes one of four slots. Capacity failure
  // must preserve the caller's output and every existing endpoint reference.
  let i=0;

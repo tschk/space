@@ -2,8 +2,10 @@
 
 The Linux personality translates bounded `clone`, `wait4`, `execve` and signal-mask
 requests to native owned user contexts. `linux-process-children.in` owns foreign
-process policy; `linux-process-state.in` owns process records and their resource
-ledgers. CPU context suspension, page-table enforcement and resumption remain
+process policy; `linux-process-state.in` owns process records and descriptor
+references. Native owned VM objects and a Linux companion now own mappings and
+current break state; see [the migration contract](linux-owned-vm.md) for final
+both-root evidence and failure recovery. CPU context suspension, page-table enforcement and resumption remain
 generic native mechanisms. Synthetic ELF fixtures are separate from upstream
 BusyBox application coverage.
 

@@ -127,8 +127,7 @@ fn linux-process-pipe-read(fd: Int, buffer: Int, length: Int) -> Int {
   let result = vfs-stream-read(host,linux-process-file-buffer,count)
   if result == -11 && (linux-process-pipe-flags(fd) & 0x800) == 0 { return -38 }
   if result < 0 { return result }
-  let i = 0
-  while i < result { linux-process-store8(buffer + i,load8(linux-process-file-buffer + i)); i = i + 1 }
+  if linux-process-copy-out(buffer,linux-process-file-buffer,result) != 0 { return -14 }
   return result
 }
 
@@ -156,8 +155,7 @@ fn linux-process-pipe-write(fd: Int, buffer: Int, length: Int) -> Int {
   if length > VFS-STREAM-CAP && nonblock == 0 && available < length { return -38 }
   let count = length
   if count > available { count = available }
-  let i = 0
-  while i < count { store8(linux-process-file-buffer + i,linux-process-read8(buffer + i)); i = i + 1 }
+  if linux-process-copy-in(buffer,linux-process-file-buffer,count) != 0 { return -14 }
   return vfs-stream-write(host,linux-process-file-buffer,count)
 }
 

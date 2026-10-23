@@ -19,13 +19,7 @@ fn child-check-init()->void {
 // guest range and live memory grant before dispatch. These are Space's explicit
 // checked-buffer rules, not Linux /dev/null host-conformance assertions.
 fn child-check-null-negatives()->void {
- linux-process-current-record=0;
- linux-process-domain=domain-create-user();linux-process-active=1;
- linux-process-authority=pipe-check-revocable;linux-process-pages=0;
- linux-process-stdout-open=1;linux-process-stderr-open=1;
- linux-check(0,linux-process-files-init(-1));linux-process-pipes-init();
- if linux-process-map-page(0x20000000,6)<=0{panic("null writable mapping");}
- if linux-process-map-page(0x20001000,5)<=0{panic("null readonly mapping");}
+ linux-fixture-begin(pipe-check-revocable);
  linux-process-store64(0x20000000,0x12345678ABCDEF01);
  let fd=linux-process-discard-open(0x80002);
  if fd<0{panic("null adapter open");}
@@ -42,9 +36,10 @@ fn child-check-null-negatives()->void {
  linux-check(-13,linux-process-fstat(fd,0x20000000));
  linux-check(-13,linux-process-descriptor-flags(fd));
  linux-check(-13,linux-process-descriptor-dup(fd,-1,0,0));
- linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000000));
+
  linux-check(0,linux-process-file-close(fd));
  store64(caprow,target);store64(caprow+8,cap-memory());
+ linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000000));
  linux-check(0,linux-process-release());pipe-check-released(0);
 }
 fn child-check-case(port:Int,id:Int,image:Int,size:Int,file:Int,rollback:Int,measured:Int)->void {

@@ -49,6 +49,7 @@ def main():
         snapshot = args.out / 'source'
         paths = [path for base in ['boot', 'components', 'kernel', 'protocol', 'services', 'fixtures/linux-pipes']
                  for path in (ROOT / base).rglob('*') if path.suffix in ['.in', '.asm']]
+        paths += list((ROOT / 'fixtures/linux-vm').rglob('*.in'))
         paths += [ROOT / 'fixtures/linux-process/checks.in', Path(__file__).resolve()]
         captured = {str(path.relative_to(ROOT)): path.read_bytes() for path in paths}
         require(all(path.read_bytes() == captured[str(path.relative_to(ROOT))] for path in paths),

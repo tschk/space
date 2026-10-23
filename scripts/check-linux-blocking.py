@@ -72,7 +72,7 @@ def main():
         report['compiler'] = dict(path=str(args.compiler), sha256=sha(args.compiler))
         snapshot = args.out / 'source'
         directories = ['boot', 'components', 'kernel', 'protocol', 'services', 'fixtures/linux-blocking',
-                       'fixtures/linux-children', 'fixtures/linux-pipes', 'fixtures/linux-process']
+                       'fixtures/linux-children', 'fixtures/linux-pipes', 'fixtures/linux-process', 'fixtures/linux-vm']
         paths = [path for name in directories for path in (ROOT / name).rglob('*') if path.suffix in ['.in', '.asm']]
         paths.append(Path(__file__).resolve())
         contents = {str(path.relative_to(ROOT)): path.read_bytes() for path in paths}

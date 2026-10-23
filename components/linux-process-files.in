@@ -111,6 +111,7 @@ fn linux-process-file-copy-path(path: Int, dest: Int) -> Int {
 }
 
 fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   let normalized = linux-process-file-copy-path(path,linux-process-file-buffer + 256)
   if normalized < 0 { return normalized }
   if strcmp(linux-process-file-buffer + 256,"/dev/null") == 0 { return linux-process-discard-open(flags) }
@@ -203,6 +204,7 @@ fn linux-process-file-unlink(path: Int) -> Int {
 fn linux-process-file-read(fd: Int, buffer: Int, length: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,0) }
   if (load64(vfs-fd-table + host * 32 + 16) & 0x10000) != 0 { return -21 }
   if length < 0 || length > 65536 { return -22 }
@@ -216,8 +218,7 @@ fn linux-process-file-read(fd: Int, buffer: Int, length: Int) -> Int {
     let n = vfs-read(host, linux-process-file-buffer, count)
     if n < 0 { if done > 0 { return done } return n }
     if n > count { return -5 }
-    let i = 0
-    while i < n { linux-process-store8(buffer + done + i, load8(linux-process-file-buffer + i)); i = i + 1 }
+    if linux-process-copy-out(buffer + done,linux-process-file-buffer,n) != 0 { return -14 }
     done = done + n
     if n < count { return done }
   }
@@ -240,6 +241,7 @@ fn linux-process-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
 fn linux-process-file-write(fd: Int, buffer: Int, length: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,1) }
   let flags = load64(vfs-fd-table + host * 32 + 16)
   if (flags & 3) == VFS-O-RDONLY { return -9 }
@@ -256,8 +258,7 @@ fn linux-process-file-write(fd: Int, buffer: Int, length: Int) -> Int {
   while done < length {
     let count = length - done
     if count > 4096 { count = 4096 }
-    let i = 0
-    while i < count { store8(linux-process-file-buffer + i,linux-process-read8(buffer + done + i)); i = i + 1 }
+    if linux-process-copy-in(buffer + done,linux-process-file-buffer,count) != 0 { return -14 }
     let n = vfs-write(host,linux-process-file-buffer,count)
     if n < 0 { if done > 0 { return done } return n }
     if n > count { return -5 }
@@ -281,6 +282,7 @@ fn linux-process-file-close(fd: Int) -> Int {
 fn linux-process-file-positional(fd: Int, buffer: Int, length: Int, offset: Int, writing: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if vfs-discard-valid(host) != 0 {
     if offset < 0 { return -22 }
     return linux-process-discard-io(fd,buffer,length,writing)
@@ -307,6 +309,7 @@ fn linux-process-file-positional(fd: Int, buffer: Int, length: Int, offset: Int,
 fn linux-process-file-stat(fd: Int, buffer: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if vfs-discard-valid(host) != 0 { return linux-process-discard-stat(fd,buffer) }
   if linux-process-range(buffer, 144, 1) == 0 { return -14 }
   let ready = linux-process-files-ready()

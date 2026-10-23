@@ -51,9 +51,14 @@ fn linux-process-exec-request(path: Int, argv: Int, env: Int) -> Int {
 }
 
 fn linux-process-exec-stack(row: Int, image: Int) -> Int {
+  linux-process-startup = 1;linux-process-startup-error = 0
+  return linux-process-startup-result(linux-process-exec-stack-build(row,image))
+}
+
+fn linux-process-exec-stack-build(row: Int, image: Int) -> Int {
   // Reuse genuine ELF auxv/entropy construction, then rebuild real argc/argv/env
   // vectors. Strings occupy their own16KiB area beneath the auxiliary entropy.
-  let original = linux-process-stack(image,linux-process-exe,"","")
+  let original = linux-process-stack-build(image,linux-process-exe,"","")
   if original < 0 { return original }
   let strings = LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 32768
   let stack = strings - 1024
@@ -108,51 +113,54 @@ fn linux-process-exec-replace(row: Int) -> Int {
   if entry < 0 { return entry }
   if heap-end - heap-next < 0x2000000 { return -12 }
   if image < heap-next + 0x2000000 && image + size > heap-next { return -12 }
-  let domain = domain-create-user()
-  if domain <= 0 { return -12 }
-  domain-set-cap(domain,-1)
-  linux-process-domain = domain
-  linux-process-ledger = load64(row + LPS-SPARE-LEDGER)
-  linux-process-pages = 0
+  let token = linux-process-vm-create(linux-process-authority)
+  if token <= 0 {
+    if linux-process-vm-created > 0 {
+      store64(row + LPS-SPARE-VM,linux-process-vm-created)
+      store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      linux-process-cleanup-failed = 1
+    }
+    return token
+  }
+  store64(row + LPS-SPARE-VM,token);store64(row + LPS-SPARE-BINDING,0)
+  if linux-process-vm-use(token,0) != 0 { return linux-process-state-refuse(row) }
+  let domain = linux-process-domain
+  linux-process-staging-context = load64(row + LPS-SPARE-CONTEXT)
   let status = linux-process-map-elf(image)
   let stack = 0
   if status == 0 { stack = linux-process-exec-stack(row,image);if stack < 0 { status = stack } }
-  let context = load64(row + LPS-SPARE-CONTEXT)
-  if status == 0 { status = user-context-init(context,768,domain,entry,0,stack) }
+  let context = linux-process-staging-context
+  if status == 0 { store64(context + 144,stack) }
+  let binding = linux-process-binding
+  store64(row + LPS-SPARE-VM,token);store64(row + LPS-SPARE-BINDING,binding)
+  store64(row + LPS-SPARE-DOMAIN,domain);store64(row + LPS-SPARE-PAGES,linux-process-pages)
   if status != 0 {
-    if domain-destroy-user(domain) != 0 {
-      store64(row + LPS-SPARE-DOMAIN,domain)
-      store64(row + LPS-SPARE-PAGES,linux-process-pages)
-      store64(context + 736,0)
+    if linux-process-vm-drop(token,binding) != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-SPARE-BINDING,0) }
       store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
       linux-process-cleanup-failed = 1
-      linux-process-state-load(row)
-      return -5
+    } else {
+      store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+      store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
     }
-    let i = 0
-    while i < linux-process-pages { frame-free(load64(linux-process-ledger + i * 24 + 8));i = i + 1 }
-    linux-process-state-load(row)
+    if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) }
+    if linux-process-cleanup-failed != 0 { return -5 }
     return status
   }
-  // The new image is complete before the old VM is revoked. Commit only now;
-  // descriptor inheritance and PID identity survive, TLS and private data reset.
-  let old-ledger = load64(row + LPS-LEDGER)
+  // The complete native replacement remains separately owned until old detach
+  // commits. Failed teardown preserves both object identities for recovery.
   let old-context = load64(row + LPS-USER-CONTEXT)
-  store64(row + LPS-SPARE-DOMAIN,domain)
-  store64(row + LPS-SPARE-PAGES,linux-process-pages)
-  if linux-process-state-drop-primary(row) != 0 { linux-process-state-load(row);return -5 }
-  store64(row + LPS-SPARE-DOMAIN,0)
-  store64(row + LPS-SPARE-PAGES,0)
+  if linux-process-state-drop-primary(row) != 0 { if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) } return -5 }
   linux-process-exec-close()
-  linux-process-brk = LINUX-PROCESS-BRK-BASE
-  linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE
-  linux-process-clear-tid = 0
-  linux-process-pipe-signal = 0
-  linux-process-pipe-last-signal = 0
-  store64(row + LPS-SPARE-LEDGER,old-ledger)
+  store64(row + LPS-VM-OBJECT,token);store64(row + LPS-VM-BINDING,binding)
+  store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+  store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
   store64(row + LPS-SPARE-CONTEXT,old-context)
   store64(row + LPS-USER-CONTEXT,context)
+  if linux-process-vm-use(token,binding) != 0 { return linux-process-state-refuse(row) }
+  linux-process-clear-tid = 0
+  linux-process-pipe-signal = 0;linux-process-pipe-last-signal = 0
   store64(row + LPS-EXEC-COUNT,load64(row + LPS-EXEC-COUNT) + 1)
-  linux-process-state-save(row)
+  if linux-process-state-save(row) != 0 { return linux-process-state-refuse(row) }
   return 0
 }

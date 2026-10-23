@@ -1,40 +1,36 @@
 package space.kernel
 
 var blocking-retry-buffer: Int = 0
+var blocking-retry-source: Int = 0
 
 // Trusted supervisor negatives around real registered domains/native pipes.
 // These do not claim Linux-host agreement or execute invented guest syscalls.
 fn blocking-check-retry-negatives()->void {
- if blocking-retry-buffer==0{blocking-retry-buffer=alloc(4096);}
+ if blocking-retry-buffer==0{blocking-retry-buffer=alloc(4096);blocking-retry-source=alloc(4096);}
  let iteration=0;
  while iteration<2{
   let mode=0;
   while mode<6{
    let heap=heap-next;let free=linux-check-free-count();let domains=domain-count;
    let owned=domain-user-owned;let native=pipe-check-native-count();
-   linux-process-state-reset();
-   let row=linux-process-states;
-   linux-check(0,linux-process-state-use-cache(row));
-   linux-process-domain=domain-create-user();
-   if linux-process-domain<=0{panic("blocking retry owned domain");}
-   linux-process-active=1;linux-process-pages=0;
-   linux-process-authority=pipe-check-revocable;
-   linux-process-stdout-open=1;linux-process-stderr-open=1;
-   linux-process-clear-tid=0;
-   let pid=linux-process-state-register(row,0,linux-process-domain,0);
-   if pid<=0{panic("blocking retry process record");}
-   linux-process-current-record=row;linux-process-current-pid=pid;
-   linux-check(0,linux-process-files-init(-1));linux-process-pipes-init();
-   linux-process-pipe-family=pid;
-   let frame=linux-process-map-page(0x20000000,6);
-   if frame<=0 || linux-process-map-page(0x20001000,6)<=0{panic("blocking retry mappings");}
+   let row=linux-fixture-create(pipe-check-revocable);
+   linux-check(1,linux-process-map-page(0x20000000,6));
+   linux-check(1,linux-process-map-page(0x20001000,6));
+   linux-check(1,linux-process-map-page(0x20002000,5));
+   store64(linux-fixture-buffer,0x002ABF0000003CB8);store64(linux-fixture-buffer+8,0x0B0F050F0000);
+   linux-check(0,linux-process-vm-populate(0x20002000,linux-fixture-buffer,16));
+   linux-fixture-attach(0x20002000,0x20000FF0);
+   let frame=blocking-retry-source;
    let j=0;while j<4096{store8(frame+j,80);j=j+1;}
+   linux-fixture-copy-out(0x20000000,frame,4096);
    linux-check(0,linux-process-pipe-create(0x20000000,0));
+   linux-fixture-copy-in(0x20000000,frame,4096);
    let reader=linux-process-read32(0x20000000);let writer=linux-process-read32(0x20000004);
    let rh=linux-process-pipe-host(reader);let wh=linux-process-pipe-host(writer);
    let pair=load64(vfs-fd-table+rh*32)-1;
    store64(frame+512,0x12345678ABCDEF01);
    store32(frame+4092,0x51525354);
+   linux-fixture-copy-out(0x20000000,frame,4096);
    store64(row+LPS-PENDING,0);
    if mode==0{linux-check(0,linux-process-blocking-read(reader,0x20000200,16));}
    else if mode==1{linux-check(0,linux-process-blocking-read(reader,0x20000FFC,8));}
@@ -61,8 +57,10 @@ fn blocking-check-retry-negatives()->void {
    let expected=-13;if mode==1 || mode==3{expected=-14;}else if mode>=4{expected=4096;}
    linux-check(expected,load64(load64(row+LPS-USER-CONTEXT)+112));
    linux-check(queued,vfs-stream-pairs[pair].count0);
-   linux-check(0x12345678ABCDEF01,load64(frame+512));
-   linux-check(0x51525354,load32(frame+4092));
+   if mode==0 || mode==2 || mode==4{store64(caprow,target);store64(caprow+8,cap-memory());}
+   linux-fixture-copy-in(0x20000000,blocking-retry-buffer,4096);
+   linux-check(0x12345678ABCDEF01,load64(blocking-retry-buffer+512));
+   linux-check(0x51525354,load32(blocking-retry-buffer+4092));
    if mode==1{
     linux-check(5,vfs-stream-read(rh,blocking-retry-buffer,4096));
     j=0;while j<5{linux-check(load8("RANGE"+j),load8(blocking-retry-buffer+j));j=j+1;}
@@ -71,7 +69,6 @@ fn blocking-check-retry-negatives()->void {
     j=0;while j<4096{linux-check(load8(frame+j),load8(blocking-retry-buffer+j));j=j+1;}
    }
    linux-check(0,linux-process-pipe-close(reader));linux-check(0,linux-process-pipe-close(writer));
-   if mode==0 || mode==2 || mode==4{store64(caprow,target);store64(caprow+8,cap-memory());}
    linux-check(0,linux-process-release());
    linux-process-current-record=0;linux-process-current-pid=0;
    linux-process-signal-mask=0;linux-process-signal-pending=0;
@@ -90,35 +87,25 @@ fn blocking-check-retry-negatives()->void {
 // Root termination wins before retrying another child's pending operation.
 // Force the exact final-work-token boundary with genuine owned pipe refs.
 fn blocking-check-terminal-root-priority()->void {
- linux-process-state-reset();
- let root=linux-process-states;
- linux-check(0,linux-process-state-use-cache(root));
- linux-process-domain=domain-create-user();
- if linux-process-domain<=0{panic("terminal root owned domain");}
- domain-set-cap(linux-process-domain,-1);
- linux-process-active=1;linux-process-pages=0;linux-process-authority=pipe-check-authority;
- linux-process-stdout-open=1;linux-process-stderr-open=1;linux-process-clear-tid=0;
- let pid=linux-process-state-register(root,0,linux-process-domain,0);
- if pid<=0{panic("terminal root registration");}
- linux-process-current-record=root;linux-process-current-pid=pid;
- linux-check(0,linux-process-files-init(-1));linux-process-pipes-init();linux-process-pipe-family=pid;
- let frame=linux-process-map-page(0x20000000,6);
- let code=linux-process-map-page(0x20001000,5);
- if frame<=0 || code<=0{panic("terminal root mappings");}
+ let root=linux-fixture-create(pipe-check-authority);
+ let pid=linux-process-current-pid;
+ linux-check(1,linux-process-map-page(0x20000000,6));
+ linux-check(1,linux-process-map-page(0x20001000,5));
+ let code=linux-fixture-buffer;
  // Real CPL3 clone request: mov eax,56; mov edi,17; clear optional pointers;
  // syscall; ud2. The stopped native context must really be SUSPEND before
  // production user-context-clone is permitted to copy it.
  store64(code,0x0011BF00000038B8);store64(code+8,0x3145D231F6310000);
- store64(code+16,0x0B0F050FC03145D2);store8(frame+512,81);
+ store64(code+16,0x0B0F050FC03145D2);linux-check(0,linux-process-vm-populate(0x20001000,code,24));
+ linux-fixture-attach(0x20001000,0x20000FF0);linux-process-store8(0x20000200,81);
  linux-check(0,linux-process-pipe-create(0x20000000,0));
  let ar=linux-process-read32(0x20000000);let aw=linux-process-read32(0x20000004);
  linux-check(0,linux-process-pipe-create(0x20000008,0));
  let br=linux-process-read32(0x20000008);let bw=linux-process-read32(0x2000000C);
- linux-check(0,user-context-init(load64(root+LPS-USER-CONTEXT),768,linux-process-domain,0x20001000,0,0x20000FF0));
  store64(root+LPS-BUDGET,100);
  linux-check(0,linux-process-state-save(root));
  let previous-hook=domain-user-syscall-hook;domain-user-syscall-hook=linux-process-dispatch;
- let stop=user-context-resume(load64(root+LPS-USER-CONTEXT),100);
+ let stop=user-space-resume(linux-process-binding,pipe-check-authority,100);
  domain-user-syscall-hook=previous-hook;
  linux-check(USER-CONTEXT-SUSPEND,stop);linux-check(1,load64(root+LPS-PENDING));
  store64(root+LPS-BUDGET,user-context-remaining(load64(root+LPS-USER-CONTEXT)));
