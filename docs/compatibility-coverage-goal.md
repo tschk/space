@@ -25,6 +25,12 @@ later663-file133-gate source (3af6ad4) also passes all133 gates at
 `/workspace/lab133/report.json`, including integrity checks. It adds counted
 startup and original fbv CLI entry; it does not retroactively extend131.
 
+The next committed checkpoint passes all135 gates from672 files at9a014c2,
+`/workspace/lab135/report.json`, with source/compiler/application integrity
+passed. It includes the native owned canvas and actual original fbv BMP pixels,
+plus the previous CLI/process, Windows/Darwin and desktop regressions. Later
+UTC metadata work is a separate in-progress source; it does not extend135.
+
 The full goal remains active. Four unmodified upstream Linux applications now
 execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,
 BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,

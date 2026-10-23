@@ -39,6 +39,16 @@ focused receipts:44 original CLI entries plus66 synthetic startup entries per
 root. The viewer GUI is unimplemented; its full source/provenance and remaining
 adapter boundary are in [the framebuffer checkpoint](2026-10-24-linux-framebuffer-app.md).
 
+The subsequent committed135-gate checkpoint,672 files at9a014c2, passes all135
+at `/workspace/lab135/report.json`, with source/compiler/application integrity
+passed. It adds native canvas ownership controls and the actual original fbv
+single-canvas BMP profile (22 original launches,88 separate syscall/failure
+controls, exact pixels and21 measured resource cycles). Existing original app,
+Darwin/Windows, default protected desktop, launcher and damage gates also pass.
+This is still a finite prototype: interactive foreign GUI input, FLTK/X11,
+ordinary viewer-launch integration and original Darwin/Windows apps remain open.
+UTC filesystem metadata development is a later separate source.
+
 ## Historical initial execution checkpoint
 
 The initial evidence in this section uses source-built frozen
