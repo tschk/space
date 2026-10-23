@@ -6,6 +6,7 @@ package space.kernel
 var linux-process-files: Int = 0
 var linux-process-file-paths: Int = 0
 var linux-process-file-buffer: Int = 0
+var linux-process-file-identities: Int = 0
 
 fn linux-process-files-ready() -> Int {
   if cap-check(linux-process-authority, cap-storage()) == 0 { return -13 }
@@ -35,9 +36,15 @@ fn linux-process-files-init(input: Int) -> Int {
     linux-process-files = alloc(VFS-MAX-FDS * 8)
     linux-process-file-paths = alloc(VFS-MAX-FDS * 256)
     linux-process-file-buffer = alloc(4096)
+    linux-process-file-identities = alloc(VFS-MAX-FDS * 16)
   }
   let i = 0
-  while i < VFS-MAX-FDS { store64(linux-process-files + i * 8, -9); i = i + 1 }
+  while i < VFS-MAX-FDS {
+    store64(linux-process-files + i * 8,-9)
+    store64(linux-process-file-identities + i * 16,0)
+    store64(linux-process-file-identities + i * 16 + 8,0)
+    i = i + 1
+  }
   if input == -1 { return 0 }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
@@ -47,16 +54,20 @@ fn linux-process-files-init(input: Int) -> Int {
   let own = vfs-dup-file(input)
   if own < 0 { if own == -16 { return -24 } return own }
   store64(linux-process-files, own)
+  if linux-process-file-bind-identity(0,own) < 0 { vfs-close(own);store64(linux-process-files,-9);return -5 }
   return 0
 }
 
 fn linux-process-files-release() -> void {
   if linux-process-files == 0 { return }
+  fs-range-release-owner(1000 + linux-process-domain)
   let i = 0
   while i < VFS-MAX-FDS {
     let fd = linux-process-file-host(i)
     if fd >= 3 { vfs-close(fd) }
     store64(linux-process-files + i * 8, -9)
+    store64(linux-process-file-identities + i * 16,0)
+    store64(linux-process-file-identities + i * 16 + 8,0)
     i = i + 1
   }
   return
@@ -109,8 +120,7 @@ fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int 
   if exists < 0 {
     if (flags & VFS-O-CREAT) == 0 { return -2 }
     if (flags & 0x10000) != 0 || (copied > 1 && load8(dest + copied - 1) == 47) { return -20 }
-    // SparkFS currently creates mode0644; fopen0666 under profile umask022.
-    if permissions != 0x1B6 && permissions != 0x1A4 { return -22 }
+    if permissions < 0 || permissions > 0x1FF { return -22 }
   } else {
     let kind = load32(linux-process-file-buffer + SF-ST-TYPE)
     if kind == SF-TYPE-DIR {
@@ -126,7 +136,14 @@ fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int 
   }
   let fd = vfs-open-borrowed-path(dest,mode | directory | (flags & (VFS-O-CREAT | 0x400)))
   if fd == -16 { return -24 }
-  if fd >= 3 { store64(linux-process-files + slot * 8, fd); return slot }
+  if fd >= 3 {
+    if exists < 0 && fs-set-mode(dest,permissions & 0x1ED) < 0 {
+      vfs-close(fd);fs-delete(dest);return -5
+    }
+    if linux-process-file-bind-identity(slot,fd) < 0 { vfs-close(fd);return -5 }
+    store64(linux-process-files + slot * 8,fd)
+    return slot
+  }
   return fd
 }
 
@@ -150,12 +167,16 @@ fn linux-process-file-unlink(path: Int) -> Int {
   if copied < 0 { return copied }
   if fs-stat(dest,linux-process-file-buffer) < 0 { return -2 }
   if load32(linux-process-file-buffer + SF-ST-TYPE) != SF-TYPE-FILE { return -21 }
+  let inode = load64(linux-process-file-buffer + SF-ST-INODE)
+  let mount = load64(linux-process-file-buffer + SF-ST-MOUNT)
   // Native VFS currently resolves paths on each operation. Refuse unlink of
   // any open binding instead of claiming Unix open-inode lifetime semantics.
   let i = 3
   while i < VFS-MAX-FDS {
     if vfs-fd-valid(i) != 0 && vfs-stream-valid(i) == 0 {
-      if strcmp(load64(vfs-fd-table + i * 32),dest) == 0 { return -16 }
+      if fs-stat(load64(vfs-fd-table + i * 32),linux-process-file-buffer) == 0 {
+        if load64(linux-process-file-buffer + SF-ST-INODE) == inode && load64(linux-process-file-buffer + SF-ST-MOUNT) == mount { return -16 }
+      }
     }
     i = i + 1
   }
@@ -228,7 +249,7 @@ fn linux-process-file-close(fd: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
   let result = vfs-close(host)
-  if result == 0 { store64(linux-process-files + fd * 8, -9) }
+  if result == 0 { linux-process-file-unlock-close(fd);store64(linux-process-files + fd * 8, -9) }
   return result
 }
 
@@ -264,16 +285,5 @@ fn linux-process-file-stat(fd: Int, buffer: Int) -> Int {
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   if fs-stat(load64(vfs-fd-table + host * 32), linux-process-file-buffer) < 0 { return -5 }
-  if load32(linux-process-file-buffer + SF-ST-TYPE) != SF-TYPE-FILE { return -21 }
-  let size = load64(linux-process-file-buffer + SF-ST-SIZE)
-  let mode = load32(linux-process-file-buffer + SF-ST-MODE) & 0x1FF
-  let links = load32(linux-process-file-buffer + SF-ST-NLINK)
-  let i = 0
-  while i < 144 { linux-process-store8(buffer + i, 0); i = i + 1 }
-  linux-process-store64(buffer + 16, links)
-  linux-process-store64(buffer + 24, 0x8000 | mode)
-  linux-process-store64(buffer + 48, size)
-  linux-process-store64(buffer + 56, 4096)
-  linux-process-store64(buffer + 64, (size + 511) / 512)
-  return 0
+  return linux-process-file-copy-stat(buffer)
 }

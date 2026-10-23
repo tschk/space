@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "classification": "unmodified upstream SQLite static Linux executable; memory database corpus",
+  "classification": "unmodified upstream SQLite static Linux executable; memory and synchronous RAM file databases",
   "infinite_argv": [
     "/sqlite3",
     ":memory:",
@@ -105,9 +105,85 @@
       "expected_stdout": "",
       "expected_stderr": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n",
       "expected_exit": 1
+    },
+    {
+      "name": "file-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists t(x);begin immediate;delete from t;insert into t values(42);commit;select sum(x) from t;"
+      ],
+      "expected_stdout": "42\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select sum(x) from t;"
+      ],
+      "expected_stdout": "42\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-large-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists big(x);begin immediate;delete from big;insert into big values(zeroblob(9000));commit;select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-large-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-rollback",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "begin immediate;update big set x=zeroblob(18000);rollback;select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
     }
   ],
   "pending_scenarios": [
-    "file transactions/reopen require actual descriptor locking/sync/stat semantics; no fake successful fcntl/fsync or identity mapping"
+    "NVMe transaction/FLUSH/QEMU reboot/reopen awaits actual device flush integration; RAM sync is not a durable-storage claim",
+    "WAL/shared-memory coordination, open-unlinked file lifetime and arbitrary file truncation remain unsupported"
   ]
 }

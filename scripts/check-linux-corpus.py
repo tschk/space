@@ -115,6 +115,7 @@ if args.application in ['busybox','sqlite'] or config_bytes is not None:
     (args.out/'case-config.json').write_bytes(config_bytes)
     config=json.loads(config_bytes)
     cases=[]
+    bound_file_slots=set()
     for item in config['cases']:
         if not args.input_suite and ('stdin' in item or 'file' in item): continue
         case={'filter':item['name'],'argv':item['argv'],
@@ -123,6 +124,11 @@ if args.application in ['busybox','sqlite'] or config_bytes is not None:
               **{key:item[key] for key in ['file','create','repeat','reset_each','file_slot'] if key in item}}
         if 'file_slot' in case:
             assert type(case['file_slot']) is int and 0<=case['file_slot']<=99
+        if 'file' in case:
+            slot=case.get('file_slot',len(cases))
+            if slot in bound_file_slots:
+                assert case.get('create'), 'shared-file follow-up must preserve the existing file'
+            bound_file_slots.add(slot)
         if 'stdin' in item: case['input']=item['stdin']
         assert len(case['argv'])==3 and all(isinstance(word,str) for word in case['argv']), 'corpus requires exactly three argv strings'
         cases.append(case)
@@ -193,10 +199,14 @@ fn linux-real-app-test(port:Int)->void{
  wrmsr64(0xC0000101,0x400000);
  CASE_CALLS
  if true { WARM_INPUT }
+ fs-range-init();
+ linux-check(0,fs-write-file("/linux-service-warm","",0));
+ linux-check(0,fs-delete("/linux-service-warm"));
  serial-write-cstr(port,"linux-real-app: regression begins");serial-nl(port);
  linux-process-trace=0;
  let heap=heap-next;let free=linux-check-free-count();let domains=domain-count;
  let storage=linux-check-fs-used();
+ let leases=fs-range-count;
  let owned=domain-user-owned;let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);
  let started=ticks;
  linux-check(124,linux-process-run(image,size,INFINITE_ARGV,authority));
@@ -204,6 +214,7 @@ fn linux-real-app-test(port:Int)->void{
  linux-check(0,user-budget-active);
  linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
  linux-check(domains,domain-count);linux-check(owned,domain-user-owned);
+ linux-check(leases,fs-range-count);
  linux-check(fs,rdmsr(0xC0000100));linux-check(0,domain-user-syscall-hook);
  linux-check(gs,rdmsr(0xC0000101));
  serial-write-cstr(port,"linux-real-app: actual guest IRQ cancellation passed");serial-nl(port);
@@ -214,6 +225,7 @@ fn linux-real-app-test(port:Int)->void{
   linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
   linux-check(domains,domain-count);linux-check(owned,domain-user-owned);
   linux-check(storage,linux-check-fs-used());
+  linux-check(leases,fs-range-count);
   linux-check(0x0654321ABCDEF123,load64(witness-frame));
   linux-check(witness-flags,domain-page-flags(witness-domain,0x400000));
   linux-check(fs,rdmsr(0xC0000100));linux-check(0,domain-user-syscall-hook);
@@ -226,6 +238,7 @@ fn linux-real-app-test(port:Int)->void{
   linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
   linux-check(domains,domain-count);linux-check(owned,domain-user-owned);
   linux-check(storage,linux-check-fs-used());
+  linux-check(leases,fs-range-count);
   linux-check(0x0654321ABCDEF123,load64(witness-frame));
   linux-check(witness-flags,domain-page-flags(witness-domain,0x400000));
   i=i+1;
@@ -314,6 +327,7 @@ with (args.out/'qemu.log').open('w') as log:
                 'personality_sha256':hashlib.sha256((ROOT/'components/linux-process.in').read_bytes()).hexdigest(),
                 'anonymous_memory_sha256':hashlib.sha256((ROOT/'components/linux-process-mmap.in').read_bytes()).hexdigest(),
                 'file_adapter_sha256':hashlib.sha256((ROOT/'components/linux-process-files.in').read_bytes()).hexdigest(),
+                'file_metadata_sha256':hashlib.sha256((ROOT/'components/linux-process-metadata.in').read_bytes()).hexdigest(),
                 'checks_sha256':hashlib.sha256((ROOT/'fixtures/linux-process/checks.in').read_bytes()).hexdigest(),
                 'compiler':args.compiler,'compiler_sha256':compiler_sha256}
         (args.out/'report.json').write_text(json.dumps(report,indent=2)+'\n')

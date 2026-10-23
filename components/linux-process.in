@@ -1,6 +1,7 @@
 package space.kernel
 import "linux-process-files.in"
 import "linux-process-mmap.in"
+import "linux-process-metadata.in"
 
 // Bounded, single-thread Linux static ELF process. Foreign semantics stay here;
 // strict CPU transitions and page-table ownership stay in the domain runtime.
@@ -391,8 +392,9 @@ fn linux-process-dispatch(frame: Int) -> Int {
   else if number == 11 { result = linux-process-munmap(first,second) }
   else if number == 72 {
     if second == 3 { result = linux-process-descriptor-flags(first) }
-    else { result = -38 }
+    else { result = linux-process-file-lock(first,second,third) }
   }
+  else if number == 74 || number == 75 { result = linux-process-file-sync(first) }
   else if number == 12 { result = linux-process-brk-call(first) }
   else if number == 158 {
     if first != 0x1002 { result = -22 }
@@ -470,8 +472,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     if linux-process-string-valid(first) == 0 { result = -14 }
     else { result = linux-process-file-open-mode(first,second,third) }
   } else if number == 262 {
-    if linux-process-string-valid(second) == 0 { result = -14 }
-    else { result = -13 }
+    result = linux-process-file-stat-at(first,second,third,fourth)
   }
   else if number == 39 || number == 186 { result = 1000 + linux-process-domain }
   if linux-process-trace != 0 {
