@@ -34,30 +34,81 @@ These native SCI apps remain trusted CPL0. Clone page tables and cooperative
 capability checks do not provide protection from malicious native code. Foreign
 protected process tests run CPL3 with private mappings; they are a separate proof.
 
+## Subsequent verified checkpoint
+
+`/tmp/space-compatibility-expanded-run/report.json` passes all26 compatibility
+contract/model/runtime/GUI gates from `/tmp/space-application-expanded-source`,
+whose367-file capture has a separate source manifest. The first earlier attempt
+lacked NASM in the parent command PATH; the corrected tools run passed25 gates
+and exposed a real extracted seat-model dependency missing after the retained
+API change. That model now executes the real retained/catalog/context functions
+and the new all26 run passes. Failure receipts remain preserved.
+
+Private image/retained ownership is committed in `7b0bcae`; the core gate passes
+280 initial/490 resumed entries including70 actual allocation aborts. The GUI
+resource observer now passes129 actual sessions, including stale generations
+against recycled pages and stable post-warmup resource counts. This repairs the
+previous19-session capacity failure. It does not make the tiny proof windows a
+usable desktop or protect trusted CPL0 SCI apps. Windows startup now has an
+explicit owned TEB/static TLS/CPL3 callback profile (`162c68c`), with171 actual
+launches and16 malformed refusals; original Windows jq remains unsupported.
+Darwin file/int-width/FS/GS isolation now passes548 activations (`935c460`).
+All four Linux corpora pass seeded FS/GS restoration and147 genuine guest CPU
+fault probes per21-cycle gate. Canonical SQLite provenance is corrected to a
+reproducible relative-input build; its manifest retains the initial absolute-path
+artifact and historical receipts separately.
+
+The expanded26-gate application lab passes at
+`/tmp/space-application-expanded-run`, with no changed source, compiler or
+application artifacts. Added retained/startup/129-session gates increase the
+next lab revision to30 mandatory gates, including real SQLite file cases. All30 pass at `/tmp/space-application-thirty-run`, sourced from a separate
+383-file snapshot, with source/compiler/application artifacts unchanged. This
+receipt predates the later pipe, NVMe, FILETIME and readable-window additions;
+it does not claim their integration. A later small successful-only
+Volume identity clearing guard is covered by its independent owning-function
+gate and is not retroactively included in that snapshot.
+
 ## Work continuing now
 
-1. Native private image/global ownership and retained generation handles. The
-   same-image baseline actually returned1 then2 and panicked for shared globals.
-   Early private-image tests now return fresh independent state; require full
-   lifecycle regression and two-live-instance/abort/stale-handle checks before
-   treating this as integrated.
-2. Retained GUI reclamation. The real standard-image baseline completes19
-   sessions, then refuses session20. Require at least129 complete sessions with
-   actual per-session input and exact pixels, alternating close order, peer
-   survival, stale-handle denial and stable heap/frame/domain/capability/object/
-   surface counts. Re-run persistence after integration.
-3. SQLite database files. Implement truthful native inode/mount metadata,
-   persisted permission updates, generic range leases and synchronous storage
-   completion; translate POSIX locking and syscall structures at the Linux edge.
-   Verify actual commit/query/close/reopen and then real NVMe reboot persistence.
-   In-memory transactions do not complete this row.
-4. BusyBox pipelines. The actual pipeline fails at unsupported pipe2. Add owned
-   process/pipe/wait/signal execution contracts, partial transfers and descriptor
-   cleanup before claiming a functioning shell pipeline. No zero-success shims.
+1. Native private image/global ownership and retained generation handles now
+   pass actual same-image/two-live-instance, byte-identical source image,
+   interleaved close/reuse and stale-handle checks. Initial and resumed
+   compiler-emitted allocation aborts restore exact resources; the latest core
+   proof runs350 initial/490 resumed entries with140 emitted aborts. Extend the
+   runtime toward protected native execution without weakening these gates.
+2. Retained GUI reclamation now passes129 sessions with actual input/pixels,
+   peer survival, retired/recycled identity denials and stable resources. The
+   old19-session refusal is fixed. The new optional readable profile passes real rendering, pointer focus,
+   editing and resize at1024x768/1280x720/1920x1080, at2x/3x scale; high-view
+   canvas buffers above4GiB also pass129 sessions and five NVMe boots. Evidence
+   is `/tmp/space-gui-readable-highview-{matrix,persistence,lifetime,standard}`.
+   Default promotion awaits the constrained-memory refusal/recovery proof.
+   Protected native execution and broader desktop quality remain required.
+3. SQLite database files now execute actual transactions,9000-byte blob update/
+   rollback and separate-process reopen on RAM SparkFS. Fourteen cases and146
+   app activations pass21 cycles with stable lease/descriptor/frame counts at
+   `/tmp/space-linux-sqlite-files21-final/report.json`; all prior jq/Lua/BusyBox
+   gates still pass. Native identity/mode/range lease APIs and Linux translation
+   are committed (`46b4593`, `6017dcb`). Checked native NVMe FLUSH is committed (`08213de`). Original SQLite now
+   passes three real NVMe boots with commit/update/rollback and independent
+   host `integrity_check` after each boot; its15 actual activations consume
+   8/4/0 successful FLUSH completions. The latest ABI-width receipt is
+   `/tmp/space-linux-sqlite-nvme-int-width-final/report.json`. Crash atomicity
+   and power-loss behavior remain open.
+4. BusyBox pipelines. Actual protected pipes now pass220 launches across standard/minimal
+   profiles, including partial transfers, descriptor aliases, EOF and SIGPIPE.
+   The original BusyBox pipeline gets past pipe2 and fails at real clone56.
+   Implement copied process contexts, inherited descriptions, self-exec and
+   wait status before claiming a functioning pipeline; host-proven child
+   fixtures and the original failing pipeline remain distinct evidence.
 5. Original macOS/Windows startup. Original jq binaries remain refused and
    unexecuted. Windows dependency inspection finds immediate GS/TEB access and
    three TLS callbacks; typed PE fixture success is not UCRT/startup coverage.
    Darwin requires broader Mach-O/dyld/relocation/libc/framework support.
+   Windows FILETIME now passes848 protected launches across four real RTC
+   boots (`9e7e46e`), with one-second native resolution. Original SQLite/7za
+   still fail admission; QPC needs an actual validated native counter, now
+   being implemented without substituting IRQ-delivered ticks.
 6. Expand the application lab to all new suites and four upstream applications.
    Freeze a coherent source snapshot, run the full expanded set and retain exact
    failures. Source mutation during a run must invalidate integration evidence.

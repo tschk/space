@@ -22,9 +22,13 @@ execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,
 BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,
 222 Lua,100 BusyBox and31 SQLite activations, each with21 measured cycles,
 actual CPU faults, timer cancellation, authority denial and resource checks.
-BusyBox pipelines still fail at unsupported pipe2; SQLite currently passes
-in-memory queries, while actual database files need metadata, mode, locking and
-sync contracts. These missing scenarios remain required acceptance work.
+Actual owned pipes pass220 protected launches across standard/minimal images;
+the original BusyBox pipeline now fails at unsupported clone56. SQLite now also completes
+real RAM-backed database transactions and separate-process reopen:14 cases,
+146 activations and21 repeated fault/cleanup cycles pass, including a9000-byte
+blob and rollback preserving its contents. Original SQLite also passes three actual NVMe boots, checked FLUSH and
+independent host database integrity checks after commit/update/rollback.
+Pipelines, crash atomicity and the broader database acceptance rows remain open.
 
 Protected Mach-O supports checked raw Darwin calls and typed libSystem imports;
 protected PE supports ten typed KERNEL32 imports and a broader validated section
@@ -43,15 +47,24 @@ and editor applications. Actual keyboard, shifted operators, pointer focus,
 close-one/keep-other-running and exact client glyph checks pass. The editor's
 explicit storage capability saves at most eight bytes and reopens them across
 five real NVMe boots; a stripped-grant image cannot change the file. These
-native clients remain trusted CPL0. Their current retained lifecycle fails on
-session20 after19 completed sessions; private image/global ownership and
-physical close reclamation are active fixes, with129 sessions as the next gate.
+native clients remain trusted CPL0. The old retained lifecycle failed on
+session20 after19 completed sessions. Private image/global ownership and
+physical close reclamation now pass129 sessions with real input/pixels and
+resource/ABA checks; capability/domain/page/surface identities are withdrawn
+before reuse. An optional readable-window profile now passes six output/scale combinations,
+real pointer/edit/resize checks,129 resource/ABA sessions and five NVMe boots,
+including server canvas views above4GiB. Low-memory refusal/recovery is the
+remaining gate before default promotion. Broader desktop quality and protected
+native execution remain open.
 
 Source-built Inauguration0.9.324 passes its required compiler checks, including
 119 conformance cases and Linux differential62 agreements/27 explicit refusals
-with zero disagreements/crashes. A frozen Space source snapshot passes all14
-then-integrated application-lab gates. Newer slices have independent receipts;
-a fresh expanded whole-tree lab run is required before claiming integration.
+with zero disagreements/crashes. A new frozen Space snapshot passes all26 compatibility gates. Its separate
+expanded26-gate application lab also passes with no changed source, compiler or
+application artifacts. The30-gate revision also passes from a separate immutable383-file snapshot,
+with compiler and application artifacts unchanged. It predates the subsequent
+pipe/NVMe/FILETIME/readable-window features; a new integrated run must include
+those gates.
 General foreign GUI applications, protected native clients, full desktop text/
 layout behavior and the rest of the acceptance matrix below remain open.
 
