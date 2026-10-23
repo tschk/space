@@ -403,6 +403,43 @@ partial launch and failed exchanges retire already admitted instances.
 close/reopen and minimal-image refusal. See [native GUI session usage and limits](native-gui-session.md).
 This product entry point is independent of the temporary-root proof orchestration.
 
+### Readable standard application profile
+
+The default standard kinds20/21 now select `GuiWindowCalc`/`GuiWindowEditor`,
+with explicit `GuiDisplay(present, window)` declarations and the exact bounded
+canvas trailer. The original64×16 named clients remain one-page fixtures;
+`GUI_PROFILE=legacy` explicitly builds that profile. Their existing protocol
+checks remain separate from the readable application tests.
+
+Each readable client owns288 possibly noncontiguous BGRA pages, mapped into a
+contiguous kernel-only view above4GiB. The compositor stores a separate explicit
+stride per surface and checks the final sampled byte against the owned pool;
+old packed geometry and48-byte surface records keep their original meaning.
+The supervisor configures visible dimensions that fit the output and translates
+local surface0/pool0 into the same exact generation-owned server records.
+
+Clients paint backgrounds, Sans titles/labels and Mono content/result/status,
+with visible focus border/caret and real keyboard/pointer input. Versioned SPDP
+surface configure/ACK and seat focus events carry scalar generation/extent/scale
+data. The entire response is validated before compositor mutation. Ctrl+G text
+size and Ctrl+O output mode preserve content through actual hardware resize;
+both shortcuts are visible in the windows. The current trusted CPL0 startup
+borrows a48-byte supervisor visual config read-only, copies its scalar fields
+and retains no pointer; a protected startup will require an owned bounded copy.
+
+The input service's optional version1 scalar poll argument updates its physical
+output bounds and clamps position after shrink; legacy zero preserves the old
+descriptor behavior. This fixes real pointer reach beyond the old800×600 range.
+Motion updates the visible cursor. Since the compositor already repaints the
+entire scene, it does not clear an old cursor rectangle over fresh client pixels.
+
+`check-gui-windows.py` checks all six1024/1280/1920 output and2×/3× text
+combinations, exact labels/content/caret/status/hints, both pointer targets,
+live resize and close/survivor/reopen. Standard product,129-session ownership and
+fiveboot NVMe gates auto-detect the actual artifact profile and keep their
+assertions. See [native GUI usage](native-gui-session.md) and the
+[readable profile plan](plans/2026-10-24-readable-native-gui.md).
+
 
 ### Native GUI persistence
 

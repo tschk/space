@@ -3,15 +3,19 @@
 import struct
 from pathlib import Path
 
-POLICIES = {"space.app.gui/GuiCalc", "space.app.gui/GuiEditor"}
+POLICIES = {"space.app.gui/GuiCalc", "space.app.gui/GuiEditor",
+            "space.app.gui/GuiWindowCalc", "space.app.gui/GuiWindowEditor"}
+CANVAS = (0x5350414345434E56, 1, 768, 384, 3072, 1179648, 1, 0)
 
 
 def translate(image, metadata):
     if not isinstance(metadata, dict) or metadata.get("component") not in POLICIES:
         raise ValueError("unexpected native GUI component identity")
-    expected = [("memory", "GuiMemory", ["map"]), ("display", "GuiDisplay", ["present"])]
+    window = metadata["component"] in {"space.app.gui/GuiWindowCalc", "space.app.gui/GuiWindowEditor"}
+    display = ["present", "window"] if window else ["present"]
+    expected = [("memory", "GuiMemory", ["map"]), ("display", "GuiDisplay", display)]
     mask = 20
-    if metadata["component"] == "space.app.gui/GuiEditor":
+    if metadata["component"] in {"space.app.gui/GuiEditor", "space.app.gui/GuiWindowEditor"}:
         expected.append(("storage", "GuiNoteFile", ["read", "write"]))
         mask |= 32
     if metadata.get("target") != "x86_64-unknown-none" or metadata.get("entry") != "client-entry":
@@ -29,6 +33,9 @@ def translate(image, metadata):
         raise ValueError("unexpected native GUI compiler capability ordinals")
     result = bytearray(image)
     struct.pack_into("<Q", result, 8, mask)
+    if window:
+        result.extend(struct.pack("<8Q", *CANVAS))
+        struct.pack_into("<Q", result, 24, len(result))
     return bytes(result)
 
 

@@ -26,7 +26,7 @@ out.mkdir(parents=True, exist_ok=True)
 compiler = Path(a.compiler).resolve()
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 sources = [x for folder in ('components','kernel','protocol') for x in (ROOT/folder).rglob('*.in')]
-sources += [ROOT/'boot/multiboot.asm', ROOT/'scripts/build-images.sh', ROOT/'scripts/pack-gui-sci.py', Path(__file__).resolve()]
+sources += [ROOT/'boot/multiboot.asm', ROOT/'scripts/build-images.sh', ROOT/'scripts/pack-gui-sci.py', ROOT/'scripts/gui-window-evidence.py', Path(__file__).resolve()]
 snapshot = {str(x.relative_to(ROOT)): sha(x) for x in sources}
 report = {'started_utc': datetime.now(timezone.utc).isoformat(), 'compiler': str(compiler), 'compiler_sha256':sha(compiler), 'boots': [], 'status':'running'}
 images = out/'images'
@@ -40,6 +40,11 @@ report['disk_origin'] = 'New exclusively owned blank64MiB raw file; guest GUI wr
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('native_disk_oracle', ROOT/'scripts/check-native-persistence.py')
 oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
+spec = importlib.util.spec_from_file_location('window_evidence', ROOT/'scripts/gui-window-evidence.py')
+window_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(window_module)
+window_oracle = window_module.WindowEvidence(ROOT)
+readable = window_module.image_has_canvas(image)
+report['gui_profile'] = 'window' if readable else 'legacy'
 glyphs = {}
 for match in re.finditer(r'fb-font-set\(([^)]+)\)', (ROOT/'components/font.in').read_text()):
     try: values = [int(x.strip(),0) for x in match.group(1).split(',')]
@@ -51,6 +56,7 @@ CLOSED = b'gui: both applications closed; stable session counters; returning to 
 class Boot:
     def __init__(self, name, kernel):
         self.path=out/name; self.path.mkdir(); self.log=bytearray(); self.serial=None; self.monitor=None
+        self.focused=0; self.live=[True,True]
         self.receipt={'name':name,'kernel_sha256':sha(kernel),'inputs':[],'screenshots':[]};report['boots'].append(self.receipt)
         self.qlog=(self.path/'qemu.log').open('w')
         serial,monitor=self.path/'serial.sock',self.path/'monitor.sock'
@@ -82,19 +88,36 @@ class Boot:
         (self.path/'serial.log').write_bytes(self.log)
         assert b'gui: native session unavailable or failed' not in self.log, self.log[-2500:]
     def command(self,value,marker):
+        if value=='gui apps':self.focused=0;self.live=[True,True]
         start=len(self.log); self.receipt['inputs'].append({'serial':value,'offset':start});self.serial.sendall(value.encode()+b'\n');self.wait(marker,start)
     def key(self,value):
-        codes={'ret':10,'backspace':8,'shift-8':42,'shift-equal':43,'ctrl-s':19,'esc':27,'tab':9}
+        codes={'ret':10,'backspace':8,'shift-8':42,'shift-equal':43,'ctrl-s':19,'esc':27,'tab':9,'ctrl-g':7,'ctrl-o':15}
         code=codes[value] if value in codes else ord(value)
         marker=f'gui: app rendered key {code}\n'.encode()
         if value=='esc':marker=b'gui: focused app closed, retired token refused'
         if value=='tab':marker=b'gui: focus '
+        if value in ('ctrl-g','ctrl-o'):marker=b'gui-window: mode '
         start=len(self.log);self.receipt['inputs'].append({'qemu_key':value,'offset':start});self.monitor.sendall(f'sendkey {value}\n'.encode());self.wait(marker,start);time.sleep(.12)
+        if value in ('ctrl-g','ctrl-o'):self.wait(b'\n',self.log.index(marker,start))
+        if value=='tab' and self.live[1-self.focused]:self.focused=1-self.focused
+        if value=='esc':
+            self.live[self.focused]=False
+            self.focused=next((slot for slot in range(2) if self.live[slot]),-1)
     def editor_focus(self):
+        self.focused=1
+        if readable:
+            receipt=window_oracle.focus_pointer(self.monitor,self.wait,self.log,1)
+            self.receipt['inputs'].append({'pointer':receipt});return
         for _ in range(25):self.monitor.sendall(b'mouse_move -100 -100\n');time.sleep(.02)
         for x,y in ((100,80),(70,8)):self.monitor.sendall(f'mouse_move {x} {y}\n'.encode());time.sleep(.1)
         start=len(self.log);self.monitor.sendall(b'mouse_button 1\n');self.wait(b'gui: pointer focused app ',start);self.monitor.sendall(b'mouse_button 0\n');self.receipt['inputs'].append({'pointer':'clamp0,0 then170,88 leftpress/release'})
     def pixels(self,name,texts):
+        if readable:
+            path=self.path/(name+'.ppm');layout=window_oracle.layout(self.log)
+            rgb=window_oracle.capture(self.monitor,path,layout)
+            window_oracle.check(rgb,layout,texts,self.focused)
+            self.receipt['screenshots'].append({'name':name,'sha256':sha(path),'expected':texts,'layout':layout,'focused':self.focused})
+            return
         path=self.path/(name+'.ppm');self.monitor.sendall(f'screendump {path}\n'.encode())
         deadline=time.monotonic()+5
         while (not path.exists() or path.stat().st_size<1920*1080*3+17) and time.monotonic()<deadline:time.sleep(.02)
@@ -138,6 +161,9 @@ try:
         for key in 'persist':boot.key(key)
         boot.key('8');boot.key('x')  # Full8byte field; ninth printable key is refused.
         boot.key('ctrl-s');boot.pixels('saved-persist', [('6*7','42'),('persist8','saved')])
+        if readable:
+            boot.key('ctrl-g');boot.key('ctrl-o')
+            boot.pixels('saved-persist-after-scale-resize',[('6*7','42'),('persist8','saved')])
         boot.key('esc');boot.pixels('editor-closed-calc-alive',[('6*7','42'),None])
         for key in ('backspace','8','ret'):boot.key(key)
         boot.pixels('surviving-calc48',[('6*8','48'),None]);boot.key('esc');boot.wait(CLOSED)

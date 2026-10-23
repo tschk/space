@@ -8,6 +8,15 @@ const INPUT-EVT-KEY-UP = 2
 const INPUT-EVT-MOUSE-MOVE = 3
 const INPUT-EVT-MOUSE-BUTTON = 4
 
+// Optional synchronous poll argument: version1 physical output extent. Zero
+// preserves the existing descriptor/default behavior. This is a scalar, never
+// an address or an authority/ring selector.
+const INPUT-OUTPUT-MAGIC = 0x494E000000000000
+fn input-output-argument(width: Int, height: Int) -> Int {
+  if width <= 0 || width > 65535 || height <= 0 || height > 65535 { return 0 }
+  return INPUT-OUTPUT-MAGIC | (width << 32) | (height << 16) | 1
+}
+
 // One 64-bit event word:
 //   bits 0..7    type   (INPUT_EVT_*)
 //   bits 8..15   flags  (modifiers / buttons)

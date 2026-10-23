@@ -33,6 +33,11 @@ source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-images}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
+GUI_PROFILE="${GUI_PROFILE:-window}"
+case "$GUI_PROFILE" in
+  legacy|window) ;;
+  *) echo "unknown native GUI profile: $GUI_PROFILE" >&2; exit 2 ;;
+esac
 
 LIB_BASE=0x3F000000
 API_BASE=0x3E000000
@@ -84,8 +89,14 @@ echo "[3/3] Compiling kernels and assembling images..."
 if [ "$VARIANT" != minimal ]; then
 # Optional native GUI artifacts are only built and packed into standard.
 sci "$SPACE_DIR/components/input.in" input-poll-entry 0x50000000 "$BUILD_DIR/gui-seat.sci"
-sci "$SPACE_DIR/components/app-gui-calc.in" client-entry 0x48000000 "$BUILD_DIR/gui-calc.raw.sci"
-sci "$SPACE_DIR/components/app-gui-editor.in" client-entry 0x49000000 "$BUILD_DIR/gui-editor.raw.sci"
+GUI_CALC_SOURCE=app-gui-calc.in
+GUI_EDITOR_SOURCE=app-gui-editor.in
+if [ "$GUI_PROFILE" = window ]; then
+  GUI_CALC_SOURCE=app-window-calc.in
+  GUI_EDITOR_SOURCE=app-window-editor.in
+fi
+sci "$SPACE_DIR/components/$GUI_CALC_SOURCE" client-entry 0x48000000 "$BUILD_DIR/gui-calc.raw.sci"
+sci "$SPACE_DIR/components/$GUI_EDITOR_SOURCE" client-entry 0x49000000 "$BUILD_DIR/gui-editor.raw.sci"
 python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-calc.raw.sci" "$BUILD_DIR/gui-calc.raw.component-metadata.json" "$BUILD_DIR/gui-calc.sci"
 python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-editor.raw.sci" "$BUILD_DIR/gui-editor.raw.component-metadata.json" "$BUILD_DIR/gui-editor.sci"
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \

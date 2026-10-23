@@ -987,7 +987,17 @@ fn input-initialize(cap-info: Int) -> Int {
 // Synchronous input-service proof entry. Existing hardware initialization waits
 // run once; only subsequent poll steps are bounded. Decoder/button state persists.
 fn input-poll-entry(cap-info: Int) -> Int {
+  let output = load64(cap-info + 64)
+  let output-width = (output >> 32) & 65535
+  let output-height = (output >> 16) & 65535
+  if output != 0 && input-output-argument(output-width, output-height) != output { return -1 }
   if input-initialized == 0 { input-initialize(cap-info) }
+  if output != 0 {
+    mouse-screen-w = output-width
+    mouse-screen-h = output-height
+    if mouse-x >= mouse-screen-w { mouse-x = mouse-screen-w - 1 }
+    if mouse-y >= mouse-screen-h { mouse-y = mouse-screen-h - 1 }
+  }
   let shared = load64(cap-info + 32)
   if usb-kbd-ready() != 0 {
     let key = usb-kbd-getchar()

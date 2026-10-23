@@ -17,6 +17,8 @@ import "mouse.in"
 import "gui-clients.in"
 import "gui-note-store.in"
 import "gui-session.in"
+import "gui-window-clients.in"
+import "gui-window-session.in"
 
 fn desktop-hub-usb-init(port: Int) -> Int {
   let usb-rc = xhci-init()

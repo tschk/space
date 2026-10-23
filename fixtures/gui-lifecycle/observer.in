@@ -50,7 +50,14 @@ fn gui-observer-aliases() -> void {
 }
 
 fn gui-admit(slot: Int) -> Int {
-  let token = gui-admit-implementation(slot)
+  return gui-observer-admit(gui-admit-implementation(slot), slot)
+}
+
+fn gui-window-admit(slot: Int) -> Int {
+  return gui-observer-admit(gui-window-admit-implementation(slot), slot)
+}
+
+fn gui-observer-admit(token: Int, slot: Int) -> Int {
   if token == 0 { return 0 }
   let record = gui-record(token)
   let handle = load64(record + GUI-HANDLE)
@@ -87,6 +94,16 @@ fn gui-retire(record: Int) -> Int {
   let cap = load64(record + 88)
   let sid = load64(record + GUI-SURFACE)
   let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let runtime = runtime-instance-record(handle, 1)
+  if runtime == 0 { runtime = runtime-instance-record(handle, 2) }
+  if runtime == 0 { panic("GUI observer missing owner") }
+  let pixel-pages = load64(load64(runtime) + 304)
+  let pixel-view = load64(record + 32)
+  let pixel-parent = 0
+  if pixel-pages > 1 {
+    pixel-parent = runtime-instance-view-parent(pixel-view)
+    if pixel-parent == 0 { panic("GUI canvas missing server parent") }
+  }
   let before = gui-observer-free-count()
   domain-switch(domain)
   let denied = 0
@@ -95,9 +112,15 @@ fn gui-retire(record: Int) -> Int {
   if denied != 1 { panic("GUI guest retired supervisor instance") }
   let result = gui-retire-implementation(record)
   if result != 1 { return result }
-  if gui-observer-free-count() < before + 512 { panic("GUI backing not physically reclaimed") }
+  if gui-observer-free-count() < before + 512 + pixel-pages { panic("GUI backing not physically reclaimed") }
+  if pixel-pages > 1 {
+    // The private PD/PT was freed. Only the captured kernel-owned parent entry
+    // remains valid to inspect; never dereference a freed directory address.
+    if load64(pixel-parent) != 0 { panic("GUI canvas server view survived release") }
+  }
   if load64(record + GUI-HANDLE) != 0 || load64(record + GUI-ACTIVE) != 0 || load64(dsp-pools + slot * 8) != 0 || dsp-surface-valid(sid) != 0 { panic("GUI close references survive release") }
   if gui-reply(record, 0, 0) != 0 { panic("GUI retired reply accessed freed endpoint") }
+  if load64(record + GUI-WINDOW-CONFIG) != 0 && gui-window-reply(record, 0, 0, 0) != 0 { panic("GUI retired window reply accessed freed endpoint") }
   if load64(domain-table + domain * 24 + 8) != DOMAIN-FREE || load64(cap-table-base + cap * 16) != 0 { panic("GUI close authority survives release") }
   // The first freed frame is deliberately recycled as a canary. Stale resume
   // must reject before dereferencing the former info/entry/frame addresses.

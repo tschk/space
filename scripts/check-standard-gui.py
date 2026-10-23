@@ -36,7 +36,7 @@ compiler_hash = hashlib.sha256(compiler.read_bytes()).hexdigest()
     + "\n"
 )
 sources = [p for folder in ("components", "kernel", "protocol") for p in (root / folder).rglob("*.in")]
-sources += [root / "boot/multiboot.asm", root / "scripts/build-images.sh", root / "scripts/pack-gui-sci.py", root / "scripts/pack-spdp-sci.py", Path(__file__).resolve()]
+sources += [root / "boot/multiboot.asm", root / "scripts/build-images.sh", root / "scripts/pack-gui-sci.py", root / "scripts/pack-spdp-sci.py", root / "scripts/gui-window-evidence.py", Path(__file__).resolve()]
 snapshot = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
 import os
 images = out / "images"
@@ -62,6 +62,14 @@ assert 3 not in standard, "on-demand GUI seat must not auto-start as boot input"
 assert struct.unpack_from("<Q", standard[20], 8)[0] == 20
 assert struct.unpack_from("<Q", standard[21], 8)[0] == 52
 assert struct.unpack_from("<Q", standard[22], 8)[0] == 3
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("window_evidence", root / "scripts/gui-window-evidence.py")
+window_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(window_module)
+window_oracle = window_module.WindowEvidence(root)
+readable = window_module.image_has_canvas(images / "standard.bin")
+focus_slot = 0
+live_slots = [True, True]
 serial_path, monitor_path = out / "serial.sock", out / "monitor.sock"
 for path in (serial_path, monitor_path):
     if path.exists():
@@ -138,6 +146,11 @@ with (out / "qemu.log").open("w") as log:
 
         def pixels(name, texts):
             path = out / f"{name}.ppm"
+            if readable:
+                layout = window_oracle.layout(data)
+                rgb = window_oracle.capture(monitor, path, layout)
+                window_oracle.check(rgb, layout, texts, focus_slot)
+                return
             path.unlink(missing_ok=True)
             monitor.sendall(f"screendump {path}\n".encode())
             deadline = time.monotonic() + 5
@@ -164,7 +177,7 @@ with (out / "qemu.log").open("w") as log:
         count = 0
         codes = {"ret": 10, "backspace": 8, "shift-8": 42, "shift-equal": 43, "slash": 47, "esc": 27, "tab": 9, "ctrl-s": 19}
         def key(value):
-            global count
+            global count, focus_slot
             count += 1
             start = len(data)
             monitor.sendall(f"sendkey {value}\n".encode())
@@ -174,21 +187,29 @@ with (out / "qemu.log").open("w") as log:
             if value == "tab": marker = "gui: focus "
             wait(marker, start)
             time.sleep(0.12)
+            if value == "tab" and live_slots[1 - focus_slot]: focus_slot = 1 - focus_slot
+            if value == "esc":
+                live_slots[focus_slot] = False
+                focus_slot = next((slot for slot in range(2) if live_slots[slot]), -1)
 
         pixels("initial", [("", ""), ("", "edit")])
         for value in ("6", "shift-8", "7", "ret"):
             key(value)
         pixels("answer-42", [("6*7", "42"), ("", "edit")])
-        for _ in range(25):
-            monitor.sendall(b"mouse_move -100 -100\n")
-            time.sleep(0.025)
-        for dx, dy in [(100, 80), (70, 8)]:
-            monitor.sendall(f"mouse_move {dx} {dy}\n".encode())
-            time.sleep(0.1)
-        monitor.sendall(b"mouse_button 1\n")
+        if readable:
+            window_oracle.focus_pointer(monitor, lambda marker, start: wait(marker.decode(), start), data, 1)
+        else:
+            for _ in range(25):
+                monitor.sendall(b"mouse_move -100 -100\n")
+                time.sleep(0.025)
+            for dx, dy in [(100, 80), (70, 8)]:
+                monitor.sendall(f"mouse_move {dx} {dy}\n".encode())
+                time.sleep(0.1)
+            monitor.sendall(b"mouse_button 1\n")
+            wait("gui: pointer focused app ")
+            monitor.sendall(b"mouse_button 0\n")
         count += 1
-        wait("gui: pointer focused app ")
-        monitor.sendall(b"mouse_button 0\n")
+        focus_slot = 1
         for value in ("n", "o", "t", "e", "backspace", "e", "s"):
             key(value)
         pixels("edited-notes", [("6*7", "42"), ("notes", "edit")])
@@ -215,6 +236,8 @@ with (out / "qemu.log").open("w") as log:
         start = len(data)
         serial.sendall(b"gui apps\n")
         wait(ready, start)
+        focus_slot = 0
+        live_slots[:] = [True, True]
         pixels("reopened", [("", ""), ("", "edit")])
         key("tab")
         key("a")

@@ -6,7 +6,10 @@ import "font.in"
 // Shared client-side drawing, using the existing built-in typeface assets.
 // All state/font allocations and output writes belong to the current SCI heap.
 interface GuiMemory { fn map() -> void }
-interface GuiDisplay { fn present() -> void }
+interface GuiDisplay {
+  fn present() -> void
+  fn window() -> void
+}
 interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {}
 interrupt fn chan-page-recv-frame(page: Int, message: Int) -> Int {}
 var widget-next: Int = 0

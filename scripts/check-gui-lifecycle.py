@@ -8,6 +8,7 @@ successful rendering alone does not establish physical reclamation.
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import re
 import socket
 import struct
 import subprocess
+import sys
 import time
 
 
@@ -41,7 +43,7 @@ def main():
     sources = [p for directory in ('components', 'kernel', 'protocol')
                for p in (root / directory).rglob('*.in')]
     sources += [root / name for name in ('boot/multiboot.asm', 'scripts/build-images.sh',
-                'scripts/pack-gui-sci.py', 'scripts/pack-spdp-sci.py', 'scripts/pack-sci-image.py')]
+                'scripts/pack-gui-sci.py', 'scripts/pack-spdp-sci.py', 'scripts/pack-sci-image.py', 'scripts/gui-window-evidence.py')]
     sources.append(Path(__file__).resolve())
     sources.append(root / 'fixtures/gui-lifecycle/observer.in')
     snapshot = {str(p.relative_to(root)): sha(p) for p in sources}
@@ -64,6 +66,13 @@ def main():
                        cwd=root, env=environment, stdout=log, stderr=subprocess.STDOUT,
                        check=True, timeout=180)
     image = out / 'images/standard.bin'
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location('window_evidence', root / 'scripts/gui-window-evidence.py')
+    window_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(window_module)
+    window_oracle = window_module.WindowEvidence(root)
+    readable = window_module.image_has_canvas(image)
+    report['gui_profile'] = 'window' if readable else 'legacy'
     if args.observe:
         def absolute_imports(source, directory):
             return re.sub(r'(?m)^import "([^"]+)"',
@@ -74,10 +83,15 @@ def main():
         manager = manager.replace('fn gui-retire(', 'fn gui-retire-implementation(', 1)
         manager += '\n' + (root / 'fixtures/gui-lifecycle/observer.in').read_text().replace('package space.kernel', '', 1)
         (out / 'manager.in').write_text(manager)
+        window_manager = (root / 'components/gui-window-clients.in').read_text()
+        window_manager = absolute_imports(window_manager, root / 'components')
+        window_manager = window_manager.replace('fn gui-window-admit(', 'fn gui-window-admit-implementation(', 1)
+        (out / 'window-manager.in').write_text(window_manager)
         session = (root / 'components/gui-session.in').read_text().replace('fn gui-session-run(', 'fn gui-session-run-implementation(', 1)
         (out / 'session.in').write_text(session)
         desktop = absolute_imports((root / 'components/desktop-hub.in').read_text(), root / 'components')
         desktop = desktop.replace(json.dumps(str(root / 'components/gui-clients.in')), json.dumps(str(out / 'manager.in')))
+        desktop = desktop.replace(json.dumps(str(root / 'components/gui-window-clients.in')), json.dumps(str(out / 'window-manager.in')))
         desktop = desktop.replace(json.dumps(str(root / 'components/gui-session.in')), json.dumps(str(out / 'session.in')))
         (out / 'desktop.in').write_text(desktop)
         kernel = absolute_imports((root / 'kernel/kernel-root.in').read_text(), root / 'kernel')
@@ -112,6 +126,8 @@ def main():
     ready = b'gui: calculator left, text editor right; click or Tab to focus, Escape closes focused app'
     closed = b'gui: both applications closed; stable session counters; returning to shell'
     data = bytearray()
+    current_focus = 0
+    live = [True, True]
     serial = monitor = process = None
     qlog = (out / 'qemu.log').open('w')
 
@@ -144,6 +160,7 @@ def main():
         (out / 'serial.log').write_bytes(data)
 
     def key(value):
+        nonlocal current_focus
         code = {'ret': 10, 'tab': 9, 'esc': 27}.get(value)
         if code is None:
             code = 43 if value == 'shift-equal' else ord(value)
@@ -157,9 +174,25 @@ def main():
         wait(marker, start)
         time.sleep(.04)
         record['keys'].append(value)
+        if value == 'tab' and live[1 - current_focus]:
+            current_focus = 1 - current_focus
+        if value == 'esc':
+            live[current_focus] = False
+            current_focus = next((slot for slot in range(2) if live[slot]), -1)
 
     def pixels(label, texts):
         path = out / 'frame.ppm'
+        if readable:
+            layout = window_oracle.layout(data)
+            rgb = window_oracle.capture(monitor, path, layout)
+            window_oracle.check(rgb, layout, texts, current_focus)
+            receipt = {'state': label, 'sha256': sha(path), 'texts': texts, 'layout': layout, 'focused': current_focus}
+            if cycle in (0, 1, 63, 127, args.sessions - 1):
+                target = out / f'session-{cycle + 1:03}-{label}.ppm'
+                path.rename(target)
+                receipt['path'] = target.name
+            record['pixels'].append(receipt)
+            return
         path.unlink(missing_ok=True)
         monitor.sendall(f'screendump {path}\n'.encode())
         deadline = time.monotonic() + 5
@@ -189,6 +222,11 @@ def main():
         record['pixels'].append(receipt)
 
     def editor_pointer_focus():
+        nonlocal current_focus
+        current_focus = 1
+        if readable:
+            record['pointer'] = window_oracle.focus_pointer(monitor, wait, data, 1)
+            return
         for _ in range(25):
             monitor.sendall(b'mouse_move -100 -100\n')
             time.sleep(.02)
@@ -212,6 +250,8 @@ def main():
         monitor = connect(out / 'monitor.sock')
         wait(b'space interactive shell')
         for cycle in range(args.sessions):
+            current_focus = 0
+            live[:] = [True, True]
             record = {'session': cycle + 1, 'close_first': 'calculator' if cycle % 2 else 'editor',
                       'keys': [], 'pixels': []}
             report['sessions'].append(record)

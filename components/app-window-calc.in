@@ -1,0 +1,23 @@
+package space.app.gui
+import "gui-window-widget.in"
+import "gui-calc-model.in"
+
+component GuiWindowCalc {
+  target "x86_64-unknown-none"
+  capability memory: GuiMemory(map)
+  capability display: GuiDisplay(present, window)
+}
+
+fn client-entry(info: Int) -> Int {
+  if window-info-valid(info) != 1 { return 1 }
+  let args = load64(info + 64)
+  if args != 0 {
+    if window-start(info) != 1 { return 2 }
+  } else {
+    let code = window-event()
+    if code == -1 { return 3 }
+    if code == 27 { return widget-close() }
+    if code >= 0 { gui-calc-key(code) }
+  }
+  return window-draw(0)
+}
