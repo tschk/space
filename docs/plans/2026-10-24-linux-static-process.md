@@ -64,7 +64,8 @@ and shares its normal VFS open-file offset. Guest-opened paths use bounded
 activation-owned storage through `vfs-open-borrowed-path`, avoiding repeated
 bump allocations. All owned descriptors close on exit/fault, including when
 storage authority has been revoked. The currently allowed filesystem backend
-is synchronous RAM SparkFS; asynchronous volume RPC returns ENOSYS.
+is synchronous RAM SparkFS or direct synchronous NVMe SparkFS; asynchronous
+Volume RPC returns ENOSYS. An offline direct controller returns an I/O error.
 
 Each launch has a configurable budget of 1–10000 guest PIT ticks (100 by
 default). Real CPL3 timer interrupts cancel an infinite jq computation with
@@ -82,8 +83,10 @@ This uses the declared single active process and synchronous IF0 service
 context; a concurrent provider will need native positional operations.
 Actual Lua write/seek/readback covers a 4 KiB block boundary, new-file creation,
 truncate then 9000-byte growth, append after a seek to zero, and sparse writes.
-Creation currently supports default fopen0666 with fixed profile umask022
-(actual SparkFS mode0644), or explicit0644; other creation modes are rejected.
+Creation accepts native permission bits0000–0777 under fixed profile umask022,
+persists the resulting inode mode and reports it through actual metadata.
+SQLite journal0600 and ordinary fopen0666→0644 therefore have distinct real
+stored permissions.
 The path buffer holds at most255 bytes, and each component must fit the current
 SparkFS directory format's24 bytes. Longer components receive ENAMETOOLONG
 before filesystem mutation; the translator does not accept silent truncation.
@@ -161,12 +164,44 @@ cases. Signal setup and several identity calls still return ENOSYS.
 The fourth upstream static ELF is SQLite 3.46.1. Nine in-memory cases cover
 its version, table insertion/order/grouping, recursive CTEs, JSON, Unicode,
 rollback, blobs, window functions and syntax errors. An infinite recursive
-query is cancelled by actual guest timer interrupts. Database files are not
-yet supported: the real file-transaction probe fails before open because
-newfstatat remains unsupported. Host tracing identified the next required
-slice: actual device/inode metadata, mode0600 journals, O_NOFOLLOW, positional
-I/O, owned byte-range locks, regular/directory sync and journal unlink. No
-successful locks, durable flushes or file transactions are claimed.
+query is cancelled by actual guest timer interrupts. Five more cases execute
+real synchronous RAM database transactions, reopen the same database in a
+separate process, store a9000-byte blob across filesystem blocks, reopen it,
+and roll back an18000-byte update. These use native inode/mount identities,
+persisted journal0600 permissions, O_NOFOLLOW, actual positional I/O, owned
+native byte-range leases, RAM regular/directory sync and journal unlink.
+The earlier failed file probe remains evidence of the missing newfstatat
+baseline; no host database computation is substituted for Space execution.
+
+Native leases are bounded provider state, not successful fcntl stubs. F_SETLK
+translates shared/exclusive/release ranges and reports real conflicts; direct
+tests cover a second owner, shared-to-exclusive upgrade, partial unlock,
+pointer refusal and closure after authority revocation. Any close of an owned
+binding releases that process's leases for the same native inode; exit/fault/
+deadline releases the remaining owner state. Blocking commands and unsupported
+range conventions remain refused. Stat structures carry actual native mount
+and inode identities, consistent between path and descriptor queries.
+
+Unlink refuses a file with any open native VFS binding because VFS currently
+resolves paths rather than retaining an open inode; identity checks include
+relative/absolute aliases. Directory removal is not exposed through unlink.
+Successful RAM fsync means that synchronous memory writes have completed.
+Direct NVMe fsync writes filesystem bitmap metadata and consumes a real
+namespace FLUSH with matched command/queue identity and successful controller
+completion; errors propagate. Asynchronous Volume RPC remains refused.
+
+`scripts/check-linux-persistence.py` runs the original reproducible SQLite ELF
+across three independent QEMU processes on one owned disposable64MiB NVMe disk.
+Only the first boot formats it. The first transaction stores42 and a9000-byte
+blob, consuming eight checked FLUSH completions. The next boot reopens the
+database and commits an update to43, consuming four. The third boot reopens43,
+rolls back an update to99 and retains43; that rollback requires no FLUSH and
+none is claimed. Fifteen actual application activations include repeated read
+processes and resource cleanup checks. A read-only raw-disk oracle extracts
+the16384-byte database after each stopped boot; separate host SQLite integrity
+checks succeed, journals are absent and the database hashes before/after the
+rollback boot match exactly. These are controlled close/halt/reboot tests,
+not arbitrary power-loss or crash-recovery guarantees.
 
 The current generic runner captures a read-only source snapshot and records
 its receipt alongside the exact compiler and application hashes. It uses that
@@ -185,6 +220,25 @@ evidence in its manifest. The canonical executable also passes the latest
 21-cycle FS/GS suite. Corpus `file_slot` explicitly shares a logical file
 between configured cases, allowing a transaction and a separate process
 reopen to operate on the same real file without a private fake filesystem.
+The runner warms bounded native lease and create/delete scratch once before
+measuring exact resource stability, and checks the native lease count alongside
+heap, frames, filesystem blocks, domains and owned file descriptor availability.
+
+The Linux translator consumes low32 bits for int file descriptors, whence,
+open flags, fcntl commands and other implemented int arguments. Signed values
+such as low32 FFFFFFFF become negative descriptors, not large positive handles.
+Linux x86_64 syscall dispatch numbers are also int32, as independently verified
+by a real host getpid syscall with nonzero upper register bits. Pointers,
+size_t and off_t retain their64-bit values; the bounded profile still refuses
+oversized I/O and unsupported offsets rather than truncating them.
+`fixtures/linux-process/int-width.asm` is a labelled synthetic ELF executed
+separately from the original-app count. It performs actual protected SYSCALLs
+with nonzero upper bits and checks descriptor, flags, seek, stat and error
+behavior. `int-width-host.py` separately exercises real Linux syscall widths,
+including a safe45-byte short read with a4GiB count. Host F_GETFL also reports
+O_LARGEFILE, so its access mode is compared explicitly. A negative-control
+snapshot omitting FD narrowing fails the actual guest probe with101 instead
+of42; pointer/count/offset width is checked independently.
 
 The explicit home is the Space profile's root directory; host controls receive
 the exact same environment. Without HOME, the first real SQLite memory probe

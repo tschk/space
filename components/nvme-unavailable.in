@@ -13,3 +13,7 @@ fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
 fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
   return -19
 }
+
+fn nvme-flush() -> Int {
+  return -19
+}

@@ -12,7 +12,11 @@ fn linux-process-files-ready() -> Int {
   if cap-check(linux-process-authority, cap-storage()) == 0 { return -13 }
   // Guest execution has IF1 under its budget. Kernel syscall service entry
   // masks interrupts, so asynchronous volume RPC cannot run in this context.
-  if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
+  if volume-ready != 0 { return -38 }
+  if sf-disk-ready != 1 { return -5 }
+  // Direct NVMe uses bounded synchronous service calls, including checked
+  // namespace FLUSH for fsync. An offline controller is an actual I/O error.
+  if sf-mem-disk == 0 && nvme-ready != 1 { return -5 }
   return 0
 }
 
@@ -151,6 +155,7 @@ fn linux-process-file-access(path: Int, mode: Int) -> Int {
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   // F_OK queries real existence. Permission/identity policy is not emulated.
+  if (mode & 7) != mode { return -22 }
   if mode != 0 { return -38 }
   let dest = linux-process-file-buffer + 256
   let copied = linux-process-file-copy-path(path,dest)

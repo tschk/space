@@ -183,7 +183,7 @@
     }
   ],
   "pending_scenarios": [
-    "NVMe transaction/FLUSH/QEMU reboot/reopen awaits actual device flush integration; RAM sync is not a durable-storage claim",
+    "Arbitrary power-loss/crash recovery beyond the separately verified three-boot direct NVMe transaction/update/rollback gate",
     "WAL/shared-memory coordination, open-unlinked file lifetime and arbitrary file truncation remain unsupported"
   ]
 }

@@ -369,12 +369,37 @@ fn linux-process-fstat(fd: Int, buffer: Int) -> Int {
   return 0
 }
 
+fn linux-process-int32(value: Int) -> Int {
+  let low = value & 0xFFFFFFFF
+  if low >= 0x80000000 { return low - 0x100000000 }
+  return low
+}
+
 fn linux-process-dispatch(frame: Int) -> Int {
-  let number = load64(frame + 112)
+  let number = linux-process-int32(load64(frame + 112))
   let first = load64(frame + 72)
   let second = load64(frame + 80)
   let third = load64(frame + 88)
   let fourth = load64(frame + 40)
+  // Linux int arguments consume their low32 bits. Guest pointers, size_t,
+  // and off_t remain full64 values. Linux x86_64 dispatch numbers are int32.
+  if number == 0 || number == 1 || number == 3 || number == 5 || number == 8 || number == 16 || number == 17 || number == 18 || number == 72 || number == 74 || number == 75 {
+    first = linux-process-int32(first)
+  }
+  if number == 8 { third = linux-process-int32(third) }
+  if number == 72 { second = linux-process-int32(second) }
+  if number == 2 { second = second & 0xFFFFFFFF;third = third & 0xFFFFFFFF }
+  if number == 257 {
+    first = linux-process-int32(first);third = third & 0xFFFFFFFF;fourth = fourth & 0xFFFFFFFF
+  }
+  if number == 262 { first = linux-process-int32(first);fourth = fourth & 0xFFFFFFFF }
+  if number == 267 { first = linux-process-int32(first);fourth = linux-process-int32(fourth) }
+  if number == 89 { third = linux-process-int32(third) }
+  if number == 21 { second = linux-process-int32(second) }
+  if number == 158 { first = linux-process-int32(first) }
+  if number == 302 { first = linux-process-int32(first);second = second & 0xFFFFFFFF }
+  if number == 318 { third = third & 0xFFFFFFFF }
+  if number == 202 { second = linux-process-int32(second);third = third & 0xFFFFFFFF }
   let result = -38
   let resume = 1
   linux-process-syscalls = linux-process-syscalls + 1
@@ -388,7 +413,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   else if number == 18 { result = linux-process-file-positional(first,second,third,fourth,1) }
   else if number == 21 { result = linux-process-file-access(first,second) }
   else if number == 87 { result = linux-process-file-unlink(first) }
-  else if number == 9 { result = linux-process-mmap(first,second,third,fourth,load64(frame + 56),load64(frame + 48)) }
+  else if number == 9 { result = linux-process-mmap(first,second,third,fourth,linux-process-int32(load64(frame + 56)),load64(frame + 48)) }
   else if number == 11 { result = linux-process-munmap(first,second) }
   else if number == 72 {
     if second == 3 { result = linux-process-descriptor-flags(first) }

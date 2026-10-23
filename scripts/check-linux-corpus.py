@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,8 @@ source_files=[]
 for directory in ['components','kernel','protocol','services','fixtures']:
     source_files += list((live_root/directory).rglob('*.in'))
 source_files += list((live_root/'fixtures/applications').glob('*.json'))
+source_files += list((live_root/'fixtures/linux-process').glob('*.asm'))
+source_files += [live_root/'fixtures/linux-process/int-width-host.py']
 source_files += [live_root/'boot/multiboot.asm',Path(__file__).resolve(),live_root/'scripts/check-linux-real-app.py']
 for attempt in range(3):
     captured={path.relative_to(live_root):path.read_bytes() for path in source_files}
@@ -56,6 +59,8 @@ for relative, data in captured.items():
     receipt[str(relative)]=hashlib.sha256(data).hexdigest()
 (ROOT/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
 manifest = json.loads((ROOT/f'fixtures/applications/{version}.json').read_text())
+width_host=subprocess.run([sys.executable,str(ROOT/'fixtures/linux-process/int-width-host.py')],capture_output=True,text=True,check=True,timeout=15)
+(args.out/'int-width-host.json').write_text(width_host.stdout)
 guest_name='/'+args.application
 expression_flag='-nc' if args.application=='jq' else '-e'
 infinite_query='recurse(.;true) | empty' if args.application=='jq' else 'while true do end'
@@ -233,6 +238,9 @@ fn linux-real-app-test(port:Int)->void{
   linux-check(0,linux-process-pages);linux-check(0,linux-process-active);
   INPUT_CYCLES
   linux-check-negative(image,size,fixture,frame,revocable,authority);
+  if linux-check-file-path!=0{
+   linux-check(42,linux-process-run(0x18000000,4096,"/int-width","--abi",linux-check-file-path,authority));
+  }
   linux-check(fs,rdmsr(0xC0000100));
   linux-check(gs,rdmsr(0xC0000101));
   linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
@@ -290,11 +298,12 @@ source=source.replace('CASE_CALLS','\n'.join(case_calls)).replace('SEED_FILES','
 compiler_sha256=hashlib.sha256(Path(args.compiler).read_bytes()).hexdigest()
 commands=[
     ['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(args.out/'trampoline.bin')],
+    ['nasm','-f','bin',str(ROOT/'fixtures/linux-process/int-width.asm'),'-o',str(args.out/'int-width.elf')],
     [args.compiler,'compile','--path',str(args.out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(args.out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(args.out/'kernel.bin')],
 ]
 with (args.out/'compile.log').open('w') as log:
     for command in commands:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
-qcommand=['qemu-system-x86_64','-cpu','max','-kernel',str(args.out/'kernel.bin'),'-m','512M','-display','none','-no-reboot','-serial','file:'+str(args.out/'serial.log'),'-device',f'loader,file={args.app},addr=0x10000000,force-raw=on']
+qcommand=['qemu-system-x86_64','-cpu','max','-kernel',str(args.out/'kernel.bin'),'-m','512M','-display','none','-no-reboot','-serial','file:'+str(args.out/'serial.log'),'-device',f'loader,file={args.app},addr=0x10000000,force-raw=on','-device',f'loader,file={args.out / "int-width.elf"},addr=0x18000000,force-raw=on']
 with (args.out/'qemu.log').open('w') as log:
     qemu=subprocess.Popen(qcommand,stdout=log,stderr=subprocess.STDOUT)
     try:
@@ -329,6 +338,7 @@ with (args.out/'qemu.log').open('w') as log:
                 'file_adapter_sha256':hashlib.sha256((ROOT/'components/linux-process-files.in').read_bytes()).hexdigest(),
                 'file_metadata_sha256':hashlib.sha256((ROOT/'components/linux-process-metadata.in').read_bytes()).hexdigest(),
                 'checks_sha256':hashlib.sha256((ROOT/'fixtures/linux-process/checks.in').read_bytes()).hexdigest(),
+                'int_width_probe':{'elf_sha256':hashlib.sha256((args.out/'int-width.elf').read_bytes()).hexdigest(),'activations':args.repeat if any('input' in case or 'file' in case for case in cases) else 0,'actual_linux_host_oracle':json.loads(width_host.stdout)},
                 'compiler':args.compiler,'compiler_sha256':compiler_sha256}
         (args.out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
         assert report['space_status']=='passed',f'actual Linux execution failed; inspect {args.out}/report.json and serial.log'

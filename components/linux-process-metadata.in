@@ -77,8 +77,8 @@ fn linux-process-file-sync(fd: Int) -> Int {
   if host < 3 { return -9 }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
-  // Current profile admits synchronous RAM only. This does not claim a
-  // durable device flush; providers lacking real FLUSH remain refused.
+  // RAM is synchronous; direct NVMe requires a matched successful namespace
+  // FLUSH after metadata writes. Asynchronous Volume remains refused.
   if fs-sync-path(load64(vfs-fd-table + host * 32)) < 0 { return -5 }
   return 0
 }
