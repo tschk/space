@@ -616,11 +616,20 @@ fn linux-process-run(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, aut
 // offset is shared (normal dup semantics); the caller retains its descriptor
 // and path lifetime. Only the execution-owned duplicate is closed on exit.
 fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int) -> Int {
+  return linux-process-run-counted-input(image,size,arg0,arg1,arg2,authority,input,3)
+}
+
+// Trusted caller's bounded initial argv profile. Existing three-slot callers
+// keep their exact old stack; one/two arguments use the owned exec vector builder.
+fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int, count: Int) -> Int {
+  if count < 1 || count > 3 { return -22 }
   if linux-process-cleanup-failed != 0 { return -5 }
   let entry = linux-process-elf-entry(image, size)
   if entry < 0 { return entry }
   if cap-check(authority, cap-memory() | cap-serial()) == 0 { return -13 }
-  if strlen(arg0) > 255 || strlen(arg1) > 255 || strlen(arg2) > 511 { return -22 }
+  if arg0 == 0 || strlen(arg0) > 255 { return -22 }
+  if count > 1 { if arg1 == 0 || strlen(arg1) > 255 { return -22 } }
+  if count > 2 { if arg2 == 0 || strlen(arg2) > 511 { return -22 } }
   if domain-current != 0 || linux-process-active != 0 || domain-user-syscall-hook != 0 { return -16 }
   if linux-process-budget-ticks < 1 || linux-process-budget-ticks > 10000 { return -22 }
   if load64(0x4190) == 0 || load64(0x4168) == 0 { return -38 }
@@ -677,7 +686,14 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   if status == 0 { status = linux-process-map-elf(image) }
   let stack = 0
   linux-process-staging-context = load64(root-row + LPS-USER-CONTEXT)
-  if status == 0 { stack = linux-process-stack(image,arg0,arg1,arg2);if stack < 0 { status = stack } }
+  if status == 0 {
+    if count == 3 { stack = linux-process-stack(image,arg0,arg1,arg2) }
+    else {
+      linux-process-initial-arguments(root-row,arg0,arg1,arg2,count)
+      stack = linux-process-exec-stack(root-row,image)
+    }
+    if stack < 0 { status = stack }
+  }
   if status == 0 { store64(linux-process-staging-context + 144,stack) }
   let fs = rdmsr(0xC0000100)
   let gs = rdmsr(0xC0000101)
@@ -706,4 +722,34 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   linux-process-signal-mask = 0
   linux-process-signal-pending = 0
   return status
+}
+
+fn linux-process-initial-arguments(row: Int, arg0: Int, arg1: Int, arg2: Int, count: Int) -> void {
+  let array = load64(row + LPS-ARGV)
+  let buffer = load64(row + LPS-ARG-BUFFER)
+  let i = 0
+  while i < count {
+    let text = arg0
+    if i == 1 { text = arg1 }
+    if i == 2 { text = arg2 }
+    store64(array + i * 8,buffer + i * 512)
+    let bytes = strlen(text)
+    let n = 0
+    while n <= bytes { store8(buffer + i * 512 + n,load8(text + n));n += 1 }
+    i += 1
+  }
+  array = load64(row + LPS-ENV)
+  buffer = load64(row + LPS-ENV-BUFFER)
+  i = 0
+  while i < 2 {
+    let text = "LC_ALL=C"
+    if i == 1 { text = "HOME=/" }
+    store64(array + i * 8,buffer + i * 512)
+    let bytes = strlen(text)
+    let n = 0
+    while n <= bytes { store8(buffer + i * 512 + n,load8(text + n));n += 1 }
+    i += 1
+  }
+  store64(row + LPS-ARGC,count)
+  store64(row + LPS-ENVC,2)
 }
