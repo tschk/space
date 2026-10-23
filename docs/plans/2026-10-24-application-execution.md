@@ -68,6 +68,32 @@ it does not claim their integration. A later small successful-only
 Volume identity clearing guard is covered by its independent owning-function
 gate and is not retroactively included in that snapshot.
 
+## Readable desktop and expanded integration checkpoint
+
+The readable native window profile is now the default (`cf2ccbb`). The final
+standard/matrix/persistence/lifetime gates all pass from the same435-file frozen
+source at `/workspace/space-application-fiftytwo-source`, with an adjacent source
+manifest. Receipts are `/tmp/space-gui-final-{standard,matrix,persistence,lifecycle}`.
+The tests cover six output/scale combinations, real keyboard/pointer/focus,
+saved eight-byte text and status through resize and five NVMe boots, and129
+sessions with stable ownership/resources, peer survival and stale-generation
+refusal. These clients still execute trusted CPL0.
+
+The expanded application lab now passes **52/52**, with source changes empty,
+compiler unchanged and application artifacts unchanged:
+`/workspace/local-evidence/space-application-fiftytwo-run/report.json`.
+The snapshot includes the reviewed committed baseline plus37 explicitly captured
+GUI/lab paths. Its manifest records that scope; in-flight CPU contexts, native
+HPET, Windows environment/QPC and Linux child-process work were excluded rather
+than implicitly claimed as integrated. That newer work has separate execution
+receipts and needs a subsequent coherent regression run.
+
+Native HPET is committed in `1196fde`, with actual PC/Q35 IRQ-masked progress,
+exact hardware frequency and explicit no-HPET refusal. Generic caller-owned CPU
+contexts are committed in `d8506fb`;61 actual runs prove separate child/parent
+GP/FX state, cold MXCSR validation, typed suspend/exit/fault/deadline and complete
+supervisor restoration. These are mechanisms, not general native SCI protection.
+
 ## Work continuing now
 
 1. Native private image/global ownership and retained generation handles now
@@ -82,8 +108,9 @@ gate and is not retroactively included in that snapshot.
    editing and resize at1024x768/1280x720/1920x1080, at2x/3x scale; high-view
    canvas buffers above4GiB also pass129 sessions and five NVMe boots. Evidence
    is `/tmp/space-gui-readable-highview-{matrix,persistence,lifetime,standard}`.
-   Default promotion awaits the constrained-memory refusal/recovery proof.
-   Protected native execution and broader desktop quality remain required.
+   The constrained-memory refusal/recovery proof now passes and the readable
+   profile is the product default. Protected native execution and broader
+   desktop quality remain required.
 3. SQLite database files now execute actual transactions,9000-byte blob update/
    rollback and separate-process reopen on RAM SparkFS. Fourteen cases and146
    app activations pass21 cycles with stable lease/descriptor/frame counts at
@@ -109,9 +136,10 @@ gate and is not retroactively included in that snapshot.
    boots (`9e7e46e`), with one-second native resolution. Original SQLite/7za
    still fail admission; QPC needs an actual validated native counter, now
    being implemented without substituting IRQ-delivered ticks.
-6. Expand the application lab to all new suites and four upstream applications.
-   Freeze a coherent source snapshot, run the full expanded set and retain exact
-   failures. Source mutation during a run must invalidate integration evidence.
+6. The52-gate lab now passes from the frozen source above. Extend the next
+   lab revision to the subsequent native counter/context, Windows environment/
+   QPC and Linux process slices after their review checkpoints. Retain exact
+   failures; source mutation during a run must invalidate integration evidence.
 7. Continue the full matrix: protected native apps, real foreign software GUI,
    display/text/scale/input quality, two-instance independent app behavior,
    clipboard, file roots, process/network services and the named FLTK/NetSurf

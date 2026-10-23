@@ -60,7 +60,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite memory execution, generic compiler ELF execution, protected Darwin/Windows fixtures, persistence and GUI workflows. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. BusyBox child processes, arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -195,6 +195,13 @@ def main():
     check('linux-sqlite-files', 'check-linux-corpus.py', '--in', args.compiler,
           '--application', 'sqlite', '--app', applications['sqlite'], '--suite', '--input-suite',
           '--out', args.out / 'linux-sqlite-files')
+    check('linux-sqlite-nvme', 'check-linux-persistence.py', '--in', args.compiler,
+          '--app', applications['sqlite'], '--out', args.out / 'linux-sqlite-nvme')
+    for variant in ['standard', 'minimal']:
+        # The original BusyBox pipeline remains a separate failing diagnostic
+        # until actual clone/exec/wait works. These gates prove real pipe APIs.
+        check('linux-pipes-' + variant, 'check-linux-pipes.py', '--in', args.compiler,
+              '--root', variant, '--out', args.out / ('linux-pipes-' + variant))
     for variant in ['standard', 'minimal']:
         check('compiler-linux-' + variant, 'check-inauguration-linux.py', '--in', args.compiler,
               '--root', variant, '--out', args.out / ('compiler-linux-' + variant))
@@ -207,10 +214,22 @@ def main():
           '--app', applications['windows'], '--out', args.out / 'windows-general')
     check('windows-startup', 'check-windows-startup.py', '--in', args.compiler,
           '--out', args.out / 'windows-startup')
+    for name, script in [('windows-parameters', 'check-windows-parameters.py'),
+                         ('windows-identity', 'check-windows-identity.py'),
+                         ('windows-pe-view', 'check-windows-pe-view.py'),
+                         ('windows-filetime', 'check-windows-filetime.py')]:
+        check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
     check('windows-nvme', 'check-windows-persistence.py', '--in', args.compiler, '--out', args.out / 'windows-nvme')
     check('native-large-files', 'check-native-large-files.py', '--in', args.compiler, '--out', args.out / 'native-large-files')
+    for name, script in [('native-file-services', 'check-native-file-services.py'),
+                         ('native-range-leases', 'check-file-range-leases.py'),
+                         ('native-stat-identity', 'check-fs-stat-identity.py'),
+                         ('native-nvme-flush', 'check-nvme-flush.py'),
+                         ('native-time-model', 'check-time-service.py'),
+                         ('native-time-rtc', 'check-time-rtc.py')]:
+        check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('native-lifecycle', 'check-native-lifecycle.py', '--in', args.compiler, '--out', args.out / 'native-lifecycle')
     check('native-retained', 'check-native-retained.py', '--in', args.compiler,
           '--out', args.out / 'native-retained')
@@ -219,6 +238,21 @@ def main():
     check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')
     check('gui-lifecycle', 'check-gui-lifecycle.py', '--in', args.compiler, '--observe',
           '--out', args.out / 'gui-lifecycle', timeout=1200)
+    for name, script in [('gui-canvas-profile', 'check-gui-canvas-profile.py'),
+                         ('gui-window-layout', 'check-gui-window-layout.py'),
+                         ('gui-window-contracts', 'check-gui-window-contracts.py'),
+                         ('gui-window-replies', 'check-gui-window-replies.py'),
+                         ('input-output', 'check-input-output.py')]:
+        check(name, script, '--in', args.compiler)
+    check('gui-canvas', 'check-gui-canvas.py', '--in', args.compiler,
+          '--out', args.out / 'gui-canvas')
+    check('gui-canvas-oom', 'check-gui-canvas.py', '--in', args.compiler,
+          '--mode', 'oom', '--out', args.out / 'gui-canvas-oom')
+    check('gui-readable-matrix', 'check-gui-windows.py', '--in', args.compiler,
+          '--out', args.out / 'gui-readable-matrix')
+    check('sci-byte-validation', 'check-sci-validation.py', '--in', args.compiler,
+          '--out', args.out / 'sci-byte-validation',
+          '--artifacts', *sorted((args.out / 'images').glob('*.sci')), dependency=built)
     for cpu in ['qemu64', 'max']:
         check('sanitized-registers-' + cpu, 'check-user-initial-state.py', '--in', args.compiler,
               '--cpu', cpu, '--out', args.out / ('sanitized-registers-' + cpu))

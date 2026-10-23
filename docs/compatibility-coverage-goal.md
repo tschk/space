@@ -53,9 +53,10 @@ physical close reclamation now pass129 sessions with real input/pixels and
 resource/ABA checks; capability/domain/page/surface identities are withdrawn
 before reuse. An optional readable-window profile now passes six output/scale combinations,
 real pointer/edit/resize checks,129 resource/ABA sessions and five NVMe boots,
-including server canvas views above4GiB. Low-memory refusal/recovery is the
-remaining gate before default promotion. Broader desktop quality and protected
-native execution remain open.
+including server canvas views above4GiB. Low-memory refusal/recovery also passes, and this profile is now the product
+default (`cf2ccbb`). Final real tests pass129 sessions, six output/scale modes
+and saved-text resize plus five NVMe boots from one435-file snapshot. Broader
+desktop quality and protected native execution remain open.
 
 Source-built Inauguration0.9.324 passes its required compiler checks, including
 119 conformance cases and Linux differential62 agreements/27 explicit refusals
@@ -64,7 +65,11 @@ expanded26-gate application lab also passes with no changed source, compiler or
 application artifacts. The30-gate revision also passes from a separate immutable383-file snapshot,
 with compiler and application artifacts unchanged. It predates the subsequent
 pipe/NVMe/FILETIME/readable-window features; a new integrated run must include
-those gates.
+those gates. That subsequent52-gate run now passes in full at
+`/workspace/local-evidence/space-application-fiftytwo-run/report.json`, with
+unchanged source/compiler/application artifacts. Its435-file scoped snapshot
+explicitly excludes newer CPU/context, native HPET, Windows environment/QPC and
+Linux child-process work; their separate proofs do not retroactively extend it.
 General foreign GUI applications, protected native clients, full desktop text/
 layout behavior and the rest of the acceptance matrix below remain open.
 
