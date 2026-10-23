@@ -37,7 +37,9 @@ def main():
         'image': str(image),
         'image_sha256': hashlib.sha256(image.read_bytes()).hexdigest(),
         'scenarios': [],
+        'inputs': [],
     }
+    input_started = time.monotonic()
     log = bytearray()
     serial = None
     process = None
@@ -45,6 +47,7 @@ def main():
         (output/'report.json').write_text(json.dumps(report, indent=2)+'\n')
         (output/'serial.log').write_bytes(log)
     def wait(marker, start=0, allow_denial=False):
+        report['last_wait'] = {'marker_hex': marker.hex(), 'serial_offset': start}
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline:
             if marker in log[start:]:
@@ -65,6 +68,8 @@ def main():
     def send(data):
         start = len(log)
         serial.sendall(data)
+        report['inputs'].append({'serial_offset': start, 'data_hex': data.hex(),
+                                 'elapsed_seconds': time.monotonic()-input_started})
         return start
     def command(text, marker):
         start = send(text.encode()+b'\n')
@@ -96,7 +101,12 @@ def main():
             # Admission refusal leaves the supervisor alive; retain this failure
             # and continue independent app scenarios. Other failures abort safely.
             scenario_log = bytes(log[entry['serial_offset']:])
-            if b'SCI: DENIED' not in scenario_log and not re.search(rb'runapp: app-[a-z]+ returned 0x[0-9a-f]+', scenario_log):
+            last_activation=scenario_log.rfind(b'SCI: starting app-')
+            returns=list(re.finditer(rb'runapp: app-[a-z]+ returned 0x[0-9a-f]+',scenario_log))
+            last_return=returns[-1].start() if returns else -1
+            if b'SCI: DENIED' not in scenario_log and last_return<last_activation:
+                raise
+            if b'SCI: DENIED' not in scenario_log and last_return<0:
                 raise
             wait(b'space> ', entry['serial_offset'], allow_denial=True)
         finally:
@@ -126,19 +136,45 @@ def main():
                 command('q', b'runapp: app-calc returned 0x0000000000000000')
             scenario('calc arithmetic and divide-by-zero recovery', calc)
             note = b'real native app save and reopen'
+            def notes_frame(content, dirty, start, column=None):
+                if column is None: column=len(content)
+                end_marker=b'\x1b[?25h'
+                wait(end_marker,start)
+                end=log.index(end_marker,start)+len(end_marker)
+                frame_start=log.find(b'\x1b[?25l',start,end)
+                if frame_start<0:
+                    raise RuntimeError('notes redraw lost cursor-hide sequence')
+                expected=b'\x1b[?25l\x1b[2J'
+                for row in range(1,23):
+                    expected+=f'\x1b[{row};1H'.encode()
+                    expected+=(b'   1 '+content) if row==1 else b'    ~'
+                    expected+=b'\x1b[0K'
+                expected+=b'\x1b[24;1H\x1b[7m notes.txt'+(b'+' if dirty else b' ')
+                expected+=f'  1:{column+1}  1 lines'.encode()
+                expected+=b'\x1b[0K\x1b[0m'+f'\x1b[1;{column+6}H'.encode()+end_marker
+                actual=bytes(log[frame_start:end])
+                report['last_render']={'content_hex':content.hex(),'serial_offset':frame_start,
+                                       'actual_bytes':len(actual),'expected_bytes':len(expected)}
+                if actual!=expected:
+                    (output/'failed-render-actual.bin').write_bytes(actual)
+                    (output/'failed-render-expected.bin').write_bytes(expected)
+                    raise RuntimeError('notes redraw bytes differ; inspect failed-render artifacts')
             def notes():
-                command('runapp notes', b'notes.txt')
-                # Rendering after every key can overrun the emulated UART's
-                # tiny FIFO. Wait for each rendered prefix before typing on.
+                start=command('runapp notes', b'notes.txt')
+                notes_frame(b'',False,start)
+                # Complete each redraw before the next key, checking every
+                # ANSI/content byte as well as the visible text prefix.
                 for count in range(1, len(note)+1):
                     start = send(note[count-1:count])
                     wait(note[:count], start)
+                    notes_frame(note[:count],True,start)
                 start = send(b'\x13')
                 wait(b'SAVED', start)
                 start = send(b'\x11')
                 wait(b'runapp: app-notes returned 0x0000000000000000', start)
                 start = command('runapp notes', b'notes.txt')
                 wait(note, start)
+                notes_frame(note,False,start,column=0)
                 start = send(b'\x11')
                 wait(b'runapp: app-notes returned 0x0000000000000000', start)
             scenario('notes edit save close and reopen within one boot', notes)
