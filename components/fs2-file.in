@@ -12,7 +12,7 @@ var sf-mutation-workspace: Int = 0
 
 fn sf-mutation-scratch() -> Int {
   if sf-mutation-workspace == 0 {
-    sf-mutation-workspace = alloc(SF-NAME-MAX + 9)
+    sf-mutation-workspace = alloc(SF-NAME-MAX + 9 + SF-INODE-SIZE)
   }
   return sf-mutation-workspace
 }
@@ -182,7 +182,7 @@ fn sparkfs-format-mem-disk() -> Int {
 }
 
 fn sparkfs-create(path: Int, is-dir: Int) -> Int {
-  if sf-disk-ready == 0 {
+  if sf-disk-ready == 0 || sf-path-name-valid(path)==0 || (is-dir!=SF-TYPE-FILE && is-dir!=SF-TYPE-DIR) {
     return -1
   }
   let name = sf-mutation-scratch()
@@ -190,7 +190,9 @@ fn sparkfs-create(path: Int, is-dir: Int) -> Int {
   if parent < 0 {
     return -1
   }
+  if load32(sf-inode-addr(parent)+SF-IN-TYPE)!=SF-TYPE-DIR { return -1 }
   let tmp = name + SF-NAME-MAX + 1
+  let backup = name + SF-NAME-MAX + 9
   if sf-dir-find(parent, name, tmp) >= 0 {
     return -1
   }
@@ -199,6 +201,8 @@ fn sparkfs-create(path: Int, is-dir: Int) -> Int {
   while ino < ino-count {
     let addr = sf-inode-addr(ino)
     if load32(addr + SF-IN-TYPE) == SF-TYPE-FREE {
+      let saved=0
+      while saved<SF-INODE-SIZE {store8(backup+saved,load8(addr+saved));saved=saved+1;}
       let j = 0
       while j < SF-INODE-SIZE {
         store8(addr + j, 0)
@@ -215,8 +219,16 @@ fn sparkfs-create(path: Int, is-dir: Int) -> Int {
       store64(addr + SF-IN-MTIME, ticks)
       store64(addr + SF-IN-ATIME, ticks)
       store32(addr + SF-IN-INLINE, 0)
-      sf-write-inode(ino)
-      sf-dir-add(parent, name, ino, is-dir)
+      let result=sf-write-inode(ino)
+      if result==0 { result=sf-dir-add(parent,name,ino,is-dir) }
+      if result!=0 {
+        // No block belongs to this fresh inode. Restore its exact former bytes;
+        // the common directory-add refusal publishes no directory entry.
+        let restore=0
+        while restore<SF-INODE-SIZE {store8(addr+restore,load8(backup+restore));restore=restore+1;}
+        sf-write-inode(ino)
+        return -1
+      }
       return ino
     }
     ino = ino + 1
@@ -692,6 +704,7 @@ fn sparkfs-rmdir(path: Int) -> Int {
 }
 
 fn sparkfs-rename(old-path: Int, new-path: Int) -> Int {
+  if sf-path-name-valid(old-path)==0 || sf-path-name-valid(new-path)==0 {return -1}
   if sf-disk-ready == 0 {
     return -1
   }

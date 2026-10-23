@@ -9,6 +9,20 @@ var sf-lookup-workspace: Int = 0
 // Parent resolution needs a distinct buffer because it invokes sf-lookup-path.
 var sf-parent-workspace: Int = 0
 
+// Native representability predicate. Personalities translate refusal to their
+// own error vocabulary. The 1023-byte path bound matches normalization output;
+// the on-disk 24-byte limit applies independently to every component.
+fn sf-path-name-valid(path:Int) -> Int {
+  let i=0;let part=0
+  while i<=1023 {
+    let c=load8(path+i)
+    if c==0 { return 1 }
+    if c==47 { part=0 } else { part=part+1;if part>SF-DIR-NAME-MAX{return 0} }
+    i=i+1
+  }
+  return 0
+}
+
 // --- path resolution --------------------------------------------------------
 
 // Find the last '/' in path. Returns index or -1.
@@ -46,6 +60,7 @@ fn sf-copy-name(dst: Int, path: Int) -> void {
 
 // Resolve a path to an inode. Returns inode or -1.
 fn sf-lookup-path(path: Int) -> Int {
+  if sf-path-name-valid(path)==0 { return -1 }
   if load8(path) == 0 {
     return 0
   }
@@ -184,16 +199,17 @@ fn sf-normalize-path(cwd: Int, path: Int, out: Int) -> Int {
 
 // Resolve parent directory and final name. Returns parent inode, or -1.
 fn sf-lookup-parent(path: Int, name-out: Int) -> Int {
+  if sf-path-name-valid(path)==0 { return -1 }
   let slash = sf-last-slash(path)
   if slash < 0 {
     sf-copy-name(name-out, path)
     return 0
   }
-  if slash > SF-NAME-MAX {
+  if slash > 1023 {
     return -1
   }
   if sf-parent-workspace == 0 {
-    sf-parent-workspace = alloc(SF-NAME-MAX + 1)
+    sf-parent-workspace = alloc(1024)
   }
   let parent-path = sf-parent-workspace
   let i = 0

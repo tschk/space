@@ -5,11 +5,23 @@ package space.kernel
 // --- directory entries ------------------------------------------------------
 
 const SF-DIR-ENTRY-SIZE = 32
+const SF-DIR-NAME-MAX = 24 // 32-byte entry minus its 8-byte header
+
+// Returns the exact representable name length, or -1. Never truncate aliases.
+fn sf-dir-name-length(name:Int) -> Int {
+  let i=0
+  while i<=SF-DIR-NAME-MAX {
+    if load8(name+i)==0 { if i==0 { return -1 }; return i }
+    i=i+1
+  }
+  return -1
+}
 // Removal follows the existing single-owner filesystem scratch contract.
 var sf-dir-remove-workspace: Int = 0
 
 // Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
 fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
+  if sf-dir-name-length(name)<0 { return -1 }
   let addr = sf-inode-addr(dir-ino)
   let size = load64(addr + SF-IN-SIZE)
   let fbn = 0
@@ -23,6 +35,7 @@ fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
         if eino != 0 {
           let name-len = load8(sf-block-buf + off + 4)
           let is-match = 1
+          if name-len>SF-DIR-NAME-MAX { is-match=0; name-len=0 }
           let i = 0
           while i < name-len {
             let a = load8(name + i)
@@ -56,6 +69,8 @@ fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
 
 // Add an entry to directory `dir_ino`. Returns 0 on success.
 fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
+  let new-len=sf-dir-name-length(name)
+  if new-len<0 { return -1 }
   let addr = sf-inode-addr(dir-ino)
   let size = load64(addr + SF-IN-SIZE)
   let fbn = 0
@@ -80,16 +95,6 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
       let eino = load32(sf-block-buf + off)
       let name-len = load8(sf-block-buf + off + 4)
       if eino == 0 {
-        let new-len = 0
-        let k = 0
-        while k < SF-DIR-ENTRY-SIZE - SF-DIR-ENTRY-HEAD {
-          if load8(name + k) == 0 {
-            k = SF-DIR-ENTRY-SIZE - SF-DIR-ENTRY-HEAD
-          } else {
-            new-len = new-len + 1
-            k = k + 1
-          }
-        }
         let esz = SF-DIR-ENTRY-SIZE
         if off + esz <= SF-BLOCK-SIZE {
           store32(sf-block-buf + off, entry-ino)
