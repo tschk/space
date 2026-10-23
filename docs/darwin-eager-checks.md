@@ -160,3 +160,7 @@ checksum-pinned original image. It is not entered. Next work is a truthful wider
 image/dependency policy and actual implementations of the observed required
 services, followed by original application execution; GUI/framework coverage
 remains a separate goal.
+
+A separate [owned heap profile](darwin-owned-heap-checks.md) adds four bounded
+allocator APIs under a new descriptor revision. This seven-service revision1
+profile and its unknown-import refusals remain unchanged.
