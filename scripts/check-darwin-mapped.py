@@ -16,6 +16,7 @@ p.add_argument('--in', dest='compiler', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--jq', type=Path, required=True)
 p.add_argument('--profile', choices=['default', 'lean', 'harden'], default='default')
+p.add_argument('--root', choices=['standard', 'minimal'], default='standard')
 a = p.parse_args()
 a.out = a.out.resolve()
 a.compiler = a.compiler.resolve()
@@ -62,7 +63,7 @@ def sha(path):
 hashes = {str(f.relative_to(snap)): sha(f) for f in snap.rglob('*') if f.is_file()}
 report = {'status': 'running', 'compiler': str(a.compiler), 'compiler_sha256': sha(a.compiler),
           'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-          'profile': a.profile,
+          'profile': a.profile, 'root': a.root,
           'runner_sha256': sha(Path(__file__)), 'source_sha256': hashes, 'commands': [],
           'scope': 'ABI fixture execution; no original application coverage',
           'source_test_variance': 'snapshot-only stage refusals, setup-source mutation, trap-time grant revocation and real native ownership/PDE corruption at teardown; production source remains unchanged'}
@@ -86,7 +87,7 @@ try:
     assert run([str(a.compiler), 'compile', '--path', str(snap / 'fixtures/darwin-mapped/private-import.in'),
                 '--entry', 'private-entry', '--emit', 'sci', '--base', '0x7a000000', '--target', 'native',
                 '--target-triple', 'x86_64-unknown-none', '--out', str(a.out / 'private.sci')], 'private-compile.log').returncode == 0
-    source = (snap / 'kernel/kernel-root.in').read_text()
+    source = (snap / ('kernel/kernel-root-minimal.in' if a.root == 'minimal' else 'kernel/kernel-root.in')).read_text()
     source = re.sub(r'import "\.\./([^"]+)"', lambda m: 'import ' + json.dumps(str(snap / m[1])), source)
     source = 'import ' + json.dumps(str(snap / 'components/darwin-mapped-process.in')) + '\n' + source
     assert source.count('  shell(port)') == 1

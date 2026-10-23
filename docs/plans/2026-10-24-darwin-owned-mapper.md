@@ -126,3 +126,11 @@ Earlier complete versions also pass default/lean/harden profiles at
 adds exact hardware fault codes, startup string contents and launch-plan
 immutability checks without production mapper changes. Earlier232-entry and
 318-entry intermediate receipts remain separate.
+
+The minimal root initially exposed an undeclared dependency on the old protected
+Darwin provider, which the full personality hub had supplied implicitly. The
+mapper now imports that dependency explicitly. The corrected minimal-root gate
+passes the same318 entries/147 setup refusals at
+`/workspace/dmapped-minimal2/report.json`; the compile-only failure remains at
+`/workspace/dmapped-minimal/report.json`. This test adds the finite mapper to a
+minimal test root; the shipped minimal image still has no personality import.

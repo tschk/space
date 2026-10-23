@@ -1,6 +1,7 @@
 package space.kernel
 
 import "darwin-image-plan.in"
+import "darwin-protected.in"
 import "user-address-space.in"
 
 // Private trusted supervisor state, not a guest buffer or isolated SCI service.
