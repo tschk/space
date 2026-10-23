@@ -107,7 +107,10 @@ with explicit unavailable-counter and allocation/admission refusals. TLS/FLS
 callbacks are committed in `66d1290`, with3544 activations across eight fresh
 boots, all14 older regressions and exact cold-cache admission/recovery checks. Recursive critical sections are committed in `96ef514`, with654 focused
 activations and all15 older regressions. Original Windows applications remain
-refused; composition of the verified API groups is being implemented.
+refused. Composition is now committed in `4327d14`:773 protected activations
+across PC/Q35/no-HPET and all16 older regression gates pass. Unknown original
+imports, PE directories and the32-import execution bound remain explicit
+barriers; the next Unicode/codepage slice is in progress.
 
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
@@ -125,7 +128,11 @@ Manager fault recovery and persistence gates are being finalized before default
 launch integration. Original Darwin/Windows applications and foreign GUI
 workloads remain open. Eager Mach-O chained imports are committed in `174d708`
 with254 actual executions and malformed/unused-import refusal controls; the new
-Darwin heap adapter remains a separate in-progress checkpoint.
+Darwin heap adapter is committed separately in `eef4ea8`:275 actual CPL3
+executions over21 stable cycles, allocator failure preservation, live-grant
+revocation, exact pressure recovery and unchanged254/344/483/548 regressions.
+Original macOS jq still refuses admission. Inspection-only Lua5.2.4 artifacts
+do not replace the full Lua5.4.7 acceptance target.
 
 The subsequent69-gate immutable run passes68 and fails one cumulative-budget
 test on the minimal image; source/compiler/application integrity passes. This

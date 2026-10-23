@@ -254,3 +254,29 @@ older gates. Eager Mach-O chained imports (`174d708`) pass254 executions and
 complete unused-import validation. Original Darwin/Windows applications still
 refuse admission. API composition and the separately owned Darwin heap are the
 next active implementation slices.
+
+
+## Subsequent composition and heap commits
+
+Windows composition is committed in `4327d14`. The explicit owned launch
+descriptor combines the verified service groups without widening old profiles.
+`/tmp/space-windows-composed-final/report.json` passes773 activations across
+PC/Q35/no-HPET; all16 older regression gates pass, with matching owned source
+hashes audited separately. Original Windows binaries remain refused.
+
+Darwin heap revision2 is committed in `eef4ea8`.
+`/tmp/space-darwin-heap-checkpoint275/report.json` passes275 actual executions
+over21 stable cycles, including record exhaustion, coalescing, realloc failure
+preservation, live revocation, heap/metadata protection and exact cold recovery.
+The old254/344/483/548 gates pass unchanged. `ec6379b` pins inspection-only
+Lua5.2.4 artifacts and explicitly records unknown build provenance; neither
+artifact was executed and the Lua5.4.7 full-goal row remains unchanged.
+
+The83-gate integrated lab is running from the552-file committed `ceef6f7`
+archive at `/workspace/space-application-eightythree-source`, with adjacent
+source manifest, frozen0.9.325 and evidence under `/workspace/lab83`. It excludes
+the later Windows composition, Darwin heap and in-progress protected GUI
+consumers. Independent desktop launcher and damage checks on this exact archive
+pass actual PS/2 interaction/pixels and322 fps against the30 fps minimum.
+Their logs are `/workspace/desktop-{launcher,damage}83.log`. Full integrated
+success is not claimed until the final lab/integrity report exists.
