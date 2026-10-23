@@ -2,6 +2,7 @@ package space.kernel
 import "linux-process-files.in"
 import "linux-process-mmap.in"
 import "linux-process-metadata.in"
+import "linux-process-pipes.in"
 
 // Bounded, single-thread Linux static ELF process. Foreign semantics stay here;
 // strict CPU transitions and page-table ownership stay in the domain runtime.
@@ -357,6 +358,7 @@ fn linux-process-mprotect(address: Int, length: Int, protection: Int) -> Int {
 }
 
 fn linux-process-fstat(fd: Int, buffer: Int) -> Int {
+  if linux-process-pipe-is(fd) != 0 { return linux-process-pipe-stat(fd,buffer) }
   if fd != 1 && fd != 2 { return linux-process-file-stat(fd, buffer) }
   if fd != 1 && fd != 2 { return -9 }
   if (fd == 1 && linux-process-stdout-open == 0) || (fd == 2 && linux-process-stderr-open == 0) { return -9 }
@@ -383,7 +385,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   let fourth = load64(frame + 40)
   // Linux int arguments consume their low32 bits. Guest pointers, size_t,
   // and off_t remain full64 values. Linux x86_64 dispatch numbers are int32.
-  if number == 0 || number == 1 || number == 3 || number == 5 || number == 8 || number == 16 || number == 17 || number == 18 || number == 72 || number == 74 || number == 75 {
+  if number == 0 || number == 1 || number == 3 || number == 5 || number == 8 || number == 16 || number == 17 || number == 18 || number == 32 || number == 33 || number == 72 || number == 74 || number == 75 || number == 292 {
     first = linux-process-int32(first)
   }
   if number == 8 { third = linux-process-int32(third) }
@@ -400,6 +402,10 @@ fn linux-process-dispatch(frame: Int) -> Int {
   if number == 302 { first = linux-process-int32(first);second = second & 0xFFFFFFFF }
   if number == 318 { third = third & 0xFFFFFFFF }
   if number == 202 { second = linux-process-int32(second);third = third & 0xFFFFFFFF }
+  if number == 13 { first = linux-process-int32(first) }
+  if number == 33 || number == 292 { second = linux-process-int32(second) }
+  if number == 292 { third = third & 0xFFFFFFFF }
+  if number == 293 { second = second & 0xFFFFFFFF }
   let result = -38
   let resume = 1
   linux-process-syscalls = linux-process-syscalls + 1
@@ -407,19 +413,40 @@ fn linux-process-dispatch(frame: Int) -> Int {
     serial-write-cstr(com1(), "linux-process: syscall "); serial-write-dec-wide(com1(), number); serial-nl(com1())
   }
   if number == 60 || number == 231 { result = first & 255; resume = 0 }
-  else if number == 0 { result = linux-process-file-read(first, second, third) }
-  else if number == 8 { result = linux-process-file-seek(first, second, third) }
-  else if number == 17 { result = linux-process-file-positional(first,second,third,fourth,0) }
-  else if number == 18 { result = linux-process-file-positional(first,second,third,fourth,1) }
+  else if number == 0 {
+    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-read(first,second,third) }
+    else { result = linux-process-file-read(first,second,third) }
+  }
+  else if number == 8 {
+    if linux-process-pipe-is(first) != 0 { result = -29 }
+    else { result = linux-process-file-seek(first,second,third) }
+  }
+  else if number == 17 || number == 18 {
+    if linux-process-pipe-is(first) != 0 { result = -29 }
+    else { result = linux-process-file-positional(first,second,third,fourth,number - 17) }
+  }
+  else if number == 22 { result = linux-process-pipe-create(first,0) }
+  else if number == 293 { result = linux-process-pipe-create(first,second) }
+  else if number == 32 { result = linux-process-pipe-dup(first,-1,0,0) }
+  else if number == 33 { result = linux-process-pipe-dup(first,second,0,0) }
+  else if number == 292 {
+    if first == second { result = -22 }
+    else { result = linux-process-pipe-dup(first,second,third,0) }
+  }
+  else if number == 13 { result = linux-process-pipe-sigaction(first,second,third,fourth) }
   else if number == 21 { result = linux-process-file-access(first,second) }
   else if number == 87 { result = linux-process-file-unlink(first) }
   else if number == 9 { result = linux-process-mmap(first,second,third,fourth,linux-process-int32(load64(frame + 56)),load64(frame + 48)) }
   else if number == 11 { result = linux-process-munmap(first,second) }
   else if number == 72 {
-    if second == 3 { result = linux-process-descriptor-flags(first) }
+    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-fcntl(first,second,third) }
+    else if second == 3 { result = linux-process-descriptor-flags(first) }
     else { result = linux-process-file-lock(first,second,third) }
   }
-  else if number == 74 || number == 75 { result = linux-process-file-sync(first) }
+  else if number == 74 || number == 75 {
+    if linux-process-pipe-is(first) != 0 { result = -22 }
+    else { result = linux-process-file-sync(first) }
+  }
   else if number == 12 { result = linux-process-brk-call(first) }
   else if number == 158 {
     if first != 0x1002 { result = -22 }
@@ -462,7 +489,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   } else if number == 334 { result = -38 }
   else if number == 228 { result = -38 }
   else if number == 10 { result = linux-process-mprotect(first, second, third) }
-  else if number == 16 { if first == 1 || first == 2 { result = -25 } else { result = -9 } }
+  else if number == 16 { if first == 1 || first == 2 || linux-process-pipe-is(first) != 0 { result = -25 } else { result = -9 } }
   else if number == 79 {
     if second < 2 { result = -34 }
     else if linux-process-range(first, 2, 1) == 0 { result = -14 }
@@ -474,7 +501,8 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else { result = -38 }
   } else if number == 5 { result = linux-process-fstat(first, second) }
   else if number == 1 {
-    if first != 1 && first != 2 { result = linux-process-file-write(first,second,third) }
+    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-write(first,second,third) }
+    else if first != 1 && first != 2 { result = linux-process-file-write(first,second,third) }
     else if (first == 1 && linux-process-stdout-open == 0) || (first == 2 && linux-process-stderr-open == 0) { result = -9 }
     else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
     else if second < 0 || third < 0 || third > 65536 { result = -22 }
@@ -486,7 +514,8 @@ fn linux-process-dispatch(frame: Int) -> Int {
       result = third
     }
   } else if number == 3 {
-    if first == 1 && linux-process-stdout-open != 0 { linux-process-stdout-open = 0; result = 0 }
+    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-close(first) }
+    else if first == 1 && linux-process-stdout-open != 0 { linux-process-stdout-open = 0; result = 0 }
     else if first == 2 && linux-process-stderr-open != 0 { linux-process-stderr-open = 0; result = 0 }
     else { result = linux-process-file-close(first) }
   } else if number == 257 {
@@ -500,6 +529,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     result = linux-process-file-stat-at(first,second,third,fourth)
   }
   else if number == 39 || number == 186 { result = 1000 + linux-process-domain }
+  if linux-process-pipe-signal != 0 { result = 128 + linux-process-pipe-signal;resume = 0 }
   if linux-process-trace != 0 {
     serial-write-cstr(com1(), "linux-process: result "); serial-write-dec-wide(com1(), result); serial-nl(com1())
   }
@@ -521,6 +551,7 @@ fn linux-process-release() -> Int {
   }
   linux-process-pages = 0
   linux-process-files-release()
+  linux-process-pipes-release()
   linux-process-domain = 0
   linux-process-active = 0
   linux-process-authority = -1
@@ -562,6 +593,7 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   linux-process-stderr-open = 1
   linux-process-output-bytes = 0
   linux-process-syscalls = 0
+  linux-process-pipes-init()
   domain-set-cap(linux-process-domain, -1)
   let status = linux-process-files-init(input)
   if status == 0 { status = linux-process-map-elf(image) }

@@ -157,18 +157,32 @@
       "expected_stdout": "6\n",
       "expected_exit": 0,
       "requires": [
-        "pipe or pipe2",
-        "fork/clone process creation",
-        "wait4/waitid lifecycle"
+        "clone/fork process creation with independent execution ownership",
+        "real signal masks and waiting/child lifecycle",
+        "scheduler-backed blocking pipe waits"
       ],
-      "status": "observed blocked: host exit0/output6, Space exit2 after pipe2 ENOSYS; excluded from passing coverage",
-      "observed_blocker": {
+      "status": "observed blocked after successful pipe2: host exit0/output6, Space exit2 after clone ENOSYS; excluded from passing coverage",
+      "historical_blocker": {
         "syscall": 293,
         "name": "pipe2",
         "result": -38,
         "space_exit": 2,
         "space_stderr": "/ash: can't create pipe: Bad file descriptor\n",
         "note": "Unmodified BusyBox cleanup closes its uncreated descriptors after pipe2 ENOSYS, so final errno text is EBADF. No process or pipe support is claimed."
+      },
+      "observed_blocker": {
+        "syscall": 56,
+        "name": "clone",
+        "result": -38,
+        "successful_pipe2_result": 0,
+        "space_exit": 2,
+        "space_stderr": "/ash: can't fork: Function not implemented\n",
+        "also_unsupported": {
+          "syscall": 14,
+          "name": "rt_sigprocmask",
+          "result": -38
+        },
+        "note": "Actual unmodified BusyBox now creates owned native pipe endpoints successfully; process creation remains unsupported and the pipeline gate fails. No child-process or wait success is claimed."
       }
     }
   ]

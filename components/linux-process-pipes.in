@@ -1,0 +1,330 @@
+package space.kernel
+
+// Linux edge adapter for execution-owned, unidirectional native VFS streams.
+// Native VFS owns rings and endpoint references. This adapter owns guest names,
+// access/nonblocking/CLOEXEC policy and private pair ownership/generation tags.
+// No native descriptor or guest pointer crosses the personality boundary.
+// Empty/full blocking waits remain ENOSYS until a real wait/scheduler contract.
+var linux-process-pipe-owners: Int = 0
+var linux-process-pipe-fdflags: Int = 0
+var linux-process-pipe-generation: Int = 0
+var linux-process-pipe-signal: Int = 0
+var linux-process-pipe-last-signal: Int = 0
+var linux-process-pipe-action: Int = 0
+var linux-process-pipe-action-flags: Int = 0
+var linux-process-pipe-action-restorer: Int = 0
+var linux-process-pipe-action-mask: Int = 0
+
+fn linux-process-pipes-init() -> void {
+  linux-process-pipe-signal = 0
+  linux-process-pipe-last-signal = 0
+  linux-process-pipe-action = 0
+  linux-process-pipe-action-flags = 0
+  linux-process-pipe-action-restorer = 0
+  linux-process-pipe-action-mask = 0
+  if linux-process-pipe-fdflags != 0 {
+    let i = 0
+    while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
+  }
+}
+
+fn linux-process-pipe-state() -> void {
+  if linux-process-pipe-owners != 0 { return }
+  linux-process-pipe-owners = alloc(VFS-STREAM-MAX * 16)
+  linux-process-pipe-fdflags = alloc(VFS-MAX-FDS * 8)
+  let i = 0
+  while i < VFS-STREAM-MAX * 16 { store64(linux-process-pipe-owners + i,0); i = i + 8 }
+  i = 0
+  while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
+}
+
+fn linux-process-pipe-host(fd: Int) -> Int {
+  if linux-process-active == 0 || linux-process-domain <= 0 { return -9 }
+  let host = linux-process-file-host(fd)
+  if host < 3 || linux-process-pipe-owners == 0 || vfs-stream-valid(host) == 0 { return -9 }
+  let pair = load64(vfs-fd-table + host * 32)
+  if load64(linux-process-pipe-owners + (pair - 1) * 16) != linux-process-domain { return -9 }
+  return host
+}
+
+fn linux-process-pipe-is(fd: Int) -> Int {
+  if linux-process-pipe-host(fd) >= 3 { return 1 }
+  return 0
+}
+
+fn linux-process-pipe-slot-used(fd: Int) -> Int {
+  if linux-process-file-host(fd) >= 3 { return 1 }
+  if fd == 1 && linux-process-stdout-open != 0 { return 1 }
+  if fd == 2 && linux-process-stderr-open != 0 { return 1 }
+  return 0
+}
+
+fn linux-process-pipe-create(buffer: Int, flags: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (flags & 0x80800) != flags { return -22 }
+  if linux-process-range(buffer,8,1) == 0 { return -14 }
+  let first = -1
+  let second = -1
+  let i = 0
+  while i < VFS-MAX-FDS {
+    if linux-process-pipe-slot-used(i) == 0 {
+      if first < 0 { first = i } else if second < 0 { second = i }
+    }
+    i = i + 1
+  }
+  if second < 0 { return -24 }
+  linux-process-pipe-state()
+  let result = vfs-stream-pair(1,1,0,linux-process-file-buffer)
+  if result < 0 { return result }
+  let reader = load32(linux-process-file-buffer)
+  let writer = load32(linux-process-file-buffer + 4)
+  let pair = load64(vfs-fd-table + reader * 32)
+  linux-process-pipe-generation = linux-process-pipe-generation + 1
+  store64(linux-process-pipe-owners + (pair - 1) * 16,linux-process-domain)
+  store64(linux-process-pipe-owners + (pair - 1) * 16 + 8,linux-process-pipe-generation)
+  store64(vfs-fd-table + reader * 32 + 16,flags & 0x800)
+  store64(vfs-fd-table + writer * 32 + 16,1 | (flags & 0x800))
+  store64(linux-process-files + first * 8,reader)
+  store64(linux-process-files + second * 8,writer)
+  let closeflag = (flags >> 19) & 1
+  store64(linux-process-pipe-fdflags + first * 8,closeflag)
+  store64(linux-process-pipe-fdflags + second * 8,closeflag)
+  let byte = 0
+  while byte < 4 {
+    linux-process-store8(buffer + byte,(first >> (byte * 8)) & 255)
+    linux-process-store8(buffer + 4 + byte,(second >> (byte * 8)) & 255)
+    byte = byte + 1
+  }
+  return 0
+}
+
+fn linux-process-pipe-flags(fd: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  return load64(vfs-fd-table + host * 32 + 16) & 0x803
+}
+
+fn linux-process-pipe-read(fd: Int, buffer: Int, length: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (linux-process-pipe-flags(fd) & 3) != 0 { return -9 }
+  if length < 0 || length > 65536 { return -22 }
+  if length == 0 { return 0 }
+  if linux-process-range(buffer,length,1) == 0 { return -14 }
+  let count = length
+  if count > VFS-STREAM-CAP { count = VFS-STREAM-CAP }
+  let result = vfs-stream-read(host,linux-process-file-buffer,count)
+  if result == -11 && (linux-process-pipe-flags(fd) & 0x800) == 0 { return -38 }
+  if result < 0 { return result }
+  let i = 0
+  while i < result { linux-process-store8(buffer + i,load8(linux-process-file-buffer + i)); i = i + 1 }
+  return result
+}
+
+fn linux-process-pipe-write(fd: Int, buffer: Int, length: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (linux-process-pipe-flags(fd) & 3) != 1 { return -9 }
+  if length < 0 || length > 65536 { return -22 }
+  if length == 0 { return 0 }
+  if linux-process-range(buffer,length,0) == 0 { return -14 }
+  let pair = load64(vfs-fd-table + host * 32) - 1
+  if vfs-stream-pairs[pair].refs0 == 0 {
+    if linux-process-pipe-action == 0 { linux-process-pipe-signal = 13; linux-process-pipe-last-signal = 13 }
+    return -32
+  }
+  let available = VFS-STREAM-CAP - vfs-stream-pairs[pair].count0
+  let nonblock = linux-process-pipe-flags(fd) & 0x800
+  // PIPE_BUF is the native ring capacity: short atomic writes never publish
+  // a prefix. Large writes may transfer a real prefix in nonblocking mode.
+  if available == 0 || (length <= VFS-STREAM-CAP && available < length) {
+    if nonblock != 0 { return -11 }
+    return -38
+  }
+  if length > VFS-STREAM-CAP && nonblock == 0 && available < length { return -38 }
+  let count = length
+  if count > available { count = available }
+  let i = 0
+  while i < count { store8(linux-process-file-buffer + i,linux-process-read8(buffer + i)); i = i + 1 }
+  return vfs-stream-write(host,linux-process-file-buffer,count)
+}
+
+// Close is revocation/cleanup, so it never requires a still-live memory grant.
+fn linux-process-pipe-close(fd: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  let pair = load64(vfs-fd-table + host * 32) - 1
+  let result = vfs-close(host)
+  if result < 0 { return result }
+  store64(linux-process-files + fd * 8,-9)
+  store64(linux-process-pipe-fdflags + fd * 8,0)
+  if vfs-stream-pairs[pair].refs0 == 0 && vfs-stream-pairs[pair].refs1 == 0 {
+    store64(linux-process-pipe-owners + pair * 16,0)
+  }
+  return 0
+}
+
+// new=-1 implements dup/F_DUPFD, otherwise dup2/dup3. Source support is
+// deliberately restricted to actual owned pipes; unsupported sources ENOSYS.
+fn linux-process-pipe-dup(old: Int, target: Int, flags: Int, minimum: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if old < 0 || old >= VFS-MAX-FDS || linux-process-pipe-slot-used(old) == 0 { return -9 }
+  let host = linux-process-pipe-host(old)
+  if host < 3 { return -38 }
+  if flags != 0 && flags != 0x80000 { return -22 }
+  let chosen = target
+  if target == -1 {
+    if minimum < 0 || minimum >= VFS-MAX-FDS { return -22 }
+    chosen = minimum
+    while chosen < VFS-MAX-FDS && linux-process-pipe-slot-used(chosen) != 0 { chosen = chosen + 1 }
+    if chosen >= VFS-MAX-FDS { return -24 }
+  }
+  if chosen < 0 || chosen >= VFS-MAX-FDS { return -9 }
+  if chosen == old { if flags != 0 { return -22 } return chosen }
+  let native = linux-process-file-host(chosen)
+  if native < 3 { native = vfs-fd-alloc(); if native < 3 { return -24 } }
+  let row = vfs-fd-table + host * 32
+  let pair = load64(row)
+  let side = load64(row + 8)
+  let status = load64(row + 16)
+  // Reserve the source reference before closing a replaced target. Reusing
+  // that target's native row also permits dup2 when the native fd pool is full.
+  vfs-stream-retain(host)
+  if linux-process-pipe-is(chosen) != 0 { linux-process-pipe-close(chosen) }
+  else if linux-process-file-host(chosen) >= 3 { linux-process-file-close(chosen) }
+  if chosen == 1 { linux-process-stdout-open = 0 }
+  if chosen == 2 { linux-process-stderr-open = 0 }
+  vfs-stream-publish(native,pair,side)
+  store64(vfs-fd-table + native * 32 + 16,status)
+  store64(linux-process-files + chosen * 8,native)
+  store64(linux-process-pipe-fdflags + chosen * 8,(flags >> 19) & 1)
+  return chosen
+}
+
+fn linux-process-pipe-fcntl(fd: Int, command: Int, argument: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  let value = argument
+  if command == 0 || command == 1030 || command == 2 || command == 1031 {
+    value = linux-process-int32(argument)
+  }
+  if command == 4 { value = argument & 0xFFFFFFFF }
+  if command == 1032 { return VFS-STREAM-CAP }
+  if command == 1031 {
+    if value < 0 { return -22 }
+    if value > VFS-STREAM-CAP { return -38 }
+    return VFS-STREAM-CAP
+  }
+  if command == 0 { return linux-process-pipe-dup(fd,-1,0,value) }
+  if command == 1030 { return linux-process-pipe-dup(fd,-1,0x80000,value) }
+  if command == 1 { return load64(linux-process-pipe-fdflags + fd * 8) }
+  if command == 2 {
+    if value != 0 && value != 1 { return -22 }
+    store64(linux-process-pipe-fdflags + fd * 8,value)
+    return 0
+  }
+  if command == 3 { return linux-process-pipe-flags(fd) }
+  if command == 4 {
+    if (value & 0x803) != value { return -22 }
+    let row = vfs-fd-table + host * 32
+    let pair = load64(row)
+    let side = load64(row + 8)
+    let i = 0
+    while i < VFS-MAX-FDS {
+      let alias = linux-process-pipe-host(i)
+      if alias >= 3 {
+        let item = vfs-fd-table + alias * 32
+        if load64(item) == pair && load64(item + 8) == side {
+          store64(item + 16,(load64(item + 16) & 3) | (value & 0x800))
+        }
+      }
+      i = i + 1
+    }
+    return 0
+  }
+  return -38
+}
+
+fn linux-process-pipe-stat(fd: Int, buffer: Int) -> Int {
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if linux-process-range(buffer,144,1) == 0 { return -14 }
+  let i = 0
+  while i < 144 { linux-process-store8(buffer + i,0); i = i + 1 }
+  let pair = load64(vfs-fd-table + host * 32) - 1
+  linux-process-store64(buffer + 8,load64(linux-process-pipe-owners + pair * 16 + 8))
+  linux-process-store64(buffer + 16,1)
+  linux-process-store64(buffer + 24,0x1180)
+  linux-process-store64(buffer + 56,VFS-STREAM-CAP)
+  return 0
+}
+
+fn linux-process-pipe-read64(address: Int) -> Int {
+  let value = 0
+  let i = 0
+  while i < 8 { value = value | (linux-process-read8(address + i) << (i * 8)); i = i + 1 }
+  return value
+}
+
+// Kernel rt_sigaction layout is four 64-bit fields with an eight-byte sigset.
+// Only default/ignored SIGPIPE is implemented. Arbitrary handlers and every
+// other signal remain explicitly unsupported rather than fake registrations.
+fn linux-process-pipe-sigaction(signal: Int, action: Int, previous: Int, size: Int) -> Int {
+  if signal != 13 { return -38 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if size != 8 { return -22 }
+  if action != 0 && linux-process-range(action,32,0) == 0 { return -14 }
+  if previous != 0 && linux-process-range(previous,32,1) == 0 { return -14 }
+  let handler = linux-process-pipe-action
+  let flags = linux-process-pipe-action-flags
+  let restorer = linux-process-pipe-action-restorer
+  let mask = linux-process-pipe-action-mask
+  if action != 0 {
+    handler = linux-process-pipe-read64(action)
+    flags = linux-process-pipe-read64(action + 8)
+    restorer = linux-process-pipe-read64(action + 16)
+    mask = linux-process-pipe-read64(action + 24) & -262401
+    if handler != 0 && handler != 1 { return -38 }
+    if (flags & 0x4000000) != flags { return -22 }
+  }
+  if previous != 0 {
+    linux-process-store64(previous,linux-process-pipe-action)
+    linux-process-store64(previous + 8,linux-process-pipe-action-flags)
+    linux-process-store64(previous + 16,linux-process-pipe-action-restorer)
+    linux-process-store64(previous + 24,linux-process-pipe-action-mask)
+  }
+  if action != 0 {
+    linux-process-pipe-action = handler
+    linux-process-pipe-action-flags = flags
+    linux-process-pipe-action-restorer = restorer
+    linux-process-pipe-action-mask = mask
+  }
+  return 0
+}
+
+fn linux-process-pipes-release() -> void {
+  if linux-process-pipe-owners != 0 {
+    let i = 0
+    while i < VFS-STREAM-MAX {
+      // files-release has already closed every execution-owned native row.
+      if load64(linux-process-pipe-owners + i * 16) == linux-process-domain {
+        if vfs-stream-pairs[i].refs0 == 0 && vfs-stream-pairs[i].refs1 == 0 {
+          store64(linux-process-pipe-owners + i * 16,0)
+        }
+      }
+      i = i + 1
+    }
+    i = 0
+    while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
+  }
+  linux-process-pipe-action = 0
+  linux-process-pipe-action-flags = 0
+  linux-process-pipe-action-restorer = 0
+  linux-process-pipe-action-mask = 0
+  linux-process-pipe-signal = 0
+}

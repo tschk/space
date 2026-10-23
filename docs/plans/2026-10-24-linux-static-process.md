@@ -96,7 +96,8 @@ O_NOFOLLOW accepts the native filesystem's current regular-file/directory
 types, which contain no symlinks. F_OK queries actual existence; permission
 queries remain unsupported while process identity is not modeled.
 
-There is no dynamic linker, threads, blocking futex waits or signals. It is a single active process component;
+There is no dynamic linker, threads, blocking futex waits or arbitrary signal
+handlers. Only default/ignored SIGPIPE is supported. It is a single active process component;
 per-instance handles and a supervisor-owned concurrent activation boundary
 remain future work. The test root imports this component explicitly; the
 normal desktop does not yet launch arbitrary Linux applications.
@@ -202,6 +203,34 @@ the16384-byte database after each stopped boot; separate host SQLite integrity
 checks succeed, journals are absent and the database hashes before/after the
 rollback boot match exactly. These are controlled close/halt/reboot tests,
 not arbitrary power-loss or crash-recovery guarantees.
+
+`components/linux-process-pipes.in` translates pipe/pipe2 and pipe descriptor
+duplication onto existing native VFS stream objects, with owned guest names,
+read/write endpoints, shared reference counts and bounded4096-byte rings.
+Pipe operations recheck memory authority and require no storage grant.
+Pointers are validated before native ring mutation. Nonblocking empty/full
+operations report EAGAIN; writes no larger than PIPE_BUF are atomic. Real
+buffered bytes, partial large writes, EOF after the last writer and closed
+reader EPIPE are covered. Pipe duplication also supports replacing stdin or
+stdout, so read/write/fstat/fcntl route owned pipes before serial/file policy.
+Seeking and positional I/O report ESPIPE and pipe fsync reports EINVAL.
+
+Default SIGPIPE terminates with141 and an explicit retained signal13 cause;
+ignored SIGPIPE returns EPIPE. rt_sigaction accepts only those two dispositions
+with the actual32-byte kernel structure and8-byte signal set; other handlers
+and signals remain refused. Exit, signal termination, faults and deadline
+close all owned endpoints while preserving another native object's buffered
+bytes and references. Blocking waits receive explicit ENOSYS until native
+readiness/scheduler support exists; descriptor CLOEXEC state is observable,
+but exec and regular/serial source duplication remain unsupported.
+
+The actual original BusyBox ash pipeline advances through successful pipe2
+and then fails clone56 with ENOSYS (and unsupported signal-mask setup). Its
+diagnostic remains a failing pipeline gate, separate from passing pipe and
+original-app cases. Next execution coverage requires genuine parent/child
+execution objects, per-process state and scheduler integration, using native
+runtime ownership rather than fabricating fork/clone/wait results inside the
+kernel-linked translator.
 
 The current generic runner captures a read-only source snapshot and records
 its receipt alongside the exact compiler and application hashes. It uses that

@@ -26,6 +26,7 @@ fn linux-process-file-host(fd: Int) -> Int {
 }
 
 fn linux-process-descriptor-flags(fd: Int) -> Int {
+  if linux-process-pipe-is(fd) != 0 { return linux-process-pipe-flags(fd) }
   if fd == 1 { if linux-process-stdout-open != 0 { return VFS-O-WRONLY } return -9 }
   if fd == 2 { if linux-process-stderr-open != 0 { return VFS-O-WRONLY } return -9 }
   let host = linux-process-file-host(fd)
