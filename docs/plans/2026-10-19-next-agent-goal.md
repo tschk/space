@@ -1,5 +1,13 @@
 # Goal statement for the next agent — Space, Subspace and Inauguration
 
+Current user direction (2026-10-23): keep increasing executable Linux, Darwin and
+Windows coverage while improving desktop quality for real GUI client testing.
+Follow the [coverage goal](../compatibility-coverage-goal.md) and
+[current compatibility/GUI checkpoint](2026-10-23-compatibility-gui-handoff.md).
+Continue the requested draft PR branch with reviewable verified slices; the
+checkpoint records current evidence, a compiler baseline failure and blocked
+GitHub authentication. The earlier cross-repository priorities below still apply.
+
 Develop Space, Subspace and Inauguration together through their distinct native
 contracts; follow `2026-10-19-three-repository-architecture.md` for ownership and
 cross-repo verification. Build a proper, original, hypermodular Space desktop platform faithful to the

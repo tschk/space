@@ -130,6 +130,8 @@ BSD numbers used (Darwin where implemented; Space-local shims noted):
 Checks: `scripts/check-darwin-personality.sh`, `scripts/check-windows-personality.sh`.
 
 Source review and acceptance checks: [ravynOS Darwin reference](ravynos-darwin-review.md).
+For user-space frameworks and the staged GUI path, see the
+[Rosemary macOS reference](rosemary-macos-reference.md).
 
 ## Trusted Mach-O fixture path
 
@@ -189,7 +191,16 @@ Linux and Darwin return variants check the same cleanup when the entry returns n
 Asynchronous volume RPC and direct NVMe SparkFS are rejected by this runner,
 which disables interrupts. Fixture commands require a fresh descriptor table.
 Existing VFS path copies use the bump allocator; descriptor cleanup does not
-reclaim those allocations. File writes, process isolation and general Windows
+reclaim those allocations.
+
+Linux `lseek=8` and Darwin Unix-class `lseek=199` now seek only execution-owned
+regular-file descriptors with a storage grant. SET/CUR/END use VFS offsets;
+invalid whence, negative targets and host/closed descriptors are refused. The
+file fixtures check tail reads, read advancement and rewind on both ABIs.
+Windows fixtures additionally check a boundary-crossing output-count pointer
+refuses without consuming data, and zero-byte read success preserves position.
+
+File writes, process isolation and general Windows
 path/sharing semantics remain unsupported.
 
 Run `bash scripts/check-foreign-syscalls.sh` (also included in personality gates).

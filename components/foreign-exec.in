@@ -47,6 +47,13 @@ fn foreign-file-read(fd: Int, buf: Int, len: Int) -> Int {
   return vfs-read(fd, buf, len)
 }
 
+fn foreign-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
+  if foreign-fd-owned(fd) == 0 { return -9 }
+  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
+  return vfs-lseek(fd, offset, whence)
+}
+
 fn foreign-file-close(fd: Int) -> Int {
   if foreign-fd-owned(fd) == 0 { return -9 }
   let rc = vfs-close(fd)
@@ -190,6 +197,9 @@ fn foreign-syscall-dispatch(frame: Int) -> Int {
   }
   if (foreign-mode == 1 && num == 0) || (foreign-mode == 2 && num == 0x2000003) {
     rc = foreign-file-read(fd, buf, len)
+  }
+  if (foreign-mode == 1 && num == 8) || (foreign-mode == 2 && num == 0x20000C7) {
+    rc = foreign-file-seek(fd, buf, len)
   }
   if (foreign-mode == 1 && num == 3) || (foreign-mode == 2 && num == 0x2000006) {
     rc = foreign-file-close(fd)

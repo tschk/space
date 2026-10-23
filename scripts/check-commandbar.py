@@ -30,6 +30,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--in", dest="compiler", type=Path, required=True)
 parser.add_argument("--out", type=Path, required=True)
 parser.add_argument("--group", choices=("all", "baseline", "lifecycle"), default="all")
+parser.add_argument("--target", choices=("all", "jit", "native"), default="all",
+                    help="Select explicit coverage; all retains native and JIT requirements")
 a = parser.parse_args()
 a.compiler = a.compiler.resolve()
 a.out = a.out.resolve()
@@ -103,6 +105,10 @@ fn store8(p:Int,v:Int)->Void{heap[p]=v;}
 fn comp-dmg-add(x0:Int,y0:Int,x1:Int,y1:Int)->Void{damage=damage+1;}
 fn comp-launcher-key(port:Int,key:Int)->Void{return;}
 fn comp-launcher-show(port:Int)->Void{comp-launcher-open=1;}
+fn comp-launcher-hide(port:Int)->Void{comp-launcher-open=0;}
+fn com1()->Int{return 0;}
+fn comp-bar-execute(port:Int,candidate:Int)->Void{return;}
+fn comp-handle-taskbar-click(mx:Int)->Int{return 0;}
 fn comp-term-focused-slot()->Int{return load64(comp-win-base(comp-focused)+32);}
 fn comp-term-scroll-by(slot:Int,lines:Int)->Void{terminal-events=terminal-events+1;}
 fn comp-term-backspace(slot:Int)->Void{terminal-events=terminal-events+1;}
@@ -118,7 +124,8 @@ fn comp-term-append(slot:Int,key:Int)->Void{
 }
 """ + "\n".join(function(name) for name in (
     "comp-win-clear", "comp-win-close", "comp-win-focus",
-    "comp-win-minimize", "comp-handle-drag", "comp-handle-key")) + "\n"
+    "comp-win-minimize", "comp-win-restore", "comp-win-contains", "comp-win-at-point",
+    "comp-win-in-titlebar", "comp-handle-click", "comp-handle-drag", "comp-handle-key")) + "\n"
 
 setup = """
 let i=0;while i<3{
@@ -128,6 +135,27 @@ let i=0;while i<3{
 }
 """
 lifecycle_cases = [
+    ("lifecycle-pointer-resize", setup + """
+// Separate windows so the topmost hit test identifies the intended record.
+comp-count=1;comp-dragging=-1;comp-drag-mode=-1;
+// Inside the bottom-right 8x8 grip: previously unreachable below the title bar.
+if comp-handle-click(496,524)!=1 || comp-dragging!=0 || comp-drag-mode!=2{return 1;}
+comp-handle-drag(496,524);
+if load32(comp-win-base(0)+12)!=400 || load32(comp-win-base(0)+16)!=300{return 2;}
+comp-handle-drag(546,554);
+if load32(comp-win-base(0)+12)!=450 || load32(comp-win-base(0)+16)!=330{return 3;}
+if load32(comp-win-base(0)+4)!=100 || load32(comp-win-base(0)+8)!=200{return 4;}
+comp-handle-drag(100,200);
+if load32(comp-win-base(0)+12)!=COMP-MIN-WIN-W || load32(comp-win-base(0)+16)!=COMP-MIN-WIN-H{return 5;}
+// Ordinary content never starts a drag, and title-bar dragging still moves.
+comp-dragging=-1;comp-drag-mode=-1;comp-handle-click(200,300);
+if comp-dragging!=-1 || comp-drag-mode!=-1{return 6;}
+comp-handle-click(120,210);
+if comp-dragging!=0 || comp-drag-mode!=1{return 7;}
+comp-handle-drag(150,250);
+if load32(comp-win-base(0)+4)!=130 || load32(comp-win-base(0)+8)!=240{return 8;}
+return 42;
+"""),
     ("lifecycle-close-held-drag", setup + """
 comp-focused=2;comp-dragging=2;comp-drag-mode=1;
 comp-win-close(2);
@@ -174,7 +202,8 @@ if a.group == "lifecycle":
 if a.group != "baseline":
     cases.extend((name, lifecycle + "fn main()->Int{" + body + "}")
                  for name, body in lifecycle_cases)
-expected_checks = len(cases) * 6
+targets = ("jit", "native") if a.target == "all" else (a.target,)
+expected_checks = len(cases) * len(targets) * 3
 
 LITERAL = re.compile(r'"(?:[^"\\]|\\.)*"')
 
@@ -206,6 +235,8 @@ def pointer_fixture(source):
 
 receipt = {
     "complete": False,
+    "selected_target": a.target,
+    "selected_group": a.group,
     "compiler": str(a.compiler),
     "compiler_sha256": sha256(a.compiler),
     "version": run([a.compiler, "--version"], 15),
@@ -229,7 +260,7 @@ try:
         path.write_text(source)
         receipt["fixtures"].append({"name": name, "path": str(path),
                                     "sha256": sha256(path), "interned_strings": strings})
-        for target in ("jit", "native"):
+        for target in targets:
             for profile in ("default", "lean", "harden"):
                 out = a.out / f"{name}-{target}-{profile}"
                 row = {"name": name, "target": target, "profile": profile,

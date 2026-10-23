@@ -270,6 +270,23 @@ with (out/'qemu.log').open('w') as qlog:
         frame_until('tile-enter-geometry', tiled)
         tile_click=action('tile','TILE WINDOWS',True)
         frame_until('tile-click-geometry', tiled)
+        # Bottom-right resizing must be reachable outside the title bar and
+        # preserve the pointer's grip offset when geometry changes.
+        # Reset at the screen edge: preceding clicks intentionally use generous
+        # hit boxes, but an 8x8 grip needs an exact pointer coordinate.
+        move(-1920,-1080)
+        move(948,1032)
+        command('mouse_button 1')
+        move(-64,-48)
+        def resized_utility(pixels):
+            def pixel(x,y): return pixels[(y*1920+x)*3:(y*1920+x)*3+3]
+            desktop=bytes((11,9,9))
+            return pixel(900,900)==desktop and pixel(800,900)!=desktop and pixel(800,1000)==desktop
+        frame_until('pointer-resize-utility', resized_utility)
+        move(64,48)
+        command('mouse_button 0')
+        frame_until('pointer-resize-restored', tiled)
+        move(700-948,138-1032)
         # Terminal 2 identity survives the earlier index-zero close.
         restored=action('focus','FOCUS TERMINAL 2')
         minimized=action('minimize','MINIMIZE FOCUSED')
@@ -294,7 +311,7 @@ with (out/'qemu.log').open('w') as qlog:
         capture('dismissed')
         command('sendkey esc'); wait('space: compositor exited')
         serial.sendall(b'halt\n')
-        print(f'PASS: PS/2 launcher selection/focus, search/edit, terminal input, pointer taskbar/topbar, Escape and rendered pixels ({out})')
+        print(f'PASS: PS/2 launcher selection/focus, search/edit, terminal input, pointer taskbar/topbar/resize, Escape and rendered pixels ({out})')
     finally:
         (out/'serial.log').write_bytes(log)
         if monitor:
