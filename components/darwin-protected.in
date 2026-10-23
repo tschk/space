@@ -1,6 +1,7 @@
 package space.kernel
 
 import "user-budget.in"
+import "darwin-protected-files.in"
 
 // Protected bounded Mach-O process slice, with explicit typed libSystem imports.
 // The trusted in-place fixture loader remains separate. Caller owns the input image.
@@ -13,6 +14,7 @@ var darwin-protected-context: Int = 0
 var darwin-protected-virtuals: Int = 0
 var darwin-protected-domain: Int = 0
 var darwin-protected-authority: Int = -1
+var darwin-protected-storage: Int = -1
 var darwin-protected-count: Int = 0
 var darwin-protected-busy: Int = 0
 var darwin-protected-last-domain: Int = 0
@@ -161,12 +163,13 @@ fn darwin-protected-release(domain: Int) -> Int {
   return 0
 }
 
-fn darwin-protected-run-budgeted(image: Int, size: Int, authority: Int, budget: Int) -> Int {
+fn darwin-protected-run-services(image: Int, size: Int, authority: Int, storage: Int, budget: Int) -> Int {
   if budget <= 0 || budget > 10000 { return -22 }
   let entry = darwin-protected-entry(image, size)
   if entry < 0 { return entry }
   if domain-current != 0 || darwin-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
   if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
+  if storage >= 0 && cap-check(storage, cap-storage()) == 0 { return -13 }
   if load64(0x4160) == 0 { return -38 }
   // Bound the maximum page requirement before the allocator can panic. The
   // small fixed context/ledger allocation is also covered by this reserve.
@@ -189,6 +192,8 @@ fn darwin-protected-run-budgeted(image: Int, size: Int, authority: Int, budget: 
   darwin-protected-last-domain = domain
   darwin-protected-domain = domain
   darwin-protected-authority = authority
+  darwin-protected-storage = storage
+  if storage >= 0 { darwin-file-init() }
   // Native application authority stays empty. The scoped ABI hook checks
   // explicitly borrowed serial authority and private frame translations.
   domain-set-cap(domain, -1)
@@ -216,33 +221,36 @@ fn darwin-protected-run-budgeted(image: Int, size: Int, authority: Int, budget: 
     store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8, 0x40006000)
     if load32(image + 16) == 5 {
       let imports = darwin-protected-take-frame()
-      // _write: mov eax,0x2000004; syscall; ret. _exit is nonreturning.
-      store8(imports,0xB8);store32(imports+1,0x2000004);
-      store8(imports+5,0x0F);store8(imports+6,0x05);
-      store8(imports+7,0x73);store8(imports+8,14);
-      // libc _write returns -1 on failure; preserve errno in private single-thread errno scratch.
-      store8(imports+9,0x89);store8(imports+10,4);store8(imports+11,0x25);store32(imports+12,0x4F004000);
-      store8(imports+16,0x48);store8(imports+17,0xC7);store8(imports+18,0xC0);store32(imports+19,-1);
-      store8(imports+23,0xC3);
-      store8(imports+32,0xB8);store32(imports+33,0x2000001);
-      store8(imports+37,0x0F);store8(imports+38,0x05);store8(imports+39,0x0F);store8(imports+40,0x0B);
-      // _error returns this single-thread process's private errno address.
-      store8(imports+48,0xB8);store32(imports+49,0x4F004000);store8(imports+53,0xC3);
+      darwin-protected-build-imports(imports)
       domain-map-user-code(domain,0x40007000,imports)
       store64(darwin-protected-virtuals+(darwin-protected-count - 1)*8,0x40007000)
       let bind=32;let j=0;
       while j<5{if load32(image+bind)==0x80000022{j=5;}else{bind=bind+load32(image+bind+4);j=j+1;}}
       status=darwin-protected-bind(image,size,bind,data,1)
     }
+    // This bounded profile has no TLS setup API. Do not inherit a caller's
+    // segment bases; restore them after normal exit, CPU fault or cancellation.
+    let caller-fs = rdmsr(0xC0000100)
+    let caller-gs = rdmsr(0xC0000101)
+    wrmsr64(0xC0000100, 0)
+    wrmsr64(0xC0000101, 0)
     domain-user-syscall-hook = darwin-protected-dispatch
     if status == 0 { status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FF8, darwin-protected-context, budget) }
     domain-user-syscall-hook = 0
+    wrmsr64(0xC0000100, caller-fs)
+    wrmsr64(0xC0000101, caller-gs)
   }
+  darwin-file-release()
   if darwin-protected-release(domain) != 0 { return -5 }
   darwin-protected-busy = 0
   darwin-protected-domain = 0
   darwin-protected-authority = -1
+  darwin-protected-storage = -1
   return status
+}
+
+fn darwin-protected-run-budgeted(image: Int, size: Int, authority: Int, budget: Int) -> Int {
+  return darwin-protected-run-services(image, size, authority, -1, budget)
 }
 
 fn darwin-protected-run-granted(image: Int, size: Int, authority: Int) -> Int {
@@ -285,6 +293,13 @@ fn darwin-protected-write(fd: Int, addr: Int, len: Int) -> Int {
   return len
 }
 
+// Darwin's fd/flags/whence arguments are 32-bit even in the x86_64 ABI.
+fn darwin-protected-int32(value: Int) -> Int {
+  let low = value & 0xFFFFFFFF
+  if low >= 0x80000000 { return low - 0x100000000 }
+  return low
+}
+
 // Action 1 resumes the guest, action 0 completes its synchronous invocation.
 // Saved IRET RFLAGS lives at136; changing R11 alone would lose carry on return.
 fn darwin-protected-dispatch(frame: Int) -> Int {
@@ -304,7 +319,15 @@ fn darwin-protected-dispatch(frame: Int) -> Int {
   }
   let result = -78
   if num == 0x2000004 {
-    result = darwin-protected-write(a0, load64(frame + 80), load64(frame + 88))
+    result = darwin-protected-write(darwin-protected-int32(a0), load64(frame + 80), load64(frame + 88))
+  } else if num == 0x2000005 {
+    result = darwin-file-open(a0, darwin-protected-int32(load64(frame + 80)))
+  } else if num == 0x2000003 {
+    result = darwin-file-read(darwin-protected-int32(a0), load64(frame + 80), load64(frame + 88))
+  } else if num == 0x2000006 {
+    result = darwin-file-close(darwin-protected-int32(a0))
+  } else if num == 0x20000C7 {
+    result = darwin-file-seek(darwin-protected-int32(a0), load64(frame + 80), darwin-protected-int32(load64(frame + 88)))
   } else if num == 0x2000014 {
     result = darwin-protected-domain
   }
@@ -316,44 +339,112 @@ fn darwin-protected-dispatch(frame: Int) -> Int {
 }
 
 
-// Explicitly typed libSystem _write, _exit and optional _error imports. Classic dyld opcodes are bounded to
-// one-byte ULEBs in this initial profile. Unknown symbols/opcodes fail closed.
-// Validation runs before allocation; application runs only after private fixups.
-fn darwin-protected-bind(image:Int,size:Int,command:Int,data:Int,apply:Int)->Int{
- let p=image+command;let off=load32(p+16);let bytes=load32(p+20);
- if off<32+load32(image+20) || bytes<=0 || bytes>128 || off>size - bytes{return -8;}
- let end=off+bytes;let cursor=off;let ordinal=0;let symbol=0;let kind=0;let slot=-1;let seen=0;
- while cursor<end{
-  let op=load8(image+cursor);cursor=cursor+1;
-  if op==0{if cursor!=end || (seen!=3 && seen!=7){return -8;};return 0;}
-  else if op==0x11{ordinal=1;}
-  else if op==0x51{kind=1;}
-  else if op==0x40{
-   symbol=0;
-   if cursor+7<=end && load8(image+cursor)==95{
-    if load8(image+cursor+1)==119 && load8(image+cursor+2)==114 && load8(image+cursor+3)==105 && load8(image+cursor+4)==116 && load8(image+cursor+5)==101 && load8(image+cursor+6)==0{symbol=1;cursor=cursor+7;}
-   }
-   if symbol==0 && cursor+6<=end{
-    if load8(image+cursor)==95 && load8(image+cursor+1)==101 && load8(image+cursor+2)==120 && load8(image+cursor+3)==105 && load8(image+cursor+4)==116 && load8(image+cursor+5)==0{symbol=2;cursor=cursor+6;}
-   }
-   if symbol==0 && cursor+7<=end{
-    if load8(image+cursor)==95 && load8(image+cursor+1)==101 && load8(image+cursor+2)==114 && load8(image+cursor+3)==114 && load8(image+cursor+4)==111 && load8(image+cursor+5)==114 && load8(image+cursor+6)==0{symbol=4;cursor=cursor+7;}
-   }
-   if symbol==0{return -8;}
-  }else if op==0x71{
-   if cursor>=end{return -8;};slot=load8(image+cursor);cursor=cursor+1;
-   if slot>=128 || (slot&7)!=0 || slot>load64(image+data+32)-8{return -8;}
-  }else if op==0x90{
-   if ordinal!=1 || kind!=1 || symbol==0 || slot<0 || (seen&symbol)!=0{return -8;}
-   // Distinct ABI slots avoid aliasing _exit over _write or mutable code/header pointers.
-   if (symbol==1 && slot!=32) || (symbol==2 && slot!=40) || (symbol==4 && slot!=48){return -8;}
-   if apply!=0{
-    let target=darwin-protected-physical(load64(image+data+24)+slot);
-    if target==0{return -8;}
-    if symbol==1{store64(target,0x40007000);}else if symbol==2{store64(target,0x40007020);}else{store64(target,0x40007030);}
-   }
-   seen=seen|symbol;slot=slot+8;
-  }else{return -8;}
- }
- return -8;
+// Explicit, allocation-free import spelling checks. No arbitrary host symbol
+// lookup, weak binding, lazy execution, or caller-controlled function pointers.
+fn darwin-protected-import-name(image: Int, off: Int, end: Int, name: String) -> Int {
+  let i = 0
+  while i < 16 {
+    if off + i >= end { return 0 }
+    let ch = load8(name + i)
+    if load8(image + off + i) != ch { return 0 }
+    if ch == 0 { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+fn darwin-protected-import-symbol(image: Int, off: Int, end: Int) -> Int {
+  if darwin-protected-import-name(image, off, end, "_write") != 0 { return 1 }
+  if darwin-protected-import-name(image, off, end, "_exit") != 0 { return 2 }
+  if darwin-protected-import-name(image, off, end, "_error") != 0 { return 4 }
+  if darwin-protected-import-name(image, off, end, "_open") != 0 { return 8 }
+  if darwin-protected-import-name(image, off, end, "_read") != 0 { return 16 }
+  if darwin-protected-import-name(image, off, end, "_close") != 0 { return 32 }
+  if darwin-protected-import-name(image, off, end, "_lseek") != 0 { return 64 }
+  return 0
+}
+
+fn darwin-protected-import-index(symbol: Int) -> Int {
+  let bit = 1
+  let index = 0
+  while bit < symbol { bit = bit << 1; index = index + 1 }
+  return index
+}
+
+// Real guest RX instructions, not kernel function addresses. The libc wrappers
+// convert positive errno/carry to -1 and private single-thread errno storage.
+fn darwin-protected-build-imports(frame: Int) -> void {
+  let index = 0
+  while index < 7 {
+    let p = frame + index * 64
+    if index == 2 {
+      store8(p, 0xB8); store32(p + 1, 0x4F004000); store8(p + 5, 0xC3)
+    } else {
+      let num = 4
+      if index == 1 { num = 1 }
+      if index == 3 { num = 5 }
+      if index == 4 { num = 3 }
+      if index == 5 { num = 6 }
+      if index == 6 { num = 199 }
+      store8(p, 0xB8); store32(p + 1, 0x2000000 | num)
+      store8(p + 5, 0x0F); store8(p + 6, 0x05)
+      if index == 1 { store8(p + 7, 0x0F); store8(p + 8, 0x0B) }
+      else {
+        store8(p + 7, 0x73); store8(p + 8, 14)
+        store8(p + 9, 0x89); store8(p + 10, 4); store8(p + 11, 0x25); store32(p + 12, 0x4F004000)
+        store8(p + 16, 0x48); store8(p + 17, 0xC7); store8(p + 18, 0xC0); store32(p + 19, -1)
+        store8(p + 23, 0xC3)
+      }
+    }
+    index = index + 1
+  }
+  return
+}
+
+// Classic normal-bind pointer opcodes, bounded one-byte ULEBs and exact typed
+// slots. Unknown symbols, opcodes and aliases fail before any allocation.
+fn darwin-protected-bind(image: Int, size: Int, command: Int, data: Int, apply: Int) -> Int {
+  let p = image + command
+  let off = load32(p + 16)
+  let bytes = load32(p + 20)
+  if off < 32 + load32(image + 20) || bytes <= 0 || bytes > 128 || off > size - bytes { return -8 }
+  let end = off + bytes
+  let cursor = off
+  let ordinal = 0
+  let symbol = 0
+  let kind = 0
+  let slot = -1
+  let seen = 0
+  while cursor < end {
+    let op = load8(image + cursor)
+    cursor = cursor + 1
+    if op == 0 {
+      if cursor != end || (seen & 3) != 3 { return -8 }
+      return 0
+    } else if op == 0x11 { ordinal = 1 }
+    else if op == 0x51 { kind = 1 }
+    else if op == 0x40 {
+      symbol = darwin-protected-import-symbol(image, cursor, end)
+      if symbol == 0 { return -8 }
+      while load8(image + cursor) != 0 { cursor = cursor + 1 }
+      cursor = cursor + 1
+    } else if op == 0x71 {
+      if cursor >= end { return -8 }
+      slot = load8(image + cursor)
+      cursor = cursor + 1
+      if slot >= 128 || (slot & 7) != 0 || slot > load64(image + data + 32) - 8 { return -8 }
+    } else if op == 0x90 {
+      if ordinal != 1 || kind != 1 || symbol == 0 || slot < 0 || (seen & symbol) != 0 { return -8 }
+      let index = darwin-protected-import-index(symbol)
+      if slot != 32 + index * 8 { return -8 }
+      if apply != 0 {
+        let target = darwin-protected-physical(load64(image + data + 24) + slot)
+        if target == 0 { return -8 }
+        store64(target, 0x40007000 + index * 64)
+      }
+      seen = seen | symbol
+      slot = slot + 8
+    } else { return -8 }
+  }
+  return -8
 }

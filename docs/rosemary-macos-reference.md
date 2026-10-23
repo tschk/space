@@ -102,6 +102,35 @@ loader trait alone does not establish resource reclamation.
    desktop integration. Keep the action unavailable until the executable path
    works; no shell command string or fake launch row.
 
+## Implemented reference-driven slices — 2026-10-24
+
+Space now implements bounded parts of slices1 and2 in original `.in` source:
+`darwin-protected.in` admits a fixed-address Mach-O profile, builds private
+CPL3 mappings and guest RX import trampolines, validates borrowed service
+capabilities and guest buffers, and reclaims execution-owned resources. The
+protected process/import gate passes483 activations; the read-only file gate
+passes464. Those are fixture counts, not original macOS application coverage.
+Original macOS jq remains refused and unexecuted. No Rosemary code or host
+runtime has been copied, linked or vendored to obtain these results.
+
+The next application startup contract must distinguish `LC_MAIN` from
+`LC_UNIXTHREAD`. Rosemary's pinned
+[`image/entry.rs`](https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/machish/src/image/entry.rs)
+records that LC_MAIN follows dyld/libSystem initialization. Its
+[`startup.rs`](https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/rosemary/src/startup.rs)
+passes argc/argv/envp/apple to initializers, runs them before main and handles
+thread-local/process termination afterward. Its TLV reporting distinguishes
+per-thread data/BSS from descriptors and initialization callbacks. These are
+useful behavioral seams to verify independently; calling the current bounded
+entry with zero arguments does not supply them.
+
+Before importing broader framework behavior, implement owned startup strings,
+argument vectors, initialization ordering, TLS/errno and bounded callbacks
+through the same protected runtime. Keep static layout admission separate from
+an executable dependency graph. Then drive a real macOS CLI binary and retain
+its unresolved-import/runtime failures. The full app and GUI acceptance rows
+remain in [the active coverage goal](compatibility-coverage-goal.md).
+
 ## GUI contract to settle before slice 4
 
 Reuse [`protocol/display.in`](../protocol/display.in) and the existing channel /
@@ -137,10 +166,10 @@ needs an explicit license/distribution decision with attribution and dependency
 review. A service boundary alone does not decide those obligations. No vendoring,
 submodule or Rust runtime dependency is introduced by this review.
 
-The smallest next implementation is slice 1 with a two-segment Mach-O fixture
-and positive/denial QEMU cases. Decide separately whether to adapt `machish` or
-extend the `.in` loader after checking the foreign-library/SCI linking path and
-license. Do not make a complete hosted Rosemary/SDL/Vulkan port a prerequisite.
+The next implementation extends the protected `.in` loader toward real startup
+and application dependencies, retaining the bounded slice1/2 gates. Decide
+separately whether to adapt `machish` after checking the foreign-library/SCI
+linking path and license. Do not make a complete hosted Rosemary/SDL/Vulkan port a prerequisite.
 Keep Space-specific ABI wrappers here and generic compiler/foreign-ABI support
 in Inauguration.
 
