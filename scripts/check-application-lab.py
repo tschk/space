@@ -60,7 +60,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. BusyBox child processes, arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children are included; blocking pipelines, arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -198,15 +198,26 @@ def main():
     check('linux-sqlite-nvme', 'check-linux-persistence.py', '--in', args.compiler,
           '--app', applications['sqlite'], '--out', args.out / 'linux-sqlite-nvme')
     for variant in ['standard', 'minimal']:
-        # The original BusyBox pipeline remains a separate failing diagnostic
-        # until actual clone/exec/wait works. These gates prove real pipe APIs.
+        # Keep native pipe contracts and copied-process application scenarios distinct.
         check('linux-pipes-' + variant, 'check-linux-pipes.py', '--in', args.compiler,
               '--root', variant, '--out', args.out / ('linux-pipes-' + variant))
+    for variant in ['standard', 'minimal']:
+        check('linux-children-' + variant, 'check-linux-children.py', '--in', args.compiler,
+              '--root', variant, '--out', args.out / ('linux-children-' + variant))
+        check('linux-busybox-children-' + variant, 'check-linux-corpus.py', '--in', args.compiler,
+              '--application', 'busybox', '--app', applications['busybox'], '--suite', '--input-suite',
+              '--case-config', ROOT / 'fixtures/applications/busybox-1.36.1-children-cases.json',
+              '--root', variant, '--wall-timeout', '600',
+              '--out', args.out / ('linux-busybox-children-' + variant), timeout=660)
     for variant in ['standard', 'minimal']:
         check('compiler-linux-' + variant, 'check-inauguration-linux.py', '--in', args.compiler,
               '--root', variant, '--out', args.out / ('compiler-linux-' + variant))
     check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',
           '--app', applications['darwin'], '--out', args.out / 'darwin-process')
+    check('darwin-startup-owner', 'check-darwin-startup-owner.py', '--in', args.compiler,
+          '--out', args.out / 'darwin-startup-owner')
+    check('darwin-startup', 'check-darwin-startup.py', '--in', args.compiler,
+          '--app', applications['darwin'], '--out', args.out / 'darwin-startup')
     check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
     check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
           '--app', applications['windows'], '--out', args.out / 'windows-process')
