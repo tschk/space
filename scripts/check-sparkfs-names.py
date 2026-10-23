@@ -64,7 +64,7 @@ def check_raw_names(disk,label):
         record=inode(number)
         if u32(record):live+=1
         if u32(record)==2:directories+=1
-    assert live==(15 if label=='A' else 16) and directories==13,(live,directories,'orphan inode after refused create')
+    assert live==15 and directories==13,(live,directories,'orphan inode after refused create')
     bitmap=u64(24)*4096;start=u64(48)
     used=sum(bool(data[bitmap+n//8]&(1<<(n%8))) for n in range(start,total))
     assert used==13,(used,'leaked data block reservation')
@@ -82,11 +82,6 @@ def check_raw_names(disk,label):
                     if entry==name:assert found is None;found=number
         assert found is not None,name
         return found
-    if label!='A':
-        boot_fixture=lookup(root,b'test.sci')
-        boot_record=inode(boot_fixture)
-        assert u32(boot_record)==1 and u64(boot_record+16)==40 and u32(boot_record+176)==1
-        assert u64(boot_record+64)==0x5343490000000001
     current=root
     for part in [b'ABCDEFGHIJKLMNOPQRSTUVWX']*12+[b'abcdefghijklmnopqrstuvwx']:
         current=lookup(current,part)

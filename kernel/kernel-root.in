@@ -206,7 +206,11 @@ fn kernel-entry(mb-info: Int) -> Int {
   let usb-rc = desktop-hub-usb-init(port)
   runtime-hub-arena-init(port)
   storage-hub-fs-init(port)
-  test-sci-loader(port)
+  // This diagnostic creates/overwrites test.sci. Automatic boot may exercise
+  // only its newly allocated disposable RAM disk, never a persistent volume.
+  if sf-mem-disk != 0 && volume-ready == 0 {
+    test-sci-loader(port)
+  }
   personality-hub-init(port)
   desktop-hub-init(port, mb-info, usb-rc)
 

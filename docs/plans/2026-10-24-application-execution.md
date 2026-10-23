@@ -387,7 +387,7 @@ This is zero-CPL3 native provider evidence, not foreign enumeration or upstream
 application coverage. NVMe/remount and concurrent mutation semantics remain open.
 
 The same native directory provider subsequently passes63 snapshots across three
-independent NVMe boots at `/workspace/native-directory-nvme2/report.json`. Only
+independent NVMe boots at `/workspace/native-directory-nvme-final/report.json`. Only
 boot A formats; B/C leave every disk byte unchanged. The raw-disk oracle checks
 all1698 entries and1697 actual file payloads after each boot. The first attempt
 correctly detected the ordinary boot self-test writing `test.sci` during reopen;
@@ -403,3 +403,17 @@ guest IRQ budgets, repetitions and assertions. The next112-gate lab adds the
 two high-address mapper roots, three Windows path/native-normalizer gates and
 two native directory backends; it exposes a configurable external pipeline wall
 limit defaulting to1200 seconds. These changes do not rewrite a failed receipt.
+
+That exact frozen pipeline retry now passes at
+`/workspace/lab105-busybox-standard-retry/report.json` in662.921 seconds. Kernel
+and application hashes equal the failed candidate. All122 original activations,
+21 fault/authority/pointer/cleanup cycles, other-domain witness and real IRQ
+cancellation pass with the same100-tick guest budget. The original105 report
+remains separate and retains its timeout.
+
+The ordinary-boot storage mutation exposed by directory testing is also fixed:
+automatic file-loader smoke tests run only on the disposable RAM disk. Three
+NVMe boots preserve a user-owned `test.sci` and all disk bytes on read-only
+reopens. The old root fails the same sentinel oracle. RAM boot, file-based SCI
+execution and three filename/deep-path/remount boots pass. See the
+[boot preservation proof](2026-10-24-boot-storage-preservation.md).

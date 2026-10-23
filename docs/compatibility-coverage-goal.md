@@ -71,6 +71,12 @@ partial-overwrite, truncate, reclaim and remount checks, plus24-byte filename
 boundaries. This proves the tested completed-write/remount behavior; crash
 atomicity and journaling remain open.
 
+Ordinary persistent-volume boot now preserves user files: its diagnostic SCI
+write is restricted to the disposable RAM filesystem. Three actual NVMe boots
+retain a user-owned `test.sci` sentinel and byte-unchanged read-only reopens; the
+old root fails that same oracle. RAM/file-loader and filename/remount regressions
+pass. See the [boot preservation checkpoint](plans/2026-10-24-boot-storage-preservation.md).
+
 The standard image now defaults to protected CPL3 calculator/editor clients
 (`f09df34`), launched through `gui apps` or the real command bar. Six display
 modes, five NVMe boots,129 sessions, hostile-peer recovery and parent desktop

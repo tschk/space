@@ -16,6 +16,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in', dest='compiler', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--nvme', action='store_true', help='new owned64MiB disk; format only boot A, then reopen in B/C')
+p.add_argument('--root-source', type=Path, help='explicit alternate boot root for preserved mutation regression controls')
 a = p.parse_args()
 a.out = a.out.resolve()
 a.compiler = a.compiler.resolve()
@@ -27,6 +28,8 @@ snap.mkdir()
 with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(['git', 'archive', 'HEAD'], cwd=ROOT))) as tar:
     tar.extractall(snap, filter='data')
 shutil.copyfile(ROOT / 'components/fs-directory-snapshot.in', snap / 'components/fs-directory-snapshot.in')
+root_source = (a.root_source or ROOT / 'kernel/kernel-root.in').resolve()
+shutil.copyfile(root_source, snap / 'kernel/kernel-root.in')
 provider = snap / 'components/fs-directory-snapshot.in'
 provider.write_text(provider.read_text().replace('sf-read-block(', 'directory-test-read('))
 loader = snap / 'components/sci-loader.in'
@@ -47,6 +50,7 @@ report = {'status': 'running', 'compiler_sha256': sha(a.compiler), 'runner_sha25
           'source_test_variance': 'native read wrapper forwards unchanged except one explicit I/O refusal and one stopped trusted live-grant revocation',
           'scope': 'synchronous native storage provider; no foreign app execution',
           'backend': 'NVMe' if a.nvme else 'guest RAM-backed SparkFS'}
+report['boot_root'] = {'path': str(root_source), 'sha256': sha(root_source), 'alternate_control': a.root_source is not None}
 
 def run(command, name, timeout=180):
     report['commands'].append(command)
@@ -95,6 +99,9 @@ def disk_oracle(disk, expected):
                     rows.append((entry[8:8 + entry[4]], identity, entry[5]))
             return rows
         target = next(index for name, index, kind in directory(0) if name == b'enum' and kind == 2)
+        sentinel = next(index for name, index, kind in directory(0) if name == b'test.sci' and kind == 1)
+        sentinel_record = inode(sentinel)
+        assert q(sentinel_record, 16) == 23 and sentinel_record[64:87] == b'user-owned SCI sentinel', 'ordinary boot changed user-owned test.sci'
         rows = directory(target)
         actual = bytearray(32 + len(rows) * 64)
         struct.pack_into('<QQQQ', actual, 0, 0x5346444952530001, 0, len(rows), 64)
@@ -160,7 +167,7 @@ fn directory-check(port:Int)->void{
  if fs-mkdir("/enum/sub")<0||fs-write-file("/enum/é😀","payload",7)!=0{panic("directory Unicode seed");}
  directory-name(0,path);if fs-delete(path)!=0{panic("directory hole0");}directory-name(64,path);if fs-delete(path)!=0{panic("directory hole64");}directory-name(128,path);if fs-delete(path)!=0{panic("directory hole128");}directory-name(1699,path);if fs-delete(path)!=0{panic("directory hole1699");}
  let inode=sf-lookup-path("/enum");let addr=sf-inode-addr(inode);if load64(addr+SF-IN-SIZE)<=12*4096||load64(addr+SF-IN-INDIRECT)==0{panic("directory indirect setup");}
- if fs-write-file("/sentinel","sentinel",8)!=0{panic("directory sentinel seed");}let host=vfs-open("/sentinel",0);if host<3{panic("directory ambient open");}let first=vfs-fd-alloc();let hostpath=load64(vfs-fd-table+host*32);
+ if fs-write-file("/sentinel","sentinel",8)!=0||fs-write-file("/test.sci","user-owned SCI sentinel",23)!=0{panic("directory sentinel seed");}let host=vfs-open("/sentinel",0);if host<3{panic("directory ambient open");}let first=vfs-fd-alloc();let hostpath=load64(vfs-fd-table+host*32);
  i=0;while i<524288{store8(metadata+i,load8(sf-inodes+i));i+=1;}i=0;while i<32{store8(metadata+524288+i,load8(sf-bitmap+i));i+=1;}
  // Warm only the filesystem's own lookup/mutation scratch, not this provider.
  let heap=heap-next;let domains=domain-count;let caps=cap-count;let free=free-list;
@@ -200,11 +207,8 @@ fn directory-check(port:Int)->void{
 }
 '''.replace('ORACLE_SIZE', str(len(expected))).replace('PRIVATE_SIZE', str((a.out / 'private.sci').stat().st_size))
     if a.nvme:
-        # The product boot self-test creates/reads test.sci. This read-only
-        # provider experiment must not run that unrelated mutating workload.
-        assert source.count('  test-sci-loader(port)') == 1
-        source = source.replace('  test-sci-loader(port)', '  // Omitted in the NVMe directory experiment: mutating boot SCI self-test.')
-        report['source_test_variance'] += '; NVMe generated test root omits its unrelated test.sci write/read boot self-test'
+        # Retain the ordinary production boot path. Its automatic file-loader
+        # diagnostic must itself refuse persistent-volume writes.
         source = source.replace(' if sf-mem-disk==0||volume-ready!=0{panic("directory RAM setup");}',
                                 ' if nvme-ready!=1||sf-mem-disk!=0||volume-ready!=0{panic("directory NVMe setup");}\n if load8(0x11040000)!=1{directory-reopen(port);return;}')
         source = source.replace('sf-do-format(SF-MEM-DISK-BLOCKS,2048)', 'sf-do-format(16384,2048)')

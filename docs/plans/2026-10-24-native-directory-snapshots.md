@@ -69,7 +69,7 @@ remain open before broader integration.
 ## NVMe reopen checkpoint
 
 The same native implementation passes63 snapshots across three independent
-NVMe boots at `/workspace/native-directory-nvme2/report.json`. Only boot A
+NVMe boots at `/workspace/native-directory-nvme-final/report.json`. Only boot A
 formats its new owned64MiB disk. It performs the complete create/delete/reuse
 corpus and requires a real successful namespace FLUSH completion. Boots B/C
 reopen1698 persisted entries21 times each, with no format or seed writes. Their
