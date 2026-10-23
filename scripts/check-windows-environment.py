@@ -87,8 +87,16 @@ with (out/'qemu.log').open('w') as qlog:
     qemu=subprocess.Popen(qemu_command,stdout=qlog,stderr=subprocess.STDOUT)
     try:
         deadline=time.monotonic()+10
-        while not path.exists() and qemu.poll() is None and time.monotonic()<deadline:time.sleep(.02)
-        serial=socket.socket(socket.AF_UNIX);serial.settimeout(.2);serial.connect(str(path))
+        # A bound Unix socket can exist before QEMU starts listening. Retry
+        # readiness within the same external deadline; guest limits/assertions
+        # below are unchanged. Never treat pathname existence as a connection.
+        while serial is None and qemu.poll() is None and time.monotonic()<deadline:
+            candidate=socket.socket(socket.AF_UNIX);candidate.settimeout(.2)
+            try:
+                candidate.connect(str(path));serial=candidate
+            except (FileNotFoundError,ConnectionRefusedError):
+                candidate.close();time.sleep(.02)
+        assert serial is not None,'QEMU serial did not become ready within10 seconds; inspect qemu.log'
         deadline=time.monotonic()+120
         while b'space> ' not in received and time.monotonic()<deadline:
             try:

@@ -84,6 +84,9 @@ def main():
             files.extend(path for path in (ROOT / directory).rglob('*') if path.suffix in ('.in', '.asm'))
         files.extend((ROOT / 'fixtures/inauguration-linux').iterdir())
         files.append(ROOT / 'fixtures/linux-process/checks.in')
+        # The shared checks now import the owned-VM direct adapter. Preserve
+        # that dependency inside the immutable fixture tree as well.
+        files.append(ROOT / 'fixtures/linux-vm/direct.in')
         hashes = {}
         for source in files:
             if not source.is_file():
