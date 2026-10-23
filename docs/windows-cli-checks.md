@@ -126,7 +126,7 @@ still does not execute original Windows SQLite or 7za.
 
 The bounded [environment profile](windows-environment-checks.md) and
 [native-counter profile](windows-counter-checks.md) add real startup contracts.
-The original SQLite/7za gate now checks all twelve profiles (504 repeated
+The original SQLite/7za gate now checks all thirteen profiles (546 repeated
 allocation-free refusals); neither original application executes. The existing
 command-only diagnostic still identifies import 2, GetEnvironmentVariableA,
 as its first unsupported import. Supporting that API in a separate explicit
@@ -164,3 +164,13 @@ has48 implemented import names in the49-name union and109 unsupported names.
 The32-import execution bound and directorymask0x46c remain unchanged;504 actual
 original-app refusals across12 profiles still produce no original version output.
 Locale/collation and general codepage tables remain refused.
+
+The [owned filesystem profile12](windows-path-checks.md) adds actual per-activation
+cwd, CreateFileW and A/W canonical path/share identity over the real native
+storage provider. Unicode files survive three independent NVMe boots, with an
+independent raw-disk directory/content oracle. The unchanged original SQLite
+now has52 implemented names and105 unsupported; its first unknown in this
+filesystem union is slot5 FindClose. Existing command/composed/Unicode diagnostics
+are preserved, along with directorymask0x46c and the32-import execution bound.
+All546 original-app attempts still refuse before allocation; directory iteration
+and remaining native provider semantics are subsequent work.

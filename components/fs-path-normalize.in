@@ -1,0 +1,39 @@
+package space.kernel
+
+// Trusted native caller-buffer path normalization. Pointer helpers are private
+// in SCI; this utility defines no guest-address or foreign drive/cwd policy.
+fn fs-path-range(pointer:Int,bytes:Int)->Int{if pointer<=0 || bytes<0 || pointer>0x7fffffffffffffff - bytes{return 0;}return 1;}
+fn fs-path-overlap(a:Int,abytes:Int,b:Int,bbytes:Int)->Int{if a<b+bbytes && b<a+abytes{return 1;}return 0;}
+fn fs-path-segments(source:Int,bytes:Int,scratch:Int,used:Int,capacity:Int)->Int{
+ let i=0;while i<bytes{
+  while i<bytes && load8(source+i)==47{i=i+1;}
+  let start=i;while i<bytes && load8(source+i)!=47{if load8(source+i)==0{return -22;}i=i+1;}
+  let n=i - start;if n>0{
+   if n==1 && load8(source+start)==46{}
+   else if n==2 && load8(source+start)==46 && load8(source+start+1)==46{
+    if used>1{used=used - 1;while used>1 && load8(scratch+used - 1)!=47{used=used - 1;}if used>1{used=used - 1;}}
+   }else{
+    let separator=0;if used>1{separator=1;}
+    if n+separator>capacity - used - 1{return -36;}
+    if separator!=0{store8(scratch+used,47);used=used+1;}
+    let j=0;while j<n{store8(scratch+used,load8(source+start+j));used=used+1;j=j+1;}
+   }
+  }
+ }return used;
+}
+// Return canonical bytes excluding NUL, or -22 malformed/aliasing and -36
+// insufficient output/scratch capacity. Scratch may change on failure; output
+// is committed only after both complete inputs have been consumed successfully.
+// Inputs need not be NULterminated and may alias output, never scratch.
+fn fs-path-normalize-into(cwd:Int,cwdbytes:Int,path:Int,pathbytes:Int,output:Int,capacity:Int,scratch:Int,scratchbytes:Int)->Int{
+ if cwdbytes<1 || cwdbytes>1023 || pathbytes<1 || pathbytes>1023 || capacity<2 || capacity>1024 || scratchbytes<2 || scratchbytes>4096{return -22;}
+ if fs-path-range(cwd,cwdbytes)==0 || fs-path-range(path,pathbytes)==0 || fs-path-range(output,capacity)==0 || fs-path-range(scratch,scratchbytes)==0{return -22;}
+ if fs-path-overlap(scratch,scratchbytes,cwd,cwdbytes)!=0 || fs-path-overlap(scratch,scratchbytes,path,pathbytes)!=0 || fs-path-overlap(scratch,scratchbytes,output,capacity)!=0{return -22;}
+ if load8(cwd)!=47{return -22;}
+ // Validate both complete input spans even when an absolute path ignores cwd.
+ let i=0;while i<cwdbytes{if load8(cwd+i)==0{return -22;}i=i+1;}i=0;while i<pathbytes{if load8(path+i)==0{return -22;}i=i+1;}
+ store8(scratch,47);let used=1;
+ if load8(path)!=47{used=fs-path-segments(cwd,cwdbytes,scratch,used,scratchbytes);if used<0{return used;}}
+ used=fs-path-segments(path,pathbytes,scratch,used,scratchbytes);if used<0{return used;}if used>=capacity{return -36;}
+ store8(scratch+used,0);i=0;while i<=used{store8(output+i,load8(scratch+i));i=i+1;}return used;
+}

@@ -14,16 +14,17 @@ ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--apps',type=Path,required=True)
 p.add_argument('--out',type=Path,required=True)
-p.add_argument('--profile',type=int,choices=[10,11],default=10)
+p.add_argument('--profile',type=int,choices=[10,11,12],default=10)
 a=p.parse_args()
 out=a.out.resolve()
 assert not out.exists() or not any(out.iterdir()),'--out must be new or empty'
 out.mkdir(parents=True,exist_ok=True)
 spec=importlib.util.spec_from_file_location('pe_inspector',ROOT/'scripts/inspect-windows-application.py')
 pe=importlib.util.module_from_spec(spec);spec.loader.exec_module(pe)
-contract_path=ROOT/('fixtures/windows-protected/unicode-contract.json' if a.profile==11 else 'fixtures/windows-protected/composed-contract.json')
+contract_name={10:'composed',11:'unicode',12:'paths'}[a.profile]
+contract_path=ROOT/f'fixtures/windows-protected/{contract_name}-contract.json'
 contract=json.loads(contract_path.read_text())
-contract_count=49 if a.profile==11 else 43
+contract_count={10:43,11:49,12:53}[a.profile]
 assert len(contract['api_ids'])==contract_count and set(contract['api_ids'].values())==set(range(contract_count))
 manifest=json.loads((ROOT/'fixtures/applications/windows-cli-2024.json').read_text())
 apps=[]
@@ -43,8 +44,8 @@ for declared in manifest['apps']:
     mask=sum(1<<int(i) for i in view['directories'] if int(i) not in accepted_dirs)
     row=dict(artifact=view,executed=False,supported_imports=supported,unsupported_imports=unknown,import_slots=view['import_count'],execution_import_slot_limit=contract['execution_import_limit'],unsupported_directory_mask=hex(mask),preferred_base_policy='zero-slide only; no relocation execution admitted')
     if declared['name']=='sqlite3':
-        assert len(supported)==(48 if a.profile==11 else 42) and len(unknown)==(109 if a.profile==11 else 115) and view['import_count']==157
-        assert unknown[0]['one_based_slot']==3 and unknown[0]['name']=='SetCurrentDirectoryW'
+        assert len(supported)=={10:42,11:48,12:52}[a.profile] and len(unknown)=={10:115,11:109,12:105}[a.profile] and view['import_count']==157
+        assert unknown[0]['one_based_slot']==(5 if a.profile==12 else 3) and unknown[0]['name']==('FindClose' if a.profile==12 else 'SetCurrentDirectoryW')
         assert mask==0x46c and view['entry']=='0x140003a8a' and view['preferred_base']=='0x140000000'
         command=['objdump','-d','--start-address=0x140234e48','--stop-address=0x140234ee0',str(path)]
         disassembly=subprocess.check_output(command,text=True)

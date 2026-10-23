@@ -28,9 +28,9 @@ fn windows-parameters-composed-prepare()->void{
 }
 fn windows-parameters-composed-release()->void{if windows-parameters-composed-data!=0{frame-free(windows-parameters-composed-data);windows-parameters-composed-data=0;}}
 fn windows-command-composed-run-profile(image:Int,size:Int,config:Int,profile:Int)->Int{
- if profile!=10 && profile!=11{return -22;}
+ if profile!=10 && profile!=11 && profile!=12{return -22;}
  if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0 || windows-parameters-env-active!=0 || windows-parameters-time-active!=0 || windows-parameters-composed-active!=0{return -16;}
- let mode=8;if profile==11{mode=9;}let entry=windows-startup-entry-mode(image,size,mode);if entry<0{return entry;}
+ let mode=8;if profile==11{mode=9;}if profile==12{mode=10;}let entry=windows-startup-entry-mode(image,size,mode);if entry<0{return entry;}
  // Native caller owns a readable descriptor/input block for the synchronous
  // call. Copy validated fields into locals before touching execution state.
  if config<=0 || (config&7)!=0 || config>0x100000000 - 96{return -22;}
@@ -41,6 +41,7 @@ fn windows-command-composed-run-profile(image:Int,size:Int,config:Int,profile:In
  if windows-parameters-line-valid(line,bytes)==0 || windows-parameters-env-valid(env,envbytes)==0{return -22;}
  if cap-check(memory,cap-memory())==0{return -13;}
  if serial>=0 && cap-check(serial,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}
+ if profile==12{if cap-check(storage,cap-storage())==0{return -13;}if sf-disk-ready==0 || volume-ready!=0{return -38;}}
  if (flags&1)!=0{if cap-check(timer,cap-timer())==0{return -13;}}
  else{if timer!=-1{return -22;}if windows-parameters-composed-needs-clock(image,size)!=0{return -13;}}
  if windows-parameters-heap-generation>=0x7fffffff{return -12;}

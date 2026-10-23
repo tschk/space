@@ -254,33 +254,24 @@ fn windows-protected-store64(addr: Int, value: Int) -> void {
   while i < 8 { store8(windows-protected-physical(addr + i), value >> (i * 8)); i = i + 1 }
 }
 
-fn windows-protected-createfile(frame: Int) -> Int {
-  if windows-protected-files-ready() == 0 { return -1 }
-  let path = load64(frame + 96)
+fn windows-protected-createfile-arguments(frame: Int) -> Int {
   let access = load64(frame + 88) & 0xFFFFFFFF
   let sharing = load64(frame + 56) & 0xFFFFFFFF
   let security = load64(frame + 48)
   let stack = load64(frame + 144)
-  if windows-protected-span(stack + 40, 24, 0) == 0 { windows-protected-error = 998; return -1 }
+  if windows-protected-span(stack + 40, 24, 0) == 0 { windows-protected-error = 998; return 0 }
   let disposition = windows-protected-load64(stack + 40) & 0xFFFFFFFF
   let attrs = windows-protected-load64(stack + 48) & 0xFFFFFFFF
   let template = windows-protected-load64(stack + 56)
-  if (access != 0x80000000 && access != 0x40000000 && access != 0xC0000000) || sharing > 3 || security != 0 || disposition < 1 || disposition > 5 || attrs != 0x80 || template != 0 { windows-protected-error = 87; return -1 }
+  if (access != 0x80000000 && access != 0x40000000 && access != 0xC0000000) || sharing > 3 || security != 0 || disposition < 1 || disposition > 5 || attrs != 0x80 || template != 0 { windows-protected-error = 87; return 0 }
   // Creation/truncation is admitted only with explicit write access. Read-only
   // OPEN_EXISTING retains the earlier profile without destructive widening.
-  if disposition != 3 && (access & 0x40000000) == 0 { windows-protected-error = 87; return -1 }
-  let slot = 3
-  while slot < VFS-MAX-FDS && windows-protected-file-host(slot) >= 3 { slot = slot + 1 }
-  if slot >= VFS-MAX-FDS || vfs-fd-alloc() < 0 { windows-protected-error = 4; return -1 }
-  let copy = windows-protected-paths + slot * 256
-  let i = 0
-  while i < 256 {
-    if windows-protected-span(path + i, 1, 0) == 0 { windows-protected-error = 998; return -1 }
-    let ch = load8(windows-protected-physical(path + i))
-    store8(copy + i, ch)
-    if ch == 0 {
-      if i == 0 { windows-protected-error = 2; return -1 }
-      if sf-path-name-valid(copy) == 0 { windows-protected-error = 206; return -1 }
+  if disposition != 3 && (access & 0x40000000) == 0 { windows-protected-error = 87; return 0 }
+  return 1
+}
+
+fn windows-protected-createfile-owned(frame:Int,slot:Int,copy:Int)->Int{
+ let access=load64(frame+88)&0xffffffff;let sharing=load64(frame+56)&0xffffffff;let stack=load64(frame+144);let disposition=windows-protected-load64(stack+40)&0xffffffff;
       let flags = VFS-O-RDONLY
       if access == 0x40000000 { flags = VFS-O-WRONLY }
       if access == 0xC0000000 { flags = VFS-O-RDWR }
@@ -304,6 +295,25 @@ fn windows-protected-createfile(frame: Int) -> Int {
         if exists != 0 { windows-protected-error = 183 }
       }
       return slot
+}
+
+fn windows-protected-createfile(frame: Int) -> Int {
+  if windows-protected-files-ready() == 0 { return -1 }
+  if windows-protected-createfile-arguments(frame) == 0 { return -1 }
+  let path = load64(frame + 96)
+  let slot = 3
+  while slot < VFS-MAX-FDS && windows-protected-file-host(slot) >= 3 { slot = slot + 1 }
+  if slot >= VFS-MAX-FDS || vfs-fd-alloc() < 0 { windows-protected-error = 4; return -1 }
+  let copy = windows-protected-paths + slot * 256
+  let i = 0
+  while i < 256 {
+    if windows-protected-span(path + i, 1, 0) == 0 { windows-protected-error = 998; return -1 }
+    let ch = load8(windows-protected-physical(path + i))
+    store8(copy + i, ch)
+    if ch == 0 {
+      if i == 0 { windows-protected-error = 2; return -1 }
+      if sf-path-name-valid(copy) == 0 { windows-protected-error = 206; return -1 }
+      return windows-protected-createfile-owned(frame,slot,copy)
     }
     i = i + 1
   }
@@ -311,11 +321,13 @@ fn windows-protected-createfile(frame: Int) -> Int {
   return -1
 }
 
+fn windows-protected-path-at(slot:Int)->Int{if windows-protected-profile==12{return windows-parameters-path-slot(slot);}return windows-protected-paths+slot*256;}
+
 fn windows-protected-share-valid(path: Int, flags: Int, sharing: Int) -> Int {
   let i = 3
   while i < VFS-MAX-FDS {
     let host = windows-protected-file-host(i)
-    if host >= 3 && strcmp(path, windows-protected-paths + i * 256) == 0 {
+    if host >= 3 && strcmp(path, windows-protected-path-at(i)) == 0 {
       let old-flags = load64(vfs-fd-table + host * 32 + 16) & 3
       let old-share = load64(windows-protected-shares + i * 8)
       if flags != VFS-O-WRONLY && (old-share & 1) == 0 { return 0 }
@@ -432,7 +444,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   } else if num == 0x100001 { result = windows-protected-writefile(frame) }
   else if num == 0x100002 { result = windows-protected-domain }
   else if num == 0x100004 { result = windows-protected-error }
-  else if num == 0x100005 { result = windows-protected-createfile(frame) }
+  else if num == 0x100005 { if windows-protected-profile == 12 { result = windows-parameters-path-create(frame,0) } else { result = windows-protected-createfile(frame) } }
   else if num == 0x100006 { result = windows-protected-readfile(frame) }
   else if num == 0x100007 { result = windows-protected-seek(frame) }
   else if num == 0x100008 { result = windows-protected-close(load64(frame + 96)) }
@@ -442,7 +454,8 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   else if num >= 0x100014 && num <= 0x100017 && (windows-protected-profile == 5 || windows-protected-profile >= 10) && windows-parameters-env-active != 0 { if windows-protected-profile >= 10 && cap-check(windows-parameters-heap-authority,cap-memory()) == 0 { windows-protected-error = 5;result = 0 } else { result = windows-parameters-env-dispatch(frame, num) } }
   else if num >= 0x100018 && num <= 0x10001C && (windows-protected-profile == 7 || windows-protected-profile == 8 || windows-protected-profile == 9 || windows-protected-profile >= 10) { result = windows-parameters-heap-dispatch(frame, num) }
   else if num >= 0x10001D && num <= 0x100024 && (windows-protected-profile == 8 || windows-protected-profile >= 10) { result = windows-parameters-local-dispatch(frame, num) }
-  else if num >= 0x10002B && num <= 0x100030 && windows-protected-profile == 11 { result = windows-parameters-unicode-dispatch(frame,num) }
+  else if num >= 0x10002B && num <= 0x100030 && windows-protected-profile >= 11 { result = windows-parameters-unicode-dispatch(frame,num) }
+  else if num >= 0x100031 && num <= 0x100034 && windows-protected-profile == 12 { result = windows-parameters-path-dispatch(frame,num) }
   else { result = 0; windows-protected-error = 120 }
   if windows-protected-profile >= 2 { store32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104), windows-protected-error) }
   store64(frame + 112, result)
@@ -496,10 +509,11 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     entry = windows-startup-entry-mode(image, size, 7)
   }
   if profile >= 10 {
-    if profile > 11 { return -22 }
+    if profile > 12 { return -22 }
     if windows-parameters-composed-active == 0 || windows-parameters-env-active == 0 || windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
     let mode = 8
     if profile == 11 { mode = 9 }
+    if profile == 12 { mode = 10 }
     entry = windows-startup-entry-mode(image, size, mode)
   }
   if entry < 0 { return entry }
@@ -513,6 +527,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if profile == 8 { needed = needed + 6 }
   if profile == 9 { needed = needed + 1 }
   if profile >= 10 { needed = needed + 14 }
+  if profile == 12 { needed = needed + 6 }
   if windows-protected-owned-pages(image,profile)>WINDOWS-PROTECTED-MAX-FRAMES { return -12 }
   // All seven retained alloc() blocks are 16-byte multiples. Free frames
   // cannot fund these first-use bump allocations; reserve them before rounding
@@ -584,7 +599,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
   let services = 43
-  if profile == 11 { services = 49 }
+  if profile >= 11 { services = 49 }
+  if profile == 12 { services = 53 }
   while i < services {
     let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
@@ -612,7 +628,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
       if profile == 8 { index = windows-parameters-local-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile == 9 { index = windows-parameters-critical-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile >= 10 { index = windows-parameters-composed-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
-      if profile == 11 { index = windows-parameters-unicode-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 11 { index = windows-parameters-unicode-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 12 { index = windows-parameters-path-import(image,size,load64(image+windows-protected-rva(image,size,lookup+i*8,8))) }
       store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
     }
   }
@@ -637,6 +654,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if profile == 8 || profile >= 10 { windows-parameters-local-prepare(domain, stub) }
   if profile == 9 || profile >= 10 { windows-parameters-critical-prepare() }
   if profile >= 10 { windows-parameters-composed-prepare() }
+  if profile == 12 { windows-parameters-path-prepare() }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = 0
   if profile == 8 || profile >= 10 { status = windows-parameters-local-run(entry, domain, 0x4F003FD8) }
@@ -645,6 +663,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   wrmsr64(0xC0000101, caller-gs)
   domain-user-syscall-hook = 0
   windows-protected-files-release()
+  if profile == 12 { windows-parameters-path-release() }
   if profile == 5 || profile >= 10 { windows-parameters-env-release() }
   if profile == 9 || profile >= 10 { windows-parameters-critical-release() }
   if profile == 8 || profile >= 10 { windows-parameters-local-release() }

@@ -364,3 +364,29 @@ main and actualFLS callback across773 PC/Q35/noHPET activations. All17 older
 Windows gates pass again, including sixNVMe boots and504 original SQLite/7za
 refusals across12 profiles. Locale/collation, wide file/module APIs and admitted
 PE metadata remain next dependencies; no originalWindowsCLI executes.
+
+## Owned cwd and wide file checkpoint
+
+[Profile12](../windows-path-checks.md) adds a declared C: namespace over actual
+borrowed synchronous Storage. The new native caller-buffer normalizer owns no
+foreign policy, allocates nothing and commits output atomically. Six native-only
+frames own cwd/scratch and1024-byte stable borrowed VFS paths; real file cleanup
+precedes path-frame release. A/W opens share canonical identity only in this
+new profile. Earlier profiles keep their existing behavior and admission.
+
+The focused CPL3 receipt records1326 activations, real directory/file/Unicode/
+query/denial semantics, exact177-refuse/178-recover and26912 bump reservation,
+native inode/bitmap and handle invariants, private-pointer faults, held deadline
+and live Storage revoke. Three independent NVMe boots add63 activations: onlyA
+formats, the guest writes a Unicode file through CreateFileW and reopens through
+A, thenB/C read it. A read-only raw-disk oracle validates nested UTF8 names/inode
+and exact bytes. The native normalizer model passes233 cases×3 compilerprofiles.
+Nineteen old Windows gates pass; a final profile12-only trailing-file separator
+refusal retains an actual pre-fix failing kernel control and affected fresh
+focused/NVMe/CLI receipts. Source/model/guest proofs are classified separately.
+
+Original SQLite still refuses:52 implemented imports/105 unsupported, next name
+FindClose at slot5,157 names versus limit32, unsupported metadata mask0x46c. No
+original Windows CLI executes. A real bounded native directory iterator is the
+next provider needed for FindFirst/Next/Close; timestamps, wide mutations, module/
+locale/mapping APIs and admitted PE metadata remain distinct executable work.

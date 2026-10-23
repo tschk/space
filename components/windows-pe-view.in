@@ -56,6 +56,8 @@ fn windows-application-import-barrier(image: Int, size: Int, parameters: Int) ->
     let id = windows-application-import-id(image, size, name)
     if parameters != 0 { id = windows-parameters-import-id(image, size, name) }
     if parameters == 2 { id = windows-parameters-composed-import(image, size, name) }
+    if parameters == 3 { id = windows-parameters-unicode-import(image,size,name) }
+    if parameters == 4 { id = windows-parameters-path-import(image,size,name) }
     if id < 0 { return i + 1 }
     i = i + 1
   }
