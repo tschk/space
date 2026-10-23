@@ -85,3 +85,20 @@ this mutating boot self-test; private SCI import denial still executes each boot
 The production snapshot provider is unchanged. Source variance and hashes are
 recorded, and before-B/C disk copies are retained. This proves synchronous
 completed-write/reopen observations, not crash atomicity or Windows enumeration.
+
+The subsequent [ordinary boot fix](2026-10-24-boot-storage-preservation.md)
+removes the need for that test-root omission. The current production boot path
+keeps its diagnostic behind a RAM-only guard; the NVMe sentinel/whole-disk oracle
+passes with this ordinary path present.
+
+Live Storage authority is now checked before each direct or indirect provider
+read and again before output publication. Mid-observation revocation performs
+exactly the one already-admitted read and refuses further I/O with-2; previously
+traversal continued reading before its final refusal. The old provider with the
+new unchanged read-count assertion fails at
+`/workspace/native-directory-revoke-control/report.json`. The corrected provider
+passes21 RAM snapshots and63 snapshots over three NVMe boots at
+`/workspace/native-directory-live-read-{ram,nvme}/report.json`. The source audit
+matches the live provider exactly after reversing only its declared test read
+wrapper. Previously captured bytes in caller-owned scratch are not erased by
+revocation; output remains unchanged on the refused operation.

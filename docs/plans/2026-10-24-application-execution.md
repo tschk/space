@@ -417,3 +417,15 @@ NVMe boots preserve a user-owned `test.sci` and all disk bytes on read-only
 reopens. The old root fails the same sentinel oracle. RAM boot, file-based SCI
 execution and three filename/deep-path/remount boots pass. See the
 [boot preservation proof](2026-10-24-boot-storage-preservation.md).
+
+The105-gate run is now complete:104 passed/1 failed, integrity passed with no
+changed source/compiler/apps. Its sole failure is that preserved external wall
+timeout; the exact-binary retry above passes every original assertion. It is not
+relabeled as a105/105 initial run. Newer Windows paths, high-address mapper,
+directory provider and boot preservation have separately scoped receipts.
+
+The directory provider's current read guard is additionally verified on both
+backends:21 RAM observations and63 across three NVMe boots. Authority revocation
+after the first admitted read now causes immediate refusal before further
+provider I/O. The previous provider fails the same exact read-count assertion;
+the output-atomicity and metadata/resource witnesses remain unchanged.

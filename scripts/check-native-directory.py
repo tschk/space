@@ -17,6 +17,7 @@ p.add_argument('--in', dest='compiler', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--nvme', action='store_true', help='new owned64MiB disk; format only boot A, then reopen in B/C')
 p.add_argument('--root-source', type=Path, help='explicit alternate boot root for preserved mutation regression controls')
+p.add_argument('--provider-source', type=Path, help='explicit alternate native provider for preserved refusal regression controls')
 a = p.parse_args()
 a.out = a.out.resolve()
 a.compiler = a.compiler.resolve()
@@ -27,7 +28,8 @@ snap = a.out / 'source'
 snap.mkdir()
 with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(['git', 'archive', 'HEAD'], cwd=ROOT))) as tar:
     tar.extractall(snap, filter='data')
-shutil.copyfile(ROOT / 'components/fs-directory-snapshot.in', snap / 'components/fs-directory-snapshot.in')
+provider_source = (a.provider_source or ROOT / 'components/fs-directory-snapshot.in').resolve()
+shutil.copyfile(provider_source, snap / 'components/fs-directory-snapshot.in')
 root_source = (a.root_source or ROOT / 'kernel/kernel-root.in').resolve()
 shutil.copyfile(root_source, snap / 'kernel/kernel-root.in')
 provider = snap / 'components/fs-directory-snapshot.in'
@@ -51,6 +53,7 @@ report = {'status': 'running', 'compiler_sha256': sha(a.compiler), 'runner_sha25
           'scope': 'synchronous native storage provider; no foreign app execution',
           'backend': 'NVMe' if a.nvme else 'guest RAM-backed SparkFS'}
 report['boot_root'] = {'path': str(root_source), 'sha256': sha(root_source), 'alternate_control': a.root_source is not None}
+report['native_provider'] = {'path': str(provider_source), 'sha256': sha(provider_source), 'alternate_control': a.provider_source is not None}
 
 def run(command, name, timeout=180):
     report['commands'].append(command)
@@ -141,7 +144,8 @@ fn private-entry(info:Int)->Int{return fs-directory-snapshot-into(info,0,0,0,0,0
     source += r'''
 var directory-test-fail:Int=0
 var directory-test-revoke:Int=0
-fn directory-test-read(block:Int,buffer:Int)->Int{if directory-test-fail!=0{directory-test-fail=0;return -1;}let result=sf-read-block(block,buffer);if result==0&&directory-test-revoke!=0{cap-revoke(directory-test-revoke);directory-test-revoke=0;}return result;}
+var directory-test-reads:Int=0
+fn directory-test-read(block:Int,buffer:Int)->Int{directory-test-reads+=1;if directory-test-fail!=0{directory-test-fail=0;return -1;}let result=sf-read-block(block,buffer);if result==0&&directory-test-revoke!=0{cap-revoke(directory-test-revoke);directory-test-revoke=0;}return result;}
 fn directory-name(i:Int,buffer:Int)->void{
  let j=0;while j<7{store8(buffer+j,load8("/enum/f"+j));j+=1;}
  store8(buffer+7,48+(i/1000)%10);store8(buffer+8,48+(i/100)%10);store8(buffer+9,48+(i/10)%10);store8(buffer+10,48+i%10);store8(buffer+11,0);
@@ -188,7 +192,7 @@ fn directory-check(port:Int)->void{
  directory-refuse("/enum/../empty",auth,out,131104,scratch,-1);directory-refuse("/enum/",auth,out,131104,scratch,-1);
  if fs-directory-snapshot-into("/enum",auth,out,131104,out,135200)!=-1{panic("directory scratch alias");}
  directory-test-fail=1;directory-refuse("/enum",auth,out,131104,scratch,-7);
- directory-test-revoke=revocable;directory-refuse("/enum",revocable,out,131104,scratch,-2);
+ directory-test-reads=0;directory-test-revoke=revocable;directory-refuse("/enum",revocable,out,131104,scratch,-2);if directory-test-reads!=1{serial-write-cstr(port,"directory continued I/O after grant revoke");serial-nl(port);outb(0xf4,17);panic("directory continued I/O after grant revoke");}
  let total=load64(sf-super+SF-SB-TOTAL-BLOCKS);store64(sf-super+SF-SB-TOTAL-BLOCKS,0);directory-refuse("/enum",auth,out,131104,scratch,-7);store64(sf-super+SF-SB-TOTAL-BLOCKS,total);
  let root=load32(sf-super+SF-SB-ROOT-INODE);let rootblock=load64(sf-inode-addr(root)+SF-IN-DIRECT);if sf-read-block(rootblock,blockcopy)!=0{panic("directory path corrupt setup");}let target=load32(blockcopy);store32(blockcopy,2048);if sf-write-block(rootblock,blockcopy)!=0{panic("directory path corrupt write");}directory-refuse("/enum",auth,out,131104,scratch,-7);store32(blockcopy,target);if sf-write-block(rootblock,blockcopy)!=0{panic("directory path corrupt restore");}
  let direct=load64(addr+SF-IN-DIRECT);store64(addr+SF-IN-DIRECT,SF-MAX-TOTAL-BLOCKS);directory-refuse("/enum",auth,out,131104,scratch,-7);store64(addr+SF-IN-DIRECT,direct);

@@ -18,18 +18,22 @@ fn fs-directory-block-valid(block:Int)->Int{
 // Direct and one indirect block cover the currently bounded directory profile.
 // Validate indirect addresses before reading them; never follow corrupt disk
 // pointers through the older unchecked inode-block helper.
-fn fs-directory-block(inode:Int,index:Int,scratch:Int)->Int{
+fn fs-directory-read(block:Int,buffer:Int,authority:Int)->Int{
+ if cap-check(authority,cap-storage())==0{return -2;}
+ if sf-read-block(block,buffer)!=0{return -7;}return 0;
+}
+fn fs-directory-block(inode:Int,index:Int,scratch:Int,authority:Int)->Int{
  let record=sf-inode-addr(inode);
- if index<0 || index>=SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT{return -1;}
+ if index<0 || index>=SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT{return -7;}
  let block=0;
  if index<SF-INODE-DIRECT{block=load64(record+SF-IN-DIRECT+index*8);}
  else{
   let indirect=load64(record+SF-IN-INDIRECT);
-  if fs-directory-block-valid(indirect)==0{return -1;}
-  if sf-read-block(indirect,scratch)!=0{return -1;}
+  if fs-directory-block-valid(indirect)==0{return -7;}
+  let status=fs-directory-read(indirect,scratch,authority);if status!=0{return status;}
   block=load64(scratch+(index - SF-INODE-DIRECT)*8);
  }
- if fs-directory-block-valid(block)==0{return -1;}return block;
+ if fs-directory-block-valid(block)==0{return -7;}return block;
 }
 fn fs-directory-size(inode:Int)->Int{
  let count=load32(sf-super+SF-SB-INODE-COUNT);
@@ -38,11 +42,11 @@ fn fs-directory-size(inode:Int)->Int{
  let size=load64(record+SF-IN-SIZE);
  if size<0 || size%32!=0 || size>(SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT)*4096{return -7;}return size;
 }
-fn fs-directory-find(inode:Int,name:Int,bytes:Int,buffer:Int)->Int{
+fn fs-directory-find(inode:Int,name:Int,bytes:Int,buffer:Int,authority:Int)->Int{
  let size=fs-directory-size(inode);if size<0{return size;}let offset=0;
  while offset<size{
-  let block=fs-directory-block(inode,offset/4096,buffer);
-  if block<0 || sf-read-block(block,buffer)!=0{return -7;}
+  let block=fs-directory-block(inode,offset/4096,buffer,authority);if block<0{return block;}
+  let status=fs-directory-read(block,buffer,authority);if status!=0{return status;}
   let limit=size - offset;if limit>4096{limit=4096;}let at=0;
   while at<limit{
    let item=load32(buffer+at);
@@ -54,14 +58,14 @@ fn fs-directory-find(inode:Int,name:Int,bytes:Int,buffer:Int)->Int{
   }offset+=limit;
  }return -4;
 }
-fn fs-directory-resolve(path:Int,length:Int,buffer:Int)->Int{
+fn fs-directory-resolve(path:Int,length:Int,buffer:Int,authority:Int)->Int{
  if load8(path)!=47{return -1;}
  let inode=load32(sf-super+SF-SB-ROOT-INODE);if length==1{return inode;}
  let at=1;
  while at<length{
   let start=at;while at<length && load8(path+at)!=47{at+=1;}let bytes=at - start;
   if bytes<1 || bytes>24 || (bytes==1 && load8(path+start)==46) || (bytes==2 && load8(path+start)==46 && load8(path+start+1)==46){return -1;}
-  inode=fs-directory-find(inode,path+start,bytes,buffer);if inode<0{return inode;}
+  inode=fs-directory-find(inode,path+start,bytes,buffer,authority);if inode<0{return inode;}
   if at<length{at+=1;if at==length{return -1;}}
  }return inode;
 }
@@ -90,13 +94,13 @@ fn fs-directory-snapshot-into(path:Int,authority:Int,output:Int,capacity:Int,scr
  let total=load64(sf-super+SF-SB-TOTAL-BLOCKS);let first=load64(sf-super+SF-SB-DATA-START);
  if count<1 || count>SF-MAX-INODE-COUNT || total<2 || total>SF-MAX-TOTAL-BLOCKS || first<1 || first>=total{return -7;}
  let mount=sf-mount-id;let block-buffer=scratch+capacity;
- let inode=fs-directory-resolve(path,length,block-buffer);if inode<0{return inode;}
+ let inode=fs-directory-resolve(path,length,block-buffer,authority);if inode<0{return inode;}
  let size=fs-directory-size(inode);if size<0{return size;}
  cpu-mem-fill64(scratch,0,4);store64(scratch,FS-DIRECTORY-SNAPSHOT-MAGIC);store64(scratch+8,mount);store64(scratch+24,64);
  let entries=0;let offset=0;
  while offset<size{
-  let block=fs-directory-block(inode,offset/4096,block-buffer);
-  if block<0 || sf-read-block(block,block-buffer)!=0{return -7;}
+  let block=fs-directory-block(inode,offset/4096,block-buffer,authority);if block<0{return block;}
+  let status=fs-directory-read(block,block-buffer,authority);if status!=0{return status;}
   let limit=size - offset;if limit>4096{limit=4096;}
   let at=0;while at<limit{
    let item=load32(block-buffer+at);
