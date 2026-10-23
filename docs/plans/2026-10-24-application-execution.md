@@ -188,3 +188,30 @@ FLTK1.3.9 `fluid` is acquired and source-built without upstream patches. A real
 host GUI reference edits/saves/reopens a form. Actual Space protected-loader
 admission refuses its dynamic ELF before allocation; this remains blocked,
 with no payload execution. See [the workload evidence](../fltk-gui-workload.md).
+
+
+## Reviewed native protection and Windows local storage
+
+Protected native SCI profiles are committed in `78fdae6`. Independent root
+regressions from the exact committed source snapshot pass paged279 and
+immutable274 actual invocations plus the32MiB exact-budget refusal/recovery
+case. `/workspace/native-core-independent-report.json` links their exact
+artifacts/compiler hashes and confirms no snapshot file changed. This does not
+switch the trusted shipped CLI/GUI loader. Actual protected GUI clients remain
+the next integration step; their staging and accepted presentation buffers have
+separate ownership.
+
+Windows TLS/FLS is committed in `66d1290`, after actual callback/context proofs,
+3544 activations across eight fresh boots, all14 older regressions and the
+reviewed cold-cache admission fix. The final narrow-delta gate passes443 focused
+activations plus one cold recovery, with six allocation-free refusals. Original
+Windows applications remain unexecuted.
+
+The69-gate run finishes68 passed/1 failed with source/compiler/application
+integrity passed at `/workspace/lab69/report.json`. Native GUI interaction,
+five-boot persistence and129-session ownership all pass. Minimal Linux children
+fail when the fixed-TSC-spin cumulative-budget test returns42 instead of124 on
+its eighth measured activation; earlier cycles and the standard counterpart
+pass. Preserve that test failure and replace its host-speed assumption with a
+robust actual-IRQ witness before claiming complete integration. The69-gate
+snapshot predates the native SCI and Windows TLS/FLS commits above.

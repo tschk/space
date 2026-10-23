@@ -95,15 +95,25 @@ Windows environment and native hardware-counter translation are committed in
 `2de596c`; the private process heap is committed in `03fa931`. Their actual
 protected checks pass380 environment,593 counter/clock and485 heap launches,
 with explicit unavailable-counter and allocation/admission refusals. TLS/FLS
-callback work remains under test. Original Windows applications remain refused.
+callbacks are committed in `66d1290`, with3544 activations across eight fresh
+boots, all14 older regressions and exact cold-cache admission/recovery checks. Original Windows applications remain refused.
 
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
 self-update pass; the existing Space toolchain remains frozen at0.9.324 until
 new-profile integration is verified. Darwin startup is committed in `168e01f`, with344 actual CPL3 executions,
 exact first-cache memory admission/recovery and unchanged483/548 old gates.
-Protected native SCI execution has initial actual CPL3 proofs under review. Protected GUI clients,
+Protected native SCI profiles are committed in `78fdae6`, with separate
+paged279/immutable274 actual invocation proofs,140 protected lifecycle
+instances per profile and exact32MiB refusal/recovery. The shipped native GUI
+loader remains trusted CPL0; the new protected GUI integration is in progress. Protected GUI clients,
 original Darwin/Windows applications and foreign GUI workloads remain open.
+
+The subsequent69-gate immutable run passes68 and fails one cumulative-budget
+test on the minimal image; source/compiler/application integrity passes. This
+is retained as an integration failure while its fixed-TSC timing assumption is
+repaired. It does not invalidate the52-gate historical checkpoint or silently
+remove the failed assertion.
 
 ## Full completion goal
 
