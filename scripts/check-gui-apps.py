@@ -175,11 +175,11 @@ for mutate in (
         raise AssertionError("native GUI policy silently dropped or widened storage authority")
 image = bytearray((out / "kernel.bin").read_bytes())
 assert len(image) < 0x180000, "retain kernel/injected image separation"
-for physical, blob in [(0x280000, input_image), (0x290000, client_image), (0x2A0000, right_image)]:
+for physical, blob in [(0x280000, input_image), (0x2A0000, client_image), (0x2C0000, right_image)]:
     offset = physical - 0x100000
     assert (
         len(image) <= offset
-        and len(blob) <= 0x10000
+        and len(blob) <= 0x20000
         and physical + len(blob) < 0x300000
     )
     image += bytes(offset - len(image)) + blob
