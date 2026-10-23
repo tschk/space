@@ -830,6 +830,28 @@ enter_user_common:
     fxsave64 [kernel_fx_state]
     fninit
     ldmxcsr [initial_mxcsr]
+    test qword [enter_rflags], 0x3000
+    jnz .fx_ready                   ; preserve legacy entry register contract
+    ; FNINIT clears tags, not underlying x87 bytes. Overwrite all eight slots.
+    times 8 fldz
+    fninit
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    pxor xmm4, xmm4
+    pxor xmm5, xmm5
+    pxor xmm6, xmm6
+    pxor xmm7, xmm7
+    pxor xmm8, xmm8
+    pxor xmm9, xmm9
+    pxor xmm10, xmm10
+    pxor xmm11, xmm11
+    pxor xmm12, xmm12
+    pxor xmm13, xmm13
+    pxor xmm14, xmm14
+    pxor xmm15, xmm15
+.fx_ready:
     pushfq
     pop qword [enter_saved_rflags]
     pop qword [enter_saved_rip]
@@ -865,6 +887,24 @@ enter_user_common:
     jz .iret
     mov cr3, rcx
 .iret:
+    test qword [enter_rflags], 0x3000
+    jnz .ready
+    ; Only the explicit argument and IRET frame cross the strict entry boundary.
+    xor eax, eax
+    xor ebx, ebx
+    xor ecx, ecx
+    xor edx, edx
+    xor esi, esi
+    xor ebp, ebp
+    xor r8d, r8d
+    xor r9d, r9d
+    xor r10d, r10d
+    xor r11d, r11d
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r14d, r14d
+    xor r15d, r15d
+.ready:
     iretq
 .busy:
     mov rax, -16

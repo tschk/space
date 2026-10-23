@@ -16,6 +16,8 @@ var cr3-read-stub: Int = 0
 var cr3-write-stub: Int = 0
 // Only empty user trees created here may be retired by the user-tree teardown.
 var domain-user-owned: Int = 0
+// Clone trees own private child tables but contain shared identity-map leaves.
+var domain-clone-owned: Int = 0
 // Supervisor-installed ABI edge dispatcher; zero keeps the native syscall ABI.
 var domain-user-syscall-hook: Int = 0
 
@@ -236,19 +238,77 @@ fn domain-map-trampoline(domain: Int) -> void {
 }
 
 fn domain-create() -> Int {
-  if domain-count >= MAX-DOMAINS {
-    return -1
-  }
-  let id = domain-count
+  let id = 1
+  while id < domain-count && load64(domain-table + id * 24 + 8) != DOMAIN-FREE { id = id + 1 }
+  if id >= MAX-DOMAINS { return -1 }
   let pml4 = create-shared-domain-pml4()
-  if pml4 == 0 {
-    return -1
-  }
-  store64(domain-table + id * 24 + 0, pml4)
+  if pml4 == 0 { return -1 }
+  store64(domain-table + id * 24, pml4)
   store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
   store64(domain-table + id * 24 + 16, -1)
-  domain-count = domain-count + 1
+  domain-clone-owned = domain-clone-owned | (1 << id)
+  if id == domain-count { domain-count = domain-count + 1 }
   return id
+}
+
+// Structural table ledger for the explicit clone kind. Every non-huge child
+// table was privately copied/allocated; huge identity leaves are borrowed.
+// Validate the bounded four-directory shape and kernel-table separation first.
+fn domain-destroy-clone-owned(domain: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
+  if domain <= 0 || domain >= domain-count { return -1 }
+  if (domain-clone-owned & (1 << domain)) == 0 || (domain-user-owned & (1 << domain)) != 0 { return -1 }
+  let root = load64(domain-table + domain * 24)
+  let kernel-root = load64(domain-table)
+  if root == 0 || root == kernel-root || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let i = 1
+  while i < 512 { if load64(root + i * 8) != 0 { return -1 }; i = i + 1 }
+  let e4 = load64(root)
+  if (e4 & 1) == 0 || (e4 & 128) != 0 { return -1 }
+  let pdpt = e4 & PAGE-ADDRESS-MASK
+  let kernel-pdpt = load64(kernel-root) & PAGE-ADDRESS-MASK
+  if pdpt == kernel-pdpt { return -1 }
+  i = 4
+  while i < 512 { if load64(pdpt + i * 8) != 0 { return -1 }; i = i + 1 }
+  let j = 0
+  while j < 4 {
+    let e3 = load64(pdpt + j * 8)
+    if (e3 & 1) == 0 || (e3 & 128) != 0 { return -1 }
+    let pd = e3 & PAGE-ADDRESS-MASK
+    let kernel-pd = load64(kernel-pdpt + j * 8) & PAGE-ADDRESS-MASK
+    if pd == kernel-pd || pd == root || pd == pdpt { return -1 }
+    let k = 0
+    while k < 512 {
+      let e2 = load64(pd + k * 8)
+      if (e2 & 1) != 0 && (e2 & 128) == 0 {
+        let leaf = e2 & PAGE-ADDRESS-MASK
+        let kernel-e2 = load64(kernel-pd + k * 8)
+        if leaf == root || leaf == pdpt || leaf == pd { return -1 }
+        if (kernel-e2 & 1) != 0 && (kernel-e2 & 128) == 0 && leaf == (kernel-e2 & PAGE-ADDRESS-MASK) { return -1 }
+      }
+      k = k + 1
+    }
+    j = j + 1
+  }
+  j = 0
+  while j < 4 {
+    let pd = load64(pdpt + j * 8) & PAGE-ADDRESS-MASK
+    let k = 0
+    while k < 512 {
+      let e2 = load64(pd + k * 8)
+      if (e2 & 1) != 0 && (e2 & 128) == 0 { frame-free(e2 & PAGE-ADDRESS-MASK) }
+      k = k + 1
+    }
+    frame-free(pd)
+    j = j + 1
+  }
+  frame-free(pdpt)
+  frame-free(root)
+  store64(domain-table + domain * 24, 0)
+  store64(domain-table + domain * 24 + 8, DOMAIN-FREE)
+  store64(domain-table + domain * 24 + 16, -1)
+  domain-clone-owned = domain-clone-owned & (-1 ^ (1 << domain))
+  return 0
 }
 
 fn domain-create-user() -> Int {
@@ -373,6 +433,20 @@ fn domain-switch(id: Int) -> void {
   domain-current = id
   current-cap = load64(domain-table + id * 24 + 16)
   return
+}
+
+// A CPL3 syscall runs policy on kernel CR3 while retaining its logical guest
+// identity/capability. Nested trusted RPC must restore both pieces separately.
+fn domain-restore-service-context(domain: Int, cap: Int, actual-root: Int) -> Int {
+  if domain < 0 || domain >= domain-count { return -1 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let kernel-root = load64(domain-table)
+  let logical-root = load64(domain-table + domain * 24)
+  if actual-root == 0 || (actual-root != kernel-root && actual-root != logical-root) { return -1 }
+  cr3-write(actual-root)
+  domain-current = domain
+  current-cap = cap
+  return 0
 }
 
 // Return the domain id last activated by domain_switch.

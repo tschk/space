@@ -3,7 +3,7 @@ package space.kernel
 import "storage.in"
 
 // Kernel-side stub for the extracted Storage component. The real NVMe driver
-// lives in components/storage.in and runs in its own isolated domain. This file
+// lives in components/storage.in and runs in its own trusted CPL0 clone domain. This file
 // starts the component and forwards NVMe read/write requests over the
 // cross-domain mailbox shared page.
 
@@ -66,12 +66,15 @@ fn nvme-submit(op: Int, lba: Int, count: Int) -> Int {
   store64(storage-mailbox + STORAGE-COUNT-OFF, count)
   store64(storage-mailbox + STORAGE-STATUS-OFF, 0)
   store64(storage-mailbox + STORAGE-OP-OFF, op)
-  // Save caller domain so nested RPC from Volume (or POSIX) restores CR3
-  // correctly instead of always dropping back to domain 0.
+  // Logical caller identity and actual CR3 differ during CPL3 syscall policy.
   let prev = domain-get-current()
+  let caller-root = cr3-read()
+  let caller-cap = current-cap
   domain-switch(storage-domain)
   storage-service()
-  domain-switch(prev)
+  if domain-restore-service-context(prev,caller-cap,caller-root) != 0 {
+    panic("NVMe RPC caller context restore failed")
+  }
   return load64(storage-mailbox + STORAGE-STATUS-OFF)
 }
 

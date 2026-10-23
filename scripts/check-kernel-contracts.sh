@@ -58,8 +58,10 @@ def main() -> int:
 
     print("[2/5] Domain / memory / boot...")
     check(
-        "domain-create returns -1 when the table is full",
-        re.search(r"if domain-count >= MAX-DOMAINS \{\n    return -1\n  \}", domain) is not None,
+        "domain-create reuses only free slots and rejects ids beyond MAX-DOMAINS",
+        "while id < domain-count && load64(domain-table + id * 24 + 8) != DOMAIN-FREE" in domain
+        and "if id >= MAX-DOMAINS { return -1 }" in domain
+        and "if id == domain-count { domain-count = domain-count + 1 }" in domain,
     )
     check(
         "SCI mapping helpers exist (code RX / data RW NX)",

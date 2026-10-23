@@ -250,8 +250,10 @@ Domains are separate page-table trees. Two regimes exist today:
   Shared pages are for IPC, not isolation.
 
 `runapp` uses the trusted CPL0 runtime-component path. Its scoped allocation
-abort now terminates the activation and returns failure to the shell, while
-clone-domain backing resources remain retained. New prepared user entry is
+abort terminates the activation and returns failure to the shell. Ordinary
+synchronous activations release explicitly owned clone/backing resources;
+retained GUI and asynchronous instances keep their own lifetime. See the
+[native lifecycle contract](docs/native-runtime-lifecycle.md). New prepared user entry is
 strict CPL3/IOPL0, supports resumable SYSCALL and INT80, and recovers only
 CPU-confirmed user exceptions. Legacy user SCI entry retains IOPL3. See the
 [runtime failure and syscall contract](docs/runtime-failure.md) for ownership,

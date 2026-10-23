@@ -1,0 +1,209 @@
+package space.kernel
+
+// Supervisor-private ephemeral resources; no pool index/pointer is published
+// to the supported app ABI or the SCI import registry.
+const RUNTIME-INSTANCE-LIVE = 0x52554E54494D4531
+var runtime-instance-live: Int = 0
+var runtime-instance-cap-pool: Int = 0
+var runtime-instance-cap-free: Int = 0
+var runtime-instance-component-free: Int = 0
+
+fn runtime-instance-new() -> Int {
+  let state = frame-alloc()
+  store64(state + 16,-1)
+  store64(state + 24,frame-alloc())
+  store64(state + 256,RUNTIME-INSTANCE-LIVE)
+  runtime-instance-live = runtime-instance-live + 1
+  return state
+}
+
+fn runtime-instance-component(name: Int, entry: Int, required: Int) -> Int {
+  let c = runtime-instance-component-free
+  if c != 0 {
+    runtime-instance-component-free = load64(c + 16)
+  } else { c = obj-bump(56) }
+  obj-counter = obj-counter + 1
+  store64(c,obj-counter)
+  store64(c + 8,5)
+  store64(c + 16,entry)
+  store64(c + 24,required)
+  store64(c + 32,name)
+  store64(c + 40,0)
+  store64(c + 48,0)
+  return c
+}
+
+fn runtime-instance-release-component(c: Int) -> Int {
+  if c == 0 || load64(c + 8) != 5 { return -1 }
+  let i = 0
+  while i < 8 { store64(c + i * 8,0); i = i + 1 }
+  store64(c + 16,runtime-instance-component-free)
+  runtime-instance-component-free = c
+  return 0
+}
+
+// Ordinary cap-mint remains monotonic. Only private, never-escaped runtime
+// slots join this pool. Per-slot record: [state, exact owner, next-free, 0].
+fn runtime-instance-cap(component: Int, rights: Int) -> Int {
+  if cap-table-cap <= 0 || cap-table-cap > 128 { return -1 }
+  if runtime-instance-cap-pool == 0 { runtime-instance-cap-pool = frame-alloc() }
+  let idx = -1
+  if runtime-instance-cap-free != 0 {
+    idx = runtime-instance-cap-free - 1
+    if idx < 0 || idx >= cap-count { return -1 }
+    let record = runtime-instance-cap-pool + idx * 32
+    let slot = cap-table-base + idx * 16
+    if load64(record) != 2 || load64(slot) != 0 || load64(slot + 8) != 0 { return -1 }
+    runtime-instance-cap-free = load64(record + 16)
+    store64(slot,component)
+    store64(slot + 8,rights)
+  } else { idx = cap-mint(component,rights) }
+  if idx < 0 { return -1 }
+  let record = runtime-instance-cap-pool + idx * 32
+  store64(record,1)
+  store64(record + 8,component)
+  store64(record + 16,0)
+  return idx
+}
+
+fn runtime-instance-release-cap(idx: Int, component: Int) -> Int {
+  if runtime-instance-cap-pool == 0 || idx < 0 || idx >= cap-count { return -1 }
+  let record = runtime-instance-cap-pool + idx * 32
+  if load64(record) != 1 || load64(record + 8) != component { return -1 }
+  let target = load64(cap-table-base + idx * 16)
+  if target != 0 && target != component { return -1 }
+  if cap-revoke(idx) != 0 { return -1 }
+  store64(record,2)
+  store64(record + 8,0)
+  store64(record + 16,runtime-instance-cap-free)
+  runtime-instance-cap-free = idx + 1
+  return 0
+}
+
+fn runtime-instance-alias(state: Int, virt: Int, address-offset: Int, value-offset: Int) -> void {
+  let pte = pt-ensure-pte-flags(load64(domain-table),virt,PAGE-NX | 7)
+  store64(state + address-offset,pte)
+  store64(state + value-offset,load64(pte))
+  return
+}
+
+fn runtime-instance-dispose(state: Int) -> Int {
+  if state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE { return -1 }
+  if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
+  let component = load64(state + 8)
+  let cap = load64(state + 16)
+  if cap >= 0 && runtime-instance-release-cap(cap,component) != 0 { return -1 }
+  let pte = load64(state + 48)
+  if pte != 0 { store64(pte,load64(state + 56)); invlpg(COMP-SHARED-VIRT) }
+  pte = load64(state + 64)
+  if pte != 0 { store64(pte,load64(state + 72)); invlpg(COMP-PIXEL-VIRT) }
+  if component != 0 && load64(root-realm + 24) == component { store64(root-realm + 24,load64(state + 80)) }
+  let domain = load64(state)
+  if domain != 0 && domain-destroy-clone-owned(domain) != 0 { return -1 }
+  let allocation = 0
+  while allocation < RUNTIME-INSTANCE-ALLOCATIONS {
+    let payload = load64(state + 320 + allocation * 8)
+    if payload != 0 { chan-heap-free(payload - 8) }
+    allocation = allocation + 1
+  }
+  let pages = load64(state + 24)
+  let i = 0
+  while i < 512 {
+    let frame = load64(pages + i * 8)
+    if frame != 0 { frame-free(frame) }
+    i = i + 1
+  }
+  let shared = load64(state + 32)
+  let pixel = load64(state + 40)
+  if shared != 0 { frame-free(shared) }
+  if pixel != 0 { frame-free(pixel) }
+  if component != 0 { runtime-instance-release-component(component) }
+  frame-free(pages)
+  store64(state + 256,0)
+  frame-free(state)
+  runtime-instance-live = runtime-instance-live - 1
+  return 0
+}
+
+fn runtime-instance-exportable(name: Int) -> Int {
+  let prefix = "runtime-instance-"
+  let i = 0
+  while load8(prefix + i) != 0 {
+    if load8(name + i) != load8(prefix + i) { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+// Only allocator import call sites are rebound; ordinary kernel service
+// allocations retain their persistent allocator. Payload pointers are owned
+// by this activation and never overlap its raw APP-API file buffer heap.
+var runtime-instance-binding: Int = 0
+var runtime-instance-active: Int = 0
+const RUNTIME-INSTANCE-ALLOCATIONS = 472
+
+fn runtime-instance-malloc(n: Int) -> Int {
+  let state = runtime-instance-active
+  if state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE || domain-current != load64(state) { return 0 }
+  if n < 0 || n > COMP-HEAP-SIZE - 32 { return 0 }
+  let charge = ((n + 8 + 15) & -16) + 16
+  let used = load64(state + 272)
+  if used < 0 || used > COMP-HEAP-SIZE - charge { return 0 }
+  let i = 0
+  while i < RUNTIME-INSTANCE-ALLOCATIONS && load64(state + 320 + i * 8) != 0 { i = i + 1 }
+  if i == RUNTIME-INSTANCE-ALLOCATIONS { return 0 }
+  let block = chan-alloc(n + 8)
+  store64(block,n)
+  let payload = block + 8
+  store64(state + 320 + i * 8,payload)
+  store64(state + 272,used + charge)
+  return payload
+}
+
+fn runtime-instance-free(payload: Int) -> void {
+  if payload == 0 { return }
+  let state = runtime-instance-active
+  if state == 0 || domain-current != load64(state) { return }
+  let i = 0
+  while i < RUNTIME-INSTANCE-ALLOCATIONS {
+    if load64(state + 320 + i * 8) == payload {
+      let n = load64(payload - 8)
+      let charge = ((n + 8 + 15) & -16) + 16
+      store64(state + 320 + i * 8,0)
+      store64(state + 272,load64(state + 272) - charge)
+      chan-heap-free(payload - 8)
+      return
+    }
+    i = i + 1
+  }
+  return
+}
+
+fn runtime-instance-calloc(n: Int, size: Int) -> Int {
+  if n < 0 || size < 0 { return 0 }
+  if n != 0 && size > COMP-HEAP-SIZE / n { return 0 }
+  let bytes = n * size
+  let payload = runtime-instance-malloc(bytes)
+  if payload == 0 { return 0 }
+  let i = 0
+  while i < bytes { store8(payload + i,0); i = i + 1 }
+  return payload
+}
+
+fn runtime-instance-realloc(payload: Int, n: Int) -> Int {
+  if payload == 0 { return runtime-instance-malloc(n) }
+  if n == 0 { runtime-instance-free(payload); return 0 }
+  let state = runtime-instance-active
+  if state == 0 || domain-current != load64(state) { return 0 }
+  let i = 0
+  while i < RUNTIME-INSTANCE-ALLOCATIONS && load64(state + 320 + i * 8) != payload { i = i + 1 }
+  if i == RUNTIME-INSTANCE-ALLOCATIONS { return 0 }
+  let replacement = runtime-instance-malloc(n)
+  if replacement == 0 { return 0 }
+  let bytes = load64(payload - 8)
+  if bytes > n { bytes = n }
+  i = 0
+  while i < bytes { store8(replacement + i,load8(payload + i)); i = i + 1 }
+  runtime-instance-free(payload)
+  return replacement
+}

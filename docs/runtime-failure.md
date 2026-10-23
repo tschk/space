@@ -16,14 +16,12 @@ activation metadata. The shell remains available. Nested continuations return
 -16. An unscoped abort halts, and a CPL0 CPU exception remains fatal.
 
 This boundary supports language allocation failure; it provides neither hardware
-isolation for `runapp` nor rollback of a component's earlier writes. Clone-domain
-page tables, component records and backing allocations remain retained. Reclaiming
-those resources requires explicit clone and backing-frame ownership. Clone
-creation now copies mutable leaf tables, repairing the earlier shared page-table
-pointer problem. A complete destructor still needs the payload/heap/shared-page
-backing ledger, removal of kernel aliases, capability-slot reuse and component
-record cleanup; freeing page tables alone does not complete activation teardown.
-This limitation also applies to successful legacy activations.
+isolation for `runapp` nor rollback of a component's earlier writes. Ordinary synchronous activations now carry explicit clone, backing-frame,
+allocator, alias, component and private capability ownership. Their normal and
+abort paths release those resources; retained GUI and asynchronous providers
+keep their lifetime. Mutable leaf page tables are private copies. See the
+[native lifecycle contract](native-runtime-lifecycle.md) for teardown ordering,
+capability reuse limits and the actual same-boot resource proof.
 
 ## CPL3 faults and strict entry
 

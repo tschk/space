@@ -20,9 +20,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--allow-boot-denial', action='store_true', help='Allow an explicit boot-time negative fixture before the shell; app admission remains strict')
     parser.add_argument('--qemu', default='qemu-system-x86_64')
     parser.add_argument('--timeout', type=float, default=15)
+    parser.add_argument('--repeat-cycles', type=int, default=0, help='Additional calc/checksum pairs in this same VM')
     args = parser.parse_args()
+    if args.repeat_cycles<0: parser.error('--repeat-cycles must be nonnegative')
     image = args.image.resolve()
     output = args.out.resolve()
     if not image.is_file():
@@ -34,6 +37,7 @@ def main():
         'started_utc': datetime.now(timezone.utc).isoformat(),
         'evidence': 'native Space shipped application scenarios in QEMU',
         'foreign_applications': False,
+        'repeat_cycles_requested': args.repeat_cycles,
         'image': str(image),
         'image_sha256': hashlib.sha256(image.read_bytes()).hexdigest(),
         'scenarios': [],
@@ -127,7 +131,7 @@ def main():
             serial = socket.socket(socket.AF_UNIX)
             serial.settimeout(.1)
             serial.connect(str(serial_path))
-            wait(b'space interactive shell')
+            wait(b'space interactive shell',allow_denial=args.allow_boot_denial)
             def calc():
                 command('runapp calc', b'calc: integer REPL')
                 command('2+3*4', b'calc: 2+3*4 = 14')
@@ -201,6 +205,13 @@ def main():
             scenario('sysmon starts and exits interactively', sysmon)
             scenario('bench computes known prime count', lambda: run_app('bench', [b'bench: found 9592 primes'], b'0000000000002578'))
             scenario('unknown application is refused', lambda: command('runapp no-such-app', b'runapp: unknown app'))
+            for cycle in range(args.repeat_cycles):
+                def repeat_pair():
+                    calc()
+                    run_app('sum notes.txt',[f'sum: notes.txt {len(note)} bytes crc32 0x{crc:08x}'.encode()])
+                scenario(f'same-boot lifecycle {cycle+1}: actual calc and checksum',repeat_pair)
+                if report['scenarios'][-1]['status']!='passed':
+                    raise RuntimeError(f'same-boot lifecycle cycle {cycle+1} failed')
             command('halt', b'halting on request')
             report['status'] = 'failed' if any(x['status']=='failed' for x in report['scenarios']) else 'passed'
     except Exception as error:
@@ -219,7 +230,7 @@ def main():
         report['finished_utc'] = datetime.now(timezone.utc).isoformat()
         report['passed'] = sum(x['status']=='passed' for x in report['scenarios'])
         report['failed'] = sum(x['status']=='failed' for x in report['scenarios'])
-        report['not_run'] = 11-len(report['scenarios'])
+        report['not_run'] = 11+args.repeat_cycles-len(report['scenarios'])
         save()
     print(f"{report['passed']} passed, {report['failed']} failed, {report['not_run']} not run; {output/'report.json'}")
     return 0 if report['status']=='passed' else 1
