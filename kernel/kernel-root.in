@@ -1,3 +1,4 @@
+import "../components/counter.in"
 package space.kernel
 
 // =============================================================================
@@ -131,6 +132,7 @@ fn kernel-entry(mb-info: Int) -> Int {
   boot-quiet = 1
 
   discover-memory(mb-info)
+  counter-init(mb-info)
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: available RAM bytes 0x")
     serial-write-hex(port, total-ram)

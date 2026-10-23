@@ -517,6 +517,7 @@ fn dyn-name-prefix(name: Int, prefix: Int) -> Int {
 
 fn dyn-kernel-exportable(name: Int) -> Int {
   if runtime-instance-exportable(name) == 0 { return 0 }
+  if dyn-name-prefix(name,"counter-") != 0 && dyn-str-eq(name,"counter-service-read") == 0 && dyn-str-eq(name,"counter-service-frequency") == 0 { return 0 }
   if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 || dyn-name-prefix(name,"windows-startup-") != 0 || dyn-name-prefix(name,"windows-parameters-") != 0 || dyn-name-prefix(name,"windows-command-") != 0 || dyn-name-prefix(name,"fs-range-") != 0 { return 0 }
   if dyn-name-prefix(name,"gui-") != 0 && dyn-str-eq(name,"gui-note-read") == 0 && dyn-str-eq(name,"gui-note-write") == 0 { return 0 }
   if dyn-str-eq(name,"dsp-surface-stride") != 0 { return 0 }
