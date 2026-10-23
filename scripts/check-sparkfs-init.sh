@@ -56,7 +56,7 @@ def translate(text: str) -> str:
             if match:
                 output.append(f"{match[1]} ({match[2]}) {{")
             else:
-                match = re.fullmatch(r"if (.+) \{ (return(?: .+)?) \}", line)
+                match = re.fullmatch(r"if (.+) \{ (return(?: .+)?|[A-Za-z_]\w*\([^{}]*\)) \}", line)
                 if not match:
                     raise ValueError(f"unsupported condition: {line}")
                 output.append(f"if ({match[1]}) {{ {match[2]}; }}")

@@ -46,6 +46,8 @@ fn retained-contract-run(port: Int) -> void {
   while byte < image-bytes { store8(pristine + byte,load8(image + byte)); byte = byte + 1 }
   byte = 0
   while byte < allocation-bytes { store8(pristine-allocation + byte,load8(allocation-image + byte)); byte = byte + 1 }
+  let pristine-caps = alloc(cap-table-cap * 16)
+  let pristine-domains = alloc(MAX-DOMAINS * 24)
   let cycle = 0
   let seen = 0
   while cycle < 70 {
@@ -71,6 +73,28 @@ fn retained-contract-run(port: Int) -> void {
     if runtime-instance-retire(left) != 0 || runtime-instance-retire(left) != 0 { panic("retained exact retire") }
     if runtime-instance-resume(left,left-entry,left-info) != -1 { panic("retained retired resume accepted") }
     if runtime-instance-release(left) != 0 { panic("retained release first") }
+    let before-free = retained-contract-free-count()
+    let before-heap = heap-next
+    let before-domains = domain-count
+    let before-caps = cap-count
+    let before-objects = obj-arena-next
+    let before-clones = domain-clone-owned
+    let before-exports = dyn-count
+    let before-live = runtime-instance-live
+    let before-root-edge = load64(root-realm + 24)
+    byte = 0
+    while byte < cap-table-cap * 16 { store8(pristine-caps + byte,load8(cap-table-base + byte)); byte = byte + 1 }
+    byte = 0
+    while byte < MAX-DOMAINS * 24 { store8(pristine-domains + byte,load8(domain-table + byte)); byte = byte + 1 }
+    if sci-load-retained-component(port,allocation-image,"retained-initial-failure",1,"abort-initial") != 134 { panic("retained initial emitted abort") }
+    if runtime-instance-last-handle != 0 || sci-sync-handle != 0 || sci-sync-entry != 0 || sci-sync-info != 0 || sci-sync-page != 0 || sci-sync-domain != 0 { panic("retained initial abort published handle") }
+    if retained-contract-free-count() != before-free || heap-next != before-heap || domain-count != before-domains || cap-count != before-caps || obj-arena-next != before-objects || domain-clone-owned != before-clones || dyn-count != before-exports || runtime-instance-live != before-live || load64(root-realm + 24) != before-root-edge { panic("retained initial abort resource drift") }
+    byte = 0
+    while byte < cap-table-cap * 16 { if load8(pristine-caps + byte) != load8(cap-table-base + byte) { panic("retained initial abort changed capability") }; byte = byte + 1 }
+    byte = 0
+    while byte < MAX-DOMAINS * 24 { if load8(pristine-domains + byte) != load8(domain-table + byte) { panic("retained initial abort changed domain") }; byte = byte + 1 }
+    byte = 0
+    while byte < allocation-bytes { if load8(pristine-allocation + byte) != load8(allocation-image + byte) { panic("retained initial abort changed source bytes") }; byte = byte + 1 }
     if runtime-instance-resume(right,right-entry,right-info) != 3 { panic("retained surviving peer") }
     if sci-load-retained-component(port,image,"counter-reused",1,0) != 1 { panic("retained reused initialized globals") }
     let fresh = runtime-instance-last-handle

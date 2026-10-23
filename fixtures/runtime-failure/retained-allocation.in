@@ -19,6 +19,9 @@ fn malloc(bytes:Int)->Int{
 fn retained-values()->[Int]{return [7,11,24];}
 fn retained-entry(info:Int)->Int{
  retained-calls=retained-calls+1;
+ // Test-only launch argument selects an initial emitted allocation failure.
+ let args=load64(info+64);
+ if args!=0 && load8(args)==97{retained-calls=3;}
  if retained-calls==1{return 1;}
  let values=retained-values();
  return values[0]+values[1]+values[2];
