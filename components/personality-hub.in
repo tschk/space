@@ -5,9 +5,11 @@ package space.kernel
 import "linux.in"
 import "darwin.in"
 import "darwin-macho.in"
+import "darwin-protected.in"
 import "foreign-exec.in"
 import "windows.in"
 import "windows-pe.in"
+import "windows-protected.in"
 
 fn personality-hub-init(port: Int) -> void {
   linux-init()
