@@ -16,7 +16,7 @@ BUILD_DIR="${BUILD_DIR:-/tmp/space-variants-check}"
 SERIAL_STD="$BUILD_DIR/standard.log"
 SERIAL_MIN="$BUILD_DIR/minimal.log"
 
-BUILD_DIR="$BUILD_DIR" "$SCRIPT_DIR/build-images.sh" >/dev/null
+GUI_PROFILE="${GUI_PROFILE:-window}" BUILD_DIR="$BUILD_DIR" "$SCRIPT_DIR/build-images.sh" >/dev/null
 
 boot_image() {
   local kernel="$1" log="$2" tag="$3"

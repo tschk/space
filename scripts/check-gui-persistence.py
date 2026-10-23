@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in', dest='compiler', required=True)
 p.add_argument('--out', type=Path, required=True, help='New/empty evidence directory; creates its own disk')
+p.add_argument('--default-gui', action='store_true', help='Test the distributable protected default; otherwise preserve the explicit trusted window baseline')
 a = p.parse_args()
 out = a.out.resolve()
 if out.exists() and any(out.iterdir()):
@@ -30,8 +31,11 @@ sources += [ROOT/'boot/multiboot.asm', ROOT/'scripts/build-images.sh', ROOT/'scr
 snapshot = {str(x.relative_to(ROOT)): sha(x) for x in sources}
 report = {'started_utc': datetime.now(timezone.utc).isoformat(), 'compiler': str(compiler), 'compiler_sha256':sha(compiler), 'boots': [], 'status':'running'}
 images = out/'images'
+environment = dict(os.environ, IN=str(compiler), BUILD_DIR=str(images), GUI_PROFILE='window')
+if a.default_gui: environment.pop('GUI_PROFILE')
+report['distributable_default_gui'] = a.default_gui
 with (out/'build.log').open('w') as log:
-    subprocess.run(['bash',str(ROOT/'scripts/build-images.sh'),'--variant','all'],env=dict(os.environ,IN=str(compiler),BUILD_DIR=str(images)),stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
+    subprocess.run(['bash',str(ROOT/'scripts/build-images.sh'),'--variant','all'],env=environment,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=240)
 image = images/'standard.bin'
 report['image_sha256'] = sha(image)
 disk = out/'owned-nvme.raw'
@@ -86,7 +90,8 @@ class Boot:
                 self.log.extend(data)
             except socket.timeout: pass
         (self.path/'serial.log').write_bytes(self.log)
-        assert b'gui: native session unavailable or failed' not in self.log, self.log[-2500:]
+        if marker != b'gui: native session unavailable or failed':
+            assert b'gui: native session unavailable or failed' not in self.log, self.log[-2500:]
     def command(self,value,marker):
         if value=='gui apps':self.focused=0;self.live=[True,True]
         start=len(self.log); self.receipt['inputs'].append({'serial':value,'offset':start});self.serial.sendall(value.encode()+b'\n');self.wait(marker,start)
@@ -114,8 +119,7 @@ class Boot:
     def pixels(self,name,texts):
         if readable:
             path=self.path/(name+'.ppm');layout=window_oracle.layout(self.log)
-            rgb=window_oracle.capture(self.monitor,path,layout)
-            window_oracle.check(rgb,layout,texts,self.focused)
+            rgb=window_oracle.capture_checked(self.monitor,path,layout,texts,self.focused)
             self.receipt['screenshots'].append({'name':name,'sha256':sha(path),'expected':texts,'layout':layout,'focused':self.focused})
             return
         path=self.path/(name+'.ppm');self.monitor.sendall(f'screendump {path}\n'.encode())
@@ -182,16 +186,22 @@ try:
     denied=bytearray(image.read_bytes());table=struct.unpack_from('<Q',denied,0xF00)[0]-0x100000;count=struct.unpack_from('<Q',denied,table+8)[0]
     for index in range(count):
         kind,physical,size,_=struct.unpack_from('<QQQQ',denied,table+16+index*32)
-        if kind==21:
+        if kind in (21,24):
             offset=physical-0x100000;assert struct.unpack_from('<Q',denied,offset+8)[0]==52;struct.pack_into('<Q',denied,offset+8,20);break
     else:raise AssertionError('editor missing from ordinary standard image')
     denied_image=out/'denied-storage.bin';denied_image.write_bytes(denied)
     report['negative_artifact']={'sha256':sha(denied_image),'mutation':'editor required mask52→20, intentionally outside production packaging policy'}
     boot=Boot('boot-c-storage-denied',denied_image)
     try:
-        boot.command('gui apps',READY);boot.pixels('load-denied',[('',''),('','denied')]);boot.editor_focus()
-        for key in 'attack':boot.key(key)
-        boot.key('ctrl-s');boot.pixels('save-denied',[('',''),('attack','denied')]);boot.close_both()
+        if kind == 24:
+            boot.command('gui apps', b'gui: native session unavailable or failed')
+            # Protected admission rejects the mismatched storage declaration
+            # before entry and cleans the pending calculator; no fallback.
+            assert b'gui: selected application profile unavailable; no fallback' in boot.log
+        else:
+            boot.command('gui apps',READY);boot.pixels('load-denied',[('',''),('','denied')]);boot.editor_focus()
+            for key in 'attack':boot.key(key)
+            boot.key('ctrl-s');boot.pixels('save-denied',[('',''),('attack','denied')]);boot.close_both()
     finally:boot.close()
     assert disk_check(b'per')==before_denied,'missing storage grant mutated target inode'
     boot=Boot('boot-d-reboot-empty',image)

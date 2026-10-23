@@ -1,0 +1,91 @@
+package space.kernel
+// Test-only wrappers around unchanged product entry, admission and retirement.
+var gui-default-observer-sessions: Int = 0
+var gui-default-observer-closes: Int = 0
+var gui-default-observer-old-handle: Int = 0
+var gui-default-observer-old-token: Int = 0
+var gui-default-observer-heap: Int = 0
+var gui-default-observer-frames: Int = 0
+var gui-default-observer-domains: Int = 0
+var gui-default-observer-caps: Int = 0
+var gui-default-observer-objects: Int = 0
+var gui-default-observer-exports: Int = 0
+var gui-default-observer-clones: Int = 0
+var gui-default-observer-users: Int = 0
+
+fn gui-default-observer-free-count() -> Int {
+  let frame = free-list
+  let count = 0
+  while frame != 0 && count < 1048576 { count += 1; frame = load64(frame) }
+  if frame != 0 { panic("protected default free-list cycle") }
+  return count
+}
+
+fn gui-protected-open(port: Int, slot: Int, image: Int, available: Int) -> Int {
+  let token = gui-protected-open-implementation(port, slot, image, available)
+  if token == 0 { return 0 }
+  let record = gui-protected-record(token)
+  let handle = load64(record)
+  let page = load64(record + 16)
+  let front = load64(record + 24)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  let pixel = load64(front)
+  let old = gui-default-observer-old-handle
+  if old != 0 {
+    if handle == old || token == gui-default-observer-old-token || gui-protected-record(gui-default-observer-old-token) != 0 || gui-protected-key(gui-default-observer-old-token, 97) != 0 { panic("protected default token ABA") }
+    if native-protected-run(old, 1) != -1 || native-protected-present(old, 1) != -1 || runtime-instance-retire(old) != -1 || runtime-instance-release(old) != -1 { panic("protected default runtime ABA") }
+  }
+  let peer = gui-protected-records + (1 - slot) * 96
+  if load64(peer) != 0 {
+    store64(record, load64(peer))
+    let refused = gui-protected-valid(record)
+    store64(record, handle)
+    if refused != 0 { panic("protected default wrong live owner") }
+  }
+  if load64(page) != head || load64(page + 8) != tail || load64(front) != pixel { panic("protected default stale request mutated owner") }
+  return token
+}
+
+fn gui-protected-retire(record: Int) -> Int {
+  let handle = load64(record)
+  let token = load64(record + 32)
+  let domain = load64(record + 8)
+  let parent = runtime-instance-view-parent(load64(record + 24))
+  let sid = load64(record + 40)
+  let slot = (record - gui-protected-records) / 96
+  let frames = gui-default-observer-free-count()
+  let result = gui-protected-retire-implementation(record)
+  if result != 1 { return result }
+  if gui-default-observer-free-count() < frames + 1024 + 576 { panic("protected default backing not reclaimed") }
+  if parent == 0 || load64(parent) != 0 || load64(record) != 0 || load64(record + 16) != 0 || load64(record + 24) != 0 || load64(record + 32) != 0 || load64(dsp-pools + slot * 8) != 0 || dsp-surface-valid(sid) != 0 { panic("protected default close references survive") }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-FREE || gui-protected-reply(record, 0, 0, 0) != 0 { panic("protected default retired endpoint used") }
+  let canary = frame-alloc()
+  store64(canary, 0x123456789abcdef)
+  if native-protected-run(handle, 1) != -1 || native-protected-present(handle, 1) != -1 || runtime-instance-retire(handle) != -1 || runtime-instance-release(handle) != -1 || load64(canary) != 0x123456789abcdef { panic("protected default recycled frame touched") }
+  frame-free(canary)
+  gui-default-observer-old-handle = handle
+  gui-default-observer-old-token = token
+  gui-default-observer-closes += 1
+  return 1
+}
+
+fn gui-protected-session-run-images(port: Int, input: Int, calc: Int, editor: Int) -> Int {
+  let result = gui-protected-session-run-images-implementation(port, input, calc, editor)
+  if result != 1 { return result }
+  gui-default-observer-sessions += 1
+  if runtime-instance-live != 0 || domain-current != 0 || current-cap != load64(domain-table + 16) || gui-session-input-handle != 0 || sci-proof-input.unit != 0 || gui-default-observer-closes != gui-default-observer-sessions * 2 { panic("protected default session ownership remains") }
+  let frames = gui-default-observer-free-count()
+  if gui-default-observer-sessions == 16 {
+    gui-default-observer-heap = heap-next; gui-default-observer-frames = frames
+    gui-default-observer-domains = domain-count; gui-default-observer-caps = cap-count
+    gui-default-observer-objects = obj-arena-next; gui-default-observer-exports = dyn-count
+    gui-default-observer-clones = domain-clone-owned; gui-default-observer-users = domain-user-owned
+  }
+  if gui-default-observer-sessions > 16 {
+    if heap-next != gui-default-observer-heap || frames != gui-default-observer-frames || domain-count != gui-default-observer-domains || cap-count != gui-default-observer-caps || obj-arena-next != gui-default-observer-objects || dyn-count != gui-default-observer-exports || domain-clone-owned != gui-default-observer-clones || domain-user-owned != gui-default-observer-users { panic("protected default resources grew") }
+  }
+  serial-write-cstr(port, "gui-lifetime: resource and ABA observation ")
+  serial-write-dec-wide(port, gui-default-observer-sessions); serial-nl(port)
+  return result
+}

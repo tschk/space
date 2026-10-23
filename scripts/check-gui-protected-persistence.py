@@ -37,8 +37,8 @@ image = images / 'standard.bin'
 def absolute_imports(source):
     return re.sub(r'import "([^"]+)"', lambda m: 'import ' + json.dumps(str((ROOT / 'components' / m[1]).resolve())), source)
 shell = absolute_imports((ROOT / 'components/shell.in').read_text())
-assert shell.count('gui-session-run(port)') == 1
-shell = shell.replace('gui-session-run(port)', 'gui-protected-session-run(port)')
+assert shell.count('gui-desktop-run(port)') == 1
+shell = shell.replace('gui-desktop-run(port)', 'gui-protected-session-run(port)')
 (images / 'shell.in').write_text(shell)
 hub = absolute_imports((ROOT / 'components/diagnostics-hub.in').read_text())
 hub = hub.replace(json.dumps(str(ROOT / 'components/shell.in')), json.dumps(str(images / 'shell.in')))
@@ -47,7 +47,7 @@ source = (ROOT / 'kernel/kernel-root.in').read_text()
 source = re.sub(r'import "\.\./([^"]+)"', lambda m: 'import ' + json.dumps(str(ROOT / m[1])), source)
 source = source.replace(json.dumps(str(ROOT / 'components/diagnostics-hub.in')), json.dumps(str(images / 'diagnostics-hub.in')))
 source = 'import ' + json.dumps(str(ROOT / 'components/gui-protected-session-run.in')) + '\n' + source
-source = source.replace('  shell(port)', '  if gui-protected-bootstrap() != 1 { panic("protected GUI boot launch") }\n  if out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI boot output") }\n  shell(port)')
+source = source.replace('  shell(port)', '  if gui-protected-launch-valid() != 1 && gui-protected-bootstrap() != 1 { panic("protected GUI boot launch") }\n  if out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI boot output") }\n  shell(port)')
 (images / 'kernel.in').write_text(source)
 commands = [['nasm', '-f', 'bin', str(ROOT / 'boot/multiboot.asm'), '-o', str(images / 'trampoline.bin')]]
 for name in ('calc', 'editor'):
@@ -63,7 +63,7 @@ commands += [[str(compiler), 'compile', '--path', str(ROOT / 'components/input.i
               '--trampoline', str(images / 'trampoline.bin'), '--target', 'native', '--target-triple', 'x86_64-unknown-none',
               '--linkage', 'static-lib', '--out', str(images / 'kernel.bin')],
              ['python3', str(ROOT / 'scripts/pack-sci-image.py'), str(images / 'kernel.bin'), str(image),
-              f'22:{images}/input.sci', f'270:{images}/calc.sci', f'271:{images}/editor.sci']]
+              f'22:{images}/input.sci', f'23:{images}/calc.sci', f'24:{images}/editor.sci']]
 with (out / 'build.log').open('w') as log:
     for command in commands:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
@@ -149,8 +149,7 @@ class Boot:
     def pixels(self,name,texts):
         if readable:
             path=self.path/(name+'.ppm');layout=window_oracle.layout(self.log)
-            rgb=window_oracle.capture(self.monitor,path,layout)
-            window_oracle.check(rgb,layout,texts,self.focused)
+            rgb=window_oracle.capture_checked(self.monitor,path,layout,texts,self.focused)
             self.receipt['screenshots'].append({'name':name,'sha256':sha(path),'expected':texts,'layout':layout,'focused':self.focused})
             return
         path=self.path/(name+'.ppm');self.monitor.sendall(f'screendump {path}\n'.encode())
@@ -217,7 +216,7 @@ try:
     denied=bytearray(image.read_bytes());table=struct.unpack_from('<Q',denied,0xF00)[0]-0x100000;count=struct.unpack_from('<Q',denied,table+8)[0]
     for index in range(count):
         kind,physical,size,_=struct.unpack_from('<QQQQ',denied,table+16+index*32)
-        if kind==271:
+        if kind==24:
             offset=physical-0x100000;assert struct.unpack_from('<Q',denied,offset+8)[0]==52;struct.pack_into('<Q',denied,offset+8,20);break
     else:raise AssertionError('editor missing from ordinary standard image')
     denied_image=out/'denied-storage.bin';denied_image.write_bytes(denied)

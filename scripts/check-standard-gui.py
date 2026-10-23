@@ -16,6 +16,7 @@ import time
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--in", dest="compiler", required=True)
 parser.add_argument("--build-dir", type=Path, default=Path("/tmp/space-standard-gui"))
+parser.add_argument("--gui-profile", choices=("window", "legacy"), default="window", help="Explicit trusted baseline; default promotion has its own checker")
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 out = args.build_dir.resolve()
@@ -40,7 +41,7 @@ sources += [root / "boot/multiboot.asm", root / "scripts/build-images.sh", root 
 snapshot = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
 import os
 images = out / "images"
-environment = dict(os.environ, IN=str(compiler), BUILD_DIR=str(images))
+environment = dict(os.environ, IN=str(compiler), BUILD_DIR=str(images), GUI_PROFILE=args.gui_profile)
 with (out / "build.log").open("w") as log:
     subprocess.run(["bash", str(root / "scripts/build-images.sh"), "--variant", "all"], env=environment, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
 
@@ -148,8 +149,7 @@ with (out / "qemu.log").open("w") as log:
             path = out / f"{name}.ppm"
             if readable:
                 layout = window_oracle.layout(data)
-                rgb = window_oracle.capture(monitor, path, layout)
-                window_oracle.check(rgb, layout, texts, focus_slot)
+                rgb = window_oracle.capture_checked(monitor, path, layout, texts, focus_slot)
                 return
             path.unlink(missing_ok=True)
             monitor.sendall(f"screendump {path}\n".encode())

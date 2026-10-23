@@ -33,7 +33,7 @@ fn gui-protected-lifetime-round(port: Int, generation: Int, order: Int) -> void 
 }
 
 fn gui-protected-lifetime-check(port: Int) -> void {
-  if gui-protected-bootstrap() != 1 || out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI lifetime bootstrap") }
+  if gui-protected-launch-valid() != 1 && gui-protected-bootstrap() != 1 || out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI lifetime bootstrap") }
   let callback = native-protected-note-backend
   native-protected-note-backend = gui-protected-note-service
   // First admission must preserve an already initialized independent DSP.

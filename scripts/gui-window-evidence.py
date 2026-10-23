@@ -1,6 +1,7 @@
 """Shared read-only framebuffer oracle for actual readable native GUI tests."""
 from pathlib import Path
 import re
+import json
 import struct
 import time
 
@@ -23,9 +24,11 @@ def image_has_canvas(path):
     for index in range(count):
         kind, physical, size, reserved = struct.unpack_from('<QQQQ', blob, table + 16 + index * 32)
         assert reserved == 0
-        if kind == 20:
-            offset = physical - 0x100000 + size - 64
-            return size >= 128 and struct.unpack_from('<Q', blob, offset)[0] == 0x5350414345434e56
+        if kind in (20, 23):
+            trailer = 64
+            if kind == 23: trailer = 128
+            offset = physical - 0x100000 + size - trailer
+            return size >= trailer + 64 and struct.unpack_from('<Q', blob, offset)[0] == 0x5350414345434e56
     return False
 
 
@@ -61,12 +64,12 @@ class WindowEvidence:
         assert 0 <= result['top'] and result['top'] + result['height'] <= result['output_height']
         return result
 
-    def capture(self, monitor, path, layout):
+    def capture(self, monitor, path, layout, timeout_seconds=5):
         path = Path(path)
         path.unlink(missing_ok=True)
         monitor.sendall(f'screendump {path}\n'.encode())
         expected = layout['output_width'] * layout['output_height'] * 3
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + timeout_seconds
         frame = []
         while len(frame) != 4 or len(frame[3]) != expected:
             assert time.monotonic() < deadline, 'readable GUI screendump timeout'
@@ -78,6 +81,56 @@ class WindowEvidence:
         assert frame[:3] == [b'P6', f"{layout['output_width']} {layout['output_height']}".encode(), b'255']
         assert len(frame[3]) == layout['output_width'] * layout['output_height'] * 3
         return frame[3]
+
+    def capture_checked(self, monitor, path, layout, texts, focused, timeout_seconds=5):
+        """Wait for the full unchanged oracle, with a finite evidence receipt.
+
+        This synchronizes a test with an in-progress scanout repaint. It does
+        not establish atomic presentation or change any expected pixel.
+        """
+        path = Path(path)
+        started = time.monotonic()
+        deadline = started + timeout_seconds
+        self.capture_sequence = getattr(self, 'capture_sequence', 0) + 1
+        receipt = {'synchronization_only': True, 'atomic_presentation_proof': False,
+                   'capture_sequence': self.capture_sequence, 'path': path.name,
+                   'layout': layout, 'expected_texts': texts, 'focused': focused,
+                   'attempts': 0, 'timeout_seconds': timeout_seconds, 'errors': []}
+        last_error = None
+        while time.monotonic() < deadline:
+            receipt['attempts'] += 1
+            try:
+                rgb = self.capture(monitor, path, layout, deadline - time.monotonic())
+                self.check(rgb, layout, texts, focused)
+                receipt['status'] = 'passed'
+                receipt['elapsed_seconds'] = time.monotonic() - started
+                self.record_capture(path, receipt)
+                return rgb
+            except AssertionError as error:
+                last_error = error
+                receipt['errors'].append({'attempt': receipt['attempts'], 'error': repr(error)})
+                if path.exists():
+                    frame = path.read_bytes()
+                    if receipt['attempts'] == 1:
+                        path.with_suffix('.failed-first.ppm').write_bytes(frame)
+                        first = path.with_name(path.stem + f'.capture-{self.capture_sequence}.failed-first.ppm')
+                        first.write_bytes(frame)
+                        receipt['first_failed_frame'] = first.name
+                    path.with_suffix('.failed-last.ppm').write_bytes(frame)
+                    last = path.with_name(path.stem + f'.capture-{self.capture_sequence}.failed-last.ppm')
+                    last.write_bytes(frame)
+                    receipt['last_failed_frame'] = last.name
+                remaining = deadline - time.monotonic()
+                if remaining > 0: time.sleep(min(.05, remaining))
+        receipt['status'] = 'failed'
+        receipt['elapsed_seconds'] = time.monotonic() - started
+        self.record_capture(path, receipt)
+        raise AssertionError(f'complete framebuffer oracle timed out after {receipt["attempts"]} attempts: {last_error!r}') from last_error
+
+    def record_capture(self, path, receipt):
+        path.with_suffix('.capture.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        with (path.parent / 'capture-history.jsonl').open('a') as log:
+            log.write(json.dumps(receipt) + '\n')
 
     def check(self, rgb, layout, texts, focused):
         s, width, height, top = (layout[n] for n in ('scale', 'width', 'height', 'top'))

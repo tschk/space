@@ -33,9 +33,9 @@ source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-images}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
-GUI_PROFILE="${GUI_PROFILE:-window}"
+GUI_PROFILE="${GUI_PROFILE:-protected}"
 case "$GUI_PROFILE" in
-  legacy|window) ;;
+  legacy|window|protected) ;;
   *) echo "unknown native GUI profile: $GUI_PROFILE" >&2; exit 2 ;;
 esac
 
@@ -95,10 +95,30 @@ if [ "$GUI_PROFILE" = window ]; then
   GUI_CALC_SOURCE=app-window-calc.in
   GUI_EDITOR_SOURCE=app-window-editor.in
 fi
-sci "$SPACE_DIR/components/$GUI_CALC_SOURCE" client-entry 0x48000000 "$BUILD_DIR/gui-calc.raw.sci"
-sci "$SPACE_DIR/components/$GUI_EDITOR_SOURCE" client-entry 0x49000000 "$BUILD_DIR/gui-editor.raw.sci"
-python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-calc.raw.sci" "$BUILD_DIR/gui-calc.raw.component-metadata.json" "$BUILD_DIR/gui-calc.sci"
-python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-editor.raw.sci" "$BUILD_DIR/gui-editor.raw.component-metadata.json" "$BUILD_DIR/gui-editor.sci"
+GUI_CALC_BASE=0x48000000
+GUI_EDITOR_BASE=0x49000000
+GUI_CALC_KIND=20
+GUI_EDITOR_KIND=21
+GUI_PACK_ARGS=()
+if [ "$GUI_PROFILE" = protected ]; then
+  GUI_CALC_SOURCE=app-protected-window-calc.in
+  GUI_EDITOR_SOURCE=app-protected-window-editor.in
+  GUI_CALC_BASE=0x60000000
+  GUI_EDITOR_BASE=0x60000000
+  GUI_CALC_KIND=23
+  GUI_EDITOR_KIND=24
+  GUI_PACK_ARGS=(--protected)
+fi
+sci "$SPACE_DIR/components/$GUI_CALC_SOURCE" client-entry "$GUI_CALC_BASE" "$BUILD_DIR/gui-calc.raw.sci"
+sci "$SPACE_DIR/components/$GUI_EDITOR_SOURCE" client-entry "$GUI_EDITOR_BASE" "$BUILD_DIR/gui-editor.raw.sci"
+for GUI_APP in calc editor; do
+  if ! python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-$GUI_APP.raw.sci" "$BUILD_DIR/gui-$GUI_APP.raw.component-metadata.json" "$BUILD_DIR/gui-$GUI_APP.sci" "${GUI_PACK_ARGS[@]}"; then
+    if [ "$GUI_PROFILE" = protected ]; then
+      echo "Protected GUI packaging refused this compiler/artifact. Set IN to a source-built Inauguration0.9.325+ with valid hash-bound page-aligned sci_layout metadata, or explicitly choose GUI_PROFILE=window/legacy for a trusted baseline." >&2
+    fi
+    exit 1
+  fi
+done
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -110,7 +130,7 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-standard.bin" "$BUILD
   "11:$BUILD_DIR/app-hd.sci" "12:$BUILD_DIR/app-sysmon.sci" "13:$BUILD_DIR/app-bench.sci" \
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
   "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci" \
-  "20:$BUILD_DIR/gui-calc.sci" "21:$BUILD_DIR/gui-editor.sci" "22:$BUILD_DIR/gui-seat.sci"
+  "$GUI_CALC_KIND:$BUILD_DIR/gui-calc.sci" "$GUI_EDITOR_KIND:$BUILD_DIR/gui-editor.sci" "22:$BUILD_DIR/gui-seat.sci"
 
 fi
 

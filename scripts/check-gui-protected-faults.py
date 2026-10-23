@@ -58,7 +58,7 @@ probe = """  let input-image = boot-image-find(22)
   let page = sci-sync-page
   let peer-domain = sci-sync-domain
   runtime-instance-launch-guard = 1
-  let refused = gui-protected-session-run(port)
+  let refused = gui-protected-session-run-images(port, input-image, boot-image-find(270), boot-image-find(271))
   runtime-instance-launch-guard = 0
   if refused != 0 || gui-session-input-handle != 0 || gui-session-input-page != 0 || runtime-instance-record(peer, 1) == 0 || sci-sync-handle != peer || sci-sync-page != page || sci-sync-domain != peer-domain { panic("protected GUI stale capture retired peer") }
   if sci-admit-input-sync(peer-domain) != 1 || sci-sync-provenance-valid(peer-domain, 1) != 1 || sci-sync-enter(peer-domain, 0) != 0 { panic("protected GUI refused load peer execution") }
@@ -252,8 +252,7 @@ def focus(slot):
 def shot(name, texts, focused):
     layout = oracle.layout(data)
     path = out / (name + '.ppm')
-    rgb = oracle.capture(monitor, path, layout)
-    oracle.check(rgb, layout, texts, focused)
+    rgb = oracle.capture_checked(monitor, path, layout, texts, focused)
     report['screenshots'].append({'name': path.name, 'sha256': sha(path), 'layout': layout,
                                   'texts': texts, 'focused': focused})
     return layout

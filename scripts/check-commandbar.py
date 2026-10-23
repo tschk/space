@@ -61,6 +61,9 @@ var fb-width:Int=1921;
 var fb-height:Int=1080;
 var damage:Int=0;
 var comp-bar-titles:Int=0;
+var comp-bar-gui-failed:Int=0;
+var gui-available:Int=0;
+fn gui-desktop-available()->Int{return gui-available;}
 var comp-launcher-query:Int=0;
 var comp-launcher-len:Int=0;
 fn comp-win-base(i:Int)->Int{return comp-windows+i*COMP-WIN-SIZE;}
@@ -90,6 +93,9 @@ for count, width, height, minimized, success in [(0, 1921, 1080, -1, False), (1,
     cases.append((f'geometry-{count}-{width}-{height}-{minimized}', base + 'fn main()->Int{' + body + 'return 42;}'))
 rowbody = 'store32(comp-win-base(0)+24,"TERMINAL 1");store32(comp-win-base(0)+40,3);store32(comp-win-base(0)+32,0);store32(comp-win-base(0)+20,1);\nstore32(comp-win-base(1)+24,"UTILITIES");store32(comp-win-base(1)+20,1);\nstore32(comp-win-base(2)+24,"TERMINAL 2");store32(comp-win-base(2)+40,3);store32(comp-win-base(2)+32,1);store32(comp-win-base(2)+20,8);\ncomp-launcher-query="";comp-launcher-len=0;\nif comp-launcher-at(0)!=0 || comp-launcher-at(1)!=1 || comp-launcher-at(2)!=2 || comp-launcher-at(3)!=16 || comp-launcher-at(4)!=-1{return 1;}\ncomp-launcher-query="close";comp-launcher-len=5;if comp-launcher-at(0)!=17 || comp-launcher-at(1)!=-1{return 2;}\ncomp-launcher-query="FOCUS TERMINAL 2";comp-launcher-len=16;if comp-launcher-at(0)!=20{return 3;}\nif comp-bar-terminal(1)!=2{return 4;}\n// Simulate the real close-record shift; terminal identity must follow its record.\nstore32(comp-win-base(1)+24,"TERMINAL 2");store32(comp-win-base(1)+40,3);store32(comp-win-base(1)+32,1);comp-count=2;\nif comp-bar-terminal(1)!=1{return 5;}\ncomp-count=1;if comp-bar-terminal(1)!=-1 || comp-bar-enabled(20)!=0{return 6;}\ncomp-launcher-query="zzzz";comp-launcher-len=4;if comp-launcher-at(0)!=-1{return 7;}\nreturn 42;'
 cases.append(('filtered-rows-and-terminal-identity', base + 'fn main()->Int{' + rowbody + '}'))
+rows_gui = 'comp-bar-init();comp-count=0;comp-launcher-query="open";comp-launcher-len=4;if comp-launcher-at(0)!=-1{return 1;}gui-available=1;if comp-launcher-at(0)!=COMP-BAR-GUI || comp-launcher-at(1)!=-1{return 2;}gui-available=0;if comp-launcher-at(0)!=-1{return 3;}gui-available=0;comp-bar-gui-failed=1;comp-launcher-query="gui";comp-launcher-len=3;if comp-launcher-at(0)!=COMP-BAR-GUI-ERROR || comp-bar-enabled(COMP-BAR-GUI)!=0{return 4;}return 42;'
+cases.append(('gui-action-live-availability-and-error-title', base + 'fn main()->Int{' + rows_gui + '}'))
+
 
 # Extract central lifecycle implementations, with only device/render/terminal
 # effects adapted to counters. Actual focus selection, record compaction, drag

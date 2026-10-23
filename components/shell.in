@@ -684,7 +684,7 @@ fn shell(port: Int) -> void {
         serial-nl(port)
       }
     } else if line-eq("gui apps") != 0 {
-      if gui-session-run(port) == 0 { serial-write-cstr(port, "  gui: native session unavailable or failed"); serial-nl(port) }
+      if gui-desktop-run(port) == 0 { serial-write-cstr(port, "  gui: native session unavailable or failed"); serial-nl(port) }
     } else if line-eq("input app") != 0 {
       if input-app-proof(port) == 0 { serial-write-cstr(port, "  seat: SCI proof failed"); serial-nl(port) }
     } else if line-eq("input sci") != 0 {

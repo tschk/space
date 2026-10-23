@@ -338,3 +338,66 @@ capability index. Reuse across sessions avoids new capability/object high-water
 marks. This is a kernel-linked supervisor bootstrap contract, not an existing
 independent service authorization boundary. The protected default stays opt-in
 until the full interaction, persistence and lifetime gates pass.
+
+### Distributable default integration (next checkpoint)
+
+The opt-in checkpoint `aa16a9e` passes six output/text sizes, five owned NVMe
+boots, 129 sessions, hostile invocation recovery and failed startup cleanup.
+The next build defaults standard images to protected calculator/editor artifacts
+at explicit boot kinds23/24; kinds20/21 retain the trusted legacy/window build
+profiles and kind22 remains the trusted input SCI driver. Minimal keeps its
+existing graph and CLI. Packaging must validate the actual generic page layout;
+a compiler without the required metadata fails with an actionable diagnostic.
+No global toolchain switch is part of this change.
+
+The full desktop hub explicitly bootstraps the private cap52 supervisor once.
+A single GUI dispatcher serves the existing `gui apps` command and a typed
+`OPEN CALCULATOR AND NOTES` desktop action. Protected artifact presence selects
+that profile exclusively: missing/invalid artifacts, lost authority or admission
+failure cannot select a trusted fallback. Availability checks artifacts and live
+launch authority. The command action runs the real retained session until close,
+then restores desktop output/geometry and input routing and redraws through the
+existing compositor. Launch failure is reported in the desktop/serial UI.
+Neither path broadens app grants or drops independent DSP surface/pool ownership.
+
+Acceptance uses ordinary built standard images through both serial dispatch and
+actual PS/2 command-bar selection, followed by pointer/keyboard, six-mode,
+persistence, close/survivor/reopen and ownership gates. Trusted profiles remain
+explicit regression choices. Default promotion is incomplete until those shipped
+image checks and the minimal boundary/CLI checks pass.
+
+### Checker profile selection
+
+`check-gui-default.py` builds the ordinary standard default with inherited
+`GUI_PROFILE` removed and exercises serial plus real command-bar dispatch.
+`check-gui-persistence.py --default-gui` and
+`check-gui-lifecycle.py --default-gui --observe` similarly build the actual
+default. The latter preserves the installed artifact bytes while adding private
+observer wrappers around product admission/close/session calls; its unobserved
+mode runs the unchanged standard kernel. `check-gui-default-faults.py` preserves
+the default kernel, dispatcher, editor, seat and CLI artifacts and replaces only
+the calculator with an explicit hostile test fixture.
+
+Historical standard-GUI, window, lifecycle, image-variant, native-lifecycle and
+SCI-admission gates explicitly choose `GUI_PROFILE=window`, including when using
+0.9.324. Persistence/lifecycle without `--default-gui` retain that baseline.
+This keeps foreign/native CLI fixture acquisition separate from default GUI
+promotion. Dedicated protected fixture gates retain their independently packed
+artifacts and explicit routes; they are not evidence of distributable packaging.
+
+### Framebuffer test synchronization
+
+An unchanged0.9.324 trusted-window gate under parallel execution captured a full
+left window and a right window repainted only through scanline277, followed by
+a horizontal background cutoff. The previous and next quiescent frames had the
+correct full border. The unchanged gate passes without concurrent heavy work.
+The fixed0.1-second delay after pointer parking was not a completed-frame fence.
+
+GUI screenshot gates now poll the unchanged full pixel oracle with a hard
+deadline. Every attempt/error and elapsed time is recorded; first/last failed
+frames remain available, including unique evidence when a probe path is reused.
+A permanent wrong pixel still times out and fails. An actual partial/complete
+QEMU-frame control and permanent-failure control exercise both outcomes. This is
+test synchronization only; it does not establish atomic scanout presentation or
+remove the separate immutable accepted-buffer requirements. The old failing
+receipt and unchanged quiescent control remain preserved.

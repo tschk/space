@@ -150,8 +150,7 @@ def focus(slot):
 def shot(name, texts, focused):
     layout = oracle.layout(data)
     path = out / (name + '.ppm')
-    rgb = oracle.capture(monitor, path, layout)
-    oracle.check(rgb, layout, texts, focused)
+    rgb = oracle.capture_checked(monitor, path, layout, texts, focused)
     report['screenshots'].append({'name': path.name, 'sha256': sha(path), 'layout': layout,
                                   'texts': texts, 'focused': focused})
     return layout

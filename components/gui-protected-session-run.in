@@ -4,7 +4,7 @@ import "gui-protected-session.in"
 // Optional supervisor entry. Bootstrap is explicit and separate; never remint
 // launch authority here. All exit paths restore the prior note backend.
 fn gui-protected-session-run(port: Int) -> Int {
-  return gui-protected-session-run-images(port, boot-image-find(22), boot-image-find(270), boot-image-find(271))
+  return gui-protected-session-run-images(port, boot-image-find(BOOT-IMAGE-GUI-SEAT), boot-image-find(BOOT-IMAGE-GUI-PROTECTED-CALC), boot-image-find(BOOT-IMAGE-GUI-PROTECTED-EDITOR))
 }
 
 // Private orchestration boundary: explicit artifacts, same launch authority and

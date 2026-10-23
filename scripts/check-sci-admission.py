@@ -37,7 +37,7 @@ for _ in range(8):
     expected = (expected ^ (expected << 17)) & ((1 << 64) - 1)
 try:
     run(['bash', root / 'scripts/build-images.sh', '--variant', 'standard'], 'build.log',
-        env=dict(os.environ, IN=str(compiler), BUILD_DIR=str(out / 'images')))
+        env=dict(os.environ, IN=str(compiler), BUILD_DIR=str(out / 'images'), GUI_PROFILE='window'))
     source = (root / 'kernel/kernel-root.in').read_text()
     source = re.sub(r'import "\.\./([^"]+)"', lambda m: 'import ' + json.dumps(str(root / m.group(1))), source)
     assert source.count('  shell(port)') == 1

@@ -3,7 +3,7 @@ import "../../components/gui-protected-session.in"
 
 // Temporary integration orchestration; not a shell action or default profile.
 fn gui-protected-demo(port: Int) -> void {
-  if gui-protected-bootstrap() != 1 { panic("protected GUI launch bootstrap") }
+  if gui-protected-launch-valid() != 1 && gui-protected-bootstrap() != 1 { panic("protected GUI launch bootstrap") }
   let caller = current-cap
   let backend = native-protected-note-backend
   native-protected-note-backend = gui-protected-note-service

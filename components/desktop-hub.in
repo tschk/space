@@ -19,6 +19,7 @@ import "gui-note-store.in"
 import "gui-session.in"
 import "gui-window-clients.in"
 import "gui-window-session.in"
+import "gui-desktop.in"
 
 fn desktop-hub-usb-init(port: Int) -> Int {
   let usb-rc = xhci-init()
@@ -79,6 +80,10 @@ fn desktop-hub-init(port: Int, mb-info: Int, usb-rc: Int) -> void {
     }
   }
 
+  // Explicit boot-owned GUI launch authority; root retains its0xF capability.
+  if gui-protected-bootstrap() != 1 {
+    serial-write-cstr(port, "gui: protected launch authority unavailable"); serial-nl(port)
+  }
   comp-init()
   if boot-quiet == 0 {
     serial-write-cstr(port, "space: compositor initialized")

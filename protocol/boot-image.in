@@ -28,3 +28,8 @@ const BOOT-IMAGE-APP-SYSINFO = 19
 const BOOT-IMAGE-GUI-CALC = 20
 const BOOT-IMAGE-GUI-EDITOR = 21
 const BOOT-IMAGE-GUI-SEAT = 22
+
+// Default standard GUI: protected CPL3 paged clients. Kinds20/21 remain the
+// explicit trusted legacy/window profiles; no admission fallback between them.
+const BOOT-IMAGE-GUI-PROTECTED-CALC = 23
+const BOOT-IMAGE-GUI-PROTECTED-EDITOR = 24

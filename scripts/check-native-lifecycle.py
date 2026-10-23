@@ -18,7 +18,7 @@ a=p.parse_args();root=Path(__file__).resolve().parents[1];out=a.out.resolve()
 if a.cycles<65:p.error('--cycles must exceed 64 to prove more than 128 real app activations')
 if out.exists() and any(out.iterdir()):p.error('--out must be new or empty')
 out.mkdir(parents=True,exist_ok=True);a.compiler=a.compiler.resolve()
-env=dict(os.environ,IN=str(a.compiler),BUILD_DIR=str(out/'build'))
+env=dict(os.environ,IN=str(a.compiler),BUILD_DIR=str(out/'build'),GUI_PROFILE='window')
 def run(command,log,**kwargs):
  with (out/log).open('w') as stream:subprocess.run([str(v) for v in command],cwd=root,stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=180,**kwargs)
 run(['bash',root/'scripts/build-images.sh','--variant','standard'],'build.log',env=env)

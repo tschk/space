@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--in', dest='compiler', required=True, type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--sessions', type=int, default=129)
+    parser.add_argument('--default-gui', action='store_true', help='Exercise the distributable protected default rather than the explicit trusted baseline')
     parser.add_argument('--observe', action='store_true',
                         help='instrument unchanged product entry/close calls with private ownership/ABA assertions')
     args = parser.parse_args()
@@ -45,7 +46,7 @@ def main():
     sources += [root / name for name in ('boot/multiboot.asm', 'scripts/build-images.sh',
                 'scripts/pack-gui-sci.py', 'scripts/pack-spdp-sci.py', 'scripts/pack-sci-image.py', 'scripts/gui-window-evidence.py')]
     sources.append(Path(__file__).resolve())
-    sources.append(root / 'fixtures/gui-lifecycle/observer.in')
+    sources.append(root / ('fixtures/gui-protected-readable/default-observer.in' if args.default_gui else 'fixtures/gui-lifecycle/observer.in'))
     snapshot = {str(p.relative_to(root)): sha(p) for p in sources}
     report = {'status': 'running', 'scope': 'standard GUI behavior; not physical ownership proof',
               'target_sessions': args.sessions, 'completed_sessions': 0,
@@ -60,7 +61,9 @@ def main():
             continue
         if len(values) == 9:
             glyphs[values[0]] = values[1:]
-    environment = dict(os.environ, IN=str(compiler), BUILD_DIR=str(out / 'images'))
+    environment = dict(os.environ, IN=str(compiler), BUILD_DIR=str(out / 'images'), GUI_PROFILE='window')
+    if args.default_gui: environment.pop('GUI_PROFILE')
+    report['distributable_default_gui'] = args.default_gui
     with (out / 'build.log').open('w') as log:
         subprocess.run(['bash', str(root / 'scripts/build-images.sh'), '--variant', 'standard'],
                        cwd=root, env=environment, stdout=log, stderr=subprocess.STDOUT,
@@ -72,28 +75,48 @@ def main():
     spec.loader.exec_module(window_module)
     window_oracle = window_module.WindowEvidence(root)
     readable = window_module.image_has_canvas(image)
-    report['gui_profile'] = 'window' if readable else 'legacy'
+    report['gui_profile'] = 'protected' if args.default_gui else ('window' if readable else 'legacy')
     if args.observe:
         def absolute_imports(source, directory):
             return re.sub(r'(?m)^import "([^"]+)"',
                           lambda match: 'import ' + json.dumps(str((directory / match.group(1)).resolve())), source)
 
-        manager = (root / 'components/gui-clients.in').read_text()
-        manager = manager.replace('fn gui-admit(', 'fn gui-admit-implementation(', 1)
-        manager = manager.replace('fn gui-retire(', 'fn gui-retire-implementation(', 1)
-        manager += '\n' + (root / 'fixtures/gui-lifecycle/observer.in').read_text().replace('package space.kernel', '', 1)
-        (out / 'manager.in').write_text(manager)
-        window_manager = (root / 'components/gui-window-clients.in').read_text()
-        window_manager = absolute_imports(window_manager, root / 'components')
-        window_manager = window_manager.replace('fn gui-window-admit(', 'fn gui-window-admit-implementation(', 1)
-        (out / 'window-manager.in').write_text(window_manager)
-        session = (root / 'components/gui-session.in').read_text().replace('fn gui-session-run(', 'fn gui-session-run-implementation(', 1)
-        (out / 'session.in').write_text(session)
-        desktop = absolute_imports((root / 'components/desktop-hub.in').read_text(), root / 'components')
-        desktop = desktop.replace(json.dumps(str(root / 'components/gui-clients.in')), json.dumps(str(out / 'manager.in')))
-        desktop = desktop.replace(json.dumps(str(root / 'components/gui-window-clients.in')), json.dumps(str(out / 'window-manager.in')))
-        desktop = desktop.replace(json.dumps(str(root / 'components/gui-session.in')), json.dumps(str(out / 'session.in')))
-        (out / 'desktop.in').write_text(desktop)
+        if args.default_gui:
+            manager = absolute_imports((root / 'components/gui-protected-clients.in').read_text(), root / 'components')
+            manager = manager.replace('fn gui-protected-open(', 'fn gui-protected-open-implementation(', 1)
+            manager = manager.replace('fn gui-protected-retire(', 'fn gui-protected-retire-implementation(', 1)
+            manager += '\n' + (root / 'fixtures/gui-protected-readable/default-observer.in').read_text().replace('package space.kernel', '', 1)
+            (out / 'manager.in').write_text(manager)
+            session = absolute_imports((root / 'components/gui-protected-session.in').read_text(), root / 'components')
+            session = session.replace(json.dumps(str(root / 'components/gui-protected-clients.in')), json.dumps(str(out / 'manager.in')))
+            (out / 'protected-session.in').write_text(session)
+            service = absolute_imports((root / 'components/gui-protected-session-run.in').read_text(), root / 'components')
+            service = service.replace(json.dumps(str(root / 'components/gui-protected-session.in')), json.dumps(str(out / 'protected-session.in')))
+            service = service.replace('fn gui-protected-session-run-images(', 'fn gui-protected-session-run-images-implementation(', 1)
+            (out / 'protected-service.in').write_text(service)
+            dispatch = absolute_imports((root / 'components/gui-desktop.in').read_text(), root / 'components')
+            dispatch = dispatch.replace(json.dumps(str(root / 'components/gui-protected-session-run.in')), json.dumps(str(out / 'protected-service.in')))
+            (out / 'dispatch.in').write_text(dispatch)
+            desktop = absolute_imports((root / 'components/desktop-hub.in').read_text(), root / 'components')
+            desktop = desktop.replace(json.dumps(str(root / 'components/gui-desktop.in')), json.dumps(str(out / 'dispatch.in')))
+            (out / 'desktop.in').write_text(desktop)
+        else:
+            manager = (root / 'components/gui-clients.in').read_text()
+            manager = manager.replace('fn gui-admit(', 'fn gui-admit-implementation(', 1)
+            manager = manager.replace('fn gui-retire(', 'fn gui-retire-implementation(', 1)
+            manager += '\n' + (root / 'fixtures/gui-lifecycle/observer.in').read_text().replace('package space.kernel', '', 1)
+            (out / 'manager.in').write_text(manager)
+            window_manager = (root / 'components/gui-window-clients.in').read_text()
+            window_manager = absolute_imports(window_manager, root / 'components')
+            window_manager = window_manager.replace('fn gui-window-admit(', 'fn gui-window-admit-implementation(', 1)
+            (out / 'window-manager.in').write_text(window_manager)
+            session = (root / 'components/gui-session.in').read_text().replace('fn gui-session-run(', 'fn gui-session-run-implementation(', 1)
+            (out / 'session.in').write_text(session)
+            desktop = absolute_imports((root / 'components/desktop-hub.in').read_text(), root / 'components')
+            desktop = desktop.replace(json.dumps(str(root / 'components/gui-clients.in')), json.dumps(str(out / 'manager.in')))
+            desktop = desktop.replace(json.dumps(str(root / 'components/gui-window-clients.in')), json.dumps(str(out / 'window-manager.in')))
+            desktop = desktop.replace(json.dumps(str(root / 'components/gui-session.in')), json.dumps(str(out / 'session.in')))
+            (out / 'desktop.in').write_text(desktop)
         kernel = absolute_imports((root / 'kernel/kernel-root.in').read_text(), root / 'kernel')
         kernel = kernel.replace(json.dumps(str(root / 'components/desktop-hub.in')), json.dumps(str(out / 'desktop.in')))
         (out / 'kernel.in').write_text(kernel)
@@ -121,7 +144,7 @@ def main():
                             str(out / 'observer-kernel.bin'), str(image), *specs], cwd=root,
                            stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
         report['scope'] = 'standard GUI behavior plus private resource/ownership/ABA observer'
-        report['observer_sha256'] = sha(root / 'fixtures/gui-lifecycle/observer.in')
+        report['observer_sha256'] = sha(root / ('fixtures/gui-protected-readable/default-observer.in' if args.default_gui else 'fixtures/gui-lifecycle/observer.in'))
     report['image_sha256'] = sha(image)
     ready = b'gui: calculator left, text editor right; click or Tab to focus, Escape closes focused app'
     closed = b'gui: both applications closed; stable session counters; returning to shell'
@@ -184,8 +207,7 @@ def main():
         path = out / 'frame.ppm'
         if readable:
             layout = window_oracle.layout(data)
-            rgb = window_oracle.capture(monitor, path, layout)
-            window_oracle.check(rgb, layout, texts, current_focus)
+            rgb = window_oracle.capture_checked(monitor, path, layout, texts, current_focus)
             receipt = {'state': label, 'sha256': sha(path), 'texts': texts, 'layout': layout, 'focused': current_focus}
             if cycle in (0, 1, 63, 127, args.sessions - 1):
                 target = out / f'session-{cycle + 1:03}-{label}.ppm'
