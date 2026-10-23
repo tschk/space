@@ -186,5 +186,6 @@ python3 scripts/inspect-darwin-application.py /path/to/jq-macos-amd64 \
 The runtime gate with `--app` also injects that exact pinned image and proves
 actual allocation-free refusal (-8) by the new startup admission. It is not
 entered. Original macOS jq and GUI/framework applications remain unexecuted;
-next work is an explicit dependency/initialization contract and real API
-implementations driven by the captured import requirements.
+a separate [finite eager adapter](darwin-eager-checks.md) now supplies a bounded
+import preparation contract. Wider dependency support and actual required API
+implementations remain driven by the captured original application imports.

@@ -138,6 +138,13 @@ dyld, libSystem initializers, constructors or TLS/TLV. Original macOS jq remains
 refused; a pinned host trace records its 17 commands and 136 undefined symbols.
 The existing protected/file profiles remain unchanged.
 
+A separate [eager dependency adapter](darwin-eager-checks.md) now binds genuine
+chained Mach-O imports to seven existing typed services, using a finite native
+provider identity and private guest trampolines. It proves real calls and
+preparation before main, with unknown imports refused before allocation. It
+loads no libSystem executable and runs no library constructor or TLV machinery;
+original macOS jq remains refused.
+
 ## GUI contract to settle before slice 4
 
 Reuse [`protocol/display.in`](../protocol/display.in) and the existing channel /
