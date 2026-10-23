@@ -297,3 +297,25 @@ admission refusals). Strict 507+jq refusal and heap 485 representatives pass at
 `/tmp/space-windows-{strict,heap}-cache-regression/report.json`. These are the
 fresh receipts for the final narrow admission change; the earlier 14-gate and
 8-boot receipts retain their own source snapshots.
+
+
+## Single-thread critical-section checkpoint
+
+[Profile 9](../windows-critical-checks.md) implements the six critical-section
+imports observed in the pinned SQLite CRT, including its AndSpinCount fallback
+at 0x1402435bf. One native-only 64-record frame owns recursion and thread identity;
+the full 40-byte guest ABI is validated before mutation. Recursive acquisition,
+TryEnter, Leave, Delete and initialization/reuse are real. Foreign-owner Try
+returns FALSE; Enter does not invent a runnable contender or successful wait.
+Void invalid/unsupported state has explicit terminal policy rather than fake
+BOOL success. Memory authority remains borrowed/live and teardown unconditional.
+
+`/tmp/space-windows-critical-final/report.json` passes 653 focused activations
+plus one exact cold-resource recovery (654 total), actual native SCI private
+import denial, full-record/guest no-partial-write observers, capacity/overflow/
+malformed/foreign-owner cases, CPU metadata-read/NX faults, live revoke,
+held-section deadline/exit and stable 21-cycle cleanup. Fifteen fresh Windows
+regression receipts under `/tmp/space-windows-*-critical-regression/` retain all
+prior behavior and 420 original SQLite/7za refusals across ten profiles. The
+original apps still do not execute; import-count and PE directory guards remain,
+with encoding/locale, module resolution and other real CRT services subsequent.

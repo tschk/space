@@ -78,7 +78,7 @@ fn windows-parameters-heap-dispatch(frame:Int,num:Int)->Int{
 }
 fn windows-command-heap-run-profile(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int,profile:Int)->Int{
  if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0{return -16;}
- let mode=5;if profile==8{mode=6;}else if profile!=7{return -22;}
+ let mode=5;if profile==8{mode=6;}else if profile==9{mode=7;}else if profile!=7{return -22;}
  let entry=windows-startup-entry-mode(image,size,mode);if entry<0{return entry;}
  if windows-parameters-line-valid(line,bytes)==0{return -22;}
  if cap-check(memory,cap-memory())==0{return -13;}

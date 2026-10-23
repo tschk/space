@@ -420,6 +420,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   let num = load64(frame + 112)
   if num == 0x100011 && (windows-protected-profile == 4 || windows-protected-profile == 6) { return windows-parameters-time-dispatch(frame) }
   let result = 0
+  if num >= 0x100025 && num <= 0x10002A && windows-protected-profile == 9 { return windows-parameters-critical-dispatch(frame, num) }
   if windows-protected-profile == 8 && num == 0x100103 && windows-parameters-local-callback != 0 { store64(frame + 112, 0); return 0 }
   if windows-protected-profile == 8 && num == 0x100003 { windows-parameters-local-exit = load64(frame + 96) & 0xFFFFFFFF; windows-parameters-local-pending = 2; store64(frame + 112, 0); return 2 }
   if num == 0x100003 { store64(frame + 112, load64(frame + 96) & 0xFFFFFFFF); return 0 }
@@ -439,7 +440,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   else if num >= 0x10000A && num <= 0x100010 && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
   else if (num == 0x100012 || num == 0x100013) && windows-protected-profile == 6 { result = windows-parameters-counter-dispatch(frame, num) }
   else if num >= 0x100014 && num <= 0x100017 && windows-protected-profile == 5 && windows-parameters-env-active != 0 { result = windows-parameters-env-dispatch(frame, num) }
-  else if num >= 0x100018 && num <= 0x10001C && (windows-protected-profile == 7 || windows-protected-profile == 8) { result = windows-parameters-heap-dispatch(frame, num) }
+  else if num >= 0x100018 && num <= 0x10001C && (windows-protected-profile == 7 || windows-protected-profile == 8 || windows-protected-profile == 9) { result = windows-parameters-heap-dispatch(frame, num) }
   else if num >= 0x10001D && num <= 0x100024 && windows-protected-profile == 8 { result = windows-parameters-local-dispatch(frame, num) }
   else { result = 0; windows-protected-error = 120 }
   if windows-protected-profile >= 2 { store32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104), windows-protected-error) }
@@ -489,6 +490,10 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
     entry = windows-startup-entry-mode(image, size, 6)
   }
+  if profile == 9 {
+    if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 7)
+  }
   if entry < 0 { return entry }
   if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
   if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
@@ -498,6 +503,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if profile >= 1 { needed = windows-application-pages(image) + 80 }
   if profile >= 7 { needed = needed + 67 }
   if profile == 8 { needed = needed + 6 }
+  if profile == 9 { needed = needed + 1 }
   if windows-protected-owned-pages(image,profile)>WINDOWS-PROTECTED-MAX-FRAMES { return -12 }
   // All seven retained alloc() blocks are 16-byte multiples. Free frames
   // cannot fund these first-use bump allocations; reserve them before rounding
@@ -568,7 +574,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
-  while i < 37 {
+  while i < 43 {
     let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
     i = i + 1
@@ -593,6 +599,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
       if profile == 6 { index = windows-parameters-counter-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile == 7 { index = windows-parameters-heap-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile == 8 { index = windows-parameters-local-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 9 { index = windows-parameters-critical-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
     }
   }
@@ -615,6 +622,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if profile == 5 { windows-parameters-env-prepare(domain) }
   if profile >= 7 { windows-parameters-heap-prepare(domain) }
   if profile == 8 { windows-parameters-local-prepare(domain, stub) }
+  if profile == 9 { windows-parameters-critical-prepare() }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = 0
   if profile == 8 { status = windows-parameters-local-run(entry, domain, 0x4F003FD8) }
@@ -624,6 +632,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   domain-user-syscall-hook = 0
   windows-protected-files-release()
   if profile == 5 { windows-parameters-env-release() }
+  if profile == 9 { windows-parameters-critical-release() }
   if profile == 8 { windows-parameters-local-release() }
   if profile >= 7 { windows-parameters-heap-release() }
   if domain-destroy-user(domain) != 0 { return -5 }

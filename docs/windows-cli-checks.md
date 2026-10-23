@@ -103,7 +103,7 @@ python3 scripts/check-windows-parameters.py \
   --out /tmp/space-windows-parameters-final-evidence
 ```
 
-The original-app admission gate now proves 378 refusals (two applications, nine
+The original-app admission gate now proves 420 refusals (two applications, ten
 profiles, 21 repeats) with exact heap/free-list/domain/owned-tree preservation.
 Its report explicitly records `executed:false`. The parameter gate exercises 275
 actual CPL3 launches, including exact ASCII/UTF16 command lines, empty and 1024-byte
@@ -126,7 +126,7 @@ still does not execute original Windows SQLite or 7za.
 
 The bounded [environment profile](windows-environment-checks.md) and
 [native-counter profile](windows-counter-checks.md) add real startup contracts.
-The original SQLite/7za gate now checks all nine profiles (378 repeated
+The original SQLite/7za gate now checks all ten profiles (420 repeated
 allocation-free refusals); neither original application executes. The existing
 command-only diagnostic still identifies import 2, GetEnvironmentVariableA,
 as its first unsupported import. Supporting that API in a separate explicit
@@ -141,4 +141,9 @@ heap profile; its unchanged images still refuse before allocation.
 The versioned [TLS/FLS profile](windows-local-checks.md) adds actual CPL3
 callbacks and a two-page TEB with a relocated PEB. Normal entry return and
 ExitProcess run real bounded FLS rundown; forced termination remains explicit.
-The original-app refusal gate now includes this ninth profile.
+The original-app refusal gate now includes the TLS/FLS profile.
+
+The [single-thread critical-section profile](windows-critical-checks.md) adds
+real ownership/recursion/try/leave/delete transitions and bounded denial of
+unimplemented cross-thread waits. The original-app gate now includes ten
+profiles and retains its unchanged-image refusal.
