@@ -39,6 +39,11 @@ def gates(compiler, output):
         ("mapping-lifetime", "model", "isolated-functions", model("check-mmap-lifetime")),
         ("command-model-jit", "model", "isolated-functions-jit", model("check-commandbar") + ["--target", "jit", "--out", str(output / "command-jit")]),
         ("command-model-native", "model", "isolated-functions-native", model("check-commandbar") + ["--target", "native", "--out", str(output / "command-native")]),
+        ("runtime-failure", "runtime", "native-abort-and-user-fault-recovery", model("check-runtime-failure") + ["--out", str(output / "runtime-failure-evidence")]),
+        ("user-syscall", "runtime", "strict-cpl3-resumable-syscall", model("check-user-syscall") + ["--out", str(output / "user-syscall-evidence")]),
+        ("protected-darwin", "runtime", "private-cpl3-macho-imports-and-budget", model("check-darwin-protected") + ["--imports", "--out", str(output / "protected-darwin-evidence")]),
+        ("protected-windows", "runtime", "private-cpl3-pe-imports-and-budget", model("check-windows-protected") + ["--out", str(output / "protected-windows-evidence")]),
+        ("user-budget", "runtime", "actual-pit-cpl3-timeout", model("check-user-budget") + ["--out", str(output / "user-budget-evidence")]),
         ("linux-darwin-windows-guests", "runtime", "trusted-cpl0-guests", ["bash", "scripts/check-foreign-syscalls.sh"]),
         ("darwin-loader", "runtime", "trusted-cpl0-guest", ["bash", "scripts/check-darwin-macho.sh"]),
         ("darwin-translator", "runtime", "kernel-linked-translator", ["bash", "scripts/check-darwin-personality.sh"]),
@@ -46,6 +51,8 @@ def gates(compiler, output):
         ("desktop-interaction", "gui", "qemu-keyboard-pointer-pixels", model("check-desktop-launcher") + ["--build-dir", str(output / "desktop")]),
         ("sci-pixels", "gui", "sci-shared-pixels", model("check-spdp-sci") + ["--build-dir", str(output / "spdp")]),
         ("sci-keyboard", "gui", "bounded-sci-keyboard-pixels", model("check-spdp-input") + ["--build-dir", str(output / "input")]),
+        ("independent-sci-clients", "gui", "trusted-cpl0-independent-input-pixels", model("check-gui-clients") + ["--build-dir", str(output / "gui-clients")]),
+        ("native-gui-apps", "gui", "trusted-cpl0-native-gui-calculator-editor", model("check-gui-apps") + ["--build-dir", str(output / "gui-apps")]),
         ("sci-seat-denial", "gui", "isolated-functions", model("check-sci-seat")),
     ]
 

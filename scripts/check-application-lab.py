@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Run the bounded application lab; the broader compatibility/desktop goal stays OPEN."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def source_inventory(root, excluded):
+    """Include tracked and new source inputs, detecting additions and removals too."""
+    names = subprocess.check_output(
+        ['git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']
+    ).decode().split('\0')
+    inventory = {}
+    for name in sorted(set(names)):
+        if not name or '__pycache__' in Path(name).parts:
+            continue
+        path = root / name
+        if any(path == base or base in path.parents for base in excluded):
+            continue
+        if path.is_file():
+            inventory[name] = sha(path)
+    return inventory
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--in', dest='compiler', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True, help='New or empty evidence directory')
+    parser.add_argument('--apps-dir', type=Path, required=True, help='Pinned upstream application cache')
+    for name in ['lua', 'busybox', 'sqlite']:
+        parser.add_argument('--' + name, type=Path,
+                            help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
+    parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
+    args = parser.parse_args()
+    args.compiler = args.compiler.resolve()
+    args.out = args.out.resolve()
+    args.apps_dir = args.apps_dir.resolve()
+    if not args.compiler.is_file():
+        parser.error('--in must name an existing source-built compiler')
+    if args.out.exists() and (not args.out.is_dir() or any(args.out.iterdir())):
+        parser.error('--out must be new or empty')
+    if args.apps_dir == ROOT or args.apps_dir in ROOT.parents:
+        parser.error('--apps-dir must be a separate application cache, not the repository or its ancestor')
+    args.out.mkdir(parents=True, exist_ok=True)
+    args.apps_dir.mkdir(parents=True, exist_ok=True)
+    report = {
+        'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
+        'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
+        'goal_status': 'OPEN',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite memory execution, generic compiler ELF execution, protected Darwin/Windows fixtures, persistence and GUI workflows. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'gates': [], 'applications': [],
+        'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
+    }
+    environment = dict(os.environ, IN=str(args.compiler), BUILD_DIR=str(args.out / 'images'))
+    if args.compiler.parts[-4:] in [('in-cli', 'target', 'release', 'in'), ('in-cli', 'target', 'debug', 'in')]:
+        environment['INAUGURATION_DIR'] = str(args.compiler.parents[3])
+
+    def save():
+        temporary = args.out / 'report.json.tmp'
+        temporary.write_text(json.dumps(report, indent=2) + '\n')
+        temporary.replace(args.out / 'report.json')
+
+    def integrity():
+        current = source_inventory(ROOT, [args.out, args.apps_dir])
+        changed = sorted(name for name in set(current) | set(report['source_sha256'])
+                         if current.get(name) != report['source_sha256'].get(name))
+        previous = report.get('source_changed_during_run', [])
+        report['source_changed_during_run'] = sorted(set(previous) | set(changed))
+        compiler_changed = not args.compiler.is_file() or sha(args.compiler) != report['compiler_sha256']
+        report['compiler_changed_during_run'] = report.get('compiler_changed_during_run', False) or compiler_changed
+        changed_apps = [app['id'] for app in report['applications']
+                        if not Path(app['path']).is_file() or sha(Path(app['path'])) != app['sha256']]
+        report['applications_changed_during_run'] = sorted(set(report.get('applications_changed_during_run', [])) | set(changed_apps))
+        return not (report['source_changed_during_run'] or report['compiler_changed_during_run']
+                    or report['applications_changed_during_run'])
+
+    def run(name, command, timeout=600, dependency=True):
+        entry = {'name': name, 'command': [str(word) for word in command],
+                 'log': str(args.out / (name + '.log'))}
+        report['gates'].append(entry)
+        if not integrity():
+            entry.update(status='blocked', reason='source/compiler/application changed during this run')
+            save()
+            return False
+        if not dependency:
+            entry.update(status='blocked', reason='required image build failed')
+            save()
+            return False
+        entry['status'] = 'running'
+        save()
+        print('RUN ' + name, flush=True)
+        start = time.monotonic()
+        try:
+            with Path(entry['log']).open('w') as log:
+                result = subprocess.run(entry['command'], cwd=ROOT, env=environment, stdout=log,
+                                        stderr=subprocess.STDOUT, timeout=timeout)
+            entry.update(status='passed' if result.returncode == 0 else 'failed', exit_code=result.returncode)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            entry.update(status='failed', error=str(error))
+        if not integrity():
+            entry.update(status='failed', integrity_failure='source/compiler/application changed during this run')
+        entry['elapsed_seconds'] = round(time.monotonic() - start, 3)
+        save()
+        print(entry['status'].upper() + ' ' + name, flush=True)
+        return entry['status'] == 'passed'
+
+    def finish():
+        coherent = integrity()
+        report['integrity_status'] = 'passed' if coherent else 'failed'
+        report.update(finished_utc=datetime.now(timezone.utc).isoformat(),
+                      passed=sum(gate['status'] == 'passed' for gate in report['gates']),
+                      failed=sum(gate['status'] != 'passed' for gate in report['gates']))
+        report['lab_status'] = 'passed' if coherent and not report['failed'] and not report.get('artifact_failure') else 'failed'
+        save()
+        print(f"{report['passed']} passed, {report['failed']} failed or blocked; lab {report['lab_status']}; broader goal OPEN; {args.out / 'report.json'}")
+        return 0 if report['lab_status'] == 'passed' else 1
+
+    def require_artifact(app, path):
+        if not path.is_file() or sha(path) != app['sha256'] or path.stat().st_size != app['size_bytes']:
+            report['artifact_failure'] = {'id': app['id'], 'path': str(path), 'reason': 'absent or invalid pinned artifact'}
+            raise RuntimeError('absent or invalid pinned application ' + str(path))
+        report['applications'].append({'id': app['id'], 'path': str(path), 'sha256': sha(path),
+                                       'size_bytes': path.stat().st_size})
+        save()
+        return path
+
+    save()
+    applications = {}
+    try:
+        for app in json.loads((ROOT / 'fixtures/applications/jq-1.8.1.json').read_text())['apps']:
+            path = args.apps_dir / app['filename']
+            if not path.exists() and args.download:
+                print('ACQUIRE ' + app['id'], flush=True)
+                temporary = path.with_suffix(path.suffix + '.part')
+                try:
+                    with urllib.request.urlopen(app['url'], timeout=60) as response, temporary.open('xb') as target:
+                        while block := response.read(65536):
+                            target.write(block)
+                    if sha(temporary) != app['sha256'] or temporary.stat().st_size != app['size_bytes']:
+                        raise RuntimeError('upstream artifact checksum/size mismatch: ' + app['id'])
+                    temporary.chmod(0o755)
+                    temporary.replace(path)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            applications[app['personality']] = require_artifact(app, path)
+        for name, version, filename in [('lua', 'lua-5.4.7', 'lua'), ('busybox', 'busybox-1.36.1', 'busybox'),
+                                        ('sqlite', 'sqlite-3.46.1', 'sqlite3')]:
+            explicit = getattr(args, name)
+            path = explicit.resolve() if explicit else args.apps_dir / filename
+            if not path.exists() and args.download and not explicit:
+                if not run(name + '-source-build', [sys.executable, ROOT / ('scripts/build-' + name + '-corpus.py'),
+                                                    '--out', args.out / (name + '-build')]):
+                    raise RuntimeError(name + ' source build failed; evidence retained')
+                path = args.out / (name + '-build') / filename
+            app = json.loads((ROOT / ('fixtures/applications/' + version + '.json')).read_text())['apps'][0]
+            applications[name] = require_artifact(app, path)
+    except (OSError, RuntimeError, ValueError) as error:
+        report.setdefault('artifact_failure', {'reason': str(error)})
+        save()
+        print('FAIL: ' + str(error), file=sys.stderr)
+        return finish()
+
+    def check(name, script, *arguments, **options):
+        return run(name, [sys.executable, ROOT / 'scripts' / script, *arguments], **options)
+
+    built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
+    for variant in ['standard', 'minimal']:
+        check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),
+              '--out', args.out / ('native-' + variant), dependency=built)
+    check('native-persistence', 'check-native-persistence.py', '--in', args.compiler,
+          '--image', args.out / 'images/standard.bin', '--out', args.out / 'native-persistence', dependency=built)
+    for name, script in [('linux-jq', 'check-linux-real-app.py'), ('linux-lua', 'check-linux-corpus.py'),
+                         ('linux-busybox', 'check-linux-corpus.py'), ('linux-sqlite-memory', 'check-linux-corpus.py')]:
+        application = name.split('-')[1]
+        command = ['--in', args.compiler, '--app', applications['linux' if application == 'jq' else application],
+                   '--suite', '--out', args.out / name]
+        if application != 'jq':
+            command += ['--application', application]
+        if application != 'sqlite':
+            command += ['--input-suite']
+        check(name, script, *command)
+    check('linux-sqlite-files', 'check-linux-corpus.py', '--in', args.compiler,
+          '--application', 'sqlite', '--app', applications['sqlite'], '--suite', '--input-suite',
+          '--out', args.out / 'linux-sqlite-files')
+    for variant in ['standard', 'minimal']:
+        check('compiler-linux-' + variant, 'check-inauguration-linux.py', '--in', args.compiler,
+              '--root', variant, '--out', args.out / ('compiler-linux-' + variant))
+    check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',
+          '--app', applications['darwin'], '--out', args.out / 'darwin-process')
+    check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
+    check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
+          '--app', applications['windows'], '--out', args.out / 'windows-process')
+    check('windows-general', 'check-windows-application.py', '--in', args.compiler,
+          '--app', applications['windows'], '--out', args.out / 'windows-general')
+    check('windows-startup', 'check-windows-startup.py', '--in', args.compiler,
+          '--out', args.out / 'windows-startup')
+    check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
+    check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
+    check('windows-nvme', 'check-windows-persistence.py', '--in', args.compiler, '--out', args.out / 'windows-nvme')
+    check('native-large-files', 'check-native-large-files.py', '--in', args.compiler, '--out', args.out / 'native-large-files')
+    check('native-lifecycle', 'check-native-lifecycle.py', '--in', args.compiler, '--out', args.out / 'native-lifecycle')
+    check('native-retained', 'check-native-retained.py', '--in', args.compiler,
+          '--out', args.out / 'native-retained')
+    check('standard-gui', 'check-standard-gui.py', '--in', args.compiler, '--build-dir', args.out / 'standard-gui')
+    check('native-gui-apps', 'check-gui-apps.py', '--in', args.compiler, '--build-dir', args.out / 'gui-apps')
+    check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')
+    check('gui-lifecycle', 'check-gui-lifecycle.py', '--in', args.compiler, '--observe',
+          '--out', args.out / 'gui-lifecycle', timeout=1200)
+    for cpu in ['qemu64', 'max']:
+        check('sanitized-registers-' + cpu, 'check-user-initial-state.py', '--in', args.compiler,
+              '--cpu', cpu, '--out', args.out / ('sanitized-registers-' + cpu))
+    check('runtime-failure', 'check-runtime-failure.py', '--in', args.compiler, '--out', args.out / 'runtime-failure')
+    check('user-budget', 'check-user-budget.py', '--in', args.compiler, '--out', args.out / 'user-budget')
+    return finish()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
