@@ -1,5 +1,7 @@
 package space.kernel
 
+import "windows-process-identity.in"
+
 // Bounded, explicit process-parameter profile. The borrowed native input is
 // copied into an execution-owned RO user page before entry; no kernel pointer
 // or host environment is exported. The initial encoding profile is ASCII.
@@ -13,7 +15,7 @@ fn windows-parameters-import-name(id: Int) -> Int {
   if id == 11 { return "GetCommandLineW" }
   if id == 12 { return "GetStartupInfoW" }
   if id == 13 { return "GetModuleHandleW" }
-  return ""
+  return windows-parameters-identity-name(id)
 }
 
 fn windows-parameters-import-id(image: Int, size: Int, name: Int) -> Int {
@@ -21,7 +23,7 @@ fn windows-parameters-import-id(image: Int, size: Int, name: Int) -> Int {
   let id = windows-application-import-id(image, size, name)
   if id >= 0 { return id }
   id = 10
-  while id < 14 {
+  while id < 17 {
     if windows-protected-name(image, size, name + 2, windows-parameters-import-name(id)) != 0 { return id }
     id = id + 1
   }
@@ -45,6 +47,7 @@ fn windows-parameters-prepare(domain: Int) -> void {
 }
 
 fn windows-parameters-dispatch(frame: Int, num: Int) -> Int {
+  if num >= 0x10000E && num <= 0x100010 { return windows-parameters-identity(frame, num) }
   if num == 0x10000A { return WINDOWS-PARAMETERS-PAGE }
   if num == 0x10000B { return WINDOWS-PARAMETERS-PAGE + 1024 }
   let addr = load64(frame + 96)

@@ -43,13 +43,13 @@ with **157 named KERNEL32 imports and no other imported DLL**. 7za has 143 impor
 across KERNEL32 (88), MSVCRT (38), ADVAPI32 (9), USER32 (2), and six OLEAUT32
 ordinals. Thus fewer total 7za imports still require a larger dependency graph.
 
-SQLite's current loader blockers include PE header offset 256, nine sections,
-946 pages under the existing mapping formula (limit 480), a raw text section
-larger than 2 MiB, DLL characteristics 0x8160, 157 import slots (limit 32), and
-resource/exception/relocation/debug/load-configuration directories. 7za has
-PE header offset 248, preferred base 0x400000, multiple DLLs and ordinal imports,
-plus unsupported directories. Neither has a static TLS directory. None of
-these constraints was bypassed to claim original application execution.
+The bounded [PE view](windows-pe-view-checks.md) now structurally validates the
+original SQLite entry `0x140003a8a`, nine sections and 946 mapped pages without
+rewriting any bytes. The next execution barriers remain 157 import slots
+(limit 32), resource/exception/relocation/debug/load-configuration directories,
+and unknown APIs. 7za still requires its lower preferred base, multiple DLLs,
+ordinal imports and unsupported directories. Both full execution paths continue
+to refuse before allocating. Neither original has a static TLS directory.
 
 ## Required startup group
 
@@ -114,9 +114,8 @@ cancellation 124, FS/GS restoration, and 21-cycle exact heap/frame/domain stabil
 Six malformed native command-line inputs refuse before activation. The earlier
 171-launch TEB/TLS gate remains a regression.
 
-The next loader slice should replace hardcoded PE-header/section offsets with a
-validated bounded image view and an explicit larger-image resource plan, before
-admitting this original SQLite layout. Then complete real startup timing/heap,
-thread-local data, encoding, file and synchronization contracts required by its
-actual linked CRT. Unknown imports continue to refuse. Do not erase them or add
-zero-success UCRT/Win32 shims to obtain a version marker.
+The follow-up [PE view/identity checkpoint](windows-pe-view-checks.md) records
+structural progress and actual current-thread/process/LastError APIs. Native
+clock/heap/thread-local/encoding/file/synchronization contracts required by the
+linked CRT remain separate executable work. Unknown imports continue to refuse;
+no version marker has been obtained by removing dependencies or success shims.

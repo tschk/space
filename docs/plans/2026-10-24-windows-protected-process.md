@@ -47,7 +47,7 @@ Accepting the layout does not claim execution of jq.
 | `WriteFile` | Synchronous serial output or owned regular-file write, BOOL plus DWORD count | At most 4096 bytes, writable count pointer, null OVERLAPPED; serial and storage grants checked separately |
 | `GetCurrentProcessId` | Returns the live native domain identity | No general Windows process objects |
 | `ExitProcess` | Ends this activation with the full low 32-bit status | No DLL detach/thread teardown semantics |
-| `GetLastError` | Per-activation state, initialized to zero and preserved on ordinary successes | Single-threaded; no Windows TEB/TLS slot yet |
+| `GetLastError` | Per-activation state, initialized to zero and preserved on ordinary successes | Single-threaded; TEB startup profiles synchronize offset `0x68` |
 | `CreateFileA` | Actual VFS regular-file open/create/truncate with execution-owned handle and path storage | Explicit read/write access, share read/write bits, null security/template, normal attributes; synchronous direct SparkFS namespace |
 | `ReadFile` | Actual VFS bytes into checked writable guest memory; EOF succeeds with zero bytes | At most 4096 bytes, writable count pointer, null OVERLAPPED |
 | `SetFilePointerEx` | Owned VFS offset with begin/current/end origin and optional 64-bit result | Signed 31-bit distance magnitude; invalid negative result returns error 131 |
@@ -174,3 +174,8 @@ the original jq import set: `CloseHandle`, `GetCurrentProcessId`, `GetLastError`
 A separate bounded [TEB/static TLS startup profile](../windows-startup-checks.md)
 now exercises private GS state and real CPL3 callbacks. The two profiles above
 retain their existing TLS refusal; original Windows jq still does not execute.
+
+The [bounded PE view and identity/error checkpoint](../windows-pe-view-checks.md)
+adds variable checked PE header layout and larger protected-image bounds, plus
+actual process/thread/pseudo-handle/TEB LastError behavior. The original strict
+fixture admission and unknown-import/directory execution guards remain.

@@ -25,7 +25,7 @@ Each activation owns four private RW/NX pages starting at `0x4e000000`:
 
 | Page | Implemented fields |
 | --- | --- |
-| TEB | NT_TIB ExceptionList `-1`, stack base/limit, self at `0x30`, activation process/thread IDs, TLS vector at `0x58`, PEB pointer at `0x60` |
+| TEB | NT_TIB ExceptionList `-1`, stack base/limit, self at `0x30`, activation process/thread IDs, TLS vector at `0x58`, PEB pointer at `0x60`, LastErrorValue at `0x68` |
 | PEB | Preferred image base at `0x10` |
 | TLS vector | Slot zero points to the activation's TLS data page |
 | TLS data | Copied initial template, zero-filled remainder, page aligned |
@@ -33,8 +33,8 @@ Each activation owns four private RW/NX pages starting at `0x4e000000`:
 The private image's TLS index is initialized to zero. No original file bytes
 are changed. The TEB/PEB are deliberately partial: there are no process
 parameters, loader lists, Windows heap, SEH/unwind, dynamic TLS allocation or
-thread creation. `GetLastError` retains the existing personality-owned state;
-it is not synchronized with a guest-writable TEB field.
+thread creation. TEB-based profiles now synchronize `GetLastError`/`SetLastError`
+with the owned TEB field; see the [identity/error checkpoint](windows-pe-view-checks.md).
 
 A generated RX guest capsule calls the validated callbacks in order, then the
 entry point. Every callback executes at CPL3 with RCX=image base,

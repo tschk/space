@@ -6,8 +6,8 @@ const WINDOWS-STARTUP-TEB = 0x4E000000
 
 fn windows-startup-memory(image: Int, rva: Int, bytes: Int, writable: Int) -> Int {
   let i = 0
-  while i < posix-load16(image + 134) {
-    let p = image + 392 + i * 40
+  while i < windows-application-sections(image) {
+    let p = windows-application-section(image, i)
     let va = load32(p + 12)
     let extent = load32(p + 8)
     if load32(p + 16) > extent { extent = load32(p + 16) }
@@ -20,9 +20,9 @@ fn windows-startup-memory(image: Int, rva: Int, bytes: Int, writable: Int) -> In
 }
 
 fn windows-startup-directory(image: Int, size: Int) -> Int {
-  let rva = load32(image + 336)
-  if rva == 0 && load32(image + 340) == 0 { return 0 }
-  if rva == 0 || load32(image + 340) != 40 { return -8 }
+  let rva = load32(windows-application-opt(image) + 184)
+  if rva == 0 && load32(windows-application-opt(image) + 188) == 0 { return 0 }
+  if rva == 0 || load32(windows-application-opt(image) + 188) != 40 { return -8 }
   let off = windows-protected-rva(image, size, rva, 40)
   if off < 0 { return -8 }
   return image + off
@@ -33,7 +33,7 @@ fn windows-startup-entry-mode(image: Int, size: Int, parameters: Int) -> Int {
   if entry < 0 { return entry }
   let d = windows-startup-directory(image, size)
   if d <= 0 { if d < 0 { return -8 }; return entry }
-  let base = load64(image + 176)
+  let base = load64(windows-application-opt(image) + 24)
   let start = load64(d)
   let end = load64(d + 8)
   let index = load64(d + 16)
@@ -73,7 +73,7 @@ fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry:
   let peb = windows-protected-physical(WINDOWS-STARTUP-TEB + 4096)
   let vector = windows-protected-physical(WINDOWS-STARTUP-TEB + 8192)
   let tls = windows-protected-physical(WINDOWS-STARTUP-TEB + 12288)
-  let base = load64(image + 176)
+  let base = load64(windows-application-opt(image) + 24)
   store64(teb, -1);store64(teb + 8, 0x4F004000);store64(teb + 16, 0x4F000000)
   store64(teb + 48, WINDOWS-STARTUP-TEB)
   store64(teb + 64, domain);store64(teb + 72, 1)

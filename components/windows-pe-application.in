@@ -1,11 +1,13 @@
 package space.kernel
 
+import "windows-pe-view.in"
+
 // Separate protected application profile; the original strict fixture admission
 // stays unchanged. Preferred-base execution has no ASLR/relocation claim.
 fn windows-application-section-flags(image: Int, rva: Int, bytes: Int) -> Int {
   let i = 0
-  while i < posix-load16(image + 134) {
-    let p = image + 392 + i * 40
+  while i < windows-application-sections(image) {
+    let p = windows-application-section(image, i)
     let va = load32(p + 12)
     let raw = load32(p + 16)
     if rva >= va && rva - va <= raw && bytes <= raw - (rva - va) { return load32(p + 36) }
@@ -43,8 +45,8 @@ fn windows-application-kernel32(image: Int, size: Int, rva: Int) -> Int {
 fn windows-application-pages(image: Int) -> Int {
   let count = 7
   let i = 0
-  while i < posix-load16(image + 134) {
-    let p = image + 392 + i * 40
+  while i < windows-application-sections(image) {
+    let p = windows-application-section(image, i)
     let extent = load32(p + 8)
     if load32(p + 16) > extent { extent = load32(p + 16) }
     count = count + (extent + 4095) / 4096
@@ -55,35 +57,39 @@ fn windows-application-pages(image: Int) -> Int {
 
 fn windows-application-structure-entry(image: Int, size: Int) -> Int {
   if image <= 0 || size < 1024 || size > 0x1000000 || (size & 511) != 0 || image > 0x100000000 - size { return -8 }
-  if posix-load16(image) != 0x5A4D || load32(image + 60) != 128 || load32(image + 128) != 0x4550 || posix-load16(image + 132) != 0x8664 { return -8 }
-  let count = posix-load16(image + 134)
-  let chars = posix-load16(image + 150)
-  if count < 1 || count > 16 || posix-load16(image + 148) != 240 || (chars & 0x2002) != 2 || (chars & (0xFFFF ^ 0x22F)) != 0 { return -8 }
-  if load64(image + 140) != 0 { return -8 }
-  let opt = image + 152
+  if posix-load16(image) != 0x5A4D { return -8 }
+  let pe = load32(image + 60)
+  if pe < 64 || pe > 4096 - 264 || pe > size - 264 || (pe & 3) != 0 { return -8 }
+  if load32(image + pe) != 0x4550 || posix-load16(image + pe + 4) != 0x8664 { return -8 }
+  let coff = windows-application-coff(image)
+  let count = windows-application-sections(image)
+  let chars = posix-load16(coff + 18)
+  if count < 1 || count > 16 || posix-load16(coff + 16) != 240 || (chars & 0x2002) != 2 || (chars & (0xFFFF ^ 0x22F)) != 0 { return -8 }
+  if load64(coff + 8) != 0 { return -8 }
+  let opt = windows-application-opt(image)
   let headers = load32(opt + 60)
   if posix-load16(opt) != 0x20B || load32(opt + 32) != 4096 || load32(opt + 36) != 512 { return -8 }
-  if headers < 392 + count * 40 || headers > 4096 || headers > size || (headers & 511) != 0 { return -8 }
+  if headers < pe + 264 + count * 40 || headers > 4096 || headers > size || (headers & 511) != 0 { return -8 }
   let base = load64(opt + 24)
   let extent = load32(opt + 56)
   if base < 0x50000000 || (base & 65535) != 0 || extent <= 4096 || extent > 0x2000000 || (extent & 4095) != 0 { return -8 }
   if base >= 0x800000000000 || extent > 0x800000000000 - base { return -8 }
   let dll = posix-load16(opt + 70)
-  if posix-load16(opt + 68) != 3 || (dll & 256) == 0 || (dll & (0xFFFF ^ 0x160)) != 0 || load32(opt + 108) != 16 { return -8 }
+  if posix-load16(opt + 68) != 3 || (dll & 256) == 0 || (dll & (0xFFFF ^ 0x8160)) != 0 || load32(opt + 108) != 16 { return -8 }
   let previous = 4096
   let file-end = headers
   let entry = load32(opt + 16)
   let found = 0
   let i = 0
   while i < count {
-    let p = image + 392 + i * 40
+    let p = windows-application-section(image, i)
     let vm = load32(p + 8)
     let va = load32(p + 12)
     let raw = load32(p + 16)
     let off = load32(p + 20)
     let flags = load32(p + 36)
     if flags != 0x60000020 && flags != 0x40000040 && flags != 0xC0000040 && flags != 0xC0000080 && flags != 0x42000040 { return -8 }
-    if vm <= 0 || vm > 0x200000 || raw > 0x200000 || va < previous || (va & 4095) != 0 { return -8 }
+    if vm <= 0 || vm > 0x400000 || raw > 0x400000 || va < previous || (va & 4095) != 0 { return -8 }
     let memory = vm
     if raw > memory { memory = raw }
     let rounded = (memory + 4095) & -4096
@@ -98,14 +104,14 @@ fn windows-application-structure-entry(image: Int, size: Int) -> Int {
     previous = va + rounded
     i = i + 1
   }
-  if previous != extent || file-end != size || found == 0 || windows-application-pages(image) > 480 { return -8 }
+  if previous != extent || file-end != size || found == 0 || windows-application-pages(image) > 1024 { return -8 }
   return base + entry
 }
 
 fn windows-application-entry-mode(image: Int, size: Int, startup: Int) -> Int {
   let validated = windows-application-structure-entry(image, size)
   if validated < 0 { return validated }
-  let opt = image + 152
+  let opt = windows-application-opt(image)
   let base = load64(opt + 24)
   let entry = validated - base
   let i = 0

@@ -8,7 +8,7 @@ import "windows-process-parameters.in"
 // the native domain runtime owns page-table entry and teardown.
 const WINDOWS-PROTECTED-LOW = 0x44000000
 const WINDOWS-PROTECTED-HIGH = 0x48000000
-const WINDOWS-PROTECTED-MAX-FRAMES = 512
+const WINDOWS-PROTECTED-MAX-FRAMES = 1152
 const WINDOWS-PROTECTED-STUB = 0x40007000
 var windows-protected-frames: Int = 0
 var windows-protected-virtuals: Int = 0
@@ -19,6 +19,7 @@ var windows-protected-last-domain: Int = 0
 var windows-protected-authority: Int = -1
 var windows-protected-busy: Int = 0
 var windows-protected-error: Int = 0
+var windows-protected-profile: Int = 0
 var windows-protected-budget: Int = 100
 var windows-protected-storage: Int = -1
 var windows-protected-files: Int = 0
@@ -29,8 +30,8 @@ var windows-protected-shares: Int = 0
 fn windows-protected-rva(image: Int, size: Int, rva: Int, bytes: Int) -> Int {
   if rva < 0 || bytes < 0 { return -1 }
   let i = 0
-  while i < posix-load16(image + 134) {
-    let p = image + 392 + i * 40
+  while i < windows-application-sections(image) {
+    let p = windows-application-section(image, i)
     let va = load32(p + 12)
     let raw = load32(p + 16)
     let off = load32(p + 20)
@@ -415,6 +416,7 @@ fn windows-protected-filesize(frame: Int) -> Int {
 // are runtime-local, never claimed as Windows NT syscall numbers.
 fn windows-protected-dispatch(frame: Int) -> Int {
   if windows-protected-busy == 0 || domain-current != windows-protected-domain { store64(frame + 112, -1); return 0 }
+  if windows-protected-profile >= 2 { windows-protected-error = load32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104)) }
   let num = load64(frame + 112)
   let result = 0
   if num == 0x100003 { store64(frame + 112, load64(frame + 96) & 0xFFFFFFFF); return 0 }
@@ -431,8 +433,9 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   else if num == 0x100007 { result = windows-protected-seek(frame) }
   else if num == 0x100008 { result = windows-protected-close(load64(frame + 96)) }
   else if num == 0x100009 { result = windows-protected-filesize(frame) }
-  else if num >= 0x10000A && num <= 0x10000D && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
+  else if num >= 0x10000A && num <= 0x100010 && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
   else { result = 0; windows-protected-error = 120 }
+  if windows-protected-profile >= 2 { store32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104), windows-protected-error) }
   store64(frame + 112, result)
   return 1
 }
@@ -469,6 +472,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let domain = domain-create-user()
   if domain <= 0 { return -12 }
   windows-protected-busy = 1
+  windows-protected-profile = profile
   windows-protected-count = 0
   windows-protected-domain = domain
   windows-protected-last-domain = domain
@@ -478,16 +482,16 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let slot = 0
   while slot < VFS-MAX-FDS { store64(windows-protected-files + slot * 8, -1); slot = slot + 1 }
   domain-set-cap(domain, -1)
-  let base = load64(image + 176)
+  let base = load64(windows-application-opt(image) + 24)
   let headers = windows-protected-frame(base)
   let i = 0
   let header-bytes = 512
-  if profile >= 1 { header-bytes = load32(image + 212) }
+  if profile >= 1 { header-bytes = load32(windows-application-opt(image) + 60) }
   while i < header-bytes { store8(headers + i, load8(image + i)); i = i + 1 }
   domain-map-user-readonly(domain, base, headers)
   let section = 0
-  while section < posix-load16(image + 134) {
-    let p = image + 392 + section * 40
+  while section < windows-application-sections(image) {
+    let p = windows-application-section(image, section)
     let va = base + load32(p + 12)
     let bytes = load32(p + 16)
     let off = load32(p + 20)
@@ -515,7 +519,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
-  while i < 14 {
+  while i < 17 {
     let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
     i = i + 1
@@ -525,8 +529,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   store8(stub + 354, 0xB8);store32(stub + 355, 0x100003)
   store8(stub + 359, 0xCD);store8(stub + 360, 0x80);store8(stub + 361, 0x0F);store8(stub + 362, 0x0B)
   domain-map-user-code(domain, WINDOWS-PROTECTED-STUB, stub)
-  if load32(image + 272) != 0 {
-    let descriptor = windows-protected-rva(image, size, load32(image + 272), 40)
+  if load32(windows-application-opt(image) + 120) != 0 {
+    let descriptor = windows-protected-rva(image, size, load32(windows-application-opt(image) + 120), 40)
     let iat = load32(image + descriptor + 16)
     i = 0
     let lookup = load32(image + descriptor)
@@ -569,6 +573,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   windows-protected-count = 0
   windows-protected-domain = 0
   windows-protected-busy = 0
+  windows-protected-profile = 0
   windows-protected-authority = -1
   windows-protected-storage = -1
   windows-protected-error = 0
