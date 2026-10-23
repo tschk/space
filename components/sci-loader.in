@@ -4,6 +4,7 @@ import "runtime-failure.in"
 import "runtime-instance.in"
 import "runtime-retained.in"
 import "runtime-pixels.in"
+import "runtime-image-view.in"
 
 var volume-ready: Int = 0
 var volume-domain: Int = 0
@@ -425,6 +426,7 @@ fn boot-image-find(kind: Int) -> Int {
       let phys = load64(entry + 8)
       let size = load64(entry + 16)
       if phys >= 0x100000 && phys < 0x300000 && size >= 32 && size <= 0x200000 && phys + size >= phys && phys + size <= 0x300000 {
+        if runtime-instance-image-valid(phys,size) == 0 { return 0 }
         return phys
       }
       return 0
@@ -517,9 +519,11 @@ fn dyn-name-prefix(name: Int, prefix: Int) -> Int {
 
 fn dyn-kernel-exportable(name: Int) -> Int {
   if runtime-instance-exportable(name) == 0 { return 0 }
-  if dyn-name-prefix(name,"vfs-discard-") != 0 || dyn-str-eq(name,"vfs-dup-file-into") != 0 { return 0 }
+  if dyn-name-prefix(name,"native-protected-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-startup-") != 0 { return 0 }
   if dyn-name-prefix(name,"user-context-") != 0 { return 0 }
   if dyn-name-prefix(name,"counter-") != 0 && dyn-str-eq(name,"counter-service-read") == 0 && dyn-str-eq(name,"counter-service-frequency") == 0 { return 0 }
+  if dyn-name-prefix(name,"vfs-discard-") != 0 || dyn-str-eq(name,"vfs-dup-file-into") != 0 { return 0 }
   if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 || dyn-name-prefix(name,"windows-startup-") != 0 || dyn-name-prefix(name,"windows-parameters-") != 0 || dyn-name-prefix(name,"windows-command-") != 0 || dyn-name-prefix(name,"fs-range-") != 0 { return 0 }
   if dyn-name-prefix(name,"gui-") != 0 && dyn-str-eq(name,"gui-note-read") == 0 && dyn-str-eq(name,"gui-note-write") == 0 { return 0 }
   if dyn-str-eq(name,"dsp-surface-stride") != 0 { return 0 }
@@ -590,6 +594,8 @@ fn sci-register-library(port: Int, load-addr: Int) -> Int {
   if load-addr == 0 {
     return -1
   }
+  let available = runtime-instance-image-boot-size(load-addr)
+  if available > 0 && runtime-instance-image-valid(load-addr,available) == 0 { return -1 }
   let magic = load64(load-addr + 0)
   if magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: library manifest is not SCI v2")
@@ -606,6 +612,9 @@ fn sci-register-library(port: Int, load-addr: Int) -> Int {
   }
   let img-entry = load64(load-addr + 16)
   let img-size = load64(load-addr + 24)
+  // Shared providers are self-contained. Registering exports does not resolve
+  // their imports or establish an initialization/dependency lifetime.
+  if load64(load-addr + SCI-V2-IMPORT-COUNT) != 0 { return -1 }
   dyn-ensure-tables()
   let export-count = load64(load-addr + SCI-V2-EXPORT-COUNT)
   if dyn-registration-room(port,export-count) == 0 { return -1 }
@@ -658,6 +667,12 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
   if load64(load-addr) != SCI-MAGIC-V2 {
     return 0
   }
+  let owned = 0
+  if runtime-instance-binding != 0 { owned = 1 }
+  if runtime-instance-image-bindings(load-addr,entry,owned) == 0 {
+    runtime-instance-image-report-import(port,load-addr)
+    return -1
+  }
   let count = load64(load-addr + SCI-V2-IMPORT-COUNT)
   if count == 0 {
     return 0
@@ -687,13 +702,7 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
     // entry + site is the call's virtual address — the same byte the store
     // below patches through the kernel's identity map of `load-addr`.
     let site-virt = entry + site
-    let target = load64(dyn-fn-tab + idx * 8)
-    if runtime-instance-binding != 0 {
-      if dyn-str-eq(name,"malloc") != 0 { target = runtime-instance-malloc }
-      if dyn-str-eq(name,"calloc") != 0 { target = runtime-instance-calloc }
-      if dyn-str-eq(name,"realloc") != 0 { target = runtime-instance-realloc }
-      if dyn-str-eq(name,"free") != 0 { target = runtime-instance-free }
-    }
+    let target = runtime-instance-image-target(name,idx,owned)
     if runtime-instance-binding != 0 {
       if runtime-instance-patch32(runtime-instance-binding,SCI-V2-HEADER + site + 1,target - site-virt - 5) != 0 { return -1 }
     } else { store32(load-addr + SCI-V2-HEADER + site + 1,target - site-virt - 5) }
@@ -748,6 +757,20 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     serial-write-cstr(port, "  SCI: null load address")
     serial-nl(port)
     return -1
+  }
+  let available = runtime-instance-image-boot-size(load-addr)
+  if available > 0 {
+    let owned = 0
+    if sync != 0 { owned = 1 }
+    if runtime-instance-image-valid(load-addr,available) == 0 {
+      serial-write-cstr(port,"  SCI: DENIED bounded image admission")
+      serial-nl(port)
+      return -1
+    }
+    if runtime-instance-image-bindings(load-addr,load64(load-addr + 16),owned) == 0 {
+      runtime-instance-image-report-import(port,load-addr)
+      return -1
+    }
   }
   let magic = load64(load-addr + 0)
   if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {

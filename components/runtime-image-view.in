@@ -1,0 +1,53 @@
+package space.kernel
+import "sci-validate.in"
+import "runtime-link-validation.in"
+
+// Only the trusted boot-image descriptor supplies this readable extent. It is
+// never inferred from the candidate image's own size word. Independently staged
+// images need their own explicit-sized validation at their ingestion edge.
+fn runtime-instance-image-boot-size(image: Int) -> Int {
+  if image < 0x100000 || image >= 0x300000 { return 0 }
+  let table = load64(0x40D0)
+  if table == 0 || load64(table) != BOOT-IMAGE-TABLE-MAGIC { return 0 }
+  let count = load64(table + 8)
+  if count < 0 || count > 64 { return 0 }
+  let i = 0
+  while i < count {
+    let record = table + 16 + i * 32
+    if load64(record + 8) == image {
+      let bytes = load64(record + 16)
+      if bytes >= 32 && bytes <= 0x200000 && bytes <= 0x300000 - image { return bytes }
+      return 0
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn runtime-instance-image-ready(image: Int, available: Int, owned: Int) -> Int {
+  if runtime-instance-image-valid(image,available) == 0 { return 0 }
+  return runtime-instance-image-bindings(image,load64(image + 16),owned)
+}
+
+// Called only after structural validation, or by the explicitly trusted raw
+// loader. Preserve the unresolved symbol diagnostic without partial binding.
+fn runtime-instance-image-report-import(port: Int, image: Int) -> void {
+  if load64(image) == SCI-MAGIC-V2 {
+    let count = load64(image + SCI-V2-IMPORT-COUNT)
+    let table = image + load64(image + SCI-V2-IMPORT-TABLE)
+    let i = 0
+    while i < count {
+      let name = image + load64(table + i * 16)
+      if dyn-resolve-idx(name) < 0 {
+        serial-write-cstr(port,"  SCI: DENIED unresolved import ")
+        serial-write-cstr(port,name)
+        serial-nl(port)
+        return
+      }
+      i = i + 1
+    }
+  }
+  serial-write-cstr(port,"  SCI: DENIED import displacement or registry state")
+  serial-nl(port)
+}
+

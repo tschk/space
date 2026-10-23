@@ -284,6 +284,7 @@ fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     return LINUX-ENOEXEC
   }
+  if runtime-instance-image-ready(image,size,0) == 0 { return LINUX-ENOEXEC }
   serial-write-cstr(port, "posix: execve loading SCI from ")
   serial-write-cstr(port, path)
   serial-nl(port)
