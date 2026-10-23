@@ -17,6 +17,13 @@ file does not create a scheduled or unattended background task.
 
 ## Active local execution checkpoint — 2026-10-24
 
+The latest completed whole-tree checkpoint passes all131 gates at
+`/workspace/lab131/report.json`, from657 committed files at f54a293, with source,
+compiler and application integrity passed. It includes shared vfork/xargs,
+keyboard/cursor editing and the repaired compiler/Windows test harnesses. The
+later663-file133-gate source (3af6ad4) adds counted startup and original fbv CLI
+entry and is running separately; it does not retroactively extend131.
+
 The full goal remains active. Four unmodified upstream Linux applications now
 execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,
 BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,

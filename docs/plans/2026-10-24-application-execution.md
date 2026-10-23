@@ -28,8 +28,10 @@ Bounded shared-vfork is now committed in `0c51464` after14 final both-root gates
 including47 actual upstream xargs launches per root and constructor/publication
 ownership review. See [the vfork contract](../linux-vfork.md). It remains
 separate from the older122-gate integration source. The newer657-file131-gate
-run at `/workspace/lab131/report.json`, committed source f54a293, is active and
-includes both harness repairs, shared vfork/xargs and keyboard/cursor editing.
+run at `/workspace/lab131/report.json`, committed source f54a293, passes all131
+gates with source/compiler/application integrity passed. It includes both
+harness repairs, shared vfork/xargs and keyboard/cursor editing. The separate
+663-file133-gate run, source3af6ad4, is active at `/workspace/lab133/report.json`.
 Counted-entry/fbv work is committed in58ce59e and has its own later source and
 focused receipts:44 original CLI entries plus66 synthetic startup entries per
 root. The viewer GUI is unimplemented; its full source/provenance and remaining
