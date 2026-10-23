@@ -59,8 +59,10 @@ pass, with19 older Windows regressions preserved. Original apps still refuse;
 directory iteration is the next missing provider contract. The new private
 native directory snapshot prototype checks1698 real entries, tombstones and
 indirect blocks across21 RAM-backed kernel observations. It has no foreign Find
-API or original-application execution claim; NVMe/remount integration remains
-open. See [Windows paths](windows-path-checks.md) and the
+API or original-application execution claim. The same provider now passes63
+observations through three actual NVMe boots, with independent raw-disk entry/
+inode/content checks and byte-unchanged read-only reopens. Foreign enumeration
+integration remains open. See [Windows paths](windows-path-checks.md) and the
 [native snapshot checkpoint](plans/2026-10-24-native-directory-snapshots.md).
 
 All11 native CLI scenarios pass. Native notes persists edited bytes across three

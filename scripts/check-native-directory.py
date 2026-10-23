@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in', dest='compiler', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
+p.add_argument('--nvme', action='store_true', help='new owned64MiB disk; format only boot A, then reopen in B/C')
 a = p.parse_args()
 a.out = a.out.resolve()
 a.compiler = a.compiler.resolve()
@@ -44,23 +45,76 @@ report = {'status': 'running', 'compiler_sha256': sha(a.compiler), 'runner_sha25
           'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
           'source_sha256': hashes, 'commands': [], 'cpl3_entries': 0,
           'source_test_variance': 'native read wrapper forwards unchanged except one explicit I/O refusal and one stopped trusted live-grant revocation',
-          'scope': 'synchronous native storage provider on real guest RAM-backed SparkFS; no foreign app execution'}
+          'scope': 'synchronous native storage provider; no foreign app execution',
+          'backend': 'NVMe' if a.nvme else 'guest RAM-backed SparkFS'}
 
 def run(command, name, timeout=180):
     report['commands'].append(command)
     with (a.out / name).open('w') as log:
         return subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
 
+def oracle(rows):
+    result = bytearray(32 + len(rows) * 64)
+    struct.pack_into('<QQQQ', result, 0, 0x5346444952530001, 0, len(rows), 64)
+    for i, (name, kind, size) in enumerate(rows):
+        name = name.encode()
+        identity = int(name[1:]) + 4 if name.startswith(b'f') else (1704 if name == b'sub' else (5 if name == b'reused' else 1705))
+        struct.pack_into('<QQQQ', result, 32 + i * 64, kind, identity, size, len(name))
+        result[64 + i * 64:64 + i * 64 + len(name)] = name
+    return result
+
+def disk_oracle(disk, expected):
+    with disk.open('rb') as f:
+        def read(at, count):
+            f.seek(at)
+            value = f.read(count)
+            assert len(value) == count
+            return value
+        def q(data, at):
+            return struct.unpack_from('<Q', data, at)[0]
+        sb = read(0, 4096)
+        assert struct.unpack_from('<I', sb)[0] == 0x53504146 and struct.unpack_from('<I', sb, 20)[0] == 2048
+        table = q(sb, 40) * 4096
+        def inode(index):
+            assert 0 <= index < 2048
+            return read(table + index * 256, 256)
+        def block(record, index):
+            assert index < 524
+            number = q(record, 64 + index * 8) if index < 12 else q(read(q(record, 160) * 4096, 4096), (index - 12) * 8)
+            assert q(sb, 48) <= number < q(sb, 12)
+            return number
+        def directory(index):
+            record = inode(index)
+            assert struct.unpack_from('<I', record)[0] == 2
+            rows = []
+            for at in range(0, q(record, 16), 32):
+                entry = read(block(record, at // 4096) * 4096 + at % 4096, 32)
+                identity = struct.unpack_from('<I', entry)[0]
+                if identity:
+                    assert 1 <= entry[4] <= 24
+                    rows.append((entry[8:8 + entry[4]], identity, entry[5]))
+            return rows
+        target = next(index for name, index, kind in directory(0) if name == b'enum' and kind == 2)
+        rows = directory(target)
+        actual = bytearray(32 + len(rows) * 64)
+        struct.pack_into('<QQQQ', actual, 0, 0x5346444952530001, 0, len(rows), 64)
+        for i, (name, identity, kind) in enumerate(rows):
+            record = inode(identity)
+            assert struct.unpack_from('<I', record)[0] == kind
+            size = q(record, 16)
+            struct.pack_into('<QQQQ', actual, 32 + i * 64, kind, identity + 1, size, len(name))
+            actual[64 + i * 64:64 + i * 64 + len(name)] = name
+            if kind == 1:
+                assert struct.unpack_from('<I', record, 176)[0] == 1
+                assert record[64:64 + size] == (b'new' if name == b'reused' else b'payload'[:size])
+        assert actual == expected, 'raw disk directory/inode/content differs from independent expected snapshot'
+        return {'entries': len(rows), 'snapshot_sha256': hashlib.sha256(actual).hexdigest(),
+                'inline_file_contents_checked': sum(kind == 1 for _, _, kind in rows)}
+
 try:
     entries = [(f'f{i:04}', 1, i % 7 + 1) for i in range(1700) if i not in [0, 64, 128, 1699]]
     entries += [('sub', 2, 0), ('é😀', 1, 7)]
-    expected = bytearray(32 + len(entries) * 64)
-    struct.pack_into('<QQQQ', expected, 0, 0x5346444952530001, 0, len(entries), 64)
-    for i, (name, kind, size) in enumerate(entries):
-        name = name.encode()
-        identity = int(name[1:]) + 4 if name.startswith(b'f') else (1704 if name == b'sub' else 1705)
-        struct.pack_into('<QQQQ', expected, 32 + i * 64, kind, identity, size, len(name))
-        expected[64 + i * 64:64 + i * 64 + len(name)] = name
+    expected = oracle(entries)
     (a.out / 'expected.bin').write_bytes(expected)
     report['expected_entries'] = len(entries)
     report['oracle_sha256'] = sha(a.out / 'expected.bin')
@@ -145,7 +199,33 @@ fn directory-check(port:Int)->void{
  serial-write-cstr(port,"native-directory: 1698 entries indirect/tombstones 21 stable snapshots PASS");serial-nl(port);outb(0xf4,16);
 }
 '''.replace('ORACLE_SIZE', str(len(expected))).replace('PRIVATE_SIZE', str((a.out / 'private.sci').stat().st_size))
+    if a.nvme:
+        # The product boot self-test creates/reads test.sci. This read-only
+        # provider experiment must not run that unrelated mutating workload.
+        assert source.count('  test-sci-loader(port)') == 1
+        source = source.replace('  test-sci-loader(port)', '  // Omitted in the NVMe directory experiment: mutating boot SCI self-test.')
+        report['source_test_variance'] += '; NVMe generated test root omits its unrelated test.sci write/read boot self-test'
+        source = source.replace(' if sf-mem-disk==0||volume-ready!=0{panic("directory RAM setup");}',
+                                ' if nvme-ready!=1||sf-mem-disk!=0||volume-ready!=0{panic("directory NVMe setup");}\n if load8(0x11040000)!=1{directory-reopen(port);return;}')
+        source = source.replace('sf-do-format(SF-MEM-DISK-BLOCKS,2048)', 'sf-do-format(16384,2048)')
+        source = source.replace(' serial-write-cstr(port,"native-directory: 1698 entries',
+                                ' let flush=nvme-flush-completions;if fs-sync-path("/enum")!=0||nvme-flush-completions<=flush{panic("directory actual NVMe flush");}\n serial-write-cstr(port,"native-directory: 1698 entries')
+        source += r'''
+fn directory-reopen(port:Int)->void{
+ if sf-disk-ready!=1{panic("directory persisted mount");}
+ let out=alloc(131104);let scratch=alloc(135200);let auth=cap-mint(root-realm,cap-storage());let heap=heap-next;let caps=cap-count;let free=free-list;let domains=domain-count;
+ let cycle=0;while cycle<21{
+  directory-fill(out,131104);let bytes=fs-directory-snapshot-into("/enum",auth,out,131104,scratch,135200);
+  if bytes!=108704||load64(out+8)!=sf-mount-id{panic("directory reopened size/mount");}
+  let i=0;while i<bytes{if i<8||i>=16{if load8(out+i)!=load8(0x11000000+i){serial-write-dec-wide(port,i);panic("directory reopened exact oracle");}}i+=1;}
+  while i<131104{if load8(out+i)!=165{panic("directory reopened tail");}i+=1;}
+  if heap-next!=heap||cap-count!=caps||free-list!=free||domain-count!=domains{panic("directory reopened resources");}cycle+=1;
+ }
+ serial-write-cstr(port,"native-directory: reopened 1698 persisted entries 21 snapshots PASS");serial-nl(port);outb(0xf4,16);
+}
+'''
     (a.out / 'kernel.in').write_text(source)
+    report['generated_kernel_source_sha256'] = sha(a.out / 'kernel.in')
     assert run(['nasm', '-f', 'bin', str(snap / 'boot/multiboot.asm'), '-o', str(a.out / 'trampoline.bin')], 'nasm.log').returncode == 0
     assert run([str(a.compiler), 'compile', '--path', str(a.out / 'kernel.in'), '--entry', 'kernel-entry',
                 '--emit', 'boot', '--trampoline', str(a.out / 'trampoline.bin'), '--target', 'native',
@@ -156,17 +236,43 @@ fn directory-check(port:Int)->void{
     assert (a.out / 'private.sci').stat().st_size <= 0x10000
     report['boot_layout'] = layout
     report['artifacts'] = {name: sha(a.out / name) for name in ['kernel.bin', 'private.sci', 'trampoline.bin', 'expected.bin']}
-    assert run(['qemu-system-x86_64', '-kernel', str(a.out / 'kernel.bin'), '-m', '512M', '-display', 'none',
+    command = ['qemu-system-x86_64', '-kernel', str(a.out / 'kernel.bin'), '-m', '512M', '-display', 'none',
                 '-no-reboot', '-serial', 'file:' + str(a.out / 'serial.log'), '-device',
                 'isa-debug-exit,iobase=0xf4,iosize=0x04', '-device',
                 f'loader,file={a.out / "expected.bin"},addr=0x11000000,force-raw=on', '-device',
-                f'loader,file={a.out / "private.sci"},addr=0x2f0000,force-raw=on'], 'qemu.log', 180).returncode == 33, (a.out / 'serial.log').read_text()[-4000:]
-    assert '1698 entries indirect/tombstones 21 stable snapshots PASS' in (a.out / 'serial.log').read_text()
-    assert 'DENIED unresolved import fs-directory-snapshot-into' in (a.out / 'serial.log').read_text()
+                f'loader,file={a.out / "private.sci"},addr=0x2f0000,force-raw=on']
+    report['boots'] = []
+    if a.nvme:
+        disk = a.out / 'owned.raw'
+        with disk.open('xb') as f:
+            f.truncate(64 * 1024 * 1024)
+        command += ['-drive', f'file={disk},format=raw,if=none,id=directorydisk', '-device',
+                    'nvme,drive=directorydisk,serial=directory-snapshot', '-device',
+                    f'loader,file={a.out / "phase.bin"},addr=0x11040000,force-raw=on']
+    persisted = oracle([('reused', 1, 3)] + [row for row in entries if row[0] != 'f0001'])
+    for stage in range(1, 4 if a.nvme else 2):
+        (a.out / 'phase.bin').write_bytes(bytes([stage]))
+        (a.out / 'expected.bin').write_bytes(expected if stage == 1 else persisted)
+        before = sha(disk) if a.nvme else None
+        if a.nvme and stage > 1:
+            shutil.copyfile(disk, a.out / f'disk-before-{stage}.raw')
+        assert run(command, f'qemu-{stage}.log', 240).returncode == 33, (a.out / 'serial.log').read_text()[-4000:]
+        serial = (a.out / 'serial.log').read_text()
+        (a.out / f'serial-{stage}.log').write_text(serial)
+        marker = '1698 entries indirect/tombstones 21 stable snapshots PASS' if stage == 1 else 'reopened 1698 persisted entries 21 snapshots PASS'
+        assert marker in serial and 'DENIED unresolved import fs-directory-snapshot-into' in serial
+        row = {'stage': stage, 'formatted': a.nvme and stage == 1, 'expected_sha256': sha(a.out / 'expected.bin'),
+               'phase_sha256': sha(a.out / 'phase.bin')}
+        if a.nvme:
+            row.update(disk_before_sha256=before, disk_after_sha256=sha(disk), raw_disk_oracle=disk_oracle(disk, persisted))
+            if stage > 1:
+                assert before == row['disk_after_sha256'], 'read-only reopen changed disk bytes'
+        report['boots'].append(row)
+    report['artifacts']['expected.bin'] = sha(a.out / 'expected.bin')
     report['source_changed'] = [name for name, digest in hashes.items() if sha(snap / name) != digest]
     assert not report['source_changed']
-    report.update(status='passed', snapshots=21)
-    print('PASS native directory snapshots: 1698 real entries, 21 measured cycles', flush=True)
+    report.update(status='passed', snapshots=63 if a.nvme else 21)
+    print('PASS native directory snapshots: 1698 real entries, ' + ('3 NVMe boots' if a.nvme else '21 measured RAM cycles'), flush=True)
 except Exception as error:
     report.update(status='failed', error=str(error))
     print('FAIL', error, flush=True)

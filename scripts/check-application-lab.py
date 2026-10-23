@@ -44,7 +44,11 @@ def main():
         parser.add_argument('--' + name, type=Path,
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
+    parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
+                        help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
     args = parser.parse_args()
+    if not 1 <= args.pipeline_wall_timeout <= 7200:
+        parser.error('--pipeline-wall-timeout must be in1..7200 seconds')
     args.compiler = args.compiler.resolve()
     args.out = args.out.resolve()
     args.apps_dir = args.apps_dir.resolve()
@@ -211,7 +215,8 @@ def main():
               '--root', variant, '--out', args.out / ('linux-blocking-' + variant), timeout=660)
         check('linux-busybox-blocking-' + variant, 'check-linux-blocking-pipeline.py',
               '--in', args.compiler, '--busybox', applications['busybox'], '--root', variant,
-              '--out', args.out / ('linux-busybox-blocking-' + variant), timeout=660)
+              '--wall-timeout', str(args.pipeline_wall_timeout),
+              '--out', args.out / ('linux-busybox-blocking-' + variant), timeout=args.pipeline_wall_timeout+60)
         check('linux-busybox-children-' + variant, 'check-linux-corpus.py', '--in', args.compiler,
               '--application', 'busybox', '--app', applications['busybox'], '--suite', '--input-suite',
               '--case-config', ROOT / 'fixtures/applications/busybox-1.36.1-children-cases.json',
@@ -236,6 +241,10 @@ def main():
           '--app', applications['darwin'], '--out', args.out / 'darwin-heap-import-baseline')
     check('darwin-heap', 'check-darwin-heap.py', '--in', args.compiler,
           '--app', applications['darwin'], '--out', args.out / 'darwin-heap')
+    for variant in ['standard', 'minimal']:
+        check('darwin-mapped-' + variant, 'check-darwin-mapped.py', '--in', args.compiler,
+              '--jq', applications['darwin'], '--root', variant,
+              '--out', args.out / ('darwin-mapped-' + variant))
     check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
     check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
           '--app', applications['windows'], '--out', args.out / 'windows-process')
@@ -261,6 +270,16 @@ def main():
           '--out', args.out / 'unicode-scalars', dependency=unicode_ok)
     check('windows-unicode-mixed', 'check-windows-composed.py', '--in', args.compiler,
           '--profile', '11', '--out', args.out / 'windows-unicode-mixed')
+    check('native-path-normalization', 'check-fs-path-normalize.py', '--in', args.compiler,
+          '--out', args.out / 'native-path-normalization')
+    check('windows-paths', 'check-windows-paths.py', '--in', args.compiler,
+          '--out', args.out / 'windows-paths')
+    check('windows-paths-nvme', 'check-windows-path-persistence.py', '--in', args.compiler,
+          '--out', args.out / 'windows-paths-nvme')
+    check('native-directory', 'check-native-directory.py', '--in', args.compiler,
+          '--out', args.out / 'native-directory')
+    check('native-directory-nvme', 'check-native-directory.py', '--in', args.compiler,
+          '--nvme', '--out', args.out / 'native-directory-nvme')
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
     check('windows-nvme', 'check-windows-persistence.py', '--in', args.compiler, '--out', args.out / 'windows-nvme')

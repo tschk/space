@@ -63,5 +63,25 @@ was corrected to require a nonnegative inode before the actual data oracles ran.
 
 This is a native CPL0 provider check with zero CPL3 entries, not upstream
 application execution. The module is not added to the default storage root and
-has no Windows Find API. NVMe/remount evidence, structured Volume RPC and
-concurrent mutation semantics remain open before broader integration.
+has no Windows Find API. Structured Volume RPC and concurrent mutation semantics
+remain open before broader integration.
+
+## NVMe reopen checkpoint
+
+The same native implementation passes63 snapshots across three independent
+NVMe boots at `/workspace/native-directory-nvme2/report.json`. Only boot A
+formats its new owned64MiB disk. It performs the complete create/delete/reuse
+corpus and requires a real successful namespace FLUSH completion. Boots B/C
+reopen1698 persisted entries21 times each, with no format or seed writes. Their
+disk bytes remain exactly unchanged. An independent read-only host parser walks
+actual direct/indirect directory blocks and inode records and verifies every
+name/type/size/identity and1697 real inline file payloads after each boot.
+
+The first attempt at `/workspace/native-directory-nvme/report.json` correctly
+failed the whole-disk read-only oracle: the ordinary boot's `test-sci-loader`
+creates and reads `test.sci`. Its first blank-disk write failed; boot B created
+that unrelated root file. The generated NVMe test root now explicitly omits only
+this mutating boot self-test; private SCI import denial still executes each boot.
+The production snapshot provider is unchanged. Source variance and hashes are
+recorded, and before-B/C disk copies are retained. This proves synchronous
+completed-write/reopen observations, not crash atomicity or Windows enumeration.

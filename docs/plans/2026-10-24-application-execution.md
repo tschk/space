@@ -385,3 +385,21 @@ corrupt metadata/I/O/authority refusals preserve it. Native inode/bitmap,
 allocation/domain/capability and ambient descriptor witnesses remain unchanged.
 This is zero-CPL3 native provider evidence, not foreign enumeration or upstream
 application coverage. NVMe/remount and concurrent mutation semantics remain open.
+
+The same native directory provider subsequently passes63 snapshots across three
+independent NVMe boots at `/workspace/native-directory-nvme2/report.json`. Only
+boot A formats; B/C leave every disk byte unchanged. The raw-disk oracle checks
+all1698 entries and1697 actual file payloads after each boot. The first attempt
+correctly detected the ordinary boot self-test writing `test.sci` during reopen;
+the scoped test root explicitly omits that unrelated mutating workload, and
+records the source variance. No production provider change was needed. General
+concurrent mutation and foreign Find semantics remain open.
+
+The105-gate candidate retains a600-second external timeout in the standard
+BusyBox pipeline repetition, after its individual output cases passed but before
+final cleanup checks completed. The minimal counterpart passes in224 seconds.
+An exact frozen-source retry uses1200 external seconds, with unchanged actual
+guest IRQ budgets, repetitions and assertions. The next112-gate lab adds the
+two high-address mapper roots, three Windows path/native-normalizer gates and
+two native directory backends; it exposes a configurable external pipeline wall
+limit defaulting to1200 seconds. These changes do not rewrite a failed receipt.
