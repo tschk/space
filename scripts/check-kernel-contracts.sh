@@ -34,7 +34,7 @@ def main() -> int:
     storage = read("components/storage.in")
     network = read("components/network.in")
     dns = read("components/dns.in")
-    shell = read("components/shell.in")
+    shell = read("components/shell.in") + "\n" + read("components/shell-common.in")
     boot = read("boot/multiboot.asm")
 
     print("[1/5] Syscall / capability surface...")
@@ -129,10 +129,16 @@ def main() -> int:
     )
 
     print("[5/5] Isolation honesty...")
+    clone = domain[domain.index("fn create-shared-domain-pml4()"):domain.index("fn create-user-domain-pml4()")]
     check(
-        "SCI guests use exclusive user PML4s; shared domains still copy PDPT[0..3]",
-        "while j < 4" in domain
-        and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain
+        "SCI guests use exclusive trees; clone PDPT[0..3] owns copied mutable leaf tables",
+        "while j < 4" in clone
+        and "let entry = load64(src-pd + k * 8)" in clone
+        and "if (entry & 1) != 0 && (entry & 128) == 0" in clone
+        and "let leaf = frame-alloc()" in clone
+        and "cpu-mem-copy64(leaf, entry & PAGE-ADDRESS-MASK, 512)" in clone
+        and "entry = leaf | (entry & (-1 ^ PAGE-ADDRESS-MASK))" in clone
+        and "store64(dst-pd + k * 8, entry)" in clone
         and "fn domain-enter-user" in domain
         and "fn domain-create-user" in domain
         and "fn domain-map-trampoline" in domain
@@ -149,7 +155,7 @@ def main() -> int:
         and "invoke1(load64(0x4060)" not in domain,
     )
 
-    shell = read("components/shell.in")
+    shell = read("components/shell.in") + "\n" + read("components/shell-common.in")
     guest = shell[shell.index('let guest-comp = component-register("hard-guest"'):]
     guest = guest[:guest.index("// DNS parser")]
     check(

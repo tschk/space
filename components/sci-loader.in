@@ -1,5 +1,7 @@
 package space.kernel
 
+import "runtime-failure.in"
+
 var volume-ready: Int = 0
 var volume-domain: Int = 0
 var volume-entry-addr: Int = 0
@@ -727,7 +729,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     return -1
   }
   // Chained dynamic modules: this component's exports become importable.
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if sync == 0 { dyn-register-image-exports(port, load-addr, entry, image-size) }
 
   // Allocate and map a 2 MiB heap for the component.
   let heap-pages = COMP-HEAP-SIZE / 4096
@@ -788,8 +790,22 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     // apps work after preempt-stop, when the shell owns the CPU.
     let prev = domain-get-current()
     domain-switch(domain)
-    let rc = invoke1(entry, cap-info)
+    let rc = runtime-invoke-entry(entry, cap-info)
     domain-switch(prev)
+    if runtime-aborted != 0 {
+      // Abort is terminal for this instance: do not publish resumable state or
+      // exports. Heap/domain backing remains subject to the existing allocator.
+      cap-revoke(cap-idx)
+      store64(component + 16, 0)
+      store64(component + 48, rc)
+      serial-write-cstr(port, "  SCI: ")
+      serial-write-cstr(port, name)
+      serial-write-cstr(port, " aborted 0x")
+      serial-write-hex(port, rc)
+      serial-nl(port)
+      return rc
+    }
+    dyn-register-image-exports(port, load-addr, entry, image-size)
     sci-sync-page = shared
     sci-sync-domain = domain
     sci-sync-grants = required

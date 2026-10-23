@@ -178,7 +178,16 @@ bind to earlier ones (chained dynamic modules, boot kind 8). Preinstalled
 dynamic apps (`calc`, `notes`, `hd`, `sysmon`, `bench`, boot kinds 9-11) ride in the boot
 image and load on demand via the shell's `runapp` command. Two root variants
 build from the same components: the full standard image and a minimal
-core-only image (`kernel-root-minimal.in`). Full contract
+core-only image (`kernel-root-minimal.in`). The full shell retains optional
+hardware/personality/desktop commands and integration proofs. Both profiles use
+`components/shell-common.in` for serial history, path/pipeline handling and the
+native app registry/launcher; `shell-minimal.in` exposes only implemented core
+commands. Minimal imports CPU/domain/channel/scheduler/syscall contracts and
+RAM SparkFS, but no desktop, network or foreign personality implementations.
+Its explicit unavailable block-transport binding returns ENODEV for device I/O;
+RAM filesystem operations remain real. Protocol definitions used by shared SCI
+validation do not instantiate input/display devices. This is a build-profile
+boundary, not new runtime separation or protection. Full contract
 in [`sci-schema.md`](sci-schema.md).
 
 ---
@@ -231,7 +240,7 @@ Domains are separate page-table trees. Two regimes exist today:
   page directories — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
   Extra SCI image/heap/shared mappings are additive. A kernel-linked
   component can still `load64(0x200000)` (kernel globals) and reach MMIO.
-- **SCI guests** (`sci-load`, `sci-load-file`, apps) use
+- **SCI user guests** (`sci-load`, `sci-load-file`) use
   `domain_create_user()`: an empty PML4 with only trampoline, IDT, TSS RSP0
   stack, and exclusive `U=1` 4 KiB image/stub/stack pages — no identity
   clone, kernel globals unmapped. The GDT carries DPL3 segments and a TSS;
@@ -239,6 +248,14 @@ Domains are separate page-table trees. Two regimes exist today:
   timer/syscall/exception stubs switch back to `kernel_cr3`.
 - `domain_switch()` changes CR3. `domain_map()` installs a mapping.
   Shared pages are for IPC, not isolation.
+
+`runapp` uses the trusted CPL0 runtime-component path. Its scoped allocation
+abort now terminates the activation and returns failure to the shell, while
+clone-domain backing resources remain retained. New prepared user entry is
+strict CPL3/IOPL0, supports resumable SYSCALL and INT80, and recovers only
+CPU-confirmed user exceptions. Legacy user SCI entry retains IOPL3. See the
+[runtime failure and syscall contract](docs/runtime-failure.md) for ownership,
+frame offsets and executable checks.
 
 Kernel-linked CPL0 services are the remaining gap before domains can be
 advertised as isolation.

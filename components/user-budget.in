@@ -1,0 +1,46 @@
+package space.kernel
+
+// Scoped synchronous CPL3 activation policy. The assembly timer capsule
+// confirms user CS, preserves registers/FPU and performs CR3/context handoff.
+var user-budget-active: Int = 0
+var user-budget-domain: Int = 0
+var user-budget-remaining: Int = 0
+
+fn user-budget-tick(frame: Int) -> Int {
+  ticks = ticks + 1
+  outb(0x20, 0x20)
+  if (load64(frame + 128) & 3) != 3 { return 0 }
+  if user-budget-active != 0 && domain-current == user-budget-domain {
+    user-budget-remaining = user-budget-remaining - 1
+    if user-budget-remaining <= 0 { return 124 }
+  }
+  return 0
+}
+
+fn domain-enter-user-budgeted(entry: Int, arg: Int, domain: Int, stack: Int, context: Int, budget: Int) -> Int {
+  if user-budget-active != 0 { return -16 }
+  if budget <= 0 || budget > 10000 || load64(0x4028) != 0 { return -1 }
+  let flags-stub = load64(0x4198)
+  let enter = load64(0x4190)
+  if flags-stub == 0 || enter == 0 || load64(0x41A0) == 0 { return -1 }
+  let flags = invoke1(flags-stub, 0)
+  cli()
+  let pic-mask = inb(0x21)
+  let previous-hook = domain-user-syscall-hook
+  let previous-cap = current-cap
+  let previous-domain = user-budget-domain
+  let previous-remaining = user-budget-remaining
+  user-budget-domain = domain
+  user-budget-remaining = budget
+  user-budget-active = 1
+  outb(0x21, pic-mask & 254)
+  let result = domain-enter-user-prepared-with-stub(entry,arg,domain,stack,context,enter)
+  user-budget-active = 0
+  user-budget-domain = previous-domain
+  user-budget-remaining = previous-remaining
+  domain-user-syscall-hook = previous-hook
+  current-cap = previous-cap
+  outb(0x21, pic-mask)
+  if (flags & 512) != 0 { sti() }
+  return result
+}

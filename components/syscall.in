@@ -156,6 +156,16 @@ fn sys-cap-check(idx: Int, rights: Int) -> Int {
 // Dispatch a syscall based on the number in the saved RAX slot of the frame.
 // Writes the return value back into the RAX slot (frame offset 112).
 fn syscall-dispatch(frame: Int) -> void {
+  if domain-user-syscall-hook != 0 && (load64(frame + 128) & 3) == 3 {
+    let action = invoke1(domain-user-syscall-hook, frame)
+    let continuation = load64(0x4168)
+    if continuation != 0 {
+      store64(continuation, 0)
+      if action == 1 { store64(continuation, 1) }
+    }
+    if action != 0 && action != 1 { store64(frame + 112, -1) }
+    return
+  }
   let num = load64(frame + 112)
   if num == 0 {
     let fd = load64(frame + 72)
