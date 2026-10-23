@@ -26,6 +26,12 @@ sources = [path for directory in ('components', 'kernel', 'protocol', 'services'
            for path in (a.source_root / directory).rglob('*.in')]
 sources.append(a.source_root / 'boot/multiboot.asm')
 inventory = {str(path.relative_to(a.source_root)): sha(path) for path in sources}
+# Independent guest-side byte oracle proves the injected original payload is readable.
+fnv = 0xcbf29ce484222325
+for byte in a.app.read_bytes():
+    fnv = ((fnv ^ byte) * 0x100000001b3) & ((1 << 64) - 1)
+if fnv >= 1 << 63:
+    fnv -= 1 << 64
 report = {'application_status': 'not-tested', 'execution_started': False,
           'scope': 'actual protected ELF validator; never invokes the foreign payload at CPL0',
           'app_sha256': sha(a.app), 'manifest_sha256': sha(manifest),
@@ -36,6 +42,10 @@ try:
 fn gui-admission-entry(mb:Int)->Int{
  let port=com1();serial-init(port);
  let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;
+ let hash=-3750763034362895579;let byte=0;
+ while byte<''' + str(app['size_bytes']) + '''{hash=(hash^load8(0x10000000+byte))*1099511628211;byte+=1;}
+ if hash!=''' + str(fnv) + '''{panic("fluid injected byte oracle mismatch");}
+ serial-write-cstr(port,"fluid: original payload byte oracle PASS");serial-nl(port);
  let i=0;
  while i<2{
   let result=linux-process-elf-entry(0x10000000,''' + str(app['size_bytes']) + ''');
@@ -56,17 +66,19 @@ fn gui-admission-entry(mb:Int)->Int{
                '--target-triple', 'x86_64-unknown-none', '--linkage', 'static-lib', '--out', str(kernel)]
     with (a.out / 'compile.log').open('w') as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
-    command = ['qemu-system-x86_64', '-kernel', str(kernel), '-m', '256M', '-display', 'none', '-no-reboot',
+    command = ['qemu-system-x86_64', '-kernel', str(kernel), '-m', '512M', '-display', 'none', '-no-reboot',
                '-serial', 'file:' + str(a.out / 'serial.log'), '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04',
                '-device', 'loader,file=' + str(a.app.resolve()) + ',addr=0x10000000,force-raw=on']
     with (a.out / 'qemu.log').open('w') as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=30)
     serial = (a.out / 'serial.log').read_text()
     assert result.returncode == 33 and serial.count('fluid: protected admission -8\n') == 2, serial
+    assert 'fluid: original payload byte oracle PASS\n' in serial, serial
     assert 'fluid: allocation-free refusal; payload not entered PASS\n' in serial, serial
     changed = [name for name, digest in inventory.items() if sha(a.source_root / name) != digest]
     assert not changed and sha(a.compiler) == report['compiler_sha256'] and sha(a.app) == report['app_sha256']
     report.update(application_status='blocked', admission_return=-8, probe_status='passed',
+                  injected_payload_fnv1a64=fnv, injected_payload_byte_oracle=True,
                   source_changed_during_run=changed, kernel_sha256=sha(kernel), qemu_command=command,
                   blockers=['ELF PIE/dynamic linker and shared dependencies', 'X11 client/server compatibility and owned GUI adapter'])
 except Exception as error:

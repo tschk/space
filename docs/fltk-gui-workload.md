@@ -27,9 +27,13 @@ The original binary is ELF PIE and needs `libX11.so.6`, `libstdc++.so.6`,
 `libm.so.6` and `libc.so.6`, plus their transitive dependencies. Space's current
 protected Linux loader accepts fixed-address static ELF. Its actual validator
 refuses this exact binary with -8 twice, before heap/resource mutation:
-`/workspace/fluid-admission-second/report.json`. The payload is never entered.
+`/workspace/fluid-admission-third/report.json`. The512MiB guest independently checks every injected payload byte with a
+host-derived FNV-1a oracle before validation. The payload is never entered.
 The initial diagnostic failed to link the process validator into its probe;
 `/workspace/fluid-admission-first` retains that harness failure separately.
+The second diagnostic used only256MiB RAM for an injection at256MiB; its
+receipt is explicitly invalidated. The corrected third run adds sufficient RAM
+and the full byte oracle, and is the only valid admission receipt.
 
 ```sh
 python3 scripts/check-linux-gui-admission.py --in "$IN" \
