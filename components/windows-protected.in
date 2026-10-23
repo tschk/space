@@ -2,6 +2,7 @@ package space.kernel
 
 import "windows-pe-application.in"
 import "windows-pe-startup.in"
+import "windows-process-parameters.in"
 
 // Bounded protected PE32+ profile. Foreign payload policy stays at this edge;
 // the native domain runtime owns page-table entry and teardown.
@@ -430,6 +431,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   else if num == 0x100007 { result = windows-protected-seek(frame) }
   else if num == 0x100008 { result = windows-protected-close(load64(frame + 96)) }
   else if num == 0x100009 { result = windows-protected-filesize(frame) }
+  else if num >= 0x10000A && num <= 0x10000D && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
   else { result = 0; windows-protected-error = 120 }
   store64(frame + 112, result)
   return 1
@@ -440,6 +442,10 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if profile == 0 { entry = windows-protected-entry(image, size) }
   else if profile == 1 { entry = windows-application-entry(image, size) }
   else if profile == 2 { entry = windows-startup-entry(image, size) }
+  else if profile == 3 {
+    if windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 1)
+  }
   if entry < 0 { return entry }
   if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
   if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
@@ -509,8 +515,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
-  while i < 10 {
-    let p = stub + i * 32
+  while i < 14 {
+    let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
     i = i + 1
   }
@@ -528,7 +534,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     while i < 32 && load64(image + windows-protected-rva(image, size, lookup + i * 8, 8)) != 0 {
       let index = i
       if profile >= 1 { index = windows-application-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
-      store64(windows-protected-physical(base + iat + i * 8), WINDOWS-PROTECTED-STUB + index * 32); i = i + 1
+      if profile == 3 { index = windows-parameters-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
     }
   }
   i = 0
@@ -542,10 +549,11 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   let caller-gs = rdmsr(0xC0000101)
   wrmsr64(0xC0000100, 0)
   wrmsr64(0xC0000101, 0)
-  if profile == 2 {
+  if profile >= 2 {
     entry = windows-startup-prepare(image, size, stub, domain, entry)
     wrmsr64(0xC0000101, WINDOWS-STARTUP-TEB)
   }
+  if profile == 3 { windows-parameters-prepare(domain) }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FF8, windows-protected-context, windows-protected-budget)
   wrmsr64(0xC0000100, caller-fs)

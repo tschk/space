@@ -28,8 +28,8 @@ fn windows-startup-directory(image: Int, size: Int) -> Int {
   return image + off
 }
 
-fn windows-startup-entry(image: Int, size: Int) -> Int {
-  let entry = windows-application-entry-mode(image, size, 1)
+fn windows-startup-entry-mode(image: Int, size: Int, parameters: Int) -> Int {
+  let entry = windows-application-entry-mode(image, size, 1 + parameters)
   if entry < 0 { return entry }
   let d = windows-startup-directory(image, size)
   if d <= 0 { if d < 0 { return -8 }; return entry }
@@ -117,4 +117,8 @@ fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry:
 
 fn windows-startup-run(image: Int, size: Int, authority: Int, storage: Int) -> Int {
   return windows-protected-run-profile(image, size, authority, storage, 2)
+}
+
+fn windows-startup-entry(image: Int, size: Int) -> Int {
+  return windows-startup-entry-mode(image, size, 0)
 }

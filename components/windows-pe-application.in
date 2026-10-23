@@ -141,7 +141,9 @@ fn windows-application-entry-mode(image: Int, size: Int, startup: Int) -> Int {
     if load64(image + io) != name { return -8 }
     if name == 0 { done = 1 }
     else {
-      if i == 32 || windows-application-import-id(image, size, name) < 0 { return -8 }
+      let id = windows-application-import-id(image, size, name)
+      if startup >= 2 { id = windows-parameters-import-id(image, size, name) }
+      if i == 32 || id < 0 { return -8 }
       i = i + 1
     }
   }
