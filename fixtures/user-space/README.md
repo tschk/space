@@ -90,3 +90,15 @@ These tests establish a kernel-linked native ownership boundary. They do not
 establish an isolated SCI service, Linux migration, vfork, general shared-VM
 threads, or upstream application success. See `docs/user-address-space.md` for
 the API and `docs/plans/2026-10-24-native-user-vm-vfork.md` for the next goal.
+
+The later additive `binding-space` native ownership projection has focused
+same-object, different-object, foreign-authority, revoked-owner and retired-token
+coverage on both roots: `/tmp/space-native-binding-space-standard-first/report.json`
+and `/tmp/space-native-binding-space-minimal-first/report.json`, ten actual CPL3
+entries each across selected shared/revocation cases. These preserve the earlier
+full-suite receipts and do not claim a new complete native run.
+
+Subsequent `/workspace/vm2-native-{standard,minimal}/report.json` full native
+runs pass143 entries each with the exact same provider hash and these additive
+assertions. Their wider frozen source also contains the separately uncommitted
+Linux migration; this is native API evidence, not a committed whole-tree lab.

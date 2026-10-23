@@ -524,6 +524,15 @@ fn user-space-binding-phase(handle: Int, authority: Int) -> Int {
   if row < 0 { return row }
   return load64(binding + 24)
 }
+fn user-space-binding-space(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 { return -6 }
+  let owner = load64(binding + 8)
+  let row = user-space-access(owner,authority,0)
+  if row < 0 { return row }
+  return owner
+}
 fn user-space-constructor-owned(handle: Int, authority: Int) -> Int {
   let row = user-space-access(handle,authority,0)
   if row < 0 { return row }

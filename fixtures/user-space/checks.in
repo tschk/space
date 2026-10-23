@@ -96,6 +96,7 @@ fn us-prepare(vm:Int,authority:Int,index:Int,mode:Int)->Int {
 fn us-shared()->void {
  let vm=us-new(us-authority);let independent=us-new(us-authority);
  let parent=us-prepare(vm,us-authority,0,0);
+ us-check(vm,user-space-binding-space(parent,us-authority));
  us-check(2,user-space-refs(vm,us-authority));us-check(0,user-space-release(vm,us-authority));
  us-check(1,user-space-refs(vm,us-authority));us-check(-1,user-space-release(vm,us-authority));
  us-run(parent,us-authority,USER-CONTEXT-SUSPEND,84,us-context(0),100);
@@ -119,12 +120,16 @@ fn us-shared()->void {
  us-check(1,user-space-refs(vm,us-authority));us-check(-6,user-space-release-binding(child,us-authority));
  us-run(parent,us-authority,USER-CONTEXT-EXIT,42,us-context(0),100);
  us-check(211,load64(original));
- let isolated=us-prepare(independent,us-authority,3,1);us-check(0,user-space-release(independent,us-authority));
+ let isolated=us-prepare(independent,us-authority,3,1);
+ us-check(independent,user-space-binding-space(isolated,us-authority));
+ us-check(vm,user-space-binding-space(parent,us-authority));
+ us-check(0,user-space-release(independent,us-authority));
  us-run(isolated,us-authority,USER-CONTEXT-EXIT,45,us-context(3),100);
  us-check(0,user-space-release-binding(isolated,us-authority));
  us-check(0,user-space-release-binding(parent,us-authority));
  us-check(0,load64(us-context(0)+736));us-check(0,load64(us-context(1)+736));
  us-check(-6,user-space-refs(vm,us-authority));us-check(-6,user-space-resume(parent,us-authority,100));
+ us-check(-6,user-space-binding-space(parent,us-authority));
  serial-write-cstr(com1(),"user-space: shared VM independent CPU contexts and copied backing PASS");serial-nl(com1());
 }
 fn us-private-import(image-size:Int)->void {

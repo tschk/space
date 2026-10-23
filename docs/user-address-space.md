@@ -67,6 +67,7 @@ Every interface below is private to trusted supervisors. `user-space-*` and
 | `recover(space, authority)` | Destructively reclaim a repaired quarantined object with no references |
 | `refs` / `pages` / `domain` / `phase` / `frame` | Owner-only metadata, including after authority revocation |
 | `binding-phase(binding, authority)` | 1 live, 2 revoked, or -6 retired/stale; authoritative detach-commit projection |
+| `binding-space(binding, authority)` | Exact native space handle associated with an owned binding, including after grant revocation |
 | `constructor-owned(space, authority)` | 0 or 1; authoritative constructor-release projection |
 | `quarantined(authority)` | Discover the first retained constructor failure for explicit cleanup |
 
@@ -129,6 +130,9 @@ Similarly, `constructor-owned` distinguishes a committed constructor drop from
 a precondition failure. Consumers must not inspect private binding rows or
 blindly repeat a committed release. These projections retain original-owner
 access after grant revocation and do not authorize new execution.
+Adapters holding a separate policy record must compare `binding-space` with that
+record's native handle before selecting it or releasing either reference. Two
+valid bindings under the same grant can still belong to different spaces.
 
 A constructor claim-provider failure similarly retains a quarantined object
 and returns -5. The original owner discovers it with `quarantined`, repairs the

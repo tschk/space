@@ -60,6 +60,8 @@ fn us-faults()->void {
 }
 fn us-revocation()->void {
  let vm=us-new(us-revocable);let binding=us-prepare(vm,us-revocable,7,8);
+ us-check(vm,user-space-binding-space(binding,us-revocable));
+ us-check(-2,user-space-binding-space(binding,us-foreign));
  let object=load64(cap-table-base+us-revocable*16);let rights=load64(cap-table-base+us-revocable*16+8);
  us-check(0,user-space-release(vm,us-revocable));
  store64(cap-table-base+us-revocable*16,object+1);
@@ -68,6 +70,8 @@ fn us-revocation()->void {
  us-check(1,user-space-refs(vm,us-revocable));
  store64(cap-table-base+us-revocable*16,object);us-check(0,cap-revoke(us-revocable));
  us-check(1,user-space-refs(vm,us-revocable));us-check(3,user-space-pages(vm,us-revocable));
+ us-check(vm,user-space-binding-space(binding,us-revocable));
+ us-check(-2,user-space-binding-space(binding,us-foreign));
  us-check(-2,user-space-write(vm,us-revocable,0x44000000,us-source,8));
  us-check(-2,user-space-protect(vm,us-revocable,0x44000000,1));
  us-check(-2,user-space-unmap(vm,us-revocable,0x44000000));
@@ -75,6 +79,7 @@ fn us-revocation()->void {
  us-check(-2,user-space-release-binding(binding,us-foreign));
  us-check(0,user-space-release-binding(binding,us-revocable));us-check(0,load64(us-context(7)+736));
  us-check(-6,user-space-pages(vm,us-revocable));
+ us-check(-6,user-space-binding-space(binding,us-revocable));
  // Trusted fixture restores its preallocated grant only after complete teardown.
  store64(cap-table-base+us-revocable*16,object);store64(cap-table-base+us-revocable*16+8,rights);
  serial-write-cstr(com1(),"user-space: revoked grant denies entry mutation but retains owner cleanup PASS");serial-nl(com1());
