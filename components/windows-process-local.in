@@ -1,0 +1,113 @@
+package space.kernel
+
+// Versioned single-thread TLS/FLS profile. Contexts and allocation metadata are
+// native-only; callbacks execute only at CPL3, never through a kernel invoke.
+var windows-parameters-local-data:Int=0
+var windows-parameters-local-pending:Int=0
+var windows-parameters-local-index:Int=0
+var windows-parameters-local-exit:Int=0
+var windows-parameters-local-callback:Int=0
+var windows-parameters-local-budget:Int=0
+var windows-parameters-local-transitions:Int=0
+fn windows-parameters-local-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-heap-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"TlsAlloc")!=0{return 29;}
+ if windows-protected-name(image,size,name+2,"TlsGetValue")!=0{return 30;}
+ if windows-protected-name(image,size,name+2,"TlsSetValue")!=0{return 31;}
+ if windows-protected-name(image,size,name+2,"TlsFree")!=0{return 32;}
+ if windows-protected-name(image,size,name+2,"FlsAlloc")!=0{return 33;}
+ if windows-protected-name(image,size,name+2,"FlsGetValue")!=0{return 34;}
+ if windows-protected-name(image,size,name+2,"FlsSetValue")!=0{return 35;}
+ if windows-protected-name(image,size,name+2,"FlsFree")!=0{return 36;}
+ return -1;
+}
+fn windows-parameters-local-prepare(domain:Int,stub:Int)->void{
+ windows-parameters-local-data=frame-alloc();windows-parameters-local-pending=0;windows-parameters-local-callback=0;windows-parameters-local-transitions=0;
+ let i=0;while i<2{let va=0x4C000000+i*4096;let page=windows-protected-frame(va);domain-map-user-data(domain,va,page);i=i+1;}
+ let page=windows-protected-physical(0x4C001000);store64(page+0xfd8,WINDOWS-PROTECTED-STUB+384);
+ store8(stub+384,0xB8);store32(stub+385,0x100103);store8(stub+389,0xCD);store8(stub+390,0x80);store8(stub+391,0x0F);store8(stub+392,0x0B);
+}
+fn windows-parameters-local-release()->void{
+ if windows-parameters-local-data!=0{frame-free(windows-parameters-local-data);windows-parameters-local-data=0;}
+ windows-parameters-local-pending=0;windows-parameters-local-index=0;windows-parameters-local-exit=0;windows-parameters-local-callback=0;windows-parameters-local-budget=0;windows-parameters-local-transitions=0;
+}
+fn windows-parameters-local-row(index:Int)->Int{return windows-parameters-local-data+1544+(index - 1)*24;}
+fn windows-parameters-local-dispatch(frame:Int,num:Int)->Int{
+ let allocation=0;if num==0x10001D || num==0x100021{allocation=1;}
+ if cap-check(windows-parameters-heap-authority,cap-memory())==0{windows-protected-error=5;if allocation!=0{return 0xffffffff;}return 0;}
+ let bitmap=windows-parameters-local-data+1536;
+ if num==0x10001D{
+  let i=0;while i<64{let bit=1<<i;if (load64(bitmap)&bit)==0{store64(bitmap,load64(bitmap)|bit);let out=WINDOWS-STARTUP-TEB+0x1480+i*8;windows-protected-store32(out,0);windows-protected-store32(out+4,0);return i;}i=i+1;}
+  windows-protected-error=8;return 0xffffffff;
+ }
+ if num==0x100021{
+  let callback=load64(frame+96);
+  if callback!=0{if windows-protected-span(callback,1,0)==0{windows-protected-error=998;return 0xffffffff;}let flags=domain-page-flags(windows-protected-domain,callback);if (flags&7)!=5 || (flags&PAGE-NX)!=0{windows-protected-error=998;return 0xffffffff;}}
+  let i=1;while i<=16{let row=windows-parameters-local-row(i);if load64(row+16)==0{store64(row,callback);store64(row+8,0);store64(row+16,1);return i;}i=i+1;}
+  windows-protected-error=8;return 0xffffffff;
+ }
+ let index=load64(frame+96)&0xffffffff;
+ if num>=0x10001E && num<=0x100020{
+  if index>=64 || (load64(bitmap)&(1<<index))==0{windows-protected-error=87;return 0;}
+  let address=WINDOWS-STARTUP-TEB+0x1480+index*8;
+  if num==0x10001E{windows-protected-error=0;return windows-protected-load64(address);}
+  if num==0x10001F{let value=load64(frame+88);windows-protected-store32(address,value);windows-protected-store32(address+4,value>>32);return 1;}
+  store64(bitmap,load64(bitmap)^ (1<<index));windows-protected-store32(address,0);windows-protected-store32(address+4,0);return 1;
+ }
+ if index<1 || index>16{windows-protected-error=87;return 0;}
+ let row=windows-parameters-local-row(index);let state=load64(row+16);
+ if state==0{windows-protected-error=87;return 0;}
+ if num==0x100022{windows-protected-error=0;return load64(row+8);}
+ if num==0x100023{store64(row+8,load64(frame+88));return 1;}
+ if state==2{windows-protected-error=170;return 0;}
+ if load64(row)!=0 && load64(row+8)!=0{
+  if windows-parameters-local-callback!=0{windows-protected-error=170;return 0;}
+  windows-parameters-local-pending=1;windows-parameters-local-index=index;store64(row+16,2);return 1;
+ }
+ store64(row,0);store64(row+8,0);store64(row+16,0);return 1;
+}
+fn windows-parameters-local-call(context:Int,row:Int,domain:Int)->Int{
+ if windows-parameters-local-budget<=0{return 124;}
+ windows-parameters-local-transitions=windows-parameters-local-transitions+1;if windows-parameters-local-transitions>64{return 127;}
+ windows-protected-store32(0x4C001FD8,WINDOWS-PROTECTED-STUB+384);windows-protected-store32(0x4C001FDC,0);
+ let callback=windows-parameters-local-data+768;
+ if user-context-init(callback,768,domain,load64(row),0,0x4C001FD8)!=0{return 127;}
+ let i=0;while i<672{store64(callback+i,load64(context+i));i=i+8;}
+ store64(callback+96,load64(row+8));store64(callback+112,0);store64(callback+120,load64(row));store64(callback+144,0x4C001FD8);
+ if user-context-set-tls(callback,0,WINDOWS-STARTUP-TEB)!=0{return 127;}
+ windows-protected-store32(WINDOWS-STARTUP-TEB+8,0x4C002000);windows-protected-store32(WINDOWS-STARTUP-TEB+12,0);windows-protected-store32(WINDOWS-STARTUP-TEB+16,0x4C000000);windows-protected-store32(WINDOWS-STARTUP-TEB+20,0);
+ windows-parameters-local-callback=1;
+ let kind=user-context-resume(callback,windows-parameters-local-budget);windows-parameters-local-budget=user-context-remaining(callback);windows-parameters-local-callback=0;
+ windows-protected-store32(WINDOWS-STARTUP-TEB+8,0x4F004000);windows-protected-store32(WINDOWS-STARTUP-TEB+12,0);windows-protected-store32(WINDOWS-STARTUP-TEB+16,0x4F000000);windows-protected-store32(WINDOWS-STARTUP-TEB+20,0);
+ if kind==USER-CONTEXT-EXIT && load64(callback+720)==0{return 0;}
+ if kind==USER-CONTEXT-FAULT || kind==USER-CONTEXT-DEADLINE{return load64(callback+720);}
+ return 127;
+}
+fn windows-parameters-local-run(entry:Int,domain:Int,stack:Int)->Int{
+ let context=windows-parameters-local-data;windows-parameters-local-budget=windows-protected-budget;
+ if user-context-init(context,768,domain,entry,0,stack)!=0 || user-context-set-tls(context,0,WINDOWS-STARTUP-TEB)!=0{return 127;}
+ let exit=-1;
+ while windows-parameters-local-budget>0{
+  let kind=user-context-resume(context,windows-parameters-local-budget);windows-parameters-local-budget=user-context-remaining(context);
+  if kind==USER-CONTEXT-FAULT || kind==USER-CONTEXT-DEADLINE{return load64(context+720);}
+  if kind!=USER-CONTEXT-SUSPEND{return 127;}
+  let pending=windows-parameters-local-pending;windows-parameters-local-pending=0;
+  if pending==1{
+   let row=windows-parameters-local-row(windows-parameters-local-index);let status=windows-parameters-local-call(context,row,domain);if status!=0{return status;}
+   store64(row,0);store64(row+8,0);store64(row+16,0);
+  }else if pending==2{exit=windows-parameters-local-exit;break;}else{return 127;}
+ }
+ if exit<0{return 124;}
+ // Clear each value after its callback. New registrations are bounded by
+ // the shared transition cap as well as the remaining guest IRQ quantum.
+ while windows-parameters-local-budget>0{
+  let row=0;let i=1;while i<=16 && row==0{let candidate=windows-parameters-local-row(i);if load64(candidate+16)!=0 && load64(candidate)!=0 && load64(candidate+8)!=0{row=candidate;}i=i+1;}
+  if row==0{return exit;}
+  let status=windows-parameters-local-call(context,row,domain);if status!=0{return status;}
+  store64(row+8,0);
+ }return 124;
+}
+fn windows-command-local-run(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int)->Int{
+ return windows-command-heap-run-profile(image,size,authority,storage,memory,line,bytes,8);
+}

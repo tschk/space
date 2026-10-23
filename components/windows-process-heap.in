@@ -23,7 +23,7 @@ fn windows-parameters-heap-prepare(domain:Int)->void{
  windows-parameters-heap-records=frame-alloc();windows-parameters-heap-generation=windows-parameters-heap-generation+1;
  windows-parameters-heap-handle=0x484500000000+windows-parameters-heap-generation;
  let i=0;while i<64{let va=WINDOWS-PARAMETERS-HEAP-BASE+i*4096;let page=windows-protected-frame(va);domain-map-user-data(domain,va,page);i=i+1;}
- store64(windows-protected-physical(WINDOWS-STARTUP-TEB+4096+48),windows-parameters-heap-handle);
+ store64(windows-protected-physical(windows-startup-peb()+48),windows-parameters-heap-handle);
 }
 fn windows-parameters-heap-release()->void{
  if windows-parameters-heap-records!=0{frame-free(windows-parameters-heap-records);windows-parameters-heap-records=0;}windows-parameters-heap-handle=0;
@@ -76,14 +76,19 @@ fn windows-parameters-heap-dispatch(frame:Int,num:Int)->Int{
  let next=windows-parameters-heap-reserve(size);if next==0{return 0;}let count=old;if size<count{count=size;}windows-parameters-heap-copy(next,address,count);
  store64(row,0);store64(row+8,0);store64(row+16,0);return next;
 }
-fn windows-command-heap-run(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int)->Int{
+fn windows-command-heap-run-profile(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int,profile:Int)->Int{
  if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0{return -16;}
- let entry=windows-startup-entry-mode(image,size,5);if entry<0{return entry;}
+ let mode=5;if profile==8{mode=6;}else if profile!=7{return -22;}
+ let entry=windows-startup-entry-mode(image,size,mode);if entry<0{return entry;}
  if windows-parameters-line-valid(line,bytes)==0{return -22;}
  if cap-check(memory,cap-memory())==0{return -13;}
  if windows-parameters-heap-generation>=0x7fffffff{return -12;}
  if authority>=0 && cap-check(authority,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}
  windows-parameters-heap-authority=memory;windows-parameters-heap-active=1;
- let result=windows-command-run-profile(image,size,authority,storage,line,bytes,7);
+ let result=windows-command-run-profile(image,size,authority,storage,line,bytes,profile);
  windows-parameters-heap-release();windows-parameters-heap-authority=-1;windows-parameters-heap-active=0;return result;
+}
+
+fn windows-command-heap-run(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int)->Int{
+ return windows-command-heap-run-profile(image,size,authority,storage,memory,line,bytes,7);
 }

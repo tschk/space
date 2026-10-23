@@ -244,3 +244,56 @@ deadline and fresh activation evidence. The original SQLite/7za refusal gate
 now checks eight profiles, 336 repeated refusals. This is still bounded runtime
 fixture coverage: original applications remain unexecuted and their import-slot,
 directory, TLS/FLS and synchronization requirements remain explicit blockers.
+
+
+## Execution-local TLS/FLS and entry ABI checkpoint
+
+[Profile 8](../windows-local-checks.md) adds 64 dynamic TLS slots at the real x64
+TEB TlsSlots offset and 16 execution-local FLS slots, while keeping static TLS
+separate. Its two-page TEB relocates the PEB without changing older profiles'
+addresses. Entry RSP now reserves the actual Win64 return/home area below its
+stack base. An independent private callback stack has valid home space and
+scoped TEB stack bounds. FLS free and normal/explicit process exit invoke actual
+CPL3 callbacks using the generic saved user context, preserving suspended outer
+GP/FX and sharing execution-local values. Fault/deadline cleanup is real, and
+nested termination/recursive callback requests have explicit bounded refusal.
+
+The first repeated gate exposed hardware-captured RF in a suspended syscall
+frame, which generic context validation had wrongly rejected. Exact failing
+frames and the original binary were preserved before the generic CPU owner
+fixed safe RF admission and proved actual IRET continuations. Windows neither
+normalizes the saved flags nor weakens CPU validation itself.
+
+Fresh focused receipt `/tmp/space-windows-local-final2/report.json` passes 443
+activations, including 21 deterministic RF-bearing callback/outer continuations,
+entry/callback home writes, all nonvolatile GP canaries, XMM6/XMM15/x87/MXCSR,
+byte-exact native kernel FX preservation, real callback faults/deadlines,
+recursive/destructor-cycle bounds, live revoke and stable 21-cycle cleanup.
+Fourteen legacy gates under `/tmp/space-windows-*-local-final-regression/` retain
+strict507, files527, write527, general317, startup171, parameters275, identity126,
+PE-view81, six NVMe boots,848 FILETIME,380 environment,593 counter and485 heap
+execution cases. Official SQLite/7za still refuse before allocation across nine
+profiles (378 checks). Original Windows apps remain unexecuted; synchronization,
+encoding/locale, other real APIs and the original PE directory/import-count
+barriers remain subsequent work.
+
+The final repeated focused gate
+`/tmp/space-windows-local-eight-boots/report.json` passes 3544 activations over
+eight fresh VMs using one compiled image, with unchanged source hashes. Its
+public harness exposes `--boots` so the earlier intermittent admission failure
+can remain a reproducible repeated acceptance check.
+
+
+A final admission review found that frame capacity could not pay for the seven
+first-use bump caches. The narrow fix reserves exact 26912 retained bytes before
+page rounding/counting and validates signed/rounding heap bounds. The explicit
+owned ledger maximum is 1096<1152, with the focused fixture's 83 entries checked
+against live mappings. Profile 8's extra 6 frame allowance covers its 3 additional
+guest pages, native context frame, callback page-table leaf and one spare.
+`/tmp/space-windows-local-cache-final/report.json` passes 443 focused activations
+plus exact cold recovery (444 total), with 200 actual free frames, zero/short-bump
+refusal, exact 26912-byte recovery and three malformed-bound refusals (six total
+admission refusals). Strict 507+jq refusal and heap 485 representatives pass at
+`/tmp/space-windows-{strict,heap}-cache-regression/report.json`. These are the
+fresh receipts for the final narrow admission change; the earlier 14-gate and
+8-boot receipts retain their own source snapshots.

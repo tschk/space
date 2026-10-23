@@ -4,6 +4,8 @@ package space.kernel
 // loading or general PEB/TEB service contract is implied by these owned pages.
 const WINDOWS-STARTUP-TEB = 0x4E000000
 
+fn windows-startup-peb()->Int{if windows-protected-profile==8{return WINDOWS-STARTUP-TEB+20480;}return WINDOWS-STARTUP-TEB+4096;}
+
 fn windows-startup-memory(image: Int, rva: Int, bytes: Int, writable: Int) -> Int {
   let i = 0
   while i < windows-application-sections(image) {
@@ -70,7 +72,9 @@ fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry:
     n = n + 1
   }
   let teb = windows-protected-physical(WINDOWS-STARTUP-TEB)
-  let peb = windows-protected-physical(WINDOWS-STARTUP-TEB + 4096)
+  let peb-va = windows-startup-peb()
+  if windows-protected-profile == 8 { let frame = windows-protected-frame(peb-va); domain-map-user-data(domain, peb-va, frame) }
+  let peb = windows-protected-physical(peb-va)
   let vector = windows-protected-physical(WINDOWS-STARTUP-TEB + 8192)
   let tls = windows-protected-physical(WINDOWS-STARTUP-TEB + 12288)
   let base = load64(windows-application-opt(image) + 24)
@@ -78,7 +82,7 @@ fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry:
   store64(teb + 48, WINDOWS-STARTUP-TEB)
   store64(teb + 64, domain);store64(teb + 72, 1)
   store64(teb + 88, WINDOWS-STARTUP-TEB + 8192)
-  store64(teb + 96, WINDOWS-STARTUP-TEB + 4096)
+  store64(teb + 96, peb-va)
   store64(peb + 16, base)
   store64(vector, WINDOWS-STARTUP-TEB + 12288)
   let d = windows-startup-directory(image, size)

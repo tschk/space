@@ -95,3 +95,9 @@ reports are `/tmp/space-windows-{strict,files,write,application}-startup-regress
 (507/527/527/317 launches), plus `/tmp/space-windows-nvme-startup-regression/report.json`
 (six independent NVMe boots). The original pinned jq retains structural entry
 `0x140001400`, complete admission refusal `-8` before allocation and `executed:false`.
+
+The separate [execution-local TLS/FLS profile](windows-local-checks.md) versions
+the TEB to two pages and relocates its PEB; the older profiles retain the layout
+above. All process entries now reserve their return address and 32-byte Win64
+home area below the declared stack base. Static callbacks continue to use actual
+CPL3 calls; dynamic FLS callbacks use saved generic user contexts.

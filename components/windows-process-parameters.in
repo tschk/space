@@ -5,6 +5,7 @@ import "windows-process-time.in"
 import "windows-process-environment.in"
 import "windows-process-counter.in"
 import "windows-process-heap.in"
+import "windows-process-local.in"
 
 // Bounded, explicit process-parameter profile. The borrowed native input is
 // copied into an execution-owned RO user page before entry; no kernel pointer
@@ -66,7 +67,7 @@ fn windows-parameters-dispatch(frame: Int, num: Int) -> Int {
     windows-protected-store32(addr + 88, 1);windows-protected-store32(addr + 96, 2)
     return 0
   }
-  if addr == 0 { return load64(windows-protected-physical(0x4E001010)) }
+  if addr == 0 { return load64(windows-protected-physical(windows-startup-peb() + 16)) }
   let i = 0
   while i < 260 {
     if windows-protected-span(addr + i * 2, 2, 0) == 0 { windows-protected-error = 998; return 0 }
