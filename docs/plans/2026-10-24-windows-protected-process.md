@@ -319,3 +319,30 @@ regression receipts under `/tmp/space-windows-*-critical-regression/` retain all
 prior behavior and 420 original SQLite/7za refusals across ten profiles. The
 original apps still do not execute; import-count and PE directory guards remain,
 with encoding/locale, module resolution and other real CRT services subsequent.
+
+## Composed startup checkpoint
+
+[Profile 10](../windows-composed-checks.md) combines API IDs0–42 from the existing
+command/identity, environment, FILETIME/QPC, heap, TLS/FLS and critical services.
+A version1 native96-byte descriptor owns the explicit borrowed grant/input
+configuration; the guest never receives its private backing. Clock service is
+explicitly disabled, optional-counter, or required-counter. The older profiles
+retain their import/layout contracts and native CPU mechanisms are unchanged.
+
+The mixed CPL3 scenario executes a real FLS callback while a recursive critical
+section is owned, allocates/frees from the same heap, changes TLS/environment,
+uses actual RTC/QPC when available and resumes with preserved nonvolatile state.
+The PC/Q35/noHPET focused receipt records773 activations; all16 prior Windows
+gates pass again, including six NVMe boots and462 original-app refusals. The
+exact cold bound is171 freeframes refused unchanged,172 recovered plus26912
+retained bump bytes. Private configuration read, readonly environment write and
+heap execution fault; deadline, live grant revoke and actual RTC SET failures
+tear down all owned resources. Void-service terminal statuses remain terminal
+through the composed context runner.
+
+Original SQLite remains behind directory mask0x46c and157 imports versus the
+execution limit32. Static union inspection finds42 implemented names and115
+unsupported, with first unknown SetCurrentDirectoryW at one-based slot3. No
+original Windows SQLite/7za/jq execution is claimed. Next implement strict
+UTF8/UTF16/count/error and truthful code-page metadata; locale/collation, wide
+file APIs, dynamic resolution and PE metadata semantics remain separate work.

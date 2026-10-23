@@ -1,0 +1,59 @@
+package space.kernel
+
+// Version1 native launch descriptor, never a guest pointer or ambient grant.
+// 0version,8bytes,16serial,24storage,32memory,40timer,48line,56linebytes,
+// 64explicitenv,72envbytes,80flags(TimeSource1/RequireCounter2),88reserved.
+var windows-parameters-composed-data:Int=0
+var windows-parameters-composed-active:Int=0
+var windows-parameters-composed-flags:Int=0
+fn windows-parameters-composed-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-critical-import(image,size,name);if id>=0{return id;}
+ id=windows-parameters-local-import(image,size,name);if id>=0{return id;}
+ id=windows-parameters-counter-import(image,size,name);if id>=0{return id;}
+ return windows-parameters-env-import(image,size,name);
+}
+fn windows-parameters-composed-needs-clock(image:Int,size:Int)->Int{
+ let rva=load32(windows-application-opt(image)+120);if rva==0{return 0;}
+ let desc=windows-protected-rva(image,size,rva,40);if desc<0{return 1;}
+ let lookup=load32(image+desc);if lookup==0{lookup=load32(image+desc+16);}
+ let i=0;while i<32{let off=windows-protected-rva(image,size,lookup+i*8,8);if off<0{return 1;}let name=load64(image+off);if name==0{return 0;}let id=windows-parameters-composed-import(image,size,name);if id>=17 && id<=19{return 1;}i=i+1;}return 1;
+}
+fn windows-parameters-composed-prepare()->void{
+ let data=frame-alloc();windows-parameters-composed-data=data;
+ store64(data,1);store64(data+8,96);store64(data+16,windows-protected-authority);store64(data+24,windows-protected-storage);
+ store64(data+32,windows-parameters-heap-authority);store64(data+40,windows-parameters-time-authority);
+ store64(data+48,windows-parameters-line);store64(data+56,windows-parameters-bytes);
+ store64(data+64,windows-parameters-env-input);store64(data+72,windows-parameters-env-input-bytes);
+ store64(data+80,windows-parameters-composed-flags);store64(data+88,0);
+}
+fn windows-parameters-composed-release()->void{if windows-parameters-composed-data!=0{frame-free(windows-parameters-composed-data);windows-parameters-composed-data=0;}}
+fn windows-command-composed-run(image:Int,size:Int,config:Int)->Int{
+ if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0 || windows-parameters-env-active!=0 || windows-parameters-time-active!=0 || windows-parameters-composed-active!=0{return -16;}
+ let entry=windows-startup-entry-mode(image,size,8);if entry<0{return entry;}
+ // Native caller owns a readable descriptor/input block for the synchronous
+ // call. Copy validated fields into locals before touching execution state.
+ if config<=0 || (config&7)!=0 || config>0x100000000 - 96{return -22;}
+ if load64(config)!=1 || load64(config+8)!=96 || load64(config+88)!=0{return -22;}
+ let serial=load64(config+16);let storage=load64(config+24);let memory=load64(config+32);let timer=load64(config+40);
+ let line=load64(config+48);let bytes=load64(config+56);let env=load64(config+64);let envbytes=load64(config+72);let flags=load64(config+80);
+ if flags<0 || flags>3 || flags==2 || serial < -1 || storage < -1{return -22;}
+ if windows-parameters-line-valid(line,bytes)==0 || windows-parameters-env-valid(env,envbytes)==0{return -22;}
+ if cap-check(memory,cap-memory())==0{return -13;}
+ if serial>=0 && cap-check(serial,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}
+ if (flags&1)!=0{if cap-check(timer,cap-timer())==0{return -13;}}
+ else{if timer!=-1{return -22;}if windows-parameters-composed-needs-clock(image,size)!=0{return -13;}}
+ if windows-parameters-heap-generation>=0x7fffffff{return -12;}
+ if (flags&2)!=0{if counter-frequency-authorized(timer)<=0 || counter-read-authorized(timer)<0{return -38;}}
+ let seconds=0;if (flags&1)!=0{seconds=time-component-wallclock();if seconds<0 || seconds>253402300799{return -11;}}
+ windows-parameters-composed-active=1;windows-parameters-composed-flags=flags;
+ windows-parameters-heap-authority=memory;windows-parameters-heap-active=1;
+ windows-parameters-env-active=1;windows-parameters-env-input=env;windows-parameters-env-input-bytes=envbytes;
+ if (flags&1)!=0{windows-parameters-time-active=1;windows-parameters-time-authority=timer;windows-parameters-time-anchor=seconds;}
+ let result=windows-command-run-profile(image,size,serial,storage,line,bytes,10);
+ windows-parameters-composed-release();windows-parameters-env-release();windows-parameters-heap-release();
+ windows-parameters-composed-active=0;windows-parameters-composed-flags=0;
+ windows-parameters-env-active=0;windows-parameters-env-input=0;windows-parameters-env-input-bytes=0;
+ windows-parameters-heap-active=0;windows-parameters-heap-authority=-1;
+ windows-parameters-time-active=0;windows-parameters-time-authority=-1;windows-parameters-time-anchor=0;
+ return result;
+}

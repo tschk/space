@@ -81,6 +81,7 @@ fn windows-parameters-local-call(context:Int,row:Int,domain:Int)->Int{
  let kind=user-context-resume(callback,windows-parameters-local-budget);windows-parameters-local-budget=user-context-remaining(callback);windows-parameters-local-callback=0;
  windows-protected-store32(WINDOWS-STARTUP-TEB+8,0x4F004000);windows-protected-store32(WINDOWS-STARTUP-TEB+12,0);windows-protected-store32(WINDOWS-STARTUP-TEB+16,0x4F000000);windows-protected-store32(WINDOWS-STARTUP-TEB+20,0);
  if kind==USER-CONTEXT-EXIT && load64(callback+720)==0{return 0;}
+ if kind==USER-CONTEXT-EXIT && windows-protected-profile==10{return load64(callback+720);}
  if kind==USER-CONTEXT-FAULT || kind==USER-CONTEXT-DEADLINE{return load64(callback+720);}
  return 127;
 }
@@ -91,6 +92,7 @@ fn windows-parameters-local-run(entry:Int,domain:Int,stack:Int)->Int{
  while windows-parameters-local-budget>0{
   let kind=user-context-resume(context,windows-parameters-local-budget);windows-parameters-local-budget=user-context-remaining(context);
   if kind==USER-CONTEXT-FAULT || kind==USER-CONTEXT-DEADLINE{return load64(context+720);}
+  if kind==USER-CONTEXT-EXIT && windows-protected-profile==10{return load64(context+720);}
   if kind!=USER-CONTEXT-SUSPEND{return 127;}
   let pending=windows-parameters-local-pending;windows-parameters-local-pending=0;
   if pending==1{

@@ -126,12 +126,12 @@ still does not execute original Windows SQLite or 7za.
 
 The bounded [environment profile](windows-environment-checks.md) and
 [native-counter profile](windows-counter-checks.md) add real startup contracts.
-The original SQLite/7za gate now checks all ten profiles (420 repeated
+The original SQLite/7za gate now checks all eleven profiles (462 repeated
 allocation-free refusals); neither original application executes. The existing
 command-only diagnostic still identifies import 2, GetEnvironmentVariableA,
 as its first unsupported import. Supporting that API in a separate explicit
 profile does not remove the original image's remaining directory, 32-import
-limit, heap, synchronization, TLS/FLS and other API barriers.
+limit and other unsupported API barriers.
 
 The [owned heap profile](windows-heap-checks.md) now adds five real allocation
 APIs behind live native memory authority. It uses private RW/NX pages and an
@@ -147,3 +147,12 @@ The [single-thread critical-section profile](windows-critical-checks.md) adds
 real ownership/recursion/try/leave/delete transitions and bounded denial of
 unimplemented cross-thread waits. The original-app gate now includes ten
 profiles and retains its unchanged-image refusal.
+
+The [composed profile 10](windows-composed-checks.md) now executes the existing
+environment, heap, TLS/FLS, critical-section and real RTC/QPC services together
+under a versioned native launch descriptor. This does not raise the 32-import
+limit or waive directory guards. Independent unchanged SQLite inspection finds
+42 of its 157 imports in the declared union, 115 still unsupported, and its first
+unsupported composed import at one-based slot 3, SetCurrentDirectoryW. The older
+command-only slot 2 diagnostic remains unchanged. The 462 actual allocation-free
+refusals and static security-cookie disassembly are not original-app execution.

@@ -55,6 +55,7 @@ fn windows-application-import-barrier(image: Int, size: Int, parameters: Int) ->
     if name < 0 || windows-protected-rva(image, size, name, 3) < 0 { return -2 }
     let id = windows-application-import-id(image, size, name)
     if parameters != 0 { id = windows-parameters-import-id(image, size, name) }
+    if parameters == 2 { id = windows-parameters-composed-import(image, size, name) }
     if id < 0 { return i + 1 }
     i = i + 1
   }

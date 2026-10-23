@@ -7,6 +7,7 @@ import "windows-process-counter.in"
 import "windows-process-heap.in"
 import "windows-process-local.in"
 import "windows-process-critical.in"
+import "windows-process-composed.in"
 
 // Bounded, explicit process-parameter profile. The borrowed native input is
 // copied into an execution-owned RO user page before entry; no kernel pointer
