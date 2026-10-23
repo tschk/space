@@ -78,15 +78,18 @@ General foreign GUI applications, protected native clients, full desktop text/
 layout behavior and the rest of the acceptance matrix below remain open.
 
 
-## New slices under integration review
+## New slices and integration work
 
-Linux copied process families now pass924 parent activations across the standard
+Linux copied process families now pass1012 parent activations across the standard
 and minimal roots, including partial descriptor-copy rollback and retained
 teardown recovery. The original BusyBox child corpus passes106 additional
 activations. These are separate checkpoint receipts, not an extension of the
 52-gate frozen integration result. Review identified repeated preparation and
-suspend-budget accounting gaps; their bounded fix is required before this slice
-is committed. Larger blocking pipelines remain a visible failing case.
+suspend-budget accounting gaps; the committed fix (`211be9e`) bounds activation
+preparations to32, carries the actual remaining delivered IRQ budget, and closes
+serial descriptors marked CLOEXEC on self-exec. A generated omission control
+proves the budget fix changes actual cancellation behavior. Larger blocking
+pipelines remain a visible failing case.
 
 Windows environment and native hardware-counter translation are committed in
 `2de596c`; the private process heap is committed in `03fa931`. Their actual
@@ -97,8 +100,9 @@ callback work remains under test. Original Windows applications remain refused.
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
 self-update pass; the existing Space toolchain remains frozen at0.9.324 until
-new-profile integration is verified. Protected native SCI execution and Darwin
-startup have initial actual CPL3 proofs under review. Protected GUI clients,
+new-profile integration is verified. Darwin startup is committed in `168e01f`, with344 actual CPL3 executions,
+exact first-cache memory admission/recovery and unchanged483/548 old gates.
+Protected native SCI execution has initial actual CPL3 proofs under review. Protected GUI clients,
 original Darwin/Windows applications and foreign GUI workloads remain open.
 
 ## Full completion goal
@@ -155,6 +159,10 @@ must be reported separately from foreign compatibility.
 | Darwin Cocoa GUI | FLTK 1.3.9 `fluid` built as an x86_64 macOS application | Drive the actual Cocoa/AppKit application: launch, edit, resize/scale, save/reopen, second instance, close and crash cleanup. Use actual client pixels and input delivery. |
 | Windows Win32 GUI | FLTK 1.3.9 `fluid` built as an x86_64 Windows application | Drive the actual Win32 message loop and software drawing backend with the same edit/save/reopen/two-instance scenario; verify buffer and handle cleanup. |
 | Expanded desktop/browser milestone | NetSurf 3.11, [upstream](https://www.netsurf-browser.org/downloads/), with a declared port/profile | A real browser action launches a live browser instance, renders a bundled HTML/CSS page, accepts link/input/scroll interaction and retrieves a controlled HTTP page; add HTTPS only with certificate/error tests. This is a later workload with its own dependency gate, not a decorative browser window. |
+
+The acquired Linux FLTK workload now has a [pinned artifact, real host edit/save/
+reopen reference and actual protected-loader refusal](fltk-gui-workload.md). It
+has not executed on Space.
 
 Before a larger GUI toolkit is ready, add a tiny upstream software GUI workload
 to expose missing contracts. Keep it as an intermediate checkpoint; neither a

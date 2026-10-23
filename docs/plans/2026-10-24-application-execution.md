@@ -124,12 +124,13 @@ supervisor restoration. These are mechanisms, not general native SCI protection.
    and power-loss behavior remain open.
 4. BusyBox pipelines. Actual protected pipes now pass220 launches across standard/minimal
    profiles, including partial transfers, descriptor aliases, EOF and SIGPIPE.
-   The new copied-process checkpoint passes924 parent activations across
+   The new copied-process checkpoint passes1012 parent activations across
    standard/minimal roots, including actual partial descriptor-copy rollback
    and retained teardown recovery. Nine original BusyBox child cases pass
    106 additional activations, including pipelines, self-exec and background
-   wait. Review requires bounded preparation retries and preservation of
-   remaining guest IRQ budget before committing. The larger10902-byte
+   wait. Committed checkpoint `211be9e` bounds preparation retries, preserves
+   remaining delivered guest IRQ budget and handles serial CLOEXEC. Its
+   omission control proves the cancellation consequence. The larger10902-byte
    pipeline remains a captured failure at4096 bytes; implement genuine blocked
    producer/consumer scheduling without enlarging the ring to hide the gap.
 5. Original macOS/Windows startup. Original jq binaries remain refused and
@@ -142,8 +143,8 @@ supervisor restoration. These are mechanisms, not general native SCI protection.
    environment translation are committed in `2de596c`; their gates pass593
    and380 activations respectively. The private process heap (`03fa931`)
    passes485 actual launches and seven admission checks. Real TLS/FLS
-   callbacks are under test. A separate Darwin startup profile passes340 CPL3
-   invocations in review; this does not supply dyld/libSystem or execute jq.
+   callbacks are under test. A separate Darwin startup profile (`168e01f`) passes344 CPL3
+   invocations, exact-memory admission/recovery and old483/548 regressions; this does not supply dyld/libSystem or execute jq.
 6. The52-gate lab now passes from the frozen source above. Extend the next
    lab revision to the subsequent native counter/context, Windows environment/
    QPC and Linux process slices after their review checkpoints. Retain exact
@@ -168,3 +169,22 @@ implementation or testing. Do not request authorization again or invent a PR URL
 Do not mark the project complete until every required acceptance row has actual
 end-to-end evidence. Preserve unsupported behaviors as visible failures and
 expand coverage by implementing their owning contracts.
+
+
+## Expanded integration in progress
+
+The first63-gate candidate uses immutable committed source at
+`/workspace/space-application-sixtythree-source` with frozen compiler0.9.325.
+It exposed a test-only64KiB artifact-slot bound after compiler page separation;
+`4a645dc` reserves nonoverlapping128KiB slots and the complete real GUI action/
+pixel check passes at `/workspace/gui-slots325`. A separate persistence harness
+failure came from a Unix socket path exceeding its platform limit. The original
+run and its exact failures are preserved. The next69-gate candidate uses a short
+evidence path and includes committed Linux children, Darwin startup and the
+architectural RF context fix (`5fd55cb`). Neither run is claimed passed before
+its complete final integrity report exists.
+
+FLTK1.3.9 `fluid` is acquired and source-built without upstream patches. A real
+host GUI reference edits/saves/reopens a form. Actual Space protected-loader
+admission refuses its dynamic ELF before allocation; this remains blocked,
+with no payload execution. See [the workload evidence](../fltk-gui-workload.md).
