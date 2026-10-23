@@ -3,8 +3,11 @@ package space.kernel
 // Linux edge adapter for execution-owned, unidirectional native VFS streams.
 // Native VFS owns rings and endpoint references. This adapter owns guest names,
 // access/nonblocking/CLOEXEC policy and private pair ownership/generation tags.
+// A process family shares only explicitly inherited endpoints, backed by actual
+// duplicated native references. The active record selects its private fd table.
 // No native descriptor or guest pointer crosses the personality boundary.
 // Empty/full blocking waits remain ENOSYS until a real wait/scheduler contract.
+var linux-process-pipe-family: Int = 0
 var linux-process-pipe-owners: Int = 0
 var linux-process-pipe-fdflags: Int = 0
 var linux-process-pipe-generation: Int = 0
@@ -16,6 +19,7 @@ var linux-process-pipe-action-restorer: Int = 0
 var linux-process-pipe-action-mask: Int = 0
 
 fn linux-process-pipes-init() -> void {
+  linux-process-pipe-family = linux-process-domain
   linux-process-pipe-signal = 0
   linux-process-pipe-last-signal = 0
   linux-process-pipe-action = 0
@@ -39,11 +43,11 @@ fn linux-process-pipe-state() -> void {
 }
 
 fn linux-process-pipe-host(fd: Int) -> Int {
-  if linux-process-active == 0 || linux-process-domain <= 0 { return -9 }
+  if linux-process-active == 0 || linux-process-domain <= 0 || linux-process-pipe-family <= 0 { return -9 }
   let host = linux-process-file-host(fd)
   if host < 3 || linux-process-pipe-owners == 0 || vfs-stream-valid(host) == 0 { return -9 }
   let pair = load64(vfs-fd-table + host * 32)
-  if load64(linux-process-pipe-owners + (pair - 1) * 16) != linux-process-domain { return -9 }
+  if load64(linux-process-pipe-owners + (pair - 1) * 16) != linux-process-pipe-family { return -9 }
   return host
 }
 
@@ -80,7 +84,7 @@ fn linux-process-pipe-create(buffer: Int, flags: Int) -> Int {
   let writer = load32(linux-process-file-buffer + 4)
   let pair = load64(vfs-fd-table + reader * 32)
   linux-process-pipe-generation = linux-process-pipe-generation + 1
-  store64(linux-process-pipe-owners + (pair - 1) * 16,linux-process-domain)
+  store64(linux-process-pipe-owners + (pair - 1) * 16,linux-process-pipe-family)
   store64(linux-process-pipe-owners + (pair - 1) * 16 + 8,linux-process-pipe-generation)
   store64(vfs-fd-table + reader * 32 + 16,flags & 0x800)
   store64(vfs-fd-table + writer * 32 + 16,1 | (flags & 0x800))
@@ -312,7 +316,7 @@ fn linux-process-pipes-release() -> void {
     let i = 0
     while i < VFS-STREAM-MAX {
       // files-release has already closed every execution-owned native row.
-      if load64(linux-process-pipe-owners + i * 16) == linux-process-domain {
+      if load64(linux-process-pipe-owners + i * 16) == linux-process-pipe-family {
         if vfs-stream-pairs[i].refs0 == 0 && vfs-stream-pairs[i].refs1 == 0 {
           store64(linux-process-pipe-owners + i * 16,0)
         }
@@ -322,6 +326,7 @@ fn linux-process-pipes-release() -> void {
     i = 0
     while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
   }
+  linux-process-pipe-family = 0
   linux-process-pipe-action = 0
   linux-process-pipe-action-flags = 0
   linux-process-pipe-action-restorer = 0

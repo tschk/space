@@ -44,7 +44,7 @@ fn pipe-check-baseline()->void {
 fn pipe-check-released(measured:Int)->void {
  linux-check(0,domain-current);linux-check(0,domain-user-syscall-hook);
  linux-check(0,user-budget-active);linux-check(0,linux-process-active);
- linux-check(0,linux-process-pages);pipe-check-witness-valid();
+ linux-check(0,linux-process-pages);linux-check(0,linux-process-pipe-family);pipe-check-witness-valid();
  let i=0;while i<VFS-STREAM-MAX{linux-check(0,load64(linux-process-pipe-owners+i*16));i=i+1;}
  i=0;while i<VFS-MAX-FDS{linux-check(0,load64(linux-process-pipe-fdflags+i*8));i=i+1;}
  linux-check(0,linux-process-pipe-action);linux-check(0,linux-process-pipe-signal);
