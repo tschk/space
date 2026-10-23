@@ -11,6 +11,14 @@ const USER-CONTEXT-DEADLINE = 3
 const USER-CONTEXT-SUSPEND = 4
 var user-context-active: Int = 0
 
+// Actual guest IRQ0 ticks left after the last admitted run. This deliberately
+// excludes kernel service time and is not a wall-clock deadline.
+fn user-context-remaining(context: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) || context <= 0 || (context & 15) != 0 { return -1 }
+  if load64(context + 736) != USER-CONTEXT-MAGIC { return -1 }
+  return load64(context + 760)
+}
+
 fn user-context-domain-valid(domain: Int) -> Int {
   if domain <= 0 || domain >= domain-count || domain >= MAX-DOMAINS { return 0 }
   if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
@@ -141,6 +149,9 @@ fn user-context-resume(context: Int, budget: Int) -> Int {
   outb(0x21,pic & 254)
   wrmsr64(0xC0000100,load64(context + 672)); wrmsr64(0xC0000101,load64(context + 680))
   let result = invoke1(enter,context + 744)
+  let remaining = user-budget-remaining
+  if remaining < 0 { remaining = 0 }
+  store64(context + 760,remaining)
   wrmsr64(0xC0000100,fs); wrmsr64(0xC0000101,gs)
   user-budget-active = 0; user-budget-domain = old-domain; user-budget-remaining = old-remaining
   user-context-active = 0

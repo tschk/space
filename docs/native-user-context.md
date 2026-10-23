@@ -29,7 +29,13 @@ ownership, and writes the parent's actual child identifier into its return slot.
 | 712,720,728 | Owned domain, stop status, lifecycle phase |
 | 736 | Internal format magic |
 | 744–759 | Private CPU entry descriptor |
-| 760–767 | Reserved |
+| 760 | Remaining delivered guest IRQ0 ticks after the last admitted run |
+
+`user-context-remaining(context)` exposes the remaining guest IRQ quantum after
+a stop; clone copies it, and admission failure preserves it. A resumed process
+may pass the remaining value into its next activation. This counts delivered
+guest IRQ0 ticks, excluding kernel service time; scheduling policy must separately
+bound repeated transitions and cannot call this a wall-clock deadline.
 
 Stop kinds are 1 Exit, 2 Fault, 3 Deadline and 4 Suspend. Status records the exit
 return value, actual `128 + vector` fault result, 124 deadline result or suspended
@@ -50,13 +56,14 @@ caller-owned memory. Both kernel
 and guest GP/FX images survive ordinary syscall continuation. Fault entry now
 saves GP/FX before touching registers or discarding guest floating-point faults.
 
-`/tmp/space-user-context-independent-final/report.json` passes 61 actual CPL3 executions:
+`/tmp/space-user-context-remaining/report.json` passes 62 actual CPL3 executions:
 a cold check immediately after domain-init and before any user entry, rejecting
 reserved MXCSR without executing FXRSTOR; ten real syscall suspensions,
 independent child/parent continuations (the child overwrites RBX/XMM15/x87
 before exit and the parent verifies its original state), genuine
 #UD and #PF with error 5, real IRQ-driven infinite-loop deadlines and a caller
-with IF0/IRQ0 masked. The guest verifies fresh zero GP/XMM/x87 data before writing canaries. The fixture checks actual register and guest FX snapshots,
+with IF0/IRQ0 masked. A finite guest observes three actual timer ticks before
+suspending; the remaining quantum decreases accordingly and deadline reports zero. The guest verifies fresh zero GP/XMM/x87 data before writing canaries. The fixture checks actual register and guest FX snapshots,
 byte-exact 512-byte kernel FX restoration, FS/GS, CR3, capability, PIC, IF, hook,
 observer and stable allocation high water. Malformed selectors, flags, MXCSR,
 noncanonical/unmapped RIP/RSP and kernel TLS refuse before CPU restore. An actual structurally valid SCI importing `user-context-resume` is refused by

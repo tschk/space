@@ -62,7 +62,7 @@ with (out/'qemu.log').open('w') as qlog:
         assert 'context: cold initialized CPU mask reserved MXCSR refusal PASS' in text,text
         assert 'context: valid SCI private CPU import refused before lifecycle PASS' in text and 'INVALID private context entry' not in text,text
         serial.sendall(b'halt\n')
-        report={'status':'passed','executions':61,'cycles':10,'private_import_refused_before_entry':True,'actual_parent_child_continuations':True,'typed_exit_fault_deadline_suspend':True,'actual_page_fault_error':5,'caller_if0_masked_pic_observer_restore':True,'exact_kernel_fx_fs_gs_restore':True,'cpu':a.cpu,'compiler':a.compiler,'compiler_sha256':hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),'kernel_sha256':hashlib.sha256(kernel).hexdigest(),'payload_sha256':hashlib.sha256(payload).hexdigest()}
+        report={'status':'passed','executions':62,'cycles':10,'private_import_refused_before_entry':True,'actual_parent_child_continuations':True,'typed_exit_fault_deadline_suspend':True,'actual_page_fault_error':5,'actual_remaining_irq_ticks':True,'caller_if0_masked_pic_observer_restore':True,'exact_kernel_fx_fs_gs_restore':True,'cpu':a.cpu,'compiler':a.compiler,'compiler_sha256':hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),'kernel_sha256':hashlib.sha256(kernel).hexdigest(),'payload_sha256':hashlib.sha256(payload).hexdigest()}
         (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
         print(f'PASS: owned CPL3 context suspension and resume; {out}')
     finally:

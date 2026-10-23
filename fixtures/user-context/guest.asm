@@ -54,6 +54,17 @@ ORG 0x42000000
     mov rax, 0x5746554354583132
     mov [rsp-8], rax
     movq xmm15, rax
+    cmp rdi, 4
+    jne .suspend
+    mov eax, 802
+    syscall
+    lea rdx, [rax+3]
+.timed:
+    mov eax, 802
+    syscall
+    cmp rax, rdx
+    jb .timed
+.suspend:
     mov eax, 800
     syscall
 .resume:
