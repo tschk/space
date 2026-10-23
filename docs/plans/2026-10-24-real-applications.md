@@ -1,5 +1,10 @@
 # Full goal and first real-application checkpoint — 2026-10-24
 
+Historical checkpoint: see the newer [execution checkpoint](2026-10-24-application-execution.md)
+for implemented compiler/protected-runtime fixes and current application results.
+The full goal remains active.
+
+
 User date: Australia/Melbourne. The active [full goal](../compatibility-coverage-goal.md)
 now covers the complete protected Linux/Darwin/Windows application platform,
 native desktop and real CLI/GUI corpus, with file persistence, independent

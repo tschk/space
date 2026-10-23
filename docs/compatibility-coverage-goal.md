@@ -6,12 +6,55 @@ personalities; keep implementing and locally testing real CLI and GUI applicatio
 until the acceptance matrix below works end to end. This is the full project
 goal. The fixture lab is an early checkpoint, not the completion target.
 
-Latest actual local results: [real-application checkpoint](plans/2026-10-24-real-applications.md).
+Latest actual local results: [execution checkpoint](plans/2026-10-24-application-execution.md).
+The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
+is historical; its compiler and protected-execution blockers have since advanced.
 
 Status: **active; full goal incomplete**. Current shipped behavior and local test
 results must be recorded separately from this destination. Work proceeds through
 reviewable implementation/test commits on the requested draft PR branch. This
 file does not create a scheduled or unattended background task.
+
+## Active local execution checkpoint — 2026-10-24
+
+The full goal remains active. Four unmodified upstream Linux applications now
+execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,
+BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,
+222 Lua,100 BusyBox and31 SQLite activations, each with21 measured cycles,
+actual CPU faults, timer cancellation, authority denial and resource checks.
+BusyBox pipelines still fail at unsupported pipe2; SQLite currently passes
+in-memory queries, while actual database files need metadata, mode, locking and
+sync contracts. These missing scenarios remain required acceptance work.
+
+Protected Mach-O supports checked raw Darwin calls and typed libSystem imports;
+protected PE supports ten typed KERNEL32 imports and a broader validated section
+profile. Windows strict507/read527/write527/general317 activation gates and six
+NVMe boots pass after register sanitization. Original macOS/Windows jq remain
+explicitly refused and unexecuted; general dyld/UCRT/framework support is open.
+
+All11 native CLI scenarios pass. Native notes persists edited bytes across three
+NVMe boots. Filesystem repairs now pass actual57391-byte multi-block, sparse,
+partial-overwrite, truncate, reclaim and remount checks, plus24-byte filename
+boundaries. This proves the tested completed-write/remount behavior; crash
+atomicity and journaling remain open.
+
+The distributable standard image includes separate native SCI GUI calculator
+and editor applications. Actual keyboard, shifted operators, pointer focus,
+close-one/keep-other-running and exact client glyph checks pass. The editor's
+explicit storage capability saves at most eight bytes and reopens them across
+five real NVMe boots; a stripped-grant image cannot change the file. These
+native clients remain trusted CPL0. Their current retained lifecycle fails on
+session20 after19 completed sessions; private image/global ownership and
+physical close reclamation are active fixes, with129 sessions as the next gate.
+
+Source-built Inauguration0.9.324 passes its required compiler checks, including
+119 conformance cases and Linux differential62 agreements/27 explicit refusals
+with zero disagreements/crashes. A frozen Space source snapshot passes all14
+then-integrated application-lab gates. Newer slices have independent receipts;
+a fresh expanded whole-tree lab run is required before claiming integration.
+General foreign GUI applications, protected native clients, full desktop text/
+layout behavior and the rest of the acceptance matrix below remain open.
+
 
 ## Full completion goal
 
