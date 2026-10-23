@@ -321,6 +321,8 @@ def main():
               '--mode', mode, '--out', args.out / ('native-protected-gui-' + mode))
     check('gui-protected-package', 'check-gui-protected-profile.py', '--in', args.compiler,
           '--out', args.out / 'gui-protected-package')
+    check('keyboard-editing-models', 'check-keyboard-editing.py', '--in', args.compiler,
+          '--out', args.out / 'keyboard-editing-models')
     for name, script in [('gui-protected-client-model', 'check-gui-protected-client.py'),
                          ('gui-protected-windows', 'check-gui-protected-windows.py'),
                          ('gui-protected-persistence', 'check-gui-protected-persistence.py'),

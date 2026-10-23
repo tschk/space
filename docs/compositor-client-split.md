@@ -16,6 +16,16 @@ A future Wayland adapter must translate into these native contracts rather than
 replace them with foreign kernel semantics. Neither source modularization nor a
 kernel-linked window demo establishes isolated SCI desktop services.
 
+## Keyboard editing checkpoint (2026-10-24)
+
+The protected default still uses the existing SPDP seat and shared-page frame
+contracts. Normalized key values and private client cursor state now support
+interior edits, with real PS/2 input and independently specified caret pixels.
+No new input channel or compositor-side text buffer is introduced. See the
+[keyboard/editing contract and receipts](plans/2026-10-24-keyboard-editing.md)
+for bounds, USB model-only evidence and remaining keyboard limitations. The
+standard client editor is still an eight-byte field, not a full text editor.
+
 ## Problem
 
 Today every compositor window lives in the kernel's address space. The window

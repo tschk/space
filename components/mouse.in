@@ -225,6 +225,8 @@ var ps2-kbd-shift: Int = 0
 var ps2-kbd-caps: Int = 0
 var ps2-kbd-caps-held: Int = 0
 var ps2-kbd-ctrl: Int = 0
+var ps2-kbd-extended: Int = 0
+var ps2-kbd-pause: Int = 0
 
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
@@ -234,6 +236,8 @@ fn ps2-kbd-init() -> Int {
   ps2-kbd-caps = 0
   ps2-kbd-caps-held = 0
   ps2-kbd-ctrl = 0
+  ps2-kbd-extended = 0
+  ps2-kbd-pause = 0
   return 0
 }
 
@@ -312,8 +316,19 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
 fn ps2-kbd-getchar() -> Int {
   if ps2-kbd-has-data() == 0 { return -1 }
   let sc = inb(PS2-DATA)
-  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
-  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
+  // Set1 Pause is E1 plus five bytes; do not interpret its embedded Ctrl bytes.
+  if ps2-kbd-pause > 0 { ps2-kbd-pause -= 1; return -1 }
+  if sc == 0xE1 { ps2-kbd-pause = 5; ps2-kbd-extended = 0; return -1 }
+  if sc == 0xE0 { ps2-kbd-extended = 1; return -1 }
+  if ps2-kbd-extended == 1 {
+    ps2-kbd-extended = 0
+    if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 2; return -1 }
+    if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -3; return -1 }
+    // PrintScreen's synthetic E0 Shift bytes and all break codes are ignored.
+    return ps2-extended-ascii(sc)
+  }
+  if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -2; return -1 }
   if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
   if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
   if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }

@@ -1,4 +1,5 @@
 package space.app.gui
+import "../protocol/keyboard.in"
 
 interface GuiNoteFile {
   fn read(buffer: Int, maximum: Int) -> Int
@@ -24,13 +25,37 @@ fn gui-editor-load-at(memory: Int) -> void {
   if count >= 0 && count <= 8 { store64((memory + 128), count); gui-editor-status-at(memory, "loaded") }
   if count == -13 { gui-editor-status-at(memory, "denied") }
   if count == -27 { gui-editor-status-at(memory, "too long") }
+  store64(memory + 136, load64(memory + 128))
 }
 
 fn gui-editor-key-at(memory: Int, code: Int) -> void {
   let length = load64((memory + 128))
-  if code == 8 && length > 0 { length -= 1; store8(memory + length, 0); gui-editor-status-at(memory, "edit") }
-  if code >= 32 && code < 127 && length < 8 { store8(memory + length, code); length += 1; gui-editor-status-at(memory, "edit") }
-  store64((memory + 128), length)
+  let cursor = load64(memory + 136)
+  if length < 0 || length > 8 || cursor < 0 || cursor > length { return }
+  if code == KEY-LEFT && cursor > 0 { cursor -= 1 }
+  if code == KEY-RIGHT && cursor < length { cursor += 1 }
+  if code == KEY-HOME { cursor = 0 }
+  if code == KEY-END { cursor = length }
+  let remove = -1
+  if code == 8 && cursor > 0 { cursor -= 1; remove = cursor }
+  if code == KEY-DELETE && cursor < length { remove = cursor }
+  if remove >= 0 {
+    let i = remove
+    while i + 1 < length { store8(memory + i, load8(memory + i + 1)); i += 1 }
+    length -= 1
+    store8(memory + length, 0)
+    gui-editor-status-at(memory, "edit")
+  }
+  if code >= 32 && code < 127 && length < 8 {
+    let i = length
+    while i > cursor { store8(memory + i, load8(memory + i - 1)); i -= 1 }
+    store8(memory + cursor, code)
+    cursor += 1
+    length += 1
+    gui-editor-status-at(memory, "edit")
+  }
+  store64(memory + 128, length)
+  store64(memory + 136, cursor)
   if code == 19 {
     let result = gui-note-write(memory, length)
     gui-editor-status-at(memory, "error")

@@ -56,6 +56,8 @@ for decoder in ('mouse', 'input'):
         functions.append(decoder_text[begin:decoder_text.index('\n}', begin)+2])
     source = """const PS2-DATA=96;
 var ps2-kbd-ctrl:Int=0;
+var ps2-kbd-extended:Int=0;
+var ps2-kbd-pause:Int=0;
 var ps2-kbd-shift:Int=0;
 var ps2-kbd-caps:Int=0;
 var ps2-kbd-caps-held:Int=0;

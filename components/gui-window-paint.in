@@ -65,7 +65,9 @@ fn window-draw-at(kind: Int, memory: Int) -> Int {
   }
   window-fill(6 * s, 34 * s, window-width - 12 * s, 14 * s, 0xFF111721)
   window-text(FONT-FACE-MONO, 8 * s, 37 * s, memory, 8, 0xFFF3F5F8)
-  if window-focused == 1 { window-fill((8 + load64((memory + 128)) * 8) * s, 37 * s, s, 8 * s, 0xFF88B5FF) }
+  let cursor = load64(memory + 128)
+  if kind == 1 { cursor = load64(memory + 136) }
+  if window-focused == 1 && cursor >= 0 && cursor <= 8 { window-fill((8 + cursor * 8) * s, 37 * s, s, 8 * s, 0xFF88B5FF) }
   if kind == 0 {
     window-text(FONT-FACE-SANS, 8 * s, 58 * s, "Result", 8, 0xFFB5C2D6)
     window-text(FONT-FACE-MONO, 8 * s, 74 * s, (memory + 16), 8, 0xFFF3F5F8)

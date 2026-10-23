@@ -94,6 +94,14 @@ driver remains trusted SCI and the supervisor/compositors remain kernel-linked.
 The bounded two-app session temporarily owns scanout; concurrent integration
 into the desktop tiling model and a larger editor remain full-goal work.
 
+Native keyboard/cursor editing now passes real PS/2 interior insertion,
+Backspace/Delete and Home/End/Left/Right with exact caret pixels across six modes.
+Five NVMe boots,129-session lifecycle, hostile-peer recovery, ordinary default
+launch and parent-desktop launcher/damage regressions remain passing. USB HID
+usage/Shift/Ctrl corrections have model evidence only; USB hardware and full
+keyboard/report handling remain open. The editor still holds eight ASCII bytes.
+See the [keyboard/editing checkpoint](plans/2026-10-24-keyboard-editing.md).
+
 The earlier distributable standard-image checkpoint includes separate native SCI GUI calculator
 and editor applications. Actual keyboard, shifted operators, pointer focus,
 close-one/keep-other-running and exact client glyph checks pass. The editor's

@@ -177,7 +177,9 @@ class WindowEvidence:
                 pixel(left + width - 1, y, border, 'window right border')
             text(1, left + 8 * s, top + 4 * s, 'Calculator' if slot == 0 else 'Notes', WHITE, TITLE)
             text(1, left + 8 * s, top + 24 * s, 'Expression' if slot == 0 else 'Text (8 chars)', LABEL, WINDOW)
-            caret = left + (8 + len(content[0]) * 8) * s if focused == slot else None
+            cursor = content[2] if len(content) == 3 else len(content[0])
+            assert 0 <= cursor <= len(content[0])
+            caret = left + (8 + cursor * 8) * s if focused == slot else None
             text(0, left + 8 * s, top + 37 * s, content[0], WHITE, FIELD, cells=9, caret=caret)
             text(1, left + 8 * s, top + 58 * s, 'Result' if slot == 0 else 'File /gui-note.txt', LABEL, WINDOW)
             text(0, left + 8 * s, top + 74 * s, content[1], WHITE if slot == 0 else GREEN, WINDOW, cells=8)

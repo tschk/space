@@ -113,7 +113,7 @@ def key(value):
     elif value == 'tab':
         wait(b'gui: focus ', start)
     else:
-        code = {'ret': 10, 'backspace': 8, 'shift-8': 42, 'ctrl-s': 19}.get(value)
+        code = {'ret': 10, 'backspace': 8, 'shift-8': 42, 'ctrl-s': 19, 'left': 129, 'right': 130, 'home': 132, 'end': 133, 'delete': 134}.get(value)
         if code is None:
             code = ord(value)
         wait(f'gui: app rendered key {code}\n'.encode(), start)
@@ -174,6 +174,18 @@ try:
     key('ctrl-s')
     texts = [('6*7', '42'), ('notes', 'no disk')]
     shot('edited-save-no-disk', texts, 1)
+    key('home'); key('right'); key('delete')
+    shot('delete-interior', [('6*7', '42'), ('ntes', 'edit', 1)], 1)
+    key('o')
+    shot('insert-interior', [('6*7', '42'), ('notes', 'edit', 2)], 1)
+    key('left'); key('backspace')
+    shot('backspace-interior', [('6*7', '42'), ('otes', 'edit', 0)], 1)
+    key('n'); key('end'); key('right'); key('delete')
+    shot('end-boundary-no-change', [('6*7', '42'), ('notes', 'edit')], 1)
+    key('home'); key('left'); key('backspace')
+    shot('home-boundary-no-change', [('6*7', '42'), ('notes', 'edit', 0)], 1)
+    key('end'); key('ctrl-s')
+    shot('restored-before-mode-matrix', texts, 1)
     previous_generation = 0
     for index, action in enumerate((None, 'ctrl-g', 'ctrl-o', 'ctrl-g', 'ctrl-o', 'ctrl-g')):
         if action:

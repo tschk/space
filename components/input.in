@@ -613,23 +613,31 @@ fn hid-to-ascii(usage: Int) -> Int {
   if usage == 0x26 { return 57 }
   if usage == 0x27 { return 48 }
   if usage == 0x28 { return 10 }
-  if usage == 0x2A { return 32 }
+  if usage == 0x29 { return 27 }
+  if usage == 0x2A { return 8 }
   if usage == 0x2B { return 9 }
-  if usage == 0x2C { return 45 }
-  if usage == 0x2D { return 61 }
-  if usage == 0x2E { return 91 }
-  if usage == 0x2F { return 93 }
-  if usage == 0x30 { return 92 }
+  if usage == 0x2C { return 32 }
+  if usage == 0x2D { return 45 }
+  if usage == 0x2E { return 61 }
+  if usage == 0x2F { return 91 }
+  if usage == 0x30 { return 93 }
+  if usage == 0x31 { return 92 }
   if usage == 0x33 { return 59 }
   if usage == 0x34 { return 39 }
   if usage == 0x35 { return 96 }
   if usage == 0x36 { return 44 }
   if usage == 0x37 { return 46 }
   if usage == 0x38 { return 47 }
-  if usage == 0x4C { return 10 }
-  if usage == 0x4B { return 128 } // PageUp
-  if usage == 0x4E { return 129 } // PageDown
-  return 0
+  if usage == 0x4A { return KEY-HOME }
+  if usage == 0x4B { return KEY-PAGE-UP }
+  if usage == 0x4C { return KEY-DELETE }
+  if usage == 0x4D { return KEY-END }
+  if usage == 0x4E { return KEY-PAGE-DOWN }
+  if usage == 0x4F { return KEY-RIGHT }
+  if usage == 0x50 { return KEY-LEFT }
+  if usage == 0x51 { return KEY-DOWN }
+  if usage == 0x52 { return KEY-UP }
+  return -1
 }
 
 fn xhci-kbd-report-ascii() -> Int {
@@ -661,12 +669,9 @@ fn xhci-kbd-report-ascii() -> Int {
     ch = hid-to-ascii(k5)
   }
   xhci-kbd-prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
-  if ch >= 97 && ch <= 122 {
-    if (mod & 0x22) != 0 {
-      ch = ch - 32
-    }
-  }
-  return ch
+  // Reuse the same US shift/control normalization as PS/2. USB Caps Lock
+  // and multi-key delivery remain outside this bounded polling profile.
+  return ps2-modified-ascii(ch, mod & 0x22, 0, mod & 0x11)
 }
 
 fn usb-kbd-getchar() -> Int {
@@ -844,6 +849,8 @@ var ps2-kbd-shift: Int = 0
 var ps2-kbd-caps: Int = 0
 var ps2-kbd-caps-held: Int = 0
 var ps2-kbd-ctrl: Int = 0
+var ps2-kbd-extended: Int = 0
+var ps2-kbd-pause: Int = 0
 
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
@@ -853,6 +860,8 @@ fn ps2-kbd-init() -> Int {
   ps2-kbd-caps = 0
   ps2-kbd-caps-held = 0
   ps2-kbd-ctrl = 0
+  ps2-kbd-extended = 0
+  ps2-kbd-pause = 0
   return 0
 }
 
@@ -925,8 +934,19 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
 fn ps2-kbd-getchar() -> Int {
   if ps2-kbd-has-data() == 0 { return -1 }
   let sc = inb(PS2-DATA)
-  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
-  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
+  // Set1 Pause is E1 plus five bytes; do not interpret its embedded Ctrl bytes.
+  if ps2-kbd-pause > 0 { ps2-kbd-pause -= 1; return -1 }
+  if sc == 0xE1 { ps2-kbd-pause = 5; ps2-kbd-extended = 0; return -1 }
+  if sc == 0xE0 { ps2-kbd-extended = 1; return -1 }
+  if ps2-kbd-extended == 1 {
+    ps2-kbd-extended = 0
+    if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 2; return -1 }
+    if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -3; return -1 }
+    // PrintScreen's synthetic E0 Shift bytes and all break codes are ignored.
+    return ps2-extended-ascii(sc)
+  }
+  if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -2; return -1 }
   if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
   if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
   if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }
