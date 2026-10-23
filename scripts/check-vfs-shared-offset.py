@@ -82,6 +82,8 @@ for name in [
     "vfs-fd-alloc",
     "vfs-fd-valid",
     "vfs-open",
+    "vfs-open-borrowed-path",
+    "vfs-open-path",
     "vfs-close",
     "vfs-dup-file",
     "vfs-read",

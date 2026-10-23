@@ -41,7 +41,8 @@ fault. Reports retain both baseline failures and fresh results:
 
 - Original prefix check: `/tmp/space-notes-stress-baseline/report.json`.
 - Full redraw baseline failures: `/tmp/space-notes-stress-baseline-complete/report.json`.
-- Fixed image with complete redraw and all application workflows:
+- Fixed image: 10/10 fresh boots, 110/110 application scenarios, with complete
+  redraw and all application workflows:
   `/tmp/space-notes-stress-fixed-cursor-correct/report.json`.
 
 The first stronger fixed-image run used an incorrect test expectation that a

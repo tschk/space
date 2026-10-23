@@ -2,6 +2,21 @@ package space.kernel
 
 // SparkFS high-level file operations: init, format, create, read, write, delete, list.
 
+// Retained zero scratch follows the existing synchronous/nonreentrant FS buffer contract.
+var sf-hole-buf: Int = 0
+// One retained reclamation list; filesystem operations share a synchronous owner.
+var sf-reclaim-buf: Int = 0
+var sf-reclaim-count: Int = 0
+// Create/delete retain a name and directory-find result under the same owner.
+var sf-mutation-workspace: Int = 0
+
+fn sf-mutation-scratch() -> Int {
+  if sf-mutation-workspace == 0 {
+    sf-mutation-workspace = alloc(SF-NAME-MAX + 9)
+  }
+  return sf-mutation-workspace
+}
+
 fn sparkfs-init() -> void {
   sf-super = alloc(SF-BLOCK-SIZE)
   sf-block-buf = alloc(SF-BLOCK-SIZE)
@@ -170,12 +185,12 @@ fn sparkfs-create(path: Int, is-dir: Int) -> Int {
   if sf-disk-ready == 0 {
     return -1
   }
-  let name = alloc(SF-NAME-MAX + 1)
+  let name = sf-mutation-scratch()
   let parent = sf-lookup-parent(path, name)
   if parent < 0 {
     return -1
   }
-  let tmp = alloc(4)
+  let tmp = name + SF-NAME-MAX + 1
   if sf-dir-find(parent, name, tmp) >= 0 {
     return -1
   }
@@ -321,9 +336,12 @@ fn sparkfs-pread(path: Int, buf: Int, max: Int, offset: Int) -> Int {
 
 // Write `count` bytes from `buf` at `offset`. Grows file if needed. Returns count or -1.
 fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
-  if sf-disk-ready == 0 {
+  let maximum = (SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT) * SF-BLOCK-SIZE
+  if sf-disk-ready == 0 || offset < 0 || count < 0 || offset > maximum {
     return -1
   }
+  if count > maximum - offset { return -1 }
+  if count == 0 { return 0 }
   let ino = sf-lookup-path(path)
   if ino < 0 {
     ino = sparkfs-create(path, SF-TYPE-FILE)
@@ -337,13 +355,16 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
   }
   let old-size = load64(addr + SF-IN-SIZE)
   let end = offset + count
-  if end > old-size {
-    let hole-buf = alloc(SF-BLOCK-SIZE)
-    let z = 0
-    while z < SF-BLOCK-SIZE {
-      store8(hole-buf + z, 0)
-      z = z + 1
+  if offset > old-size {
+    if sf-hole-buf == 0 {
+      sf-hole-buf = alloc(SF-BLOCK-SIZE)
+      let z = 0
+      while z < SF-BLOCK-SIZE {
+        store8(sf-hole-buf + z, 0)
+        z = z + 1
+      }
     }
+    let hole-buf = sf-hole-buf
     let pos = old-size
     while pos < offset {
       let chunk = offset - pos
@@ -368,10 +389,10 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
       store64(addr + SF-IN-SIZE, end)
     }
     store64(addr + SF-IN-MTIME, ticks)
-    sf-write-inode(ino)
+    if sf-write-inode(ino) != 0 { return -1 }
     return count
   }
-  if end <= SF-INLINE-MAX && offset == 0 && count <= SF-INLINE-MAX {
+  if old-size == 0 && end <= SF-INLINE-MAX && offset == 0 {
     let i = 0
     while i < count {
       store8(addr + SF-IN-DIRECT + i, load8(buf + i))
@@ -380,8 +401,33 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
     store64(addr + SF-IN-SIZE, count)
     store32(addr + SF-IN-INLINE, 1)
     store64(addr + SF-IN-MTIME, ticks)
-    sf-write-inode(ino)
+    if sf-write-inode(ino) != 0 { return -1 }
     return count
+  }
+  // Promote inline bytes before installing block addresses: otherwise a
+  // partial append loses the prefix, and its remaining bytes become pointers.
+  if load32(addr + SF-IN-INLINE) != 0 {
+    let first = sf-alloc-block()
+    if first < 0 {
+      return -1
+    }
+    let i = 0
+    while i < old-size {
+      store8(sf-block-buf + i, load8(addr + SF-IN-DIRECT + i))
+      i = i + 1
+    }
+    if sf-write-block(first, sf-block-buf) != 0 {
+      return -1
+    }
+    let slot = 0
+    while slot < SF-INODE-DIRECT {
+      store64(addr + SF-IN-DIRECT + slot * 8, 0)
+      slot = slot + 1
+    }
+    store64(addr + SF-IN-DIRECT, first)
+    store64(addr + SF-IN-INDIRECT, 0)
+    store64(addr + SF-IN-DINDIRECT, 0)
+    store32(addr + SF-IN-INLINE, 0)
   }
   let n = 0
   while n < count {
@@ -393,11 +439,11 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
       if bno < 0 {
         return -1
       }
-      sf-set-inode-block(ino, fbn, bno)
+      if sf-set-inode-block(ino, fbn, bno) != 0 { return -1 }
       sf-zero-block(sf-block-buf)
-      sf-write-block(bno, sf-block-buf)
+      if sf-write-block(bno, sf-block-buf) != 0 { return -1 }
     }
-    sf-read-block(bno, sf-block-buf)
+    if sf-read-block(bno, sf-block-buf) != 0 { return -1 }
     let off = pos & (SF-BLOCK-SIZE - 1)
     let chunk = SF-BLOCK-SIZE - off
     let left = count - n
@@ -409,7 +455,7 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
       store8(sf-block-buf + off + i, load8(buf + n + i))
       i = i + 1
     }
-    sf-write-block(bno, sf-block-buf)
+    if sf-write-block(bno, sf-block-buf) != 0 { return -1 }
     n = n + chunk
   }
   if end > load64(addr + SF-IN-SIZE) {
@@ -417,12 +463,94 @@ fn sparkfs-pwrite(path: Int, buf: Int, count: Int, offset: Int) -> Int {
     store32(addr + SF-IN-INLINE, 0)
   }
   store64(addr + SF-IN-MTIME, ticks)
-  sf-write-inode(ino)
+  if sf-write-inode(ino) != 0 { return -1 }
   return count
 }
 
+// Collect old tail ownership before any inline bytes replace its pointers.
+// The caller persists the detached inode before publishing these free bits.
+fn sf-prepare-replacement(ino: Int, keep: Int) -> Int {
+  sf-reclaim-count = 0
+  let addr = sf-inode-addr(ino)
+  if load32(addr + SF-IN-INLINE) != 0 {
+    return 0
+  }
+  let old-size = load64(addr + SF-IN-SIZE)
+  let maximum = (SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT) * SF-BLOCK-SIZE
+  if old-size < 0 || old-size > maximum {
+    return -1
+  }
+  let old-blocks = (old-size + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
+  if keep >= old-blocks {
+    return 0
+  }
+  if sf-reclaim-buf == 0 {
+    sf-reclaim-buf = alloc((SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT + 1) * 8)
+  }
+  let fbn = keep
+  let data-start = load64(sf-super + SF-SB-DATA-START)
+  while fbn < old-blocks {
+    let block = sf-inode-block(ino, fbn)
+    if block < data-start || sf-bno-in-range(block) == 0 {
+      return -1
+    }
+    store64(sf-reclaim-buf + sf-reclaim-count * 8, block)
+    sf-reclaim-count = sf-reclaim-count + 1
+    fbn = fbn + 1
+  }
+  let indirect = load64(addr + SF-IN-INDIRECT)
+  if indirect > 0 && keep <= SF-INODE-DIRECT {
+    if indirect < data-start || sf-bno-in-range(indirect) == 0 {
+      return -1
+    }
+    store64(sf-reclaim-buf + sf-reclaim-count * 8, indirect)
+    sf-reclaim-count = sf-reclaim-count + 1
+    store64(addr + SF-IN-INDIRECT, 0)
+  } else if indirect > 0 {
+    if sf-read-block(indirect, sf-block-buf) != 0 {
+      return -1
+    }
+    let slot = keep - SF-INODE-DIRECT
+    while slot < SF-INODE-INDIRECT-COUNT {
+      store64(sf-block-buf + slot * 8, 0)
+      slot = slot + 1
+    }
+    if sf-write-block(indirect, sf-block-buf) != 0 {
+      return -1
+    }
+  }
+  let slot = keep
+  while slot < SF-INODE-DIRECT {
+    store64(addr + SF-IN-DIRECT + slot * 8, 0)
+    slot = slot + 1
+  }
+  return 0
+}
+
+fn sf-commit-replacement(ino: Int, size: Int) -> Int {
+  let addr = sf-inode-addr(ino)
+  store64(addr + SF-IN-SIZE, size)
+  store64(addr + SF-IN-MTIME, ticks)
+  if sf-write-inode(ino) != 0 {
+    return -1
+  }
+  // Release only after the persisted inode no longer owns these addresses.
+  // This ordering prevents reuse aliases; it is not a journal transaction.
+  let i = 0
+  while i < sf-reclaim-count {
+    sf-free-block(load64(sf-reclaim-buf + i * 8))
+    i = i + 1
+  }
+  if sf-reclaim-count > 0 {
+    sf-reclaim-count = 0
+    return sf-flush-bitmap()
+  }
+  return 0
+}
+
 fn sparkfs-write(path: Int, buf: Int, size: Int) -> Int {
-  if sf-disk-ready == 0 {
+  let maximum = (SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT) * SF-BLOCK-SIZE
+  if sf-disk-ready == 0 || size < 0 || size > maximum {
     return -1
   }
   let ino = sf-lookup-path(path)
@@ -436,51 +564,55 @@ fn sparkfs-write(path: Int, buf: Int, size: Int) -> Int {
   if load32(addr + SF-IN-TYPE) != SF-TYPE-FILE {
     return -1
   }
-  let old-size = load64(addr + SF-IN-SIZE)
-
   if size <= SF-INLINE-MAX {
+    if sf-prepare-replacement(ino, 0) != 0 {
+      return -1
+    }
     let i = 0
+    while i < SF-INODE-DIRECT * 8 {
+      store8(addr + SF-IN-DIRECT + i, 0)
+      i = i + 1
+    }
+    i = 0
     while i < size {
       store8(addr + SF-IN-DIRECT + i, load8(buf + i))
       i = i + 1
     }
-    store64(addr + SF-IN-SIZE, size)
-    store32(addr + SF-IN-INLINE, 1)
-    store64(addr + SF-IN-MTIME, ticks)
-    sf-write-inode(ino)
-    return 0
-  }
-
-  if load32(addr + SF-IN-INLINE) != 0 {
-    let bno = sf-alloc-block()
-    if bno < 0 {
-      return -1
-    }
-    sf-read-block(bno, sf-block-buf)
-    let i = 0
-    while i < old-size {
-      store8(sf-block-buf + i, load8(addr + SF-IN-DIRECT + i))
-      i = i + 1
-    }
-    sf-write-block(bno, sf-block-buf)
-    store64(addr + SF-IN-DIRECT, bno)
-    store32(addr + SF-IN-INLINE, 0)
     store64(addr + SF-IN-INDIRECT, 0)
     store64(addr + SF-IN-DINDIRECT, 0)
+    store32(addr + SF-IN-INLINE, 1)
+    return sf-commit-replacement(ino, size)
   }
-
+  if load32(addr + SF-IN-INLINE) != 0 {
+    // Whole replacement does not retain old inline content. Clear all words
+    // before interpreting this storage as physical block addresses.
+    let slot = 0
+    while slot < SF-INODE-DIRECT {
+      store64(addr + SF-IN-DIRECT + slot * 8, 0)
+      slot = slot + 1
+    }
+    store64(addr + SF-IN-INDIRECT, 0)
+    store64(addr + SF-IN-DINDIRECT, 0)
+    store32(addr + SF-IN-INLINE, 0)
+    store64(addr + SF-IN-SIZE, 0)
+  }
+  let keep = (size + SF-BLOCK-SIZE - 1) / SF-BLOCK-SIZE
+  if sf-prepare-replacement(ino, keep) != 0 {
+    return -1
+  }
   let n = 0
   while n < size {
     let fbn = n / SF-BLOCK-SIZE
     let bno = sf-inode-block(ino, fbn)
     if bno < 0 {
       bno = sf-alloc-block()
-      if bno < 0 {
+      if bno < 0 || sf-set-inode-block(ino, fbn, bno) != 0 {
         return -1
       }
-      sf-set-inode-block(ino, fbn, bno)
     }
-    sf-read-block(bno, sf-block-buf)
+    if sf-read-block(bno, sf-block-buf) != 0 {
+      return -1
+    }
     let off = n & (SF-BLOCK-SIZE - 1)
     let to-copy = SF-BLOCK-SIZE - off
     if n + to-copy > size {
@@ -491,18 +623,12 @@ fn sparkfs-write(path: Int, buf: Int, size: Int) -> Int {
       store8(sf-block-buf + off + i, load8(buf + n + i))
       i = i + 1
     }
-    sf-write-block(bno, sf-block-buf)
+    if sf-write-block(bno, sf-block-buf) != 0 {
+      return -1
+    }
     n = n + to-copy
   }
-  if size > old-size {
-    store64(addr + SF-IN-SIZE, size)
-  }
-  store64(addr + SF-IN-MTIME, ticks)
-  sf-write-inode(ino)
-  if sf-disk-ready == 0 {
-    return -1
-  }
-  return 0
+  return sf-commit-replacement(ino, size)
 }
 
 fn sparkfs-delete(path: Int) -> Int {
@@ -519,7 +645,7 @@ fn sparkfs-delete(path: Int) -> Int {
       return -1
     }
   }
-  let name = alloc(SF-NAME-MAX + 1)
+  let name = sf-mutation-scratch()
   let parent = sf-lookup-parent(path, name)
   if parent < 0 {
     return -1
@@ -709,9 +835,9 @@ fn sparkfs-list(path: Int, port: Int) -> void {
   return
 }
 
-fn sf-flush-bitmap() -> void {
+fn sf-flush-bitmap() -> Int {
   if sf-disk-ready == 0 {
-    return
+    return -1
   }
   let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
   let bitmap-bytes = (total + 7) / 8
@@ -725,10 +851,12 @@ fn sf-flush-bitmap() -> void {
       store8(sf-block-buf + k, load8(sf-bitmap + b * SF-BLOCK-SIZE + k))
       k = k + 1
     }
-    sf-write-block(bitmap-start + b, sf-block-buf)
+    if sf-write-block(bitmap-start + b, sf-block-buf) != 0 {
+      return -1
+    }
     b = b + 1
   }
-  return
+  return 0
 }
 
 fn sparkfs-sync() -> void {

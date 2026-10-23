@@ -5,6 +5,8 @@ package space.kernel
 // --- directory entries ------------------------------------------------------
 
 const SF-DIR-ENTRY-SIZE = 32
+// Removal follows the existing single-owner filesystem scratch contract.
+var sf-dir-remove-workspace: Int = 0
 
 // Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
 fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
@@ -62,7 +64,7 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
     if fbn * SF-BLOCK-SIZE < size {
       bno = sf-inode-block(dir-ino, fbn)
     }
-    if bno == 0 {
+    if bno <= 0 {
       bno = sf-alloc-block()
       if bno < 0 {
         return -1
@@ -142,7 +144,8 @@ fn sf-dir-is-empty(dir-ino: Int) -> Int {
 
 // Remove an entry from directory `dir_ino`. Returns 0 on success.
 fn sf-dir-remove(dir-ino: Int, name: Int) -> Int {
-  let tmp = alloc(4)
+  if sf-dir-remove-workspace == 0 { sf-dir-remove-workspace = alloc(8) }
+  let tmp = sf-dir-remove-workspace
   let off = sf-dir-find(dir-ino, name, tmp)
   if off < 0 {
     return -1
