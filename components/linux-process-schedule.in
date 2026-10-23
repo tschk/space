@@ -1,0 +1,200 @@
+package space.kernel
+
+fn linux-process-schedule-trace(row: Int, operation: Int, result: Int) -> void {
+  if linux-process-trace != 0 {
+    serial-write-cstr(com1(),"linux-process: completed ");serial-write-dec-wide(com1(),load64(row + LPS-PID));
+    serial-write-cstr(com1()," ");serial-write-dec-wide(com1(),operation);
+    serial-write-cstr(com1()," ");serial-write-dec-wide(com1(),result);serial-nl(com1())
+  }
+}
+
+// Bounded cooperative foreign process policy. Native contexts own CPU state,
+// and native VFS owns ring bytes/refcounts. This scheduler retains actual
+// blocked syscalls so a parent can create a consumer after its producer fills.
+fn linux-process-schedule-ready(preferred: Int) -> Int {
+  if linux-process-state-valid(preferred) != 0 && load64(preferred + LPS-STATUS) == LINUX-STATE-READY { return preferred }
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-READY { return row }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-schedule-finish(row: Int, kind: Int, status: Int, detail: Int) -> Int {
+  linux-process-state-save(row)
+  store64(row + LPS-STOP-KIND,kind)
+  store64(row + LPS-STOP-DETAIL,detail)
+  let wait = 9
+  if kind == LINUX-PROCESS-STOP-SIGPIPE { wait = 13 }
+  else if kind > 0 { wait = linux-process-child-wait-status(kind,load64(row + LPS-USER-CONTEXT)) }
+  store64(row + LPS-WAIT-STATUS,wait)
+  // Edge signals/deadlock/cancellation have explicit causes rather than fake
+  // native Fault/Deadline observations. Native statuses are captured already.
+  if kind < 0 { store64(load64(row + LPS-USER-CONTEXT) + 720,status) }
+  if load64(row + LPS-PARENT) != 0 {
+    if linux-process-child-discard(row) != 0 { return -5 }
+  }
+  store64(row + LPS-STATUS,LINUX-STATE-ZOMBIE)
+  return 0
+}
+
+fn linux-process-schedule-close-children(root: Int) -> Int {
+  let i = 1
+  let result = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    let status = load64(row + LPS-STATUS)
+    if status != LINUX-STATE-FREE && status != LINUX-STATE-REAPED {
+      if status == LINUX-STATE-QUARANTINED { result = -5 }
+      else {
+        if load64(row + LPS-DOMAIN) > 0 {
+          linux-process-state-load(row)
+          if linux-process-schedule-finish(row,LINUX-PROCESS-STOP-JOB-END,137,0) != 0 { result = -5 }
+        }
+        if load64(row + LPS-DOMAIN) == 0 { store64(row + LPS-STATUS,LINUX-STATE-REAPED) }
+      }
+    }
+    i = i + 1
+  }
+  linux-process-state-load(root)
+  return result
+}
+
+// Returns1 when readiness, transferred bytes or endpoint closure changed the
+// owned graph. The caller repeats only while that finite progress is real.
+fn linux-process-schedule-wake() -> Int {
+  if load64(linux-process-states + LPS-STATUS) == LINUX-STATE-ZOMBIE { return 0 }
+  let progress = 0
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-BLOCKED {
+      if linux-process-work-take() == 0 { return LINUX-PROCESS-STOP-POLICY }
+      linux-process-state-load(row)
+      let operation = load64(row + LPS-PENDING)
+      let before = load64(row + LPS-IO-DONE)
+      let fd = load64(row + LPS-IO-FD)
+      let buffer = load64(row + LPS-IO-BUFFER)
+      let count = load64(row + LPS-IO-COUNT)
+      store64(row + LPS-PENDING,0)
+      let result = -38
+      if operation == 3 { result = linux-process-blocking-read(fd,buffer,count) }
+      else if operation == 4 { result = linux-process-blocking-write(fd,buffer,count,before) }
+      else if operation == 5 { result = linux-process-wait(fd,buffer,count,before) }
+      let signal = linux-process-signal-deliver()
+      linux-process-state-save(row)
+      if signal != 0 {
+        if linux-process-schedule-finish(row,LINUX-PROCESS-STOP-SIGPIPE,141,13) != 0 { return -5 }
+        progress = 1
+        // The root's first terminal cause closes this activation. Do not retry
+        // another child's pending IO or consume policy quota after that stop.
+        if load64(row + LPS-PARENT) == 0 { return progress }
+      } else if load64(row + LPS-PENDING) == 0 {
+        store64(load64(row + LPS-USER-CONTEXT) + 112,result)
+        linux-process-schedule-trace(row,operation,result)
+        store64(row + LPS-STATUS,LINUX-STATE-READY)
+        progress = 1
+      } else if operation == 4 && load64(row + LPS-IO-DONE) > before { progress = 1 }
+    }
+    i = i + 1
+  }
+  return progress
+}
+
+fn linux-process-family-resume(root: Int) -> Int {
+  let read-flags = load64(0x4198)
+  if read-flags == 0 { return -38 }
+  let flags = invoke1(read-flags,0)
+  cli()
+  store64(root + LPS-STATUS,LINUX-STATE-READY)
+  let preferred = root
+  let status = -5
+  let done = 0
+  while done == 0 {
+    if linux-process-cleanup-failed != 0 {
+      status = -5
+      done = 1
+    } else if load64(root + LPS-STATUS) == LINUX-STATE-ZOMBIE {
+      status = load64(load64(root + LPS-USER-CONTEXT) + 720)
+      done = 1
+    } else if linux-process-work-take() == 0 {
+      linux-process-state-load(root)
+      linux-process-schedule-finish(root,LINUX-PROCESS-STOP-POLICY,LINUX-PROCESS-STATUS-POLICY,0)
+      status = LINUX-PROCESS-STATUS-POLICY
+      done = 1
+    } else {
+      let changed = linux-process-schedule-wake()
+      let row = linux-process-schedule-ready(preferred)
+      while changed > 0 && row == 0 && linux-process-cleanup-failed == 0 && load64(root + LPS-STATUS) != LINUX-STATE-ZOMBIE {
+        changed = linux-process-schedule-wake()
+        row = linux-process-schedule-ready(0)
+      }
+      if linux-process-cleanup-failed != 0 { status = -5;done = 1 }
+      else if load64(root + LPS-STATUS) == LINUX-STATE-ZOMBIE {
+        status = load64(load64(root + LPS-USER-CONTEXT) + 720)
+        done = 1
+      }
+      else if linux-process-work-exhausted != 0 {
+        linux-process-state-load(root)
+        linux-process-schedule-finish(root,LINUX-PROCESS-STOP-POLICY,LINUX-PROCESS-STATUS-POLICY,0)
+        status = LINUX-PROCESS-STATUS-POLICY
+        done = 1
+      }
+      else if changed < 0 { status = -5;done = 1 }
+      else if row == 0 {
+        // No runnable owner can change this closed private pipe/wait graph.
+        // This is explicit edge cancellation, never an invented IRQ deadline.
+        linux-process-state-load(root)
+        linux-process-schedule-finish(root,LINUX-PROCESS-STOP-DEADLOCK,LINUX-PROCESS-STATUS-DEADLOCK,0)
+        status = LINUX-PROCESS-STATUS-DEADLOCK
+        done = 1
+      } else {
+        preferred = 0
+        linux-process-state-load(row)
+        store64(row + LPS-STATUS,LINUX-STATE-RUNNING)
+        let context = load64(row + LPS-USER-CONTEXT)
+        let quantum = load64(row + LPS-BUDGET)
+        let kind = user-context-resume(context,quantum)
+        if kind > 0 {
+          let remaining = user-context-remaining(context)
+          if remaining < 0 || remaining > quantum { kind = -5 }
+          else { store64(row + LPS-BUDGET,remaining) }
+        }
+        linux-process-state-save(row)
+        if linux-process-work-exhausted != 0 {
+          linux-process-state-load(root)
+          linux-process-schedule-finish(root,LINUX-PROCESS-STOP-POLICY,LINUX-PROCESS-STATUS-POLICY,0)
+          status = LINUX-PROCESS-STATUS-POLICY
+          done = 1
+        } else if kind == USER-CONTEXT-SUSPEND {
+          let operation = load64(row + LPS-PENDING)
+          if operation == 1 {
+            store64(row + LPS-PENDING,0)
+            let child = linux-process-child-copy(row)
+            let result = child
+            if child > 0 { result = load64(child + LPS-PID);preferred = child }
+            store64(context + 112,result)
+            linux-process-schedule-trace(row,operation,result)
+            if linux-process-cleanup-failed == 0 { store64(row + LPS-STATUS,LINUX-STATE-READY) }
+          } else if operation == 2 {
+            store64(row + LPS-PENDING,0)
+            let result = linux-process-exec-replace(row)
+            if result != 0 { store64(context + 112,result) }
+            linux-process-schedule-trace(row,operation,result)
+            if linux-process-cleanup-failed == 0 { store64(row + LPS-STATUS,LINUX-STATE-READY);preferred = row }
+          } else if operation >= 3 && operation <= 5 { store64(row + LPS-STATUS,LINUX-STATE-BLOCKED) }
+          else { store64(context + 112,-38);store64(row + LPS-STATUS,LINUX-STATE-READY) }
+        } else {
+          let result = load64(context + 720)
+          if kind < 0 { result = kind }
+          if linux-process-schedule-finish(row,kind,result,load64(context + 696)) != 0 { status = -5;done = 1 }
+        }
+      }
+    }
+  }
+  if linux-process-schedule-close-children(root) != 0 { status = -5 }
+  if (flags & 512) != 0 { sti() }
+  return status
+}

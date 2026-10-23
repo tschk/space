@@ -80,7 +80,11 @@ fn linux-process-wait(pid: Int, status: Int, options: Int, usage: Int) -> Int {
   }
   let child = linux-process-state-find-child(linux-process-current-pid,pid)
   if child == 0 { return -10 }
-  if load64(child + LPS-STATUS) != LINUX-STATE-ZOMBIE { if options == 1 { return 0 } return -38 }
+  if load64(child + LPS-STATUS) != LINUX-STATE-ZOMBIE {
+    if options == 1 { return 0 }
+    linux-process-block-io(5,pid,status,options,usage)
+    return 0
+  }
   if status != 0 {
     let value = load64(child + LPS-WAIT-STATUS)
     let i = 0
@@ -158,72 +162,6 @@ fn linux-process-child-copy(parent: Int) -> Int {
   store64(child + LPS-STATUS,LINUX-STATE-READY)
   linux-process-state-load(parent)
   return child
-}
-
-fn linux-process-family-resume(row: Int) -> Int {
-  linux-process-state-load(row)
-  let context = load64(row + LPS-USER-CONTEXT)
-  let done = 0
-  let status = -5
-  while done == 0 {
-    context = load64(row + LPS-USER-CONTEXT)
-    store64(row + LPS-STATUS,LINUX-STATE-RUNNING)
-    let quantum = load64(row + LPS-BUDGET)
-    let kind = user-context-resume(context,quantum)
-    if kind > 0 {
-      let remaining = user-context-remaining(context)
-      if remaining < 0 || remaining > quantum { kind = -5 }
-      else { store64(row + LPS-BUDGET,remaining) }
-    }
-    linux-process-state-save(row)
-    if kind == USER-CONTEXT-SUSPEND {
-      let operation = load64(row + LPS-PENDING)
-      store64(row + LPS-PENDING,0)
-      if operation == 1 {
-        let child = linux-process-child-copy(row)
-        let result = child
-        if child > 0 {
-          result = load64(child + LPS-PID)
-          let child-status = linux-process-family-resume(child)
-          if child-status < 0 {
-            // Admission failure is not a fabricated successful child result.
-            // Native ownership is already reclaimed by the terminal path.
-            result = child-status
-            if load64(child + LPS-DOMAIN) == 0 { store64(child + LPS-STATUS,LINUX-STATE-REAPED) }
-          }
-          linux-process-state-load(row)
-        }
-        store64(context + 112,result)
-      } else if operation == 2 {
-        let result = linux-process-exec-replace(row)
-        if result != 0 { store64(context + 112,result) }
-      } else { store64(context + 112,-38) }
-      if linux-process-cleanup-failed != 0 {
-        linux-process-state-load(row)
-        // A quarantined VM cannot disappear behind a new process record.
-        // Abort this activation without resuming any user continuation.
-        status = -5
-        done = 1
-        store64(row + LPS-STOP-KIND,-5)
-        if load64(row + LPS-PARENT) != 0 {
-          let cleanup = linux-process-child-discard(row)
-          if cleanup == 0 { store64(row + LPS-STATUS,LINUX-STATE-REAPED) }
-        }
-      }
-    } else {
-      done = 1
-      status = load64(context + 720)
-      if kind < 0 { status = kind }
-      store64(row + LPS-STOP-KIND,kind)
-      store64(row + LPS-STOP-DETAIL,load64(context + 696))
-      store64(row + LPS-WAIT-STATUS,linux-process-child-wait-status(kind,context))
-      if load64(row + LPS-PARENT) != 0 {
-        if linux-process-child-discard(row) != 0 { return -5 }
-        store64(row + LPS-STATUS,LINUX-STATE-ZOMBIE)
-      }
-    }
-  }
-  return status
 }
 
 // Trusted supervisor-only recovery: retry retained teardown after the native

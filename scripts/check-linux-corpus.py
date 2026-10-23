@@ -323,7 +323,7 @@ with (args.out/'qemu.log').open('w') as log:
             body=text.split(f'linux-real-app: case {index} begins\n',1)[1]
             before_exit=body.split(f'linux-real-app: case {index} exit ',1)[0]
             if args.trace:
-                before_exit=re.sub(r'linux-process: (?:syscall|result) -?\d+\n','',before_exit)
+                before_exit=re.sub(r'linux-process: (?:(?:syscall|result|suspended) -?\d+|completed \d+ \d+ -?\d+)\n','',before_exit)
             match=re.search(rf'linux-real-app: case {index} exit (-?\d+)',body)
             assert match is not None,text
             status=int(match.group(1))

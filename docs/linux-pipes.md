@@ -40,12 +40,15 @@ client's pair remains independently owned and buffered.
 - `PIPE_BUF` and the actual ring capacity are 4096 bytes. Writes at most
   `PIPE_BUF` publish all bytes or none. Larger nonblocking writes may return an
   actual short count. Full rings return `EAGAIN` in nonblocking mode.
-- The synchronous personality has no scheduler wait contract. Empty/full blocking
-  operations which would need to wait return `ENOSYS`; they never report false
-  EOF or pretend to block. A blocking write larger than the ring is also refused
-  before publishing a prefix.
-- `dup`, `dup2`, `dup3`, `F_DUPFD` and `F_DUPFD_CLOEXEC` currently accept owned pipe
-  sources. Other live source types return `ENOSYS`. Invalid descriptors return
+- Blocking operations now retain an owned pending syscall and suspend while
+  another process can change the condition. Large writes retain their actual
+  published prefix, then continue without duplicating bytes. A closed graph with
+  no runnable producer/consumer terminates with explicit edge deadlock 125;
+  genuine IRQ deadline remains 124, and admitted policy-work exhaustion 126.
+  The low-level synchronous primitive's internal would-wait refusal is not a
+  fabricated successful guest transfer. See [blocking tests](linux-blocking-tests.md).
+- `dup`, `dup2`, `dup3`, `F_DUPFD` and `F_DUPFD_CLOEXEC` accept owned pipe sources;
+  the descriptor adapter also owns regular-file/null duplication. Invalid descriptors return
   `EBADF`. `dup3` rejects a same-descriptor request, including flags zero.
 - Nonblocking status belongs to the shared endpoint description. `F_SETFL` updates
   all of its aliases. Close-on-exec is per guest descriptor, and ordinary `dup`
@@ -98,7 +101,7 @@ Completed pipe-slice evidence (before the child layer):
   these failures, without changing the unrelated buffered native pair.
 
 These historical reports describe specific fixtures and pinned upstream bytes.
-The later child layer executes small actual ash pipelines; its separate
+The later child layer executes actual ash pipelines; its separate
 [contract and receipts](linux-children.md) distinguish this progress from the
-older clone-refusal evidence. General scheduler-backed blocking transfers remain
-open work.
+older clone-refusal evidence. The [blocking suite](linux-blocking-tests.md)
+tracks genuine cross-capacity execution and its final repeated acceptance.

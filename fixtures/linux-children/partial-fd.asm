@@ -29,28 +29,22 @@ create:
  inc r13
  cmp r13,3
  jb create
- xor r15d,r15d
 attempt:
 %ifdef CUMULATIVE_IRQ
- rdtsc
- shl rdx,32
- or rax,rdx
- mov r14,rax
+ ; Test snapshot exposes only actual delivered CPL3 IRQs through saved R15.
+ ; No clock-frequency or instruction-duration calibration is involved.
+ mov r14,r15
 spin:
- rdtsc
- shl rdx,32
- or rax,rdx
- sub rax,r14
- cmp rax,20000000
- jb spin
+ cmp r15,r14
+ je spin
 %endif
  lea r10,[rel child_tid]
  xor r8d,r8d
  call 56,0x1200011,0,0
  expect -24
 %ifdef ADMISSION_RETRY
- inc r15
- cmp r15,32
+ inc dword[rel attempts]
+ cmp dword[rel attempts],32
  jb attempt
  lea r10,[rel child_tid]
  xor r8d,r8d
@@ -144,6 +138,7 @@ fail:
  ud2
 section .data
 child_tid: dd 0x12345678
+attempts: dd 0
 bytes: db 'ABC'
 section .bss
 align 8

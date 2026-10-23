@@ -9,7 +9,8 @@ BusyBox application coverage.
 
 ## Implemented boundary
 
-Children execute first. The suspended parent retains a native context while the
+The scheduler prefers a new child until it blocks or finishes, then can run its
+retained parent or another ready owner. The suspended parent retains a native context while the
 child receives copied private user mappings, inherited register/FX/FS/GS state,
 and independently owned references to inherited native open descriptions. File
 offsets and pipe endpoint status are shared; guest descriptor flags and mutable
@@ -55,9 +56,12 @@ program data/TLS, and retains ignored SIGPIPE and the signal mask. Preparation
 failure leaves the old image and descriptors usable. The implemented image path
 is `/proc/self/exe`; this does not claim a general executable filesystem loader.
 
-Child-first execution supports small pipelines whose producers complete within
-the existing 4096-byte stream capacity. It does not establish a scheduler-backed
-blocking stream contract. Larger blocking transfers remain an explicit next goal.
+Owned pending read/write/wait operations now retain arguments and real published
+write prefixes while another ready owner runs. This supports transfers beyond
+the existing 4096-byte stream capacity. The [blocking acceptance suite](linux-blocking-tests.md)
+tracks exact bytes, wakeups and whole-job cleanup separately from the original
+child-first checkpoint. Deadlock125, real IRQ124 and admitted policy-work126 have
+distinct causes; none is inferred from an ordinary program exit with that number.
 
 ## Verification and remaining goals
 
@@ -150,24 +154,34 @@ because wc succeeds; stdout/stderr disagreement still correctly fails the gate.
 The remedy requires genuine producer suspension and consumer scheduling while
 retaining native stream ownership and the 4096-byte capacity contract.
 
-The final boundedness suite has 23 cases. Its retry-admission case forces 32
+The boundedness suite has 23 cases. Its retry-admission case forces 32
 actual partial native-FD copy failures, requires EMFILE each time, then EAGAIN
 on attempt 33 without a waitable child or parent-pipe damage. Kernel diagnostics
 require exactly 32 admitted preparations/rollbacks and five copied references on
-each failed preparation. Its cumulative-IRQ variant spins for 20 million RDTSC
-cycles between attempts and must stop with typed native DEADLINE/status 124 after
+each failed preparation. The original cumulative-IRQ variant used a fixed RDTSC
+delay; a later .325 laboratory run finished normally instead of exhausting its
+budget. Those older passing receipts retain their historical calibration and
+do not establish a deterministic IRQ fixture.
+
+The replacement waits for an actually delivered IRQ between attempts. A private
+test snapshot increments saved guest R15 only after the native CPL3/domain IRQ
+guard, with a fixture-only flag enabled solely for this case. Attempt count lives
+in separate guest BSS. The production budget decrement/deadline branch remains
+unchanged. Original and compiled snapshot hashes plus the exact observer delta
+are recorded; no production source or general guest ABI gains an observer hook.
+This variant must stop with typed native DEADLINE/status 124 after
 at least one completed suspended preparation, at least ten actual IRQ ticks and
 zero remaining budget, before 32 preparations complete. This distinguishes IRQ
 enforcement from an ordinary program exit 124 or an external wall watchdog.
 
-The causal control in `/tmp/space-linux-budget-no-carry-first3/report.json`
+The earlier causal control in `/tmp/space-linux-budget-no-carry-first3/report.json`
 deliberately omits only the budget carry store in an isolated captured source
 copy. It records original/modified hashes, is explicitly classified
 `negative-control-passed`, and requires the same finite program to finish with
 typed normal exit 42 after 32 preparations. It passes two activations. No live
 production source is modified, and this control is not compatibility coverage.
 
-The final 23-case gate passes 506 parent activations per root in
+The pre-observer 23-case gate passed 506 parent activations per root in
 `/tmp/space-linux-children-budget-standard23-final21/report.json` and
 `/tmp/space-linux-children-minimal23-budget-final21/report.json`. The original
 nine-case child application corpus also passes 53 actual upstream activations
@@ -175,3 +189,12 @@ per root in `/tmp/space-linux-busybox-children-budget-standard21/report.json`
 and `/tmp/space-linux-busybox-children-budget-minimal21/report.json`. These
 include serial stderr CLOEXEC preserved in the parent and closed only in the
 exec-replaced child.
+
+The authoritative post-scheduler .325 child gates use the real-IRQ observer
+instead of fixed-delay calibration and pass 506 parent activations per root:
+`/tmp/space-linux-children-terminal-standard23-final21/report.json` and
+`/workspace/linux-children-terminal-minimal325-final21/report.json`. The matching
+causal no-carry control passes 22 finite completions in
+`/tmp/space-linux-irq-observer-no-carry-final21/report.json`. The broader blocking
+suite additionally proves cross-capacity data, wake/reap behavior and distinct
+policy 126/deadlock 125/IRQ 124 causes; see [its final receipts](linux-blocking-tests.md).

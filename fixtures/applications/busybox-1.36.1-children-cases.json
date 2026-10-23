@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "classification": "new child-execution goals for the unchanged pinned upstream BusyBox ELF; distinct from the completed12-case baseline",
+  "classification": "Completed bounded child-execution corpus for unchanged pinned upstream BusyBox ELF; distinct from original12-case baseline and larger blocking-transfer corpus",
   "infinite_argv": [
     "/ash",
     "-c",
@@ -111,7 +111,7 @@
       "repeat": true
     }
   ],
-  "pending_scenarios": [
+  "historical_blocking_goal": [
     {
       "name": "pipeline-beyond-ring",
       "argv": [
@@ -124,5 +124,10 @@
       "requires": "scheduler-backed blocking transfer; child-first producer alone cannot drain a full ring",
       "status": "must remain failed until actual blocking and parent/consumer scheduling are implemented"
     }
-  ]
+  ],
+  "blocking_followup": {
+    "cases": "fixtures/applications/busybox-1.36.1-blocking-cases.json",
+    "runner": "scripts/check-linux-blocking-pipeline.py",
+    "scope": "Separate real10902/110000-byte count and exact-byte goals; original nine cases unchanged. Historical ring-boundary failures retained; current bounded scheduler evidence documented separately."
+  }
 }

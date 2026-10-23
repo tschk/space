@@ -66,6 +66,7 @@ fn pipe-check-case(port:Int,id:Int,image:Int,size:Int,expected:Int,signal:Int,me
  let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
  let status=linux-process-run(image,size,"/pipe-corpus","","",pipe-check-authority);
  linux-check(expected,status);linux-check(signal,linux-process-pipe-last-signal);
+ if expected==125{linux-check(LINUX-PROCESS-STOP-DEADLOCK,load64(linux-process-states+LPS-STOP-KIND));}
  linux-check(fs,rdmsr(0xC0000100));linux-check(gs,rdmsr(0xC0000101));linux-check(cap,current-cap);
  pipe-check-released(measured);
  serial-write-cstr(port,"pipe-corpus: end ");serial-write-dec-wide(port,pipe-check-count);
@@ -152,7 +153,20 @@ fn pipe-check-finish(port:Int)->void {
 
 fn pipe-check-busybox(port:Int,image:Int,size:Int,measured:Int)->void {
  serial-write-cstr(port,"pipe-corpus: BusyBox pipeline begins");serial-nl(port);
+ let previous-budget=linux-process-budget-ticks;
+ linux-process-budget-ticks=100;
  let status=linux-process-run(image,size,"/ash","-c","printf \"hello\\n\" | wc -c",pipe-check-authority);
+ linux-process-budget-ticks=previous-budget;
  pipe-check-released(measured);
+ let i=0;while i<LINUX-STATE-MAX{
+  let row=linux-process-states+i*LINUX-STATE-BYTES;
+  if load64(row+LPS-STATUS)!=LINUX-STATE-FREE{
+   serial-write-cstr(port,"pipe-corpus: BusyBox stop ");serial-write-dec-wide(port,load64(row+LPS-PID));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-STOP-KIND));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-STOP-DETAIL));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-WAIT-STATUS));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-BUDGET));serial-nl(port);
+  }i=i+1;
+ }
  serial-write-cstr(port,"pipe-corpus: BusyBox pipeline status ");serial-write-dec-wide(port,status);serial-nl(port);
 }

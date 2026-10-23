@@ -36,8 +36,9 @@ _start:
  expect 0
  mov edi,[rel ends]
  call 0,rdi,buffer,1
- expect -38
- jmp pass
+ ; No runnable owner can write. Space cancels the owned graph with explicit
+ ; edge deadlock125; this syscall must not fabricate EOF or return ENOSYS.
+ jmp fail
 %endif
 %ifdef DEFAULT_SIGPIPE
  call 3,r12,0,0

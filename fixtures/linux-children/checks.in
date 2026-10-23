@@ -4,6 +4,8 @@ import "cleanup.in"
 // allocator witnesses; synthetic child programs assert ordinary Linux results.
 var child-check-count: Int = 0
 var child-check-file-buffer: Int = 0
+// Used only by recorded private IRQ-observer snapshots, never production IRQ.
+var child-check-observe-irq: Int = 0
 
 fn child-check-init()->void {
  pipe-check-init();
@@ -52,8 +54,10 @@ fn child-check-case(port:Int,id:Int,image:Int,size:Int,file:Int,rollback:Int,mea
  let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
  let path="";if file!=0{path="/child-offset.txt";}
  linux-process-budget-ticks=100;if rollback==3 || rollback==4{linux-process-budget-ticks=10;}
+ child-check-observe-irq=0;if rollback==3 || rollback==4{child-check-observe-irq=1;}
  let tickstart=ticks;
  let result=linux-process-run(image,size,"/child-corpus",path,"",pipe-check-authority);
+ child-check-observe-irq=0;
  let expected=42;if rollback==3{expected=124;}
  linux-check(expected,result);linux-check(0,linux-process-pipe-last-signal);
  if rollback!=0{linux-check(5,linux-process-copy-rollback-refs);}
@@ -64,10 +68,12 @@ fn child-check-case(port:Int,id:Int,image:Int,size:Int,file:Int,rollback:Int,mea
   linux-check(linux-process-preparations,linux-process-copy-rollbacks);
   linux-check(0,load64(linux-process-states+LPS-BUDGET));
   linux-check(USER-CONTEXT-DEADLINE,load64(linux-process-states+LPS-STOP-KIND));
+  if load64(load64(linux-process-states+LPS-USER-CONTEXT))<10{panic("child real IRQ observer count");}
   serial-write-cstr(port,"child-corpus: cumulative actual IRQ deadline passed");serial-nl(port);
  }
  if rollback==4{
   linux-check(USER-CONTEXT-EXIT,load64(linux-process-states+LPS-STOP-KIND));
+  if load64(load64(linux-process-states+LPS-USER-CONTEXT))<32{panic("child control real IRQ observer count");}
   serial-write-cstr(port,"child-corpus: omitted carry control normal exit passed");serial-nl(port);
  }
  linux-check(fs,rdmsr(0xC0000100));linux-check(gs,rdmsr(0xC0000101));linux-check(cap,current-cap);

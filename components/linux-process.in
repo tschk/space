@@ -5,8 +5,10 @@ import "linux-process-metadata.in"
 import "linux-process-pipes.in"
 import "linux-process-children.in"
 import "linux-process-descriptors.in"
+import "linux-process-blocking.in"
+import "linux-process-schedule.in"
 
-// Bounded static ELF process family with child-first, single-CPU execution.
+// Bounded static ELF process family with cooperative, single-CPU execution.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
 // remain native mechanisms with explicit per-record backing ownership.
 const LINUX-PROCESS-MAX-PAGES = 4096
@@ -382,6 +384,10 @@ fn linux-process-int32(value: Int) -> Int {
 }
 
 fn linux-process-dispatch(frame: Int) -> Int {
+  if linux-process-work-take() == 0 {
+    store64(frame + 112,LINUX-PROCESS-STATUS-POLICY)
+    return 0
+  }
   let number = linux-process-int32(load64(frame + 112))
   let first = load64(frame + 72)
   let second = load64(frame + 80)
@@ -418,7 +424,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   }
   if number == 60 || number == 231 { result = first & 255; resume = 0 }
   else if number == 0 {
-    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-read(first,second,third) }
+    if linux-process-pipe-is(first) != 0 { result = linux-process-blocking-read(first,second,third) }
     else { result = linux-process-file-read(first,second,third) }
   }
   else if number == 8 {
@@ -533,7 +539,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else { result = -38 }
   } else if number == 5 { result = linux-process-fstat(first, second) }
   else if number == 1 {
-    if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-write(first,second,third) }
+    if linux-process-pipe-is(first) != 0 { result = linux-process-blocking-write(first,second,third,0) }
     else if linux-process-file-host(first) >= 3 || (first != 1 && first != 2) { result = linux-process-file-write(first,second,third) }
     else if (first == 1 && linux-process-stdout-open == 0) || (first == 2 && linux-process-stderr-open == 0) { result = -9 }
     else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
@@ -562,9 +568,14 @@ fn linux-process-dispatch(frame: Int) -> Int {
     result = linux-process-file-stat-at(first,second,third,fourth)
   }
   else if number == 39 || number == 186 { result = linux-process-state-id() }
+  if linux-process-current-record != 0 && load64(linux-process-current-record + LPS-PENDING) >= 3 { resume = 2 }
   if linux-process-signal-deliver() != 0 { result = 128 + linux-process-pipe-signal;resume = 0 }
   if linux-process-trace != 0 {
-    serial-write-cstr(com1(), "linux-process: result "); serial-write-dec-wide(com1(), result); serial-nl(com1())
+    if resume == 2 {
+      serial-write-cstr(com1(), "linux-process: suspended "); serial-write-dec-wide(com1(),load64(linux-process-current-record + LPS-PENDING));serial-nl(com1())
+    } else {
+      serial-write-cstr(com1(), "linux-process: result "); serial-write-dec-wide(com1(), result); serial-nl(com1())
+    }
   }
   store64(frame + 112, result)
   let flag = load64(0x4168)
@@ -598,6 +609,7 @@ fn linux-process-release() -> Int {
   }
   linux-process-files-release()
   linux-process-pipes-release()
+  if linux-process-current-record != 0 && load64(linux-process-current-record + LPS-SPARE-DOMAIN) == 0 { store64(linux-process-current-record + LPS-STATUS,LINUX-STATE-REAPED) }
   linux-process-domain = 0
   linux-process-active = 0
   linux-process-authority = -1

@@ -127,9 +127,9 @@
       "argv": [
         "/busybox",
         "echo",
-        "λ 🙂"
+        "\u03bb \ud83d\ude42"
       ],
-      "expected_stdout": "λ 🙂\n",
+      "expected_stdout": "\u03bb \ud83d\ude42\n",
       "expected_stderr": "",
       "expected_exit": 0
     },
@@ -146,7 +146,7 @@
       "expected_exit": 0
     }
   ],
-  "pending_scenarios": [
+  "historical_pipeline_scenarios": [
     {
       "name": "ash-pipeline",
       "argv": [
@@ -185,5 +185,10 @@
         "note": "Actual unmodified BusyBox now creates owned native pipe endpoints successfully; process creation remains unsupported and the pipeline gate fails. No child-process or wait success is claimed."
       }
     }
-  ]
+  ],
+  "current_pipeline_coverage": {
+    "children_cases": "fixtures/applications/busybox-1.36.1-children-cases.json",
+    "blocking_cases": "fixtures/applications/busybox-1.36.1-blocking-cases.json",
+    "scope": "The original12 finite cases remain unchanged. Historical pipe2/clone failures below preceded real bounded child/blocking support; they are retained as historical evidence, not current unsupported status. See docs/linux-blocking-tests.md for current acceptance and limits."
+  }
 }

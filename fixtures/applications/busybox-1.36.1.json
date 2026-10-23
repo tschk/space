@@ -87,6 +87,12 @@
       "ash explicit nonzero exit"
     ],
     "runtime_goal": "Execute each exact pinned ELF case through real Linux personality CPL3 transitions with exact output/status, private VFS bindings and post-exit cleanup; repeat on standard and minimal roots.",
-    "next_boundary": "Actual ash pipelines and external commands require process creation, pipe transport, waiting and per-child ownership; unsupported calls must return real errors until implemented."
+    "next_boundary": "Preserve both-root repeated acceptance, genuine IRQ/policy/deadlock causes and bounded ownership while expanding executable paths, signal handling and shared-VM/vfork only through real native mechanisms.",
+    "current_bounded_coverage": {
+      "children_cases": "fixtures/applications/busybox-1.36.1-children-cases.json",
+      "blocking_cases": "fixtures/applications/busybox-1.36.1-blocking-cases.json",
+      "contract": "Real copied private children, owned native pipes, wait and bounded self-exec; actual cross-capacity producer/consumer scheduling, exact bytes and cleanup. Arbitrary shared-VM/vfork, installed signal handlers, general executable paths and unrestricted shells are not established.",
+      "documentation": "docs/linux-blocking-tests.md"
+    }
   }
 }

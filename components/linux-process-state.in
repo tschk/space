@@ -17,6 +17,14 @@ const LINUX-STATE-RUNNING = 3
 const LINUX-STATE-ZOMBIE = 4
 const LINUX-STATE-REAPED = 5
 const LINUX-STATE-QUARANTINED = 6
+const LINUX-STATE-BLOCKED = 7
+const LINUX-PROCESS-STOP-DEADLOCK = -35
+const LINUX-PROCESS-STOP-JOB-END = -125
+const LINUX-PROCESS-STOP-SIGPIPE = -13
+const LINUX-PROCESS-STATUS-DEADLOCK = 125
+const LINUX-PROCESS-STOP-POLICY = -7
+const LINUX-PROCESS-STATUS-POLICY = 126
+const LINUX-PROCESS-WORK-MAX = 4096
 const LPS-PID = 0
 const LPS-PARENT = 8
 const LPS-STATUS = 16
@@ -74,6 +82,11 @@ const LPS-EXEC-COUNT = 424
 const LPS-SPARE-CONTEXT = 432
 const LPS-SPARE-DOMAIN = 440
 const LPS-SPARE-PAGES = 448
+// Pending I/O/wait union, private to this stopped process record.
+const LPS-IO-FD = 456
+const LPS-IO-BUFFER = 464
+const LPS-IO-COUNT = 472
+const LPS-IO-DONE = 480
 
 var linux-process-states: Int = 0
 var linux-process-current-record: Int = 0
@@ -90,6 +103,19 @@ var linux-process-cleanup-failed: Int = 0
 var linux-process-copy-rollback-refs: Int = 0
 var linux-process-copy-rollbacks: Int = 0
 var linux-process-preparations: Int = 0
+var linux-process-work: Int = 0
+var linux-process-work-exhausted: Int = 0
+
+// Activation-wide admission for syscall services, scheduler turns and pending
+// retries. This bounds policy work separately from delivered guest IRQ ticks.
+fn linux-process-work-take() -> Int {
+  if linux-process-work >= LINUX-PROCESS-WORK-MAX {
+    linux-process-work-exhausted = 1
+    return 0
+  }
+  linux-process-work = linux-process-work + 1
+  return 1
+}
 
 fn linux-process-state-valid(row: Int) -> Int {
   if linux-process-states == 0 || row < linux-process-states { return 0 }
@@ -248,16 +274,20 @@ fn linux-process-state-register(row: Int, parent: Int, domain: Int, depth: Int) 
 }
 
 fn linux-process-state-find-child(parent: Int, pid: Int) -> Int {
+  let first = 0
   let i = 1
   while i < LINUX-STATE-MAX {
     let row = linux-process-states + i * LINUX-STATE-BYTES
     let status = load64(row + LPS-STATUS)
     if status != LINUX-STATE-FREE && status != LINUX-STATE-REAPED && load64(row + LPS-PARENT) == parent {
-      if pid == -1 || load64(row + LPS-PID) == pid { return row }
+      if pid == -1 || load64(row + LPS-PID) == pid {
+        if status == LINUX-STATE-ZOMBIE { return row }
+        if first == 0 { first = row }
+      }
     }
     i = i + 1
   }
-  return 0
+  return first
 }
 
 // Copy backing pages into a separately owned native domain. All page mappings
@@ -409,6 +439,8 @@ fn linux-process-state-reset() -> void {
   linux-process-copy-rollback-refs = 0
   linux-process-copy-rollbacks = 0
   linux-process-preparations = 0
+  linux-process-work = 0
+  linux-process-work-exhausted = 0
   linux-process-state-pool-init()
   let i = 0
   while i < LINUX-STATE-MAX {

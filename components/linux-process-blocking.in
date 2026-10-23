@@ -1,0 +1,62 @@
+package space.kernel
+
+// The native VFS owns the bounded rings and actual transferred bytes. This
+// edge owns one pending syscall and an exact published prefix per process.
+// Every retry validates its live descriptor, grant and complete guest range.
+fn linux-process-block-io(operation: Int, fd: Int, buffer: Int, count: Int, done: Int) -> void {
+  let row = linux-process-current-record
+  store64(row + LPS-IO-FD,fd)
+  store64(row + LPS-IO-BUFFER,buffer)
+  store64(row + LPS-IO-COUNT,count)
+  store64(row + LPS-IO-DONE,done)
+  store64(row + LPS-PENDING,operation)
+}
+
+fn linux-process-blocking-read(fd: Int, buffer: Int, count: Int) -> Int {
+  let result = linux-process-pipe-read(fd,buffer,count)
+  if result != -38 { return result }
+  if linux-process-state-valid(linux-process-current-record) == 0 { return -38 }
+  linux-process-block-io(3,fd,buffer,count,0)
+  return 0
+}
+
+fn linux-process-blocking-write(fd: Int, buffer: Int, count: Int, done: Int) -> Int {
+  if linux-process-state-valid(linux-process-current-record) == 0 { return linux-process-pipe-write(fd,buffer,count) }
+  let host = linux-process-pipe-host(fd)
+  if host < 3 { if done > 0 { return done } return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { if done > 0 { return done } return -13 }
+  let flags = linux-process-pipe-flags(fd)
+  if flags < 0 { if done > 0 { return done } return flags }
+  if (flags & 3) != 1 { if done > 0 { return done } return -9 }
+  if count < 0 || count > 65536 || done < 0 || done > count { return -22 }
+  if count == 0 { return 0 }
+  if linux-process-range(buffer,count,0) == 0 { if done > 0 { return done } return -14 }
+  if done == count { return done }
+  if (flags & 0x800) != 0 {
+    let result = linux-process-pipe-write(fd,buffer + done,count - done)
+    if result < 0 { if done > 0 { return done } return result }
+    return done + result
+  }
+  let pair = load64(vfs-fd-table + host * 32) - 1
+  if vfs-stream-pairs[pair].refs0 == 0 {
+    let result = linux-process-pipe-write(fd,buffer + done,count - done)
+    if done > 0 { return done }
+    return result
+  }
+  let available = VFS-STREAM-CAP - vfs-stream-pairs[pair].count0
+  let remaining = count - done
+  // Writes no larger than PIPE_BUF publish all bytes together. Larger calls
+  // retain the real published prefix and may fill any available ring space.
+  if available == 0 || (count <= VFS-STREAM-CAP && available < remaining) {
+    linux-process-block-io(4,fd,buffer,count,done)
+    return 0
+  }
+  let piece = remaining
+  if piece > available { piece = available }
+  let result = linux-process-pipe-write(fd,buffer + done,piece)
+  if result < 0 { if done > 0 { return done } return result }
+  done = done + result
+  if done == count { return done }
+  linux-process-block-io(4,fd,buffer,count,done)
+  return 0
+}

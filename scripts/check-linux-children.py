@@ -92,14 +92,33 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             report['source_sha256'][name] = hashlib.sha256(data).hexdigest()
-        if args.budget_carry_negative_control:
-            target = snapshot / 'components/linux-process-children.in'
+        report['compiled_source_sha256'] = dict(report['source_sha256'])
+        if any(case[0] == 'cumulative-irq-budget' for case in cases):
+            target = snapshot / 'components/user-budget.in'
             original = target.read_text()
+            guard = ('  if (load64(frame + 128) & 3) != 3 { return 0 }\n'
+                     '  if user-budget-active != 0 && domain-current == user-budget-domain {\n')
+            require(original.count(guard) == 1, 'actual CPL3/domain IRQ observer guard changed')
+            observed = guard + ('    if child-check-observe-irq != 0 { store64(frame,load64(frame) + 1) }\n')
+            target.write_text(original.replace(guard, observed))
+            report['irq_observer'] = dict(scope='private test snapshot; enabled only for cumulative IRQ ELF',
+                                         real_irq_guard=guard, saved_guest_register='R15 at actual IRQ frame offset0',
+                                         original_sha256=hashlib.sha256(original.encode()).hexdigest(),
+                                         modified_sha256=sha(target), added_instruction=observed[len(guard):],
+                                         production_budget_branch='unchanged; existing decrement and deadline check retained')
+            report['compiled_source_sha256']['components/user-budget.in'] = sha(target)
+        if args.budget_carry_negative_control:
             instruction = 'else { store64(row + LPS-BUDGET,remaining) }'
+            candidates = [snapshot / 'components' / name for name in ['linux-process-children.in', 'linux-process-schedule.in']]
+            targets = [path for path in candidates if path.exists() and instruction in path.read_text()]
+            require(len(targets) == 1, 'negative-control unique carry owner changed')
+            target = targets[0]
+            original = target.read_text()
             require(original.count(instruction) == 1, 'negative-control carry instruction contract changed')
             target.write_text(original.replace(instruction, 'else { remaining = remaining }'))
             report['negative_control_source'] = dict(path=str(target), original_sha256=hashlib.sha256(original.encode()).hexdigest(),
                                                      modified_sha256=sha(target), omission=instruction)
+            report['compiled_source_sha256'][str(target.relative_to(snapshot))] = sha(target)
         with (args.out / 'build.log').open('w') as log:
             for index, (name, filename, define, expected, file_case) in enumerate(cases):
                 obj, binary = args.out / (name + '.o'), args.out / name

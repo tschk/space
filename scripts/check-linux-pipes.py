@@ -41,6 +41,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     report = {'status': 'running', 'goal_status': 'OPEN', 'root': args.root, 'repeat': args.repeat,
               'scope': 'Synthetic Linux ABI pipe contracts; optional unmodified BusyBox follow-on pipeline is separate',
+              'synthetic_guest_budget_ticks': 10,
               'artifacts': [], 'executions': []}
     qemu = None
     try:
@@ -62,7 +63,7 @@ def main():
                  ('default-sigpipe', 'DEFAULT_SIGPIPE', -13, 141, 13, None),
                  ('leaked-fault', 'LEAK_FAULT', -4, 134, 0, 6),
                  ('leaked-timeout', 'LEAK_TIMEOUT', 'timeout', 124, 0, None),
-                 ('blocking-wait-refusal', 'BLOCKING_LIMIT', 'timeout', 42, 0, None)]
+                 ('blocking-no-runnable-deadlock', 'BLOCKING_LIMIT', 'timeout', 125, 0, None)]
         with (args.out / 'build.log').open('w') as log:
             for index, (name, define, host_status, space_status, signal, fault) in enumerate(modes):
                 obj = args.out / (name + '.o')
@@ -94,7 +95,7 @@ def main():
                                   capture_output=True, text=True, timeout=10)
             require((host.returncode, host.stdout, host.stderr) == (0, '6\n', ''), 'BusyBox host pipeline oracle failed')
             report['busybox'] = dict(path=str(busybox), sha256=sha(busybox), host_exit=host.returncode,
-                                     host_stdout=host.stdout, host_stderr=host.stderr)
+                                     host_stdout=host.stdout, host_stderr=host.stderr, guest_budget_ticks=100)
         source = (snapshot / ('kernel/kernel-root-minimal.in' if args.root == 'minimal' else 'kernel/kernel-root.in')).read_text()
         source = re.sub(r'import "\.\./([^"]+)"', lambda match: 'import ' + json.dumps(str(snapshot / match.group(1))), source)
         source = ''.join('import ' + json.dumps(str(snapshot / name)) + '\n' for name in
@@ -164,12 +165,17 @@ def main():
             require(len(bodies) == 2, 'missing actual BusyBox pipeline probes')
             executions = []
             for body, status in bodies:
-                output = re.sub(r'linux-process: (?:syscall|result) -?\d+\n', '', body)
-                numbers = re.findall(r'linux-process: syscall (\d+)\n', body)
-                results = re.findall(r'linux-process: result (-?\d+)\n', body)
-                require(len(numbers) == len(results), 'incomplete BusyBox syscall trace')
-                calls = [dict(number=int(number), result=int(result)) for number, result in zip(numbers, results)]
-                executions.append(dict(exit=int(status), output=output, raw_serial_body=body, syscalls=calls,
+                pattern = r'linux-process: (syscall|result|suspended|completed) (-?\d+(?: -?\d+)*)\n'
+                output = re.sub(pattern, '', body)
+                stops = [dict(pid=int(pid), kind=int(kind), detail=int(detail), wait_status=int(wait), remaining_ticks=int(remaining))
+                         for pid, kind, detail, wait, remaining in re.findall(
+                             r'pipe-corpus: BusyBox stop (-?\d+) (-?\d+) (-?\d+) (-?\d+) (-?\d+)\n', body)]
+                output = re.sub(r'pipe-corpus: BusyBox stop -?\d+(?: -?\d+){4}\n', '', output)
+                events = [dict(kind=kind, values=[int(value) for value in values.split()])
+                          for kind, values in re.findall(pattern, body)]
+                # Suspended processes interleave: a completion belongs to its
+                # explicit PID/operation, never a positional syscall/result zip.
+                executions.append(dict(exit=int(status), output=output, raw_serial_body=body, trace_events=events, stop_causes=stops,
                                        passed=int(status) == 0 and output == '6\n'))
             report['busybox']['executions'] = executions
             report['busybox']['status'] = 'passed' if all(row['passed'] for row in executions) else 'failed'
