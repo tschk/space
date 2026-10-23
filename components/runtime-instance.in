@@ -115,11 +115,11 @@ fn runtime-instance-dispose(state: Int) -> Int {
     i = i + 1
   }
   let shared = load64(state + 32)
-  let pixel = load64(state + 40)
   if shared != 0 { frame-free(shared) }
-  if pixel != 0 { frame-free(pixel) }
+  if runtime-instance-pixels-release(state) != 0 { return -1 }
   if component != 0 { runtime-instance-release-component(component) }
   frame-free(pages)
+  if load64(state + 232) != 0 { frame-free(load64(state + 232)) }
   store64(state + 256,0)
   frame-free(state)
   runtime-instance-live = runtime-instance-live - 1

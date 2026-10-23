@@ -1,0 +1,184 @@
+package space.kernel
+import "../protocol/gui-canvas.in"
+
+// A fixed server-only virtual slot per owned domain. These PDEs belong to this
+// runtime, not to a predecessor instance; a released slot becomes unmapped.
+const RUNTIME-INSTANCE-PIXEL-SERVER-BASE = 0x100000000
+const RUNTIME-INSTANCE-PIXEL-SLOT-BYTES = 0x40000000
+const RUNTIME-INSTANCE-PIXEL-PAGES = 288
+
+fn runtime-instance-canvas-profile(image: Int, header: Int, bytes: Int, required: Int, sync: Int) -> Int {
+  if bytes < header + SCI-CANVAS-TRAILER-BYTES { return 0 }
+  let trailer = image + bytes - SCI-CANVAS-TRAILER-BYTES
+  if load64(trailer) != SCI-CANVAS-MAGIC { return 0 }
+  let display = cap-memory() | cap-display()
+  if header != SCI-V2-HEADER || sync != 2 || (required != display && required != (display | cap-storage())) { return -1 }
+  // The fixed allocation bound covers only mappings in the four identity PDs.
+  let entry = load64(image + 16)
+  if entry < header || bytes <= header || bytes > 0x200000 { return -1 }
+  let base = entry - header
+  if base >= 0x100000000 || (base & 4095) != 0 || ((bytes + 4095) & -4096) > 0x100000000 - base { return -1 }
+  if load64(trailer + 8) != SCI-CANVAS-VERSION || load64(trailer + 16) != SCI-CANVAS-WIDTH || load64(trailer + 24) != SCI-CANVAS-HEIGHT || load64(trailer + 32) != SCI-CANVAS-STRIDE || load64(trailer + 40) != SCI-CANVAS-BYTES || load64(trailer + 48) != SCI-CANVAS-FLAGS || load64(trailer + 56) != 0 { return -1 }
+  return 1
+}
+
+fn runtime-instance-view-parent(virt: Int) -> Int {
+  let root = load64(domain-table)
+  let e4 = load64(root + ((virt >> 39) & 511) * 8)
+  if (e4 & 1) == 0 || (e4 & 128) != 0 { return 0 }
+  return (e4 & PAGE-ADDRESS-MASK) + ((virt >> 30) & 511) * 8
+}
+
+fn runtime-instance-view-pde(virt: Int) -> Int {
+  let parent = runtime-instance-view-parent(virt)
+  if parent == 0 { return 0 }
+  let e3 = load64(parent)
+  if (e3 & 1) == 0 || (e3 & 128) != 0 { return 0 }
+  return (e3 & PAGE-ADDRESS-MASK) + ((virt >> 21) & 511) * 8
+}
+
+fn runtime-instance-canvas-new(state: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE { return 0 }
+  let domain = load64(state)
+  if domain <= 0 || domain >= MAX-DOMAINS || load64(state + 40) != 0 || load64(state + 112) != 0 { return 0 }
+  let view = RUNTIME-INSTANCE-PIXEL-SERVER-BASE + domain * RUNTIME-INSTANCE-PIXEL-SLOT-BYTES
+  let parent = runtime-instance-view-parent(view)
+  if parent == 0 || load64(parent) != 0 { return 0 }
+  let ledger = frame-alloc()
+  let directory = frame-alloc()
+  let table = frame-alloc()
+  let pde = directory
+  store64(ledger + 4072,directory)
+  store64(ledger + 4080,parent)
+  store64(ledger + 4088,table)
+  store64(state + 112,ledger)
+  store64(state + 312,pde)
+  store64(state + 40,view)
+  let i = 0
+  while i < RUNTIME-INSTANCE-PIXEL-PAGES {
+    let physical = frame-alloc()
+    store64(ledger + i * 8,physical)
+    store64(state + 304,i + 1)
+    store64(table + i * 8,physical | PAGE-NX | 3)
+    domain-map-user-data(domain,COMP-PIXEL-VIRT + i * 4096,physical)
+    i = i + 1
+  }
+  store64(pde,table | 3)
+  store64(parent,directory | 3)
+  cr3-write(load64(domain-table))
+  return view
+}
+
+fn runtime-instance-pixel-bytes(state: Int) -> Int {
+  if state == 0 || load64(state + 40) == 0 { return 0 }
+  let ledger = load64(state + 112)
+  let pages = load64(state + 304)
+  if ledger == 0 && pages == 1 { return 4096 }
+  if ledger != 0 && pages == RUNTIME-INSTANCE-PIXEL-PAGES { return SCI-CANVAS-BYTES }
+  return 0
+}
+
+fn runtime-instance-pixels-release(state: Int) -> Int {
+  let pixels = load64(state + 40)
+  if pixels == 0 { return 0 }
+  let ledger = load64(state + 112)
+  if ledger == 0 {
+    if load64(state + 304) != 1 { return -1 }
+    frame-free(pixels)
+    return 0
+  }
+  let domain = load64(state)
+  let view = RUNTIME-INSTANCE-PIXEL-SERVER-BASE + domain * RUNTIME-INSTANCE-PIXEL-SLOT-BYTES
+  let pde = runtime-instance-view-pde(view)
+  let table = load64(ledger + 4088)
+  let directory = load64(ledger + 4072)
+  let parent = runtime-instance-view-parent(view)
+  if directory == 0 || parent == 0 || parent != load64(ledger + 4080) || (load64(parent) & -97) != (directory | 3) { return -1 }
+  if pixels != view || pde == 0 || pde != load64(state + 312) || table == 0 || (load64(pde) & -97) != (table | 3) { return -1 }
+  let pages = load64(state + 304)
+  if pages != RUNTIME-INSTANCE-PIXEL-PAGES { return -1 }
+  let i = 0
+  while i < pages {
+    let physical = load64(ledger + i * 8)
+    if physical == 0 || (physical & 4095) != 0 || (load64(table + i * 8) & -97) != (physical | PAGE-NX | 3) { return -1 }
+    i = i + 1
+  }
+  // Clear the entire slot, then flush before any backing/table frame is freed.
+  store64(parent,0)
+  store64(pde,0)
+  cr3-write(load64(domain-table))
+  i = 0
+  while i < pages { frame-free(load64(ledger + i * 8)); i = i + 1 }
+  frame-free(table)
+  frame-free(directory)
+  frame-free(ledger)
+  return 0
+}
+
+// Bound all clone/import mappings to the four already-present identity PDs.
+// This inspects trusted registry ranges, not untrusted image tables/names.
+fn runtime-instance-canvas-provider-bound() -> Int {
+  if dyn-count < 0 || dyn-count > DYN-MAX-EXPORTS { return 0 }
+  let i = 0
+  while i < dyn-count {
+    if load64(dyn-prov-phys + i * 8) != 0 {
+      let base = load64(dyn-prov-base + i * 8)
+      let bytes = load64(dyn-prov-size + i * 8)
+      if base < 0 || base >= 0x100000000 || (base & 4095) != 0 || bytes <= 0 || bytes > 0x200000 { return 0 }
+      let rounded = (bytes + 4095) & -4096
+      if rounded > 0x100000000 - base { return 0 }
+    }
+    i = i + 1
+  }
+  return 1
+}
+
+fn runtime-instance-canvas-frame-budget(bytes: Int) -> Int {
+  if bytes <= SCI-V2-HEADER || bytes > 0x200000 { return -1 }
+  // At most 2048 leaf tables across all four 1GiB PDs, including tables
+  // cloned initially and later splits for imports/image/heap/shared pages.
+  let clone-and-mapping = 6 + 2048
+  let state-and-ledgers = 3 + 1 + 1 // state/heap/image, private-cap pool, catalog
+  let backing = 512 + ((bytes + 4095) / 4096) + 1
+  let canvas = RUNTIME-INSTANCE-PIXEL-PAGES + 1 + 1 + 1 // backing, ledger, PD, PT
+  let kernel-shared-alias = 1
+  return clone-and-mapping + state-and-ledgers + backing + canvas + kernel-shared-alias
+}
+
+fn runtime-instance-frame-capacity() -> Int {
+  if heap-next < 0 || heap-end < heap-next || heap-end > 0x100000000 { return -1 }
+  let aligned = (heap-next + 4095) & -4096
+  let frames = 0
+  if aligned <= heap-end { frames = (heap-end - aligned) / 4096 }
+  let cursor = free-list
+  let fast = free-list
+  let count = 0
+  while cursor != 0 {
+    if cursor < 0x100000 || cursor >= heap-end || (cursor & 4095) != 0 || count >= 1048576 { return -1 }
+    cursor = load64(cursor)
+    count = count + 1
+    let step = 0
+    while step < 2 && fast != 0 {
+      if fast < 0x100000 || fast >= heap-end || (fast & 4095) != 0 { return -1 }
+      fast = load64(fast)
+      step = step + 1
+    }
+    if cursor != 0 && cursor == fast { return -1 }
+  }
+  return frames + count
+}
+
+fn runtime-instance-canvas-admit(port: Int, bytes: Int) -> Int {
+  let flags = load64(0x4198)
+  let budget = runtime-instance-canvas-frame-budget(bytes)
+  if flags == 0 || budget <= 0 || runtime-instance-launch-guard != 1 || (invoke1(flags,0) & 512) != 0 || load64(0x4028) != 0 { return 0 }
+  if runtime-instance-can-admit(1) == 0 || runtime-instance-canvas-provider-bound() == 0 { return 0 }
+  if runtime-instance-component-free == 0 && obj-arena-end - obj-arena-next < 64 { return 0 }
+  let available = runtime-instance-frame-capacity()
+  if available < budget {
+    serial-write-cstr(port,"  SCI: DENIED canvas memory budget")
+    serial-nl(port)
+    return 0
+  }
+  return 1
+}

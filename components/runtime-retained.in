@@ -6,6 +6,8 @@ const RUNTIME-INSTANCE-CATALOG-SLOTS = 64
 var runtime-instance-catalog: Int = 0
 var runtime-instance-generation: Int = 0
 var runtime-instance-last-handle: Int = 0
+var runtime-instance-launch-guard: Int = 0
+var runtime-instance-launch-flags: Int = 0
 
 fn runtime-instance-kernel-context() -> Int {
   if domain-current != 0 || cr3-read() != load64(domain-table) { return 0 }
@@ -69,7 +71,11 @@ fn runtime-instance-can-admit(count: Int) -> Int {
 fn runtime-instance-retain(state: Int, entry: Int) -> Int {
   if runtime-instance-kernel-context() == 0 || state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE || load64(state + 280) != 0 { return 0 }
   if runtime-instance-generation >= 0x7fffffffffffff { return 0 }
-  if runtime-instance-catalog == 0 { runtime-instance-catalog = frame-alloc() }
+  if runtime-instance-catalog == 0 {
+    runtime-instance-catalog = load64(state + 232)
+    store64(state + 232,0)
+    if runtime-instance-catalog == 0 { runtime-instance-catalog = frame-alloc() }
+  }
   let slot = 0
   while slot < RUNTIME-INSTANCE-CATALOG-SLOTS && load64(runtime-instance-catalog + slot * 64) != 0 { slot = slot + 1 }
   if slot == RUNTIME-INSTANCE-CATALOG-SLOTS { return 0 }

@@ -1,0 +1,24 @@
+package space.app.gui
+component GuiWindowCalc {
+ target "x86_64-unknown-none"
+ capability memory: GuiMemory(map)
+ capability display: GuiDisplay(present,window)
+}
+var canvas-calls:Int=0
+fn client-entry(info:Int)->Int{
+ if load64(info)!=20 || load64(info+72)!=0x70001000 || load64(info+80)!=1179648{return -9;}
+ store32(0x70001008,invoke-native1(load64(0x4198),0)&512);
+ canvas-calls=canvas-calls+1;
+ let page=0;
+ while page<288{
+  let pointer=0x70001000+page*4096;
+  let previous=0;if canvas-calls>1{previous=(canvas-calls - 1)*4096+page;}
+  if load32(pointer)!=previous{return -10;}
+  let previous-end=0;if canvas-calls>1{previous-end=0x11000000+previous;}
+  if load32(pointer+4092)!=previous-end{return -11;}
+  store32(pointer,canvas-calls*4096+page);
+  store32(pointer+4092,0x11000000+canvas-calls*4096+page);
+  page=page+1;
+ }
+ return 42;
+}

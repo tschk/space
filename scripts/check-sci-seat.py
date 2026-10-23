@@ -33,6 +33,7 @@ for filename, names in [
             "chan-page-recv-frame",
         ],
     ),
+    ("components/runtime-pixels.in", ["runtime-instance-pixel-bytes"]),
     ("components/runtime-retained.in", ["runtime-instance-kernel-context", "runtime-instance-record", "runtime-instance-resume"]),
     ("components/domain.in", ["domain-restore-service-context"]),
     ("protocol/input.in", ["input-page-header-valid"]),
@@ -67,6 +68,7 @@ source = (
     + ",".join(["0"] * 20000)
     + "];\n"
     + """
+const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
 const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
 const SCI-INPUT-GRANTS=3;const SCI-V2-HEADER=64;const DOMAIN-ACTIVE=1;
 const COMP-HEAP-VIRT=0x80000000;const COMP-HEAP-SIZE=0x200000;
@@ -118,7 +120,7 @@ fn invoke1(entry:Int,info:Int)->Int{
 fn retained-model(state:Int,component:Int,domain:Int,cap:Int,entry:Int,shared:Int,pixel:Int,generation:Int,slot:Int)->Void{
  let handle=(generation<<8)|(slot+1);let record=runtime-instance-catalog+slot*64;
  store64(state,domain);store64(state+8,component);store64(state+16,cap);store64(state+32,shared);store64(state+40,pixel);
- store64(state+256,RUNTIME-INSTANCE-LIVE);store64(state+280,handle);store64(state+288,entry);store64(state+296,0);
+ store64(state+112,0);store64(state+304,if pixel==0{0}else{1});store64(state+256,RUNTIME-INSTANCE-LIVE);store64(state+280,handle);store64(state+288,entry);store64(state+296,0);
  store64(component,generation+100);store64(component+8,5);store64(component+16,entry);store64(component+40,domain);
  store64(record,state);store64(record+8,generation);store64(record+16,generation+100);store64(record+24,component);store64(record+32,cap);store64(record+40,domain);store64(record+48,1);
  return;

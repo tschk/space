@@ -3,6 +3,7 @@ package space.kernel
 import "runtime-failure.in"
 import "runtime-instance.in"
 import "runtime-retained.in"
+import "runtime-pixels.in"
 
 var volume-ready: Int = 0
 var volume-domain: Int = 0
@@ -78,6 +79,8 @@ var sci-sync-ring-unit: Int = 4
 var sci-sync-page: Int = 0
 var sci-sync-domain: Int = 0
 var sci-sync-grants: Int = 0
+// Legacy profiles store a physical page; canvas profiles store the kernel-only
+// contiguous server view over their separately owned physical frames.
 var sci-sync-pixel-phys: Int = 0
 var sci-sync-pixel-size: Int = 0
 var sci-sync-pixel-pool: Int = 0
@@ -101,6 +104,7 @@ fn sci-sync-restore-info(args: Int) -> void {
   store64(sci-sync-info + 56, 600)
   store64(sci-sync-info + 64, args)
   sci-display-cap-info(sci-sync-info, sci-sync-pixel-phys)
+  if sci-sync-pixel-phys != 0 { store64(sci-sync-info + 80,sci-sync-pixel-size) }
   return
 }
 
@@ -371,8 +375,13 @@ fn sci-sync-pixels(domain: Int, pool: Int) -> Int {
   if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
   if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
   if (sci-sync-grants & (cap-memory() | cap-display())) != (cap-memory() | cap-display()) { return 0 }
-  if pool != 0 || sci-sync-pixel-pool != pool || sci-sync-pixel-size != 4096 { return 0 }
-  if sci-sync-pixel-phys <= 0 || sci-sync-pixel-phys >= 0x100000000 || (sci-sync-pixel-phys & 4095) != 0 { return 0 }
+  if pool != 0 || sci-sync-pixel-pool != pool { return 0 }
+  let owner = runtime-instance-record(sci-sync-handle,1)
+  if owner == 0 { return 0 }
+  let state = load64(owner)
+  if load64(state + 40) != sci-sync-pixel-phys || runtime-instance-pixel-bytes(state) != sci-sync-pixel-size { return 0 }
+  if sci-sync-pixel-phys <= 0 || (sci-sync-pixel-phys & 4095) != 0 { return 0 }
+  if sci-sync-pixel-size == 4096 && sci-sync-pixel-phys >= 0x100000000 { return 0 }
   return sci-sync-pixel-phys
 }
 
@@ -510,6 +519,7 @@ fn dyn-kernel-exportable(name: Int) -> Int {
   if runtime-instance-exportable(name) == 0 { return 0 }
   if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 || dyn-name-prefix(name,"windows-startup-") != 0 || dyn-name-prefix(name,"windows-parameters-") != 0 || dyn-name-prefix(name,"windows-command-") != 0 || dyn-name-prefix(name,"fs-range-") != 0 { return 0 }
   if dyn-name-prefix(name,"gui-") != 0 && dyn-str-eq(name,"gui-note-read") == 0 && dyn-str-eq(name,"gui-note-write") == 0 { return 0 }
+  if dyn-str-eq(name,"dsp-surface-stride") != 0 { return 0 }
   if dyn-str-eq(name,"sci-load-retained-component") != 0 || dyn-str-eq(name,"domain-destroy-clone-owned") != 0 || dyn-str-eq(name,"domain-restore-service-context") != 0 { return 0 }
   return 1
 }
@@ -696,8 +706,19 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
 // Kernel supervisor-only retained activation. Native SCI imports do not
 // receive this symbol through the dynamic registry.
 fn sci-load-retained-component(port: Int, load-addr: Int, name: Int, grants: Int, args: Int) -> Int {
-  if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
-  return sci-load-runtime-component(port,load-addr,name,grants,2,args)
+  if domain-current != 0 || cr3-read() != load64(domain-table) || runtime-instance-launch-guard != 0 { return -1 }
+  let flags-stub = load64(0x4198)
+  if flags-stub == 0 { return -1 }
+  let flags = invoke1(flags-stub,0)
+  cli()
+  runtime-instance-launch-guard = 1
+  runtime-instance-launch-flags = flags
+  let result = sci-load-runtime-component(port,load-addr,name,grants,2,args)
+  cli()
+  runtime-instance-launch-guard = 0
+  runtime-instance-launch-flags = 0
+  if (flags & 512) != 0 { sti() }
+  return result
 }
 
 fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {
@@ -755,11 +776,17 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     serial-nl(port)
     return -1
   }
+  let canvas = runtime-instance-canvas-profile(load-addr,header,image-size,required,sync)
+  if canvas < 0 {
+    serial-write-cstr(port,"  SCI: DENIED invalid canvas profile"); serial-nl(port); return -1
+  }
+  if canvas == 1 && runtime-instance-canvas-admit(port,image-size) == 0 { return -1 }
   let lifecycle = 0
   let component = 0
   let cap-idx = -1
   if sync != 0 {
     lifecycle = runtime-instance-new()
+    if canvas == 1 && runtime-instance-catalog == 0 { store64(lifecycle + 232,frame-alloc()) }
     store64(lifecycle + 80,load64(root-realm + 24))
     component = runtime-instance-component(name,entry,required)
     store64(lifecycle + 8,component)
@@ -851,9 +878,13 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
 
   let pixel = 0
   if (required & (cap-memory() | cap-display())) == (cap-memory() | cap-display()) {
-    if lifecycle != 0 { runtime-instance-alias(lifecycle,COMP-PIXEL-VIRT,64,72) }
-    pixel = domain-create-shared-page(0, domain, COMP-PIXEL-VIRT, COMP-PIXEL-VIRT)
-    if lifecycle != 0 { store64(lifecycle + 40,pixel) }
+    if canvas == 1 {
+      pixel = runtime-instance-canvas-new(lifecycle)
+    } else {
+      if lifecycle != 0 { runtime-instance-alias(lifecycle,COMP-PIXEL-VIRT,64,72) }
+      pixel = domain-create-shared-page(0,domain,COMP-PIXEL-VIRT,COMP-PIXEL-VIRT)
+      if lifecycle != 0 { store64(lifecycle + 40,pixel); store64(lifecycle + 304,1) }
+    }
     if pixel == 0 { if lifecycle != 0 { runtime-instance-dispose(lifecycle) }; return -1 }
   }
 
@@ -873,6 +904,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   store64(cap-info + 56, 600)
   store64(cap-info + 64, args)
   sci-display-cap-info(cap-info, pixel)
+  if canvas == 1 { store64(cap-info + 80,SCI-CANVAS-BYTES) }
 
   serial-write-cstr(port, "  SCI: starting ")
   serial-write-cstr(port, name)
@@ -884,7 +916,12 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     let prev = domain-get-current()
     domain-switch(domain)
     runtime-instance-active = lifecycle
+    if sync == 2 && runtime-instance-launch-guard == 1 {
+      runtime-instance-launch-guard = 2
+      if (runtime-instance-launch-flags & 512) != 0 { sti() }
+    }
     let rc = runtime-invoke-entry(entry, cap-info)
+    if sync == 2 && runtime-instance-launch-guard == 2 { cli(); runtime-instance-launch-guard = 1 }
     runtime-instance-active = 0
     domain-switch(prev)
     if lifecycle != 0 { runtime-instance-detach-aliases(lifecycle) }
@@ -920,7 +957,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     sci-sync-domain = domain
     sci-sync-grants = required
     sci-sync-pixel-phys = pixel
-    if pixel != 0 { sci-sync-pixel-size = 4096 }
+    if pixel != 0 { sci-sync-pixel-size = runtime-instance-pixel-bytes(lifecycle) }
     sci-sync-pixel-pool = 0
     if magic == SCI-MAGIC-V2 {
       sci-sync-entry = entry
