@@ -22,12 +22,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True, help='New or empty build/evidence directory')
     parser.add_argument('--archive', type=Path, help='Cached official archive; checksum is always enforced')
+    parser.add_argument('--manifest', type=Path, default=ROOT / 'fixtures/applications/busybox-1.36.1.json')
+    parser.add_argument('--case-config', type=Path, default=ROOT / 'fixtures/applications/busybox-1.36.1-cases.json')
     args = parser.parse_args()
     out = args.out.resolve()
     if out.exists() and any(out.iterdir()):
         parser.error('--out must be new or empty')
     out.mkdir(parents=True, exist_ok=True)
-    manifest = json.loads((ROOT / 'fixtures/applications/busybox-1.36.1.json').read_text())
+    manifest = json.loads(args.manifest.read_text())
     source, build = manifest['source'], manifest['build']
     archive = args.archive.resolve() if args.archive else out / 'busybox-1.36.1.tar.bz2'
     if not args.archive:
@@ -66,11 +68,21 @@ def main():
             raise SystemExit('Upstream Kconfig did not retain requested setting: ' + expected)
     shutil.copy2(config, out / 'resolved.config')
     make('-j4', 'V=1')
+    checked = 0
+    with tarfile.open(archive) as contents:
+        for member in contents.getmembers():
+            if member.isfile() and Path(member.name).suffix in ['.c', '.h', '.S']:
+                if (out / member.name).read_bytes() != contents.extractfile(member).read():
+                    raise SystemExit('Upstream source modified: ' + member.name)
+                checked += 1
     binary = out / 'busybox'
     shutil.copy2(checkout / 'busybox', binary)
     expected = manifest['apps'][0]
     receipt = {
         'source_url': source['url'], 'source_sha256': digest(archive),
+        'manifest': str(args.manifest.resolve()), 'manifest_sha256': digest(args.manifest),
+        'case_config': str(args.case_config.resolve()), 'case_config_sha256': digest(args.case_config),
+        'source_files_checked': checked,
         'checksum_reference': source['checksum_reference'], 'source_modified': False,
         'license': manifest['license'], 'license_file_sha256': digest(checkout / 'LICENSE'),
         'commands': commands, 'environment': {key: environment[key] for key in
@@ -86,7 +98,7 @@ def main():
             and digest(out / 'resolved.config') == build['resolved_config_sha256']
             and digest(checkout / 'LICENSE') == build['license_file_sha256']),
     }
-    cases = json.loads((ROOT / 'fixtures/applications/busybox-1.36.1-cases.json').read_text())
+    cases = json.loads(args.case_config.read_text())
     receipt['host_cases'] = []
     for index, case in enumerate(cases['cases']):
         fixture = out / ('host-file-' + str(index) + '.txt')
@@ -94,7 +106,8 @@ def main():
             fixture.write_text(case['file'])
         argv = [value.replace('@FILE@', str(fixture)) for value in case['argv']]
         result = subprocess.run(argv, executable=str(binary), input=case.get('stdin', ''),
-                                text=True, capture_output=True, timeout=10)
+                                text=True, capture_output=True, timeout=10,
+                                env={'LC_ALL': 'C', 'HOME': '/'}, cwd='/')
         passed = (result.returncode == case['expected_exit']
             and result.stdout == case['expected_stdout'].replace('@FILE@', str(fixture))
             and result.stderr == case['expected_stderr'].replace('@FILE@', str(fixture)))
