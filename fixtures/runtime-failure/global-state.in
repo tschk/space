@@ -1,0 +1,15 @@
+package space.fixture
+component FreshGlobals {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ export entry: FreshEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface FreshEntry { fn fresh-entry(info:Int)->Int }
+var fresh-counter:Int=0
+fn fresh-entry(info:Int)->Int{
+ fresh-counter=fresh-counter+1;
+ return fresh-counter;
+}

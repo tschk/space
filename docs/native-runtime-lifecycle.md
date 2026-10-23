@@ -18,7 +18,8 @@ capability slot, shared/pixel backing frames, prior kernel alias PTE values and
 prior root-realm edge. Cleanup first revokes its authority and removes/restores
 aliases, then releases its explicitly clone-owned private table tree and owned
 backing frames. Boot images, library providers, persistent filesystem state and
-retained components are outside that ledger.
+asynchronous providers are outside that ledger. Retained mode2 clients now
+carry their own equivalent ledger and exact-generation catalog handle.
 
 Global capability allocation/revocation stays monotonic: arbitrary revoked raw
 indices must never regain new authority. The runtime may recycle only its own
@@ -33,17 +34,20 @@ The production loader now binds canonical `malloc`, `calloc`, `realloc` and
 `free` imports to the activation's tracked allocator. Its reusable blocks are
 separate from the raw application file-buffer heap. Explicit free, normal exit,
 import refusal and scoped allocation abort all preserve ownership. Retained
-mode2 and asynchronous mode0 keep their existing lifetime until their own
-retirement contract is implemented.
+mode2 clients use explicit retire/release after supervisor ring/surface fences;
+asynchronous mode0 keeps its existing provider lifetime. Both mode1 and mode2
+copy the complete initialized image before import binding, preserving mutable
+globals per instance. Import patches affect only those owned frames. See the
+[retained runtime contract](native-retained-runtime.md).
 
 The observed production-loader check at
-`/tmp/space-native-lifecycle-final-allocator/report.json` passed151 normal real
+`/tmp/space-native-lifecycle-startup-private/report.json` passed151 normal real
 application activations and136 emitted allocation aborts in one boot. It checks
 stable free-frame count, heap high water, domain/capability counts, object arena,
 clone ownership and export count after warmup. It also exercises actual allocator
 ABI behavior, malformed private imports, refusal to recycle a generic revoked
 capability, and refusal to destroy kernel or user trees through the clone API.
-The normal driver reports81 application scenarios, including70 additional real
+Fresh same-image initialized globals are independently checked. The normal driver reports81 application scenarios, including70 additional real
 calculator/checksum pairs. Retained GUI regression checks continue to pass.
 
 The bounded4096-entry export registry admits whole providers before writing any

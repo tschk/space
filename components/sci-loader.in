@@ -2,6 +2,7 @@ package space.kernel
 
 import "runtime-failure.in"
 import "runtime-instance.in"
+import "runtime-retained.in"
 
 var volume-ready: Int = 0
 var volume-domain: Int = 0
@@ -86,6 +87,7 @@ var sci-sync-code-end: Int = 0
 var sci-sync-info: Int = 0
 var sci-sync-cap: Int = -1
 var sci-sync-object: Int = 0
+var sci-sync-handle: Int = 0
 
 // Rebuild every writable descriptor word; never reuse client-provided pointers.
 fn sci-sync-restore-info(args: Int) -> void {
@@ -133,6 +135,10 @@ fn sci-resume-input-sync(domain: Int) -> Int {
 // Shared provenance only; callers separately enforce their exact ring handoff.
 fn sci-sync-provenance-valid(domain: Int, unit: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
+  let retained = runtime-instance-record(sci-sync-handle,1)
+  if retained == 0 { return 0 }
+  let state = load64(retained)
+  if load64(state) != domain || load64(state + 8) != sci-sync-object || load64(state + 16) != sci-sync-cap || load64(state + 32) != sci-sync-page || load64(state + 40) != sci-sync-pixel-phys || state + 128 != sci-sync-info || load64(state + 288) != sci-sync-entry { return 0 }
   if unit != 1 && unit != 4 { return 0 }
   if unit != sci-sync-ring-unit { return 0 }
   if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
@@ -156,16 +162,10 @@ fn sci-sync-provenance-valid(domain: Int, unit: Int) -> Int {
 
 fn sci-sync-enter(domain: Int, args: Int) -> Int {
   if domain-get-current() != 0 { return -1 }
-  let previous = domain-get-current()
-  if previous < 0 || previous >= domain-count { return -1 }
-  if load64(domain-table + previous * 24 + 8) != DOMAIN-ACTIVE || load64(domain-table + previous * 24) == 0 { return -1 }
   sci-sync-restore-info(args)
-  domain-switch(domain)
-  if domain-get-current() != domain { domain-switch(previous); return -1 }
-  let result = invoke1(sci-sync-entry, sci-sync-info)
-  domain-switch(previous)
-  if domain-get-current() != previous { return -1 }
-  return result
+  let record = runtime-instance-record(sci-sync-handle,1)
+  if record == 0 || load64(record + 40) != domain { return -1 }
+  return runtime-instance-resume(sci-sync-handle,sci-sync-entry,sci-sync-info)
 }
 
 fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
@@ -201,9 +201,10 @@ struct SciProofSnapshot {
   Int info
   Int cap
   Int object
+  Int handle
 }
-var sci-proof-input: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
-var sci-proof-app: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
+var sci-proof-input: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0, handle: 0}
+var sci-proof-app: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0, handle: 0}
 
 fn sci-proof-capture(role: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
@@ -234,6 +235,7 @@ fn sci-proof-capture(role: Int) -> Int {
     sci-proof-input.info = sci-sync-info
     sci-proof-input.cap = sci-sync-cap
     sci-proof-input.object = sci-sync-object
+    sci-proof-input.handle = sci-sync-handle
     sci-proof-input.unit = role
   } else {
     sci-proof-app.page = sci-sync-page
@@ -248,6 +250,7 @@ fn sci-proof-capture(role: Int) -> Int {
     sci-proof-app.info = sci-sync-info
     sci-proof-app.cap = sci-sync-cap
     sci-proof-app.object = sci-sync-object
+    sci-proof-app.handle = sci-sync-handle
     sci-proof-app.unit = role
   }
   return 1
@@ -271,6 +274,7 @@ fn sci-proof-restore(role: Int) -> Int {
     sci-sync-info = sci-proof-input.info
     sci-sync-cap = sci-proof-input.cap
     sci-sync-object = sci-proof-input.object
+    sci-sync-handle = sci-proof-input.handle
   } else {
     if sci-proof-app.unit != role { return 0 }
     sci-sync-ring-unit = sci-proof-app.unit
@@ -286,6 +290,7 @@ fn sci-proof-restore(role: Int) -> Int {
     sci-sync-info = sci-proof-app.info
     sci-sync-cap = sci-proof-app.cap
     sci-sync-object = sci-proof-app.object
+    sci-sync-handle = sci-proof-app.handle
   }
   if sci-sync-provenance-valid(sci-sync-domain, role) == 0 {
     if role == 1 { sci-proof-input.unit = 0 } else { sci-proof-app.unit = 0 }
@@ -503,7 +508,7 @@ fn dyn-name-prefix(name: Int, prefix: Int) -> Int {
 
 fn dyn-kernel-exportable(name: Int) -> Int {
   if runtime-instance-exportable(name) == 0 { return 0 }
-  if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 { return 0 }
+  if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 || dyn-name-prefix(name,"windows-startup-") != 0 { return 0 }
   if dyn-name-prefix(name,"gui-") != 0 && dyn-str-eq(name,"gui-note-read") == 0 && dyn-str-eq(name,"gui-note-write") == 0 { return 0 }
   if dyn-str-eq(name,"sci-load-retained-component") != 0 || dyn-str-eq(name,"domain-destroy-clone-owned") != 0 || dyn-str-eq(name,"domain-restore-service-context") != 0 { return 0 }
   return 1
@@ -676,7 +681,9 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
       if dyn-str-eq(name,"realloc") != 0 { target = runtime-instance-realloc }
       if dyn-str-eq(name,"free") != 0 { target = runtime-instance-free }
     }
-    store32(load-addr + SCI-V2-HEADER + site + 1, target - site-virt - 5)
+    if runtime-instance-binding != 0 {
+      if runtime-instance-patch32(runtime-instance-binding,SCI-V2-HEADER + site + 1,target - site-virt - 5) != 0 { return -1 }
+    } else { store32(load-addr + SCI-V2-HEADER + site + 1,target - site-virt - 5) }
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: bound ")
@@ -708,6 +715,8 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   sci-sync-info = 0
   sci-sync-cap = -1
   sci-sync-object = 0
+  sci-sync-handle = 0
+  runtime-instance-last-handle = 0
   serial-write-cstr(port, "  SCI: loading ")
   serial-write-cstr(port, name)
   serial-nl(port)
@@ -749,7 +758,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   let lifecycle = 0
   let component = 0
   let cap-idx = -1
-  if sync == 1 {
+  if sync != 0 {
     lifecycle = runtime-instance-new()
     store64(lifecycle + 80,load64(root-realm + 24))
     component = runtime-instance-component(name,entry,required)
@@ -781,9 +790,20 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
   while i < image-pages {
-    domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
+    let physical = load-addr + i * 4096
+    if lifecycle != 0 {
+      physical = frame-alloc()
+      store64(load64(lifecycle + 88) + i * 8,physical)
+      store64(lifecycle + 96,i + 1)
+      let bytes = image-size - i * 4096
+      if bytes > 4096 { bytes = 4096 }
+      let byte = 0
+      while byte < bytes { store8(physical + byte,load8(load-addr + i * 4096 + byte)); byte = byte + 1 }
+    }
+    domain-map-user-code(domain, virt-load + i * 4096, physical)
     i = i + 1
   }
+  if lifecycle != 0 { store64(lifecycle + 104,image-size) }
   serial-write-cstr(port, "  SCI: image mapped")
   serial-nl(port)
 
@@ -867,7 +887,8 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     let rc = runtime-invoke-entry(entry, cap-info)
     runtime-instance-active = 0
     domain-switch(prev)
-    if lifecycle != 0 {
+    if lifecycle != 0 { runtime-instance-detach-aliases(lifecycle) }
+    if lifecycle != 0 && (sync == 1 || runtime-aborted != 0) {
       if runtime-instance-dispose(lifecycle) != 0 {
         serial-write-cstr(port,"  SCI: ephemeral teardown refused"); serial-nl(port); return -1
       }
@@ -889,7 +910,12 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
       serial-nl(port)
       return rc
     }
-    if dyn-register-image-exports(port,load-addr,entry,image-size) != 0 { cap-revoke(cap-idx); store64(component + 16,0); return -1 }
+    // Standalone retained clients expose only their typed supervisor record.
+    // Shared libraries and asynchronous service providers keep their own path.
+    let handle = runtime-instance-retain(lifecycle,entry)
+    if handle == 0 { runtime-instance-dispose(lifecycle); return -1 }
+    runtime-instance-last-handle = handle
+    sci-sync-handle = handle
     sci-sync-page = shared
     sci-sync-domain = domain
     sci-sync-grants = required

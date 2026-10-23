@@ -1,0 +1,140 @@
+package space.kernel
+
+// Kernel-owned retained SCI catalog. Tokens never contain a pointer/capability
+// index and are not published to a guest ABI or the flat SCI import registry.
+const RUNTIME-INSTANCE-CATALOG-SLOTS = 64
+var runtime-instance-catalog: Int = 0
+var runtime-instance-generation: Int = 0
+var runtime-instance-last-handle: Int = 0
+
+fn runtime-instance-kernel-context() -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) { return 0 }
+  return 1
+}
+
+// Catalog record: state, generation, component ID, component, capability,
+// domain, phase (1 live, 2 retiring), reserved. Generation zero is never live.
+fn runtime-instance-record(handle: Int, phase: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || runtime-instance-catalog == 0 || handle <= 0 { return 0 }
+  let slot = (handle & 255) - 1
+  let generation = handle >> 8
+  if slot < 0 || slot >= RUNTIME-INSTANCE-CATALOG-SLOTS || generation <= 0 { return 0 }
+  let record = runtime-instance-catalog + slot * 64
+  if load64(record + 8) != generation || load64(record + 48) != phase { return 0 }
+  let state = load64(record)
+  if state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE || load64(state + 280) != handle { return 0 }
+  let component = load64(record + 24)
+  let cap = load64(record + 32)
+  let domain = load64(record + 40)
+  if component == 0 || load64(state + 8) != component || load64(component) != load64(record + 16) || load64(component + 8) != 5 { return 0 }
+  if cap < 0 || cap >= cap-count || load64(state + 16) != cap || load64(cap-table-base + cap * 16) != component { return 0 }
+  if domain <= 0 || domain >= domain-count || load64(state) != domain || load64(component + 40) != domain { return 0 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE || load64(domain-table + domain * 24 + 16) != cap { return 0 }
+  return record
+}
+
+fn runtime-instance-can-admit(count: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || count <= 0 || count > RUNTIME-INSTANCE-CATALOG-SLOTS { return 0 }
+  if cap-table-cap <= 0 || cap-table-cap > 128 || runtime-instance-generation >= 0x7fffffffffffff - count { return 0 }
+  let available = 0
+  let i = 0
+  while i < RUNTIME-INSTANCE-CATALOG-SLOTS {
+    if runtime-instance-catalog == 0 || load64(runtime-instance-catalog + i * 64) == 0 { available = available + 1 }
+    i = i + 1
+  }
+  if available < count { return 0 }
+  available = MAX-DOMAINS - domain-count
+  i = 1
+  while i < domain-count {
+    if load64(domain-table + i * 24 + 8) == DOMAIN-FREE { available = available + 1 }
+    i = i + 1
+  }
+  if available < count { return 0 }
+  available = cap-table-cap - cap-count
+  let cursor = runtime-instance-cap-free
+  i = 0
+  while cursor != 0 {
+    let idx = cursor - 1
+    if runtime-instance-cap-pool == 0 || idx < 0 || idx >= cap-count || i >= 128 { return 0 }
+    let record = runtime-instance-cap-pool + idx * 32
+    if load64(record) != 2 || load64(cap-table-base + idx * 16) != 0 { return 0 }
+    available = available + 1
+    cursor = load64(record + 16)
+    i = i + 1
+  }
+  if available < count { return 0 }
+  return 1
+}
+
+fn runtime-instance-retain(state: Int, entry: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE || load64(state + 280) != 0 { return 0 }
+  if runtime-instance-generation >= 0x7fffffffffffff { return 0 }
+  if runtime-instance-catalog == 0 { runtime-instance-catalog = frame-alloc() }
+  let slot = 0
+  while slot < RUNTIME-INSTANCE-CATALOG-SLOTS && load64(runtime-instance-catalog + slot * 64) != 0 { slot = slot + 1 }
+  if slot == RUNTIME-INSTANCE-CATALOG-SLOTS { return 0 }
+  let component = load64(state + 8)
+  if component == 0 || load64(component + 16) != entry { return 0 }
+  runtime-instance-generation = runtime-instance-generation + 1
+  let handle = (runtime-instance-generation << 8) | (slot + 1)
+  let record = runtime-instance-catalog + slot * 64
+  store64(record,state)
+  store64(record + 8,runtime-instance-generation)
+  store64(record + 16,load64(component))
+  store64(record + 24,component)
+  store64(record + 32,load64(state + 16))
+  store64(record + 40,load64(state))
+  store64(record + 48,1)
+  store64(state + 280,handle)
+  store64(state + 288,entry)
+  return handle
+}
+
+fn runtime-instance-resume(handle: Int, entry: Int, argument: Int) -> Int {
+  let record = runtime-instance-record(handle,1)
+  if record == 0 || runtime-instance-active != 0 { return -1 }
+  let state = load64(record)
+  if load64(state + 296) != 0 || entry != load64(state + 288) || argument != state + 128 { return -1 }
+  store64(state + 296,1)
+  let caller-root = cr3-read()
+  let caller-cap = current-cap
+  domain-switch(load64(state))
+  if domain-current != load64(state) || cr3-read() != load64(domain-table + load64(state) * 24) {
+    if domain-restore-service-context(0,caller-cap,caller-root) != 0 { return -1 }
+    store64(state + 296,0)
+    return -1
+  }
+  runtime-instance-active = state
+  let result = runtime-invoke-entry(entry,argument)
+  runtime-instance-active = 0
+  if domain-restore-service-context(0,caller-cap,caller-root) != 0 { return -1 }
+  store64(state + 296,0)
+  if runtime-aborted != 0 { store64(record + 48,2) }
+  return result
+}
+
+fn runtime-instance-retire(handle: Int) -> Int {
+  let record = runtime-instance-record(handle,1)
+  if record == 0 {
+    if runtime-instance-record(handle,2) != 0 { return 0 }
+    return -1
+  }
+  let state = load64(record)
+  if load64(state + 296) != 0 || runtime-instance-active == state { return -1 }
+  store64(record + 48,2)
+  return 0
+}
+
+// Caller must first withdraw routes, drain rings and detach owned surfaces.
+// This contract remains kernel-owned; a guest cannot invoke retire/release.
+fn runtime-instance-release(handle: Int) -> Int {
+  let record = runtime-instance-record(handle,2)
+  if record == 0 { return -1 }
+  let state = load64(record)
+  if load64(state + 296) != 0 || runtime-instance-active == state { return -1 }
+  if runtime-instance-dispose(state) != 0 { return -1 }
+  store64(record,0)
+  store64(record + 48,0)
+  if runtime-instance-last-handle == handle { runtime-instance-last-handle = 0 }
+  return 0
+}

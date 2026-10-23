@@ -444,6 +444,7 @@ fn domain-restore-service-context(domain: Int, cap: Int, actual-root: Int) -> In
   let logical-root = load64(domain-table + domain * 24)
   if actual-root == 0 || (actual-root != kernel-root && actual-root != logical-root) { return -1 }
   cr3-write(actual-root)
+  if cr3-read() != actual-root { return -1 }
   domain-current = domain
   current-cap = cap
   return 0

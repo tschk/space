@@ -1,0 +1,25 @@
+package space.fixture
+component RetainedAllocation {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ export entry: RetainedEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface RetainedEntry { fn retained-entry(info:Int)->Int }
+interrupt fn calloc(n:Int,size:Int)->Int{}
+var retained-calls:Int=0
+// The second invocation needs the instance's rebound allocator; the third
+// forces the compiler's real escaping-array allocation-failure branch.
+fn malloc(bytes:Int)->Int{
+ if retained-calls>=3{return 0;}
+ return calloc(1,bytes);
+}
+fn retained-values()->[Int]{return [7,11,24];}
+fn retained-entry(info:Int)->Int{
+ retained-calls=retained-calls+1;
+ if retained-calls==1{return 1;}
+ let values=retained-values();
+ return values[0]+values[1]+values[2];
+}
