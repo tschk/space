@@ -59,6 +59,7 @@ fn linux-process-discard-stat(fd: Int, buffer: Int) -> Int {
 }
 
 fn linux-process-descriptor-dup(old: Int, chosen: Int, flags: Int, minimum: Int) -> Int {
+  if linux-process-device-is(old)!=0 || linux-process-device-is(chosen)!=0{return -95;}
   if linux-process-pipe-is(old) != 0 { return linux-process-pipe-dup(old,chosen,flags,minimum) }
   let host = linux-process-file-host(old)
   if host < 3 { if linux-process-descriptor-flags(old) >= 0 { return -38 } return -9 }

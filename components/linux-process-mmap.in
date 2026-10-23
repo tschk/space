@@ -3,10 +3,16 @@ package space.kernel
 const LINUX-PROCESS-MMAP-BASE = 0x30000000
 const LINUX-PROCESS-MMAP-LIMIT = 0x31000000
 
-// Private anonymous data mappings only: no executable, fixed, file-backed or
-// shared mappings. The native VM object owns zeroed backing and teardown for
-// these mappings alongside ELF, stack and brk.
+// Ordinary mappings are private anonymous data only. An explicitly armed
+// framebuffer edge may admit its one bounded device mapping before this path.
+// Native VM owns every backing page; executable/fixed/general file mappings
+// remain refused.
 fn linux-process-mmap(address: Int, length: Int, protection: Int, flags: Int, fd: Int, offset: Int) -> Int {
+  if linux-process-device-is(fd)!=0{return linux-process-device-mmap(address,length,protection,flags,fd,offset);}
+  return linux-process-mmap-anonymous(address,length,protection,flags,fd,offset);
+}
+
+fn linux-process-mmap-anonymous(address: Int, length: Int, protection: Int, flags: Int, fd: Int, offset: Int) -> Int {
   if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if address != 0 || length <= 0 || length > LINUX-PROCESS-MMAP-LIMIT - LINUX-PROCESS-MMAP-BASE { return -22 }
   if protection != 1 && protection != 3 { return -13 }
@@ -35,6 +41,11 @@ fn linux-process-mmap(address: Int, length: Int, protection: Int, flags: Int, fd
 }
 
 fn linux-process-munmap(address: Int, length: Int) -> Int {
+  if linux-process-device-overlap(address,length)!=0{return linux-process-device-unmap(address,length);}
+  return linux-process-munmap-anonymous(address,length);
+}
+
+fn linux-process-munmap-anonymous(address: Int, length: Int) -> Int {
   if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if (address & 4095) != 0 || length <= 0 { return -22 }
   if address < LINUX-PROCESS-MMAP-BASE || address >= LINUX-PROCESS-MMAP-LIMIT { return -22 }

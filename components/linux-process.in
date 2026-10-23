@@ -1,5 +1,6 @@
 package space.kernel
 import "linux-process-vm.in"
+import "linux-process-devices.in"
 import "linux-process-files.in"
 import "linux-process-mmap.in"
 import "linux-process-metadata.in"
@@ -325,6 +326,7 @@ fn linux-process-brk-call(request: Int) -> Int {
 }
 
 fn linux-process-mprotect(address: Int, length: Int, protection: Int) -> Int {
+  if linux-process-device-overlap(address,length)!=0{return -95;}
   if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if (address & 4095) != 0 || length < 0 || length > 0x1000000 { return -22 }
   if protection != 1 && protection != 3 { return -22 }
@@ -437,6 +439,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   }
   else if number == 13 { result = linux-process-pipe-sigaction(first,second,third,fourth) }
   else if number == 14 { result = linux-process-signal-mask-call(linux-process-int32(first),second,third,fourth) }
+  else if (number==56 || number==57 || number==58 || number==59) && linux-process-device-entry!=0 { result=-95 }
   else if number == 58 {
     result = linux-process-vfork-request()
     if result == 0 { resume = 2 }
@@ -523,7 +526,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   } else if number == 334 { result = -38 }
   else if number == 228 { result = -38 }
   else if number == 10 { result = linux-process-mprotect(first, second, third) }
-  else if number == 16 { if first == 1 || first == 2 || linux-process-pipe-is(first) != 0 { result = -25 } else { result = -9 } }
+  else if number == 16 { if linux-process-device-is(first)!=0{result=linux-process-device-ioctl(first,second,third);}else if first == 1 || first == 2 || linux-process-pipe-is(first) != 0 { result = -25 } else { result = -9 } }
   else if number == 79 {
     if second < 2 { result = -34 }
     else if linux-process-range(first, 2, 1) == 0 { result = -14 }

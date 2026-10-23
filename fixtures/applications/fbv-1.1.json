@@ -61,7 +61,7 @@
     }
   ],
   "coverage_goal": {
-    "status": "original protected CLI startup verified on both roots; GUI adapter not implemented",
+    "status": "original protected CLI startup verified on both roots; explicit single-canvas BMP presentation verified on standard GUI profile; interactive/full GUI goal open",
     "purpose": "Intermediate original framebuffer GUI workload exposing owned display/input adapter gaps; full FLTK matrix remains required",
     "cli_reports": {
       "standard": "/workspace/fbv-counted2-final-standard/report.json",
@@ -69,6 +69,18 @@
     },
     "cli_activations_per_root": 44,
     "synthetic_startup_entries_per_root": 66,
-    "acceptance_manifest_sha256": "e4112b3bdfaed760bbf7dc12c44e9f80c03579cda0048310497825e6dcae4fc8"
+    "acceptance_manifest_sha256": "e4112b3bdfaed760bbf7dc12c44e9f80c03579cda0048310497825e6dcae4fc8",
+    "framebuffer_profile": {
+      "argv": [
+        "/fbv",
+        "-cery",
+        "/fbv-test.bmp"
+      ],
+      "report": "/workspace/linux-framebuffer-verified/report.json",
+      "original_activations": 22,
+      "synthetic_controls": 88,
+      "measured_resource_cycles": 21,
+      "limitations": "one completed full mapping per explicit sole-process lease; no aliases/remap, interactive TTY, ordinary launcher or FLTK/X11"
+    }
   }
 }

@@ -16,6 +16,20 @@ A future Wayland adapter must translate into these native contracts rather than
 replace them with foreign kernel semantics. Neither source modularization nor a
 kernel-linked window demo establishes isolated SCI desktop services.
 
+## Private owned canvas / original viewer checkpoint (2026-10-24)
+
+A separately imported private native canvas library owns staging/accepted frames
+and leases existing SPDP surfaces. Checked stopped uploads from native VM objects
+publish only after full copy and validation; uncertain close retains ownership.
+The [canvas evidence](plans/2026-10-24-native-canvas-upload.md) proves two real
+protected producers, exact pixels, revocation and teardown controls. The later
+[original fbv profile](plans/2026-10-24-linux-framebuffer-app.md) translates one
+bounded Linux device mapping onto that contract and the existing renderer.
+No second renderer, IPC fabric, foreign frame ledger or physical scanout map is
+introduced. These libraries remain kernel-linked, explicitly imported prototypes;
+ordinary launcher integration, concurrent tiling and interactive foreign seat
+routing remain required work.
+
 ## Keyboard editing checkpoint (2026-10-24)
 
 The protected default still uses the existing SPDP seat and shared-page frame

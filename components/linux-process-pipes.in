@@ -62,6 +62,7 @@ fn linux-process-pipe-is(fd: Int) -> Int {
 }
 
 fn linux-process-pipe-slot-used(fd: Int) -> Int {
+  if linux-process-device-is(fd)!=0{return 1;}
   if linux-process-file-host(fd) >= 3 { return 1 }
   if fd == 1 && linux-process-stdout-open != 0 { return 1 }
   if fd == 2 && linux-process-stderr-open != 0 { return 1 }
@@ -177,6 +178,7 @@ fn linux-process-pipe-close(fd: Int) -> Int {
 // new=-1 implements dup/F_DUPFD, otherwise dup2/dup3. Source support is
 // deliberately restricted to actual owned pipes; unsupported sources ENOSYS.
 fn linux-process-pipe-dup(old: Int, target: Int, flags: Int, minimum: Int) -> Int {
+  if linux-process-device-is(target)!=0{return -95;}
   if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
   if old < 0 || old >= VFS-MAX-FDS || linux-process-pipe-slot-used(old) == 0 { return -9 }
   let host = linux-process-pipe-host(old)

@@ -63,8 +63,11 @@ protected CLI activations per root now pass with unchanged host help/no-argument
 output and status. Its initial argc mismatch drove an explicit argc1..3 launcher;
 66 separately counted startup ELF entries per root check argv/envp/auxv, high
 immutable sources and unused-pointer refusal. Three clean unmodified-source
-builds are byte-identical. The viewer has not rendered pixels or received GUI
-input on Space; this does not complete any FLTK or foreign GUI row. See the
+builds are byte-identical. A later explicit native-canvas framebuffer profile now renders the original
+viewer BMP:22 original launches and88 separately counted syscall/fault/deadline/
+quarantine controls pass with exact pixels and21 measured resource cycles. It
+does not provide interactive input, ordinary launcher integration or complete
+any FLTK/framework row. See the
 [framebuffer workload checkpoint](plans/2026-10-24-linux-framebuffer-app.md).
 
 Protected Mach-O supports checked raw Darwin calls and finite typed libSystem

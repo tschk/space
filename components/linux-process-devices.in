@@ -1,0 +1,27 @@
+package space.kernel
+
+// Optional private, synchronous edge adapter. Ordinary Linux CLI images have no
+// display dependency or allocations. The trusted supervisor installs one raw
+// machine-ABI entry and a private64-byte request before starting a sole process.
+// Entry accepts a kernel-owned request pointer, returns Int errors, preserves
+// callee-saved registers and cannot throw. It is not an application/SCI export
+// or an IPC service, and may not retain/reenter the shared request.
+var linux-process-device-entry:Int=0
+var linux-process-device-request:Int=0
+var linux-process-device-busy:Int=0
+fn linux-process-device-call(operation:Int,a:Int,b:Int,c:Int,d:Int,e:Int,f:Int)->Int{
+ if linux-process-device-entry==0{if operation==0 || operation==6{return 0;}return -19;}
+ if linux-process-device-request==0{return -5;}
+ if linux-process-device-busy!=0{return -16;}
+ let request=linux-process-device-request;
+ store64(request,operation);store64(request+8,a);store64(request+16,b);store64(request+24,c);store64(request+32,d);store64(request+40,e);store64(request+48,f);
+ linux-process-device-busy=1;let result=invoke1(linux-process-device-entry,request);linux-process-device-busy=0;return result;
+}
+fn linux-process-device-is(fd:Int)->Int{return linux-process-device-call(0,fd,0,0,0,0,0);}
+fn linux-process-device-open(path:Int,flags:Int)->Int{return linux-process-device-call(1,path,flags,0,0,0,0);}
+fn linux-process-device-close(fd:Int)->Int{return linux-process-device-call(2,fd,0,0,0,0,0);}
+fn linux-process-device-flags(fd:Int)->Int{return linux-process-device-call(3,fd,0,0,0,0,0);}
+fn linux-process-device-ioctl(fd:Int,request:Int,buffer:Int)->Int{return linux-process-device-call(4,fd,request,buffer,0,0,0);}
+fn linux-process-device-mmap(address:Int,length:Int,protection:Int,flags:Int,fd:Int,offset:Int)->Int{return linux-process-device-call(5,address,length,protection,flags,fd,offset);}
+fn linux-process-device-overlap(address:Int,length:Int)->Int{return linux-process-device-call(6,address,length,0,0,0,0);}
+fn linux-process-device-unmap(address:Int,length:Int)->Int{return linux-process-device-call(7,address,length,0,0,0,0);}

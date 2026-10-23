@@ -36,9 +36,10 @@ Both final roots now pass44 original CLI executions plus66 separately classified
 startup-fixture entries over21 measured cycles. Exact merged serial output and
 status match real host execution. Resource, authority, domain, hook, budget and
 caller FS/GS state checks pass. These original entries execute through CPL3
-native owned address spaces. The app has not drawn pixels or received GUI input.
+native owned address spaces. That CLI checkpoint does not prove pixels or GUI
+input. The later explicit presentation slice below adds original viewer pixels.
 
-## Next executable boundary
+## Intended display/input boundary
 
 Run a known BMP through the original viewer, with an explicitly granted real
 file and no host framebuffer access. Record its actual missing calls before
@@ -68,7 +69,8 @@ nonzero/blocked even when its diagnostic assertions hold. A real102-byte4x4 BMP
 is written through native filesystem APIs and read by the unmodified viewer.
 The original program reaches `open /dev/fb0: No such file or directory`, rather
 than its corrupt/unknown-image path. Saved file bytes and runtime ownership are
-checked after each invocation. No framebuffer pixels have been presented.
+checked after each invocation. That diagnostic invocation presents no pixels;
+it remains a missing-device refusal outside the explicit display session.
 
 The headless host error path is also unhealthy: after the missing framebuffer,
 upstream cleanup can abort with an invalid free. The source jumps to cleanup
@@ -88,4 +90,72 @@ passes44 original entries after adding this diagnostic option at
 
 A healthy graphical reference requires an actual virtual framebuffer. Preparing
 a small Linux reference boot is comparison work only; it will never count as
-Space application or GUI execution. The actual Space adapter remains required.
+Space application or GUI execution. Its zero-credit reference receipt remains
+separate from the later actual Space adapter below.
+
+
+## Original viewer presentation — explicit initial profile
+
+`/workspace/linux-framebuffer-verified/report.json` passes22 original unchanged
+fbv activations plus88 separately counted synthetic syscall/fault/deadline/
+quarantine activations, with21 measured resource cycles after warmup. The pinned
+828736-byte ELF runs as CPL3 through native owned VM objects. It reads the real
+102-byte BMP from SparkFS and uses its own `-cery` enlargement and RGB conversion.
+The entire1024x768 RGB screenshot matches an independent BMP/nearest-neighbor
+oracle, including all256x128 client pixels, background and cursor. The actual
+rendered frame was inspected. Original fbv exits0; no host viewer supplies Space
+pixels or application behavior.
+
+This profile explicitly borrows a caller-owned native canvas and independently
+granted Memory/Display owner. One open `/dev/fb0` descriptor and one full
+131072-byte RW MAP_SHARED mapping are admitted for a sole process. Native VM
+owns all backing; no physical scanout/MMIO is mapped. Actual canvas dimensions,
+stride and RGB bitfields populate FBIOGET_VSCREENINFO/FBIOGET_FSCREENINFO.
+Successful complete unmap performs checked stopped native upload before page
+withdrawal. The descriptor may close while its mapping remains writable; the
+actual fixture proves that unmap still presents. A completed mapping retires
+this bounded lease: remap and concurrent aliases refuse rather than invent file
+backing persistence. Unknown ioctl/flags/offsets, partial unmap/protection,
+descriptor duplication/replacement and fork/vfork/exec refuse before effects.
+Other device reads/writes/stat remain unsupported, with real errors.
+
+The ordinary Linux runtime imports a small optional private device contract;
+only this explicit workload imports the framebuffer/display implementation.
+A kernel-owned64-byte serialized request and raw machine-ABI status callback
+carry private edge calls, not guest-selected function pointers or a new IPC
+service. Neither the provider nor canvas is a public SCI export. The minimal
+ordinary CLI regression passes44 original CLI plus66 startup fixture entries at
+`/workspace/linux-framebuffer-cli-minimal/report.json`; a display-free root does
+not gain GUI capability by importing the ordinary Linux runtime.
+
+Each resource cycle adds three genuine negative execution paths: a mapped guest
+writes RX code and faults, a mapped guest reaches a serial barrier then expires
+its real10-tick IRQ budget, and a stopped mapping receives an actual malformed
+PDE before its complete unmap. The latter native copy quarantines the VM, leaves
+accepted epoch0, closes admission and retains the edge/canvas lease. Binding and
+constructor retirement are independently verified; only trusted page-table repair,
+public Linux/native recovery and explicit edge release reopen admission. No CPU
+phase is forged and the quarantined guest is not resumed. The test-only frozen
+source changes exactly one callback installation to an interposer that always
+calls the real provider; canonical/compiled hashes and replacement are recorded.
+The production provider has no test hook. Caller FS/GS/capability, frames, domains,
+heap, object arena, grants, hook, VM and budget invariants hold after warmup.
+
+Earlier receipts remain failures: missing initial explicit import/helper caused
+compile refusals; the first small-image run exited0 but its second mapping was
+correctly refused, so the presentation gate failed. A first minimal-GUI compile
+exposed a display dependency and drove the optional-device split; it is not GUI
+coverage. A reentrancy guard caught the provider recursively querying its own
+adapter during FD allocation, repaired to inspect its owned descriptor state.
+The first quarantine interposer injected before a partial unmap and caused a
+real CPU fault; its final fault-count assertion failed. Injection now targets
+only the exact complete unmap, preserving the original assertion.
+
+These are private kernel-linked prototypes, not isolated SCI display services,
+ordinary launcher integration, interactive TTY/seat input, remappable framebuffer
+backing, X11, FLTK, Cocoa or Win32 GUI completion. Native source
+`482bbb1` separately passed two-producer canvas pixels,132 entries,22 faults,
+partial-copy grant revocation, mode changes and retained close. The later native
+canvas regression also passes at `/workspace/native-canvas-framebuffer-regression`.
+The application lab now adds two mandatory gates (native canvas and original
+framebuffer viewer) for135 total; a fresh committed integration run is required.

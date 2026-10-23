@@ -167,3 +167,19 @@ termination, last-reference quarantine and the original upstream xargs success
 and failed-exec cases. General threads, installed arbitrary signal handlers,
 arbitrary executable lookup and unrestricted applications remain outside the
 current bounded profile. The overall application and desktop goal stays open.
+
+
+## Optional framebuffer edge
+
+The [explicit framebuffer workload](plans/2026-10-24-linux-framebuffer-app.md)
+uses these same native VM-owned pages for its sole admitted device mapping.
+It adds no foreign backing ledger, physical frame translation or scanout map.
+The ordinary runtime's private optional-device contract has no graphics imports
+or per-process allocation when uninstalled. The trusted GUI supervisor installs
+one synchronous raw machine-ABI adapter with a private serialized request.
+Only that separately imported edge supplies fbdev policy. Fork/vfork/exec while
+its lease is armed are refused; existing ordinary process coverage remains
+required. A failed native copy/teardown retains both the quarantined native VM
+and edge lease until actual page-table repair, public native/Linux recovery and
+explicit edge release. Source hashes and real failure controls are recorded in
+the workload checkpoint; this is not an isolated SCI display service.

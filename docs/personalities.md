@@ -7,6 +7,15 @@ it does not provide a general Linux, macOS, or Windows process environment.
 **Progress + milestones:** [`personalities-roadmap.md`](personalities-roadmap.md)
 Verify: `bash scripts/check-personalities.sh`.
 
+The separately imported [initial Linux framebuffer profile](plans/2026-10-24-linux-framebuffer-app.md)
+now runs the original pinned fbv BMP viewer against an explicitly owned native
+canvas:22 original activations,88 separately counted syscall/failure controls,
+exact pixels and21 resource cycles. Ordinary CLI images import only the optional
+private device contract; they acquire no display implementation or authority.
+The profile admits one completed mapping per sole-process lease and publishes
+on checked stopped unmap. Interactive input, remapping/aliases, X11 and FLTK
+remain open. Neither private adapter is an isolated SCI service.
+
 ## ReactOS / NT layering (research takeaway)
 
 On real Windows / ReactOS:

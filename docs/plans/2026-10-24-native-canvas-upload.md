@@ -109,3 +109,37 @@ at `/workspace/native-canvas-launcher`; the unchanged100-frame damage gate passe
 at `/workspace/native-canvas-damage` with333fps/30 ticks (threshold30). These
 checks do not give original foreign GUI application credit. The Linux edge and
 product launch integration remain open.
+
+## Next executable edge profile
+
+Implement an explicit Linux framebuffer session around a caller-owned canvas,
+with one protected process, one open device descriptor at a time and one shared
+mapping per complete lease. Reopening after its completed unmap refuses-95;
+this does not claim persistent remappable file backing. The first original workload uses `fbv -cery /fbv-test.bmp`: original nearest-
+neighbor enlargement of the4x4 BMP to the whole canvas, no interactive TTY
+request. Inspection/actual execution showed that even -y centers smaller images,
+so the earlier proposed top-left profile was incorrect. Smaller fbv output
+makes two simultaneous shared aliases; the native VM currently has no owned alias contract, so refuse
+the second mapping rather than return the same address or copy disconnected
+buffers. Genuine MAP_SHARED backing exists for the admitted single mapping;
+closing its descriptor does not invalidate it. Commit pixels at exact whole
+mapping unmap, before native page withdrawal, and retain mapping on failed copy.
+
+Expose only FBIOGET_VSCREENINFO and FBIOGET_FSCREENINFO with actual canvas
+geometry/stride/RGB bitfields. smem_start/mmio_start are zero: no physical mapping
+is exposed. Unsupported ioctl, dup, device reads/writes, partial unmap/protection,
+and fork/vfork/exec while the explicit session is armed must refuse. Unknown
+paths retain existing behavior. No VT, signal, keyboard or terminal success is
+fabricated. The first gate must compare actual original-app pixels with an
+independent BMP oracle, check status/ownership and show no ambient device access.
+This is a finite initial framebuffer profile, not general Linux fbdev/X11.
+
+
+Ordinary Linux CLI builds import only a small private synchronous optional-device
+contract. They do not import display/canvas/foreign GUI modules or allocate the
+private request buffer. The framebuffer supervisor explicitly installs a raw
+machine-ABI Int->Int callback and owned64-byte request before its sole process;
+all policy remains in the separately imported framebuffer adapter. This trusted
+kernel-linked call is not a second IPC service or SCI isolation. It cannot throw,
+retain the request, reenter the adapter or accept guest-selected callback pointers.
+The actual minimal CLI regression verifies that the display dependency is absent.
