@@ -1,0 +1,157 @@
+package space.kernel
+
+// Bounded advisory byte-range ownership for native file objects. Callers lend
+// an owner identity; personality-specific lock commands and errno stay at edges.
+// Like SparkFS buffers, this ledger has one synchronous/nonreentrant owner.
+const FS-RANGE-MAX = 128
+const FS-RANGE-STAGE-MAX = 257
+const FS-RANGE-BYTES = 48
+const FS-RANGE-SHARED = 0
+const FS-RANGE-EXCLUSIVE = 1
+const FS-RANGE-RELEASE = 2
+var fs-range-table: Int = 0
+var fs-range-stage: Int = 0
+var fs-range-count: Int = 0
+
+fn fs-range-init() -> void {
+  if fs-range-table == 0 {
+    fs-range-table = alloc(FS-RANGE-MAX * FS-RANGE-BYTES)
+    fs-range-stage = alloc(FS-RANGE-STAGE-MAX * FS-RANGE-BYTES)
+    fs-range-count = 0
+  }
+}
+
+fn fs-range-copy(dest: Int, source: Int) -> void {
+  let i = 0
+  while i < FS-RANGE-BYTES {
+    store64(dest + i, load64(source + i))
+    i = i + 8
+  }
+}
+
+// End -1 denotes infinity; all finite intervals are half-open [start,end).
+fn fs-range-overlap(a: Int, ae: Int, b: Int, be: Int) -> Int {
+  if ae >= 0 && ae <= b { return 0 }
+  if be >= 0 && be <= a { return 0 }
+  return 1
+}
+
+fn fs-range-touch(a: Int, ae: Int, b: Int, be: Int) -> Int {
+  if ae >= 0 && ae < b { return 0 }
+  if be >= 0 && be < a { return 0 }
+  return 1
+}
+
+fn fs-range-stage-put(count: Int, owner: Int, mount: Int, inode: Int, start: Int, end: Int, kind: Int) -> Int {
+  if count >= FS-RANGE-STAGE-MAX { return -3 }
+  let p = fs-range-stage + count * FS-RANGE-BYTES
+  store64(p, owner)
+  store64(p + 8, mount)
+  store64(p + 16, inode)
+  store64(p + 24, start)
+  store64(p + 32, end)
+  store64(p + 40, kind)
+  return count + 1
+}
+
+// 0 success, -1 invalid request/object, -2 another owner's conflict,
+// -3 ledger capacity. Refusals leave the active ledger unchanged.
+fn fs-range-lease(owner: Int, mount: Int, inode: Int, start: Int, length: Int, kind: Int) -> Int {
+  if owner <= 0 || mount <= 0 || mount != sf-mount-id || sf-disk-ready == 0 { return -1 }
+  if inode <= 0 || inode > load32(sf-super + SF-SB-INODE-COUNT) { return -1 }
+  if load32(sf-inode-addr(inode - 1) + SF-IN-TYPE) != SF-TYPE-FILE { return -1 }
+  if start < 0 || length < 0 || kind < 0 || kind > FS-RANGE-RELEASE { return -1 }
+  if length > 9223372036854775807 - start { return -1 }
+  let end = -1
+  if length > 0 { end = start + length }
+  let i = 0
+  // Check conflicts before allocating scratch or changing any active record.
+  while i < fs-range-count {
+    let p = fs-range-table + i * FS-RANGE-BYTES
+    if load64(p) != owner && load64(p + 8) == mount && load64(p + 16) == inode && kind != FS-RANGE-RELEASE {
+      if (kind == FS-RANGE-EXCLUSIVE || load64(p + 40) == FS-RANGE-EXCLUSIVE) && fs-range-overlap(start, end, load64(p + 24), load64(p + 32)) != 0 { return -2 }
+    }
+    i = i + 1
+  }
+  if kind == FS-RANGE-RELEASE && fs-range-count == 0 { return 0 }
+  fs-range-init()
+  let count = 0
+  i = 0
+  while i < fs-range-count {
+    let p = fs-range-table + i * FS-RANGE-BYTES
+    let old-start = load64(p + 24)
+    let old-end = load64(p + 32)
+    if load64(p) == owner && load64(p + 8) == mount && load64(p + 16) == inode && fs-range-overlap(start, end, old-start, old-end) != 0 {
+      if old-start < start { count = fs-range-stage-put(count, owner, mount, inode, old-start, start, load64(p + 40)) }
+      if end >= 0 && (old-end < 0 || old-end > end) { count = fs-range-stage-put(count, owner, mount, inode, end, old-end, load64(p + 40)) }
+    } else if load64(p + 8) == sf-mount-id {
+      fs-range-copy(fs-range-stage + count * FS-RANGE-BYTES, p)
+      count = count + 1
+    }
+    if count < 0 || count > FS-RANGE-STAGE-MAX { return -3 }
+    i = i + 1
+  }
+  if kind != FS-RANGE-RELEASE { count = fs-range-stage-put(count, owner, mount, inode, start, end, kind) }
+  if count < 0 { return -3 }
+  // Coalesce same-owner/same-kind neighbors after splitting and replacement.
+  i = 0
+  while i < count {
+    let p = fs-range-stage + i * FS-RANGE-BYTES
+    let j = i + 1
+    while j < count {
+      let q = fs-range-stage + j * FS-RANGE-BYTES
+      if load64(p) == load64(q) && load64(p + 8) == load64(q + 8) && load64(p + 16) == load64(q + 16) && load64(p + 40) == load64(q + 40) && fs-range-touch(load64(p + 24), load64(p + 32), load64(q + 24), load64(q + 32)) != 0 {
+        if load64(q + 24) < load64(p + 24) { store64(p + 24, load64(q + 24)) }
+        if load64(q + 32) < 0 || (load64(p + 32) >= 0 && load64(q + 32) > load64(p + 32)) { store64(p + 32, load64(q + 32)) }
+        count = count - 1
+        if j != count { fs-range-copy(q, fs-range-stage + count * FS-RANGE-BYTES) }
+        j = i + 1
+      } else {
+        j = j + 1
+      }
+    }
+    i = i + 1
+  }
+  if count > FS-RANGE-MAX { return -3 }
+  i = 0
+  while i < count {
+    fs-range-copy(fs-range-table + i * FS-RANGE-BYTES, fs-range-stage + i * FS-RANGE-BYTES)
+    i = i + 1
+  }
+  fs-range-count = count
+  return 0
+}
+
+fn fs-range-release-owner-file(owner: Int, mount: Int, inode: Int) -> void {
+  let i = 0
+  while i < fs-range-count {
+    let p = fs-range-table + i * FS-RANGE-BYTES
+    if load64(p) == owner && load64(p + 8) == mount && load64(p + 16) == inode {
+      fs-range-count = fs-range-count - 1
+      fs-range-copy(p, fs-range-table + fs-range-count * FS-RANGE-BYTES)
+    } else { i = i + 1 }
+  }
+}
+
+fn fs-range-release-owner(owner: Int) -> void {
+  let i = 0
+  while i < fs-range-count {
+    let p = fs-range-table + i * FS-RANGE-BYTES
+    if load64(p) == owner {
+      fs-range-count = fs-range-count - 1
+      fs-range-copy(p, fs-range-table + fs-range-count * FS-RANGE-BYTES)
+    } else { i = i + 1 }
+  }
+}
+
+// Native object destruction invalidates leases before the inode slot is reused.
+fn fs-range-release-file(mount: Int, inode: Int) -> void {
+  let i = 0
+  while i < fs-range-count {
+    let p = fs-range-table + i * FS-RANGE-BYTES
+    if load64(p + 8) == mount && load64(p + 16) == inode {
+      fs-range-count = fs-range-count - 1
+      fs-range-copy(p, fs-range-table + fs-range-count * FS-RANGE-BYTES)
+    } else { i = i + 1 }
+  }
+}

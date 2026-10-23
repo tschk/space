@@ -1,5 +1,7 @@
 package space.kernel
 
+import "file-range-leases.in"
+
 // SparkFS public compatibility API.
 
 fn fs-init() -> void {
@@ -96,7 +98,14 @@ fn fs-rename(old: Int, new: Int) -> Int {
 
 fn fs-stat(path: Int, buf: Int) -> Int {
   if volume-ready != 0 {
-    return volume-rpc-stat(path, buf)
+    let result = volume-rpc-stat(path, buf)
+    // Volume's older response has no identity fields. Clear these after the
+    // response copy so prior shared-buffer contents cannot become identities.
+    if result == 0 {
+      store64(buf + SF-ST-INODE, 0)
+      store64(buf + SF-ST-MOUNT, 0)
+    }
+    return result
   }
   return sparkfs-stat(path, buf)
 }
@@ -110,4 +119,31 @@ fn fs-open-path(path: Int) -> Int {
     return -1
   }
   return ino
+}
+
+
+// Native inode permission bits; no foreign mode flags or errno vocabulary.
+fn fs-set-mode(path: Int, permissions: Int) -> Int {
+  if volume-ready != 0 || sf-disk-ready == 0 || permissions < 0 || permissions > 511 { return -1 }
+  let inode = sf-lookup-path(path)
+  if inode < 0 { return -1 }
+  let record = sf-inode-addr(inode)
+  let old = load32(record + SF-IN-MODE)
+  store32(record + SF-IN-MODE, permissions)
+  if sf-write-inode(inode) != 0 {
+    store32(record + SF-IN-MODE, old)
+    return -1
+  }
+  return 0
+}
+
+// RAM block writes complete synchronously. NVMe write-through completion is
+// not FLUSH: refuse that durability claim until the backend implements it.
+fn fs-sync-path(path: Int) -> Int {
+  if volume-ready != 0 || sf-disk-ready == 0 || sf-mem-disk == 0 { return -1 }
+  let inode = sf-lookup-path(path)
+  if inode < 0 { return -1 }
+  let kind = load32(sf-inode-addr(inode) + SF-IN-TYPE)
+  if kind != SF-TYPE-FILE && kind != SF-TYPE-DIR { return -1 }
+  return 0
 }

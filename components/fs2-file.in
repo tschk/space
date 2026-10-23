@@ -21,6 +21,7 @@ fn sparkfs-init() -> void {
   sf-super = alloc(SF-BLOCK-SIZE)
   sf-block-buf = alloc(SF-BLOCK-SIZE)
   sf-disk-ready = 0
+  sf-mount-id = 0
   sf-initialized = 1
   if nvme-ready == 0 {
     sf-mem-disk = alloc(SF-MEM-DISK-SIZE)
@@ -78,11 +79,14 @@ fn sparkfs-init() -> void {
     ino = ino + 1
   }
   sf-disk-ready = 1
+  sf-mount-id = sf-next-mount-id
+  sf-next-mount-id = sf-next-mount-id + 1
   return
 }
 
 fn sf-do-format(total: Int, ino-count: Int) -> Int {
   sf-disk-ready = 0
+  sf-mount-id = 0
   if total < 2 || total > SF-MAX-TOTAL-BLOCKS {
     return -1
   }
@@ -170,6 +174,8 @@ fn sf-do-format(total: Int, ino-count: Int) -> Int {
     return -1
   }
   sf-disk-ready = 1
+  sf-mount-id = sf-next-mount-id
+  sf-next-mount-id = sf-next-mount-id + 1
   return 0
 }
 
@@ -677,6 +683,7 @@ fn sparkfs-delete(path: Int) -> Int {
   if indirect > 0 {
     sf-free-block(indirect)
   }
+  fs-range-release-file(sf-mount-id, ino + 1)
   let j = 0
   while j < SF-INODE-SIZE {
     store8(addr + j, 0)
@@ -783,6 +790,8 @@ fn sparkfs-stat(path: Int, stat-buf: Int) -> Int {
   store64(stat-buf + SF-ST-CTIME, load64(addr + SF-IN-CTIME))
   store64(stat-buf + SF-ST-MTIME, load64(addr + SF-IN-MTIME))
   store64(stat-buf + SF-ST-ATIME, load64(addr + SF-IN-ATIME))
+  store64(stat-buf + SF-ST-INODE, ino + 1)
+  store64(stat-buf + SF-ST-MOUNT, sf-mount-id)
   return 0
 }
 
