@@ -11,6 +11,21 @@ set -euo pipefail
 # Apps are preinstalled dynamic modules (boot kinds 9-13) that bind kernel
 # services and libspace at load time and run on demand via `runapp`.
 
+# Default remains the full two-image build. A targeted build never certifies
+# the other variant; this allows standard-app testing while minimal is broken.
+VARIANT=all
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != --variant ]; then
+    echo "usage: $0 [--variant all|standard|minimal]" >&2
+    exit 2
+  fi
+  VARIANT="$2"
+fi
+case "$VARIANT" in
+  all|standard|minimal) ;;
+  *) echo "unknown image variant: $VARIANT" >&2; exit 2 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=inauguration-dir.sh
@@ -66,6 +81,7 @@ sci "$SPACE_DIR/components/app-man.in" app-man-entry "$MAN_BASE" "$BUILD_DIR/app
 sci "$SPACE_DIR/components/app-sysinfo.in" app-sysinfo-entry "$SYSINFO_BASE" "$BUILD_DIR/app-sysinfo.sci"
 
 echo "[3/3] Compiling kernels and assembling images..."
+if [ "$VARIANT" != minimal ]; then
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -78,6 +94,9 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-standard.bin" "$BUILD
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
   "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci"
 
+fi
+
+if [ "$VARIANT" != standard ]; then
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root-minimal.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -89,7 +108,14 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-minimal.bin" "$BUILD_
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
   "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci"
 
-ls -lh "$BUILD_DIR/standard.bin" "$BUILD_DIR/minimal.bin"
-echo "Done. Boot with:"
-echo "  qemu-system-x86_64 -kernel $BUILD_DIR/standard.bin -m 256M -nographic -no-reboot -serial stdio"
-echo "  qemu-system-x86_64 -kernel $BUILD_DIR/minimal.bin  -m 256M -nographic -no-reboot -serial stdio"
+fi
+
+echo "Done: requested image variant $VARIANT. Boot with:"
+if [ "$VARIANT" != minimal ]; then
+  ls -lh "$BUILD_DIR/standard.bin"
+  echo "  qemu-system-x86_64 -kernel $BUILD_DIR/standard.bin -m 256M -nographic -no-reboot -serial stdio"
+fi
+if [ "$VARIANT" != standard ]; then
+  ls -lh "$BUILD_DIR/minimal.bin"
+  echo "  qemu-system-x86_64 -kernel $BUILD_DIR/minimal.bin -m 256M -nographic -no-reboot -serial stdio"
+fi

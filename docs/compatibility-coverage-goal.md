@@ -1,9 +1,135 @@
 # Compatibility coverage and GUI application goal
 
-User direction: 2026-10-23. Grow Linux, Darwin/macOS and Windows coverage through
-working, tested slices while improving the native desktop enough to exercise
-real GUI clients. This is an ongoing engineering goal, not a claim of general
-application compatibility or a scheduled background task.
+User direction, expanded 2026-10-24 (Australia/Melbourne): build a usable native
+Space desktop and protected Linux, Darwin/macOS and Windows application
+personalities; keep implementing and locally testing real CLI and GUI applications
+until the acceptance matrix below works end to end. This is the full project
+goal. The fixture lab is an early checkpoint, not the completion target.
+
+Latest actual local results: [real-application checkpoint](plans/2026-10-24-real-applications.md).
+
+Status: **active; full goal incomplete**. Current shipped behavior and local test
+results must be recorded separately from this destination. Work proceeds through
+reviewable implementation/test commits on the requested draft PR branch. This
+file does not create a scheduled or unattended background task.
+
+## Full completion goal
+
+From a clean checkout, build Space and its source-built compiler, boot locally
+under QEMU, install the pinned application corpus, and use the original Space
+desktop to launch native and foreign applications as separate protected
+instances. A user can open/edit/save/reopen files, run CLI pipelines, switch
+between independent GUI windows, resize/tile/minimize/restore them, and close or
+recover a crashed application without losing another application's work. Reboot
+preserves saved files. Denied authority and unsupported APIs produce bounded,
+useful failures. No supported scenario depends on executing a foreign payload at
+CPL0, faking its output, or forwarding the workload to the development host.
+
+Completion means all required scenarios in the versioned corpus pass through
+Space's own runtime in fresh repeatable local runs, with isolation, persistence,
+interaction, visible output and cleanup evidence. It does not mean every API or
+every application ever released for the three operating systems is implemented.
+Expand the supported application/profile matrix after each completed checkpoint;
+a narrowed matrix must never silently redefine the full destination.
+
+### Required platform outcomes
+
+| Workstream | Completion evidence |
+|---|---|
+| Native platform and compiler | Source → Inauguration → SCI packaging → loader → granted objects is reproducible; generic ABI/native/JIT fixes live in Inauguration. Native compiler model gates pass on the actual development host rather than being skipped. |
+| Protected process runtime | ELF, Mach-O and PE images have validated mappings, startup stack/arguments/environment, RX/RW/NX permissions, guest-pointer checks, per-instance descriptors/handles/TLS/errno and bounded exit/fault cleanup. Two instances cannot read/write each other or kernel memory; repeated launch/fault/exit reclaims owned resources. |
+| Linux personality | The pinned corpus exercises real Linux startup, dynamic/static loading as selected, file metadata/offsets, process creation/wait/signals, pipes/polling, terminal/session behavior, threads/futexes, time and required sockets. Unsupported structures/flags/syscalls fail before unintended side effects. |
+| Darwin/macOS personality | The pinned Mach-O corpus exercises segment/fixup/import and dyld behavior, Darwin error conventions, BSD descriptors/process behavior, required Mach task/port/VM contracts, Objective-C/blocks, Foundation/CoreFoundation, run loops and the AppKit/graphics subset its GUI workloads use. |
+| Windows personality | The pinned PE corpus exercises imports/relocations/TLS and callbacks, declared x64 calling conventions, process/thread/synchronization and file semantics, NTSTATUS versus Win32 BOOL/count/LastError, message loops and the Win32/GDI or equivalent GUI subset its workloads require. Space-local translator IDs do not stand in for a real binary ABI. |
+| Native desktop | Separately owned command, layout, compositor, seat, text and application-supervisor services work together. Real independent terminal/editor/file sessions launch; focus/layout/command actions refer to stable identities and display actual launch failures. Preserve the original niri-like layout and command-bar direction. |
+| Display/text/input | Supported resolutions/scales work with multiple real typefaces, measured text/caret/hit testing, fallback and declared Unicode/shaping support. Keyboard releases/modifiers/repeat, pointer capture/focus, clipboard and text input have explicit recipient/authority contracts; extend to IME with actual tested input before claiming it. |
+| GUI adapters and buffers | Native SCI clients and foreign software-rendered windows present their own bounded buffers. Attach/damage/commit/release, resize/scale, stale identities, disconnect and crash recovery are tested; clients cannot modify in-flight buffers or receive another client's input. Shell decorations remain Space policy. |
+| Files, network and resources | App file access follows granted roots, saved content survives close/relaunch/reboot, denial does not mutate files, and network/DNS/TLS scenarios use explicit service grants. Audio/GPU capabilities enter only through owned service/backends and actual corpus cases; software presentation remains a working fallback. |
+| Continuous application lab | One command acquires/verifies corpus artifacts, builds/boots the tested Space image, drives scenarios with bounded timeouts, captures status/logs/screenshots and compares outputs/content. CI runs redistributable gates; local GUI evidence includes actual keyboard/pointer effects and keeps failure artifacts. |
+
+### Real application acceptance matrix
+
+The following are concrete initial targets, not claims of current support or
+verified downloadable artifacts. Start with native x86_64 for all three foreign
+formats. Pin the exact upstream archive/revision, source/build recipe, target
+triple, binary SHA256 and distribution license in the executable corpus before
+counting a scenario. Source-built applications retain unmodified upstream source;
+record build/configuration choices. A special Space rewrite is a native port and
+must be reported separately from foreign compatibility.
+
+| Target/profile | Initial named upstream version | Required scenario and oracle |
+|---|---|---|
+| Native Space | Repository `calc`, `notes`, `files`, terminal and their SCI artifacts, pinned to the tested Space commit | Calculate a known result, edit/save/reopen exact text, list/create/read files, launch two independent terminal sessions, switch focus, close one and keep the other responsive. Reboot and verify saved bytes. |
+| Linux ELF CLI | BusyBox 1.36.1, [upstream](https://busybox.net/downloads/); Lua 5.4.7, [upstream](https://www.lua.org/ftp/); SQLite 3.46.1, [upstream](https://www.sqlite.org/2024/) | BusyBox `echo`/`cat`/`wc` and shell pipeline operate on known files with exact stdout/status; Lua computes and reads/writes a file; SQLite creates a database, commits/query rows and reopens it after restart. |
+| Darwin x86_64 Mach-O CLI | Lua 5.4.7 and SQLite 3.46.1, built for the declared macOS deployment target | Execute the same Lua/file and SQLite transaction/reopen scenarios through the Darwin process/import path. Capture imports/startup requirements; a hosted Rosemary run is comparison evidence only. |
+| Windows x86_64 PE CLI | 7-Zip 24.09 standalone command-line tool, [upstream](https://www.7-zip.org/); SQLite 3.46.1 for Windows | Create/list/extract a known archive, compare extracted hashes and failure exit codes; run the database transaction/reopen scenario with real Win32 file/handle behavior. |
+| Linux software GUI | FLTK 1.3.9 `fluid`, [upstream](https://www.fltk.org/software.php) | Launch the actual designer through its Linux GUI backend, type/edit a form, resize, save/reopen its project, open a second instance and prove focused input and independent content. |
+| Darwin Cocoa GUI | FLTK 1.3.9 `fluid` built as an x86_64 macOS application | Drive the actual Cocoa/AppKit application: launch, edit, resize/scale, save/reopen, second instance, close and crash cleanup. Use actual client pixels and input delivery. |
+| Windows Win32 GUI | FLTK 1.3.9 `fluid` built as an x86_64 Windows application | Drive the actual Win32 message loop and software drawing backend with the same edit/save/reopen/two-instance scenario; verify buffer and handle cleanup. |
+| Expanded desktop/browser milestone | NetSurf 3.11, [upstream](https://www.netsurf-browser.org/downloads/), with a declared port/profile | A real browser action launches a live browser instance, renders a bundled HTML/CSS page, accepts link/input/scroll interaction and retrieves a controlled HTTP page; add HTTPS only with certificate/error tests. This is a later workload with its own dependency gate, not a decorative browser window. |
+
+Before a larger GUI toolkit is ready, add a tiny upstream software GUI workload
+to expose missing contracts. Keep it as an intermediate checkpoint; neither a
+hand-authored surface fixture nor a toolkit demo completes the real-application
+rows above. Higher-level text/framework/network/GPU work is driven by the actual
+application's observed imports and behavior, not by adding success stubs.
+
+### Local testing and evidence rules
+
+Record each run as one of: artifact/build failure, loader refusal, runtime
+failure, scenario mismatch, or scenario pass. Keep `execution_started` separate
+from artifact inspection. A loader refusing a real binary is useful evidence of
+a gap, but is not a successful application run. Native host execution, Wine,
+Rosemary, a stock Linux VM or a reference OS may establish expected output; only
+execution through the tested Space image counts toward Space compatibility.
+
+For each app scenario, retain the artifact origin/hash, license/build provenance,
+Space/compiler/image hashes, boot/backend configuration, command/inputs, exact
+stdout/stderr/exit status, file-content hashes, serial logs and screenshots.
+GUI scenarios must include keyboard and pointer interactions, focus changes,
+resize/scale, close/reopen and post-close refusal; screenshots alone cannot prove
+input routing. Pin reference outputs and allowed rendering tolerances explicitly.
+Never run an ordinary acquired foreign app through the trusted CPL0 fixture
+invoker to obtain an apparent success; complete its protected process path first.
+
+Run every required scenario from a fresh boot and again in the same session.
+Run at least 20 repeated launch/exit cycles and a two-instance interaction/fault
+case while checking owned page/descriptor/handle/surface counts return to their
+expected baseline. For saves, verify data in a separate process and after reboot.
+A timeout, skip, missing toolchain or unsupported API remains a visible failure
+or blocker and does not reduce the required acceptance set.
+
+### Delivery order and completion gate
+
+1. Establish versioned real-app acquisition/provenance and attempt/diagnostic
+   records now; run existing native applications locally and retain foreign
+   loader refusals without calling them successful executions.
+2. Implement protected native x86_64 Mach-O execution and generic instance /
+   lifecycle primitives; apply those primitives to ELF and PE. Keep the existing
+   bounded fixtures as fast semantic regressions.
+3. Bring up the three CLI corpus rows through real startup, imports, files,
+   terminal and process paths. Use actual missing calls to choose each next
+   coherent implementation slice; fix generic compiler blockers in Inauguration.
+4. Complete sustained native SCI desktop clients, independent app sessions,
+   authenticated focus/seat routing, buffer release and teardown. Verify native
+   terminal/editor/files workflows and persistence before relying on them as
+   the foreign GUI test platform.
+5. Implement each personality's software GUI adapter and bring up real FLTK
+   `fluid` applications. Complete edit/save/reopen, two instances, focus, resize,
+   scale and failure recovery through the native desktop.
+6. Complete browser/network/text requirements, then add audio/GPU and more
+   demanding apps with explicit service ownership and new executable scenarios.
+   Keep software rendering, original native shell behavior and prior apps green.
+7. Run the whole matrix from clean builds and fresh/repeated local boots with
+   retained artifacts and no unexplained required failures. Review portability,
+   isolation, resource lifetime, license and distribution requirements for the
+   exact shipped dependencies. Publish the supported profile/version matrix.
+
+The full goal is complete only when these outcomes and required application rows
+are supported and reproducible. Each checkpoint updates the handoff, executable
+manifest and draft PR evidence; a passed fixture subset or a plan document is
+not completion. Beyond that milestone, keep adding named application scenarios
+and fixing the coherent gaps they expose while preserving the supported matrix.
 
 ## Completion target for the next milestone
 
@@ -27,6 +153,32 @@ Each PR should close one behavioral gap with observable evidence. A larger API
 count without executed behavior does not satisfy the goal. Do not use a single
 percentage of all Linux/Windows/macOS APIs as a coverage metric: the denominator,
 ABI version and dependencies would be misleading.
+
+## Immediate pinned application baseline
+
+jq **1.8.1** is the first acquired upstream comparison program for x86_64 Linux,
+macOS and Windows. The [manifest](../fixtures/applications/jq-1.8.1.json) pins
+official release URLs, byte sizes, upstream SHA256 values and the actual scenario
+`jq -nc '[range(10)] | add'` (stdout `45`, exit 0). Binaries remain outside git.
+The [local admission runner](../scripts/check-real-app-admission.py) validates
+these original binaries with actual Space loader functions in QEMU, twice per
+personality, before any heap initialization can overwrite the injected payload.
+It never invokes a foreign payload in the trusted CPL0 runner. Host reference
+output is labeled separately. A blocked or merely admitted app keeps this
+application gate nonzero; loader acceptance alone is not application coverage.
+
+```sh
+python3 scripts/check-real-app-admission.py \
+  --in /workspace/inauguration/in-cli/target/release/in \
+  --apps-dir /workspace/real-apps/jq-1.8.1 \
+  --out /tmp/space-real-jq-new --download
+```
+
+The larger candidate matrix below remains the full delivery target. Add pinned
+manifests and actual workflows as each application is acquired, then replace
+admission-only evidence with protected launch, application output and lifecycle
+evidence as the runtime becomes capable. Do not alter a real binary into the
+special fixture layout and call that unmodified-app compatibility.
 
 ## Source-reviewed baseline
 

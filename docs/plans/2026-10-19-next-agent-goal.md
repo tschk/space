@@ -1,5 +1,12 @@
 # Goal statement for the next agent — Space, Subspace and Inauguration
 
+Latest user direction (2026-10-24 Australia/Melbourne): the
+[full end-to-end goal](../compatibility-coverage-goal.md) requires protected
+Linux/macOS/Windows runtimes and local real CLI/GUI application workflows.
+Start from the [real-app checkpoint](2026-10-24-real-applications.md), including
+verified native app fixes and explicit foreign-loader/build/runtime blockers.
+Keep working toward all acceptance rows, not just the fixture milestone.
+
 Current user direction (2026-10-23): keep increasing executable Linux, Darwin and
 Windows coverage while improving desktop quality for real GUI client testing.
 Follow the [coverage goal](../compatibility-coverage-goal.md) and
