@@ -1,0 +1,121 @@
+package space.kernel
+
+// Test orchestration only. Session policy lives in gui-clients.in.
+fn gui-session-proof(port: Int) -> Int {
+  if gui-init() != 1 { return 0 }
+  if sci-load-retained-component(port, 0x280000, "gui-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
+  let input-page = sci-sync-page
+  if sci-load-retained-component(port, 0x290000, "gui-left", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let left = gui-admit(0)
+  if left == 0 { return 0 }
+  if sci-load-retained-component(port, 0x2A0000, "gui-right", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let right = gui-admit(1)
+  if right == 0 || right == left { return 0 }
+  // Refuse unfocused delivery without publishing even one event.
+  let right-page = sci-sync-page
+  let saved-head = load64(right-page)
+  let saved-tail = load64(right-page + 8)
+  if gui-key(right, ticks, 97) != 0 || load64(right-page) != saved-head || load64(right-page + 8) != saved-tail { return 0 }
+  // Shared kernel text must still refuse calls with a guest's current authority.
+  let left-domain = load64(gui-record(left) + 16)
+  domain-switch(left-domain)
+  let guest-refused = 0
+  if gui-record(left) == 0 && gui-key(left, ticks, 97) == 0 && gui-pointer(ticks, 170, 88) == 0 && gui-admit(0) == 0 && gui-init() == 0 && gui-reply(1, 0, 0) == 0 { guest-refused = 1 }
+  domain-switch(0)
+  if guest-refused != 1 || load64(right-page) != saved-head || load64(right-page + 8) != saved-tail { return 0 }
+  if gui-reply(1, 0, 0) != 0 { return 0 }
+  // Stale capability provenance must fail before event publication or entry.
+  let left-record = gui-record(left)
+  let left-page = load64(left-record + 8)
+  let left-head = load64(left-page)
+  let left-tail = load64(left-page + 8)
+  let capability = cap-table-base + load64(left-record + 88) * 16
+  let rights = load64(capability + 8)
+  store64(capability + 8, 0)
+  let stale-refused = gui-key(left, ticks, 97)
+  store64(capability + 8, rights)
+  if stale-refused != 0 || load64(left-page) != left-head || load64(left-page + 8) != left-tail { return 0 }
+  if gui-restore(right) != 1 { return 0 }
+  // Inject a malformed wire response into this trusted test's own endpoint.
+  // The entire batch must be refused before either server surface is mutated.
+  let left-pool = load64(dsp-pools)
+  let right-pool = load64(dsp-pools + 8)
+  let left-flags = load64(dsp-surfaces + 40)
+  let right-flags = load64(dsp-surfaces + dsp-surface-size() + 40)
+  if chan-page-send-frame(right-page, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 0 }
+  if chan-page-send-frame(right-page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 1, (64 << 16) | 16) != 1 { return 0 }
+  if chan-page-send-frame(right-page, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 0 }
+  let pending-head = load64(right-page)
+  let pending-tail = load64(right-page + 8)
+  if gui-reply(left-record, 0, 0) != 0 || load64(right-page) != pending-head || load64(right-page + 8) != pending-tail { return 0 }
+  if gui-reply(gui-record(right), 0, 0) != 0 { return 0 }
+  if load64(right-page) != load64(right-page + 8) { return 0 }
+  if load64(dsp-pools) != left-pool || load64(dsp-pools + 8) != right-pool || load64(dsp-surfaces + 40) != left-flags || load64(dsp-surfaces + dsp-surface-size() + 40) != right-flags { return 0 }
+  serial-write-cstr(port, "gui: guest/stale-cap/unfocused delivery and foreign local ID refused")
+  serial-nl(port)
+  let message = alloc(8)
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  let changes = 0
+  serial-write-cstr(port, "gui: two retained clients ready")
+  serial-nl(port)
+  while true {
+    if sci-proof-poll-input() != 0 { return 0 }
+    let received = input-page-recv(input-page, message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(message)
+      let type = event & 255
+      if type == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        if code == 97 || code == 98 || code == 27 {
+          if gui-key(gui-focused, ticks, code) != 1 { return 0 }
+          changes += 1
+          if code == 27 {
+            let record = gui-records + GUI-RECORD-SIZE
+            let page = load64(record + 8)
+            let head = load64(page)
+            let tail = load64(page + 8)
+            if gui-key(right, ticks, 97) != 0 || gui-event(right, SPDP-SEAT-KEYBOARD-KEY, ticks, 97) != 0 || gui-record(right) != 0 { return 0 }
+            if load64(page) != head || load64(page + 8) != tail { return 0 }
+            if gui-record(left) == 0 || dsp-surface-valid(0) != 1 || dsp-surface-valid(1) != 0 { return 0 }
+            gui-focused = left
+            serial-write-cstr(port, "gui: right closed, stale token refused")
+            serial-nl(port)
+          } else {
+            serial-write-cstr(port, "gui: key rendered ")
+            serial-write-dec-wide(port, changes)
+            serial-nl(port)
+          }
+        }
+      }
+      if type == INPUT-EVT-MOUSE-BUTTON && ((event >> 8) & 1) == 1 {
+        let x = (event >> 32) & 65535
+        let y = (event >> 48) & 65535
+        serial-write-cstr(port, "gui: pointer ")
+        serial-write-dec-wide(port, x)
+        serial-write-cstr(port, ",")
+        serial-write-dec-wide(port, y)
+        serial-nl(port)
+        if gui-pointer(ticks, x, y) != 1 { return 0 }
+        changes += 1
+        serial-write-cstr(port, "gui: pointer focused right")
+        serial-nl(port)
+      }
+      received = input-page-recv(input-page, message)
+      if received < 0 { return 0 }
+    }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    if changes == 5 {
+      if gui-record(left) == 0 || gui-record(right) != 0 { return 0 }
+      serial-write-cstr(port, "gui: surviving left rendered, stable counters PASS")
+      serial-nl(port)
+      return 1
+    }
+    pause()
+  }
+  return 0
+}

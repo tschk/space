@@ -77,6 +77,8 @@ boot_image "$BUILD_DIR/minimal.bin" "$SERIAL_MIN" min
 for marker in \
   "SCI: library registered at 0x000000003f000040" \
   "SCI: library registered at 0x000000003e000040" \
+  "calc: integer REPL" \
+  "SCI: app-calc exited 0x0000000000000000" \
   "calc: 2+3*4 = 14" \
   "calc: (18-6)/4 = 3" \
   "calc: divide by zero" \
@@ -109,25 +111,10 @@ for marker in \
   "runapp: unknown app (try: apps)" \
   "preinstalled dynamic apps: calc notes hd sysmon bench files clock sum man sysinfo"; do
   grep -qF "$marker" "$SERIAL_STD" || { echo "MISSING (standard): $marker" >&2; exit 1; }
-done
-
-# Known issue (todo.md: minimal app-console output loss): in the minimal
-# image an app's kernel-mediated serial writes can be silently captured by
-# serial-put's redirect branch — a stale stack temp makes the redir-buf
-# check misread under app context. Standard is unaffected. The loss is
-# intermittent and progressive (later apps can lose output entirely, and
-# even bench's libspace-written line vanished in one run), so minimal
-# asserts only the boot/link markers and the round-trips that were stable
-# across repeated runs: dynamic library registration, the calc banner +
-# clean SCI exit, and sum's self-test (libspace direct outb).
-for marker in \
-  "SCI: library registered at 0x000000003f000040" \
-  "SCI: library registered at 0x000000003e000040" \
-  "calc: integer REPL" \
-  "SCI: app-calc exited 0x0000000000000000" \
-  "sum: ok"; do
   grep -qF "$marker" "$SERIAL_MIN" || { echo "MISSING (minimal): $marker" >&2; exit 1; }
 done
+
+# Both roots now declare the shared redirect state and run the full app marker set.
 for log in "$SERIAL_STD" "$SERIAL_MIN"; do
   grep -qE "SCI: kernel exports registered: [0-9]+" "$log" \
     || { echo "MISSING: kernel exports registered in $log" >&2; exit 1; }

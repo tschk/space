@@ -1,5 +1,7 @@
 package space.input
 
+import "../protocol/keyboard.in"
+
 import "../protocol/input.in"
 
 // Standalone input component for the Space nanokernel.
@@ -838,12 +840,18 @@ fn mouse-right-pressed() -> Int {
   return mouse-buttons & 0x02
 }
 
+var ps2-kbd-shift: Int = 0
+var ps2-kbd-caps: Int = 0
+var ps2-kbd-caps-held: Int = 0
 var ps2-kbd-ctrl: Int = 0
 
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
+  ps2-kbd-shift = 0
+  ps2-kbd-caps = 0
+  ps2-kbd-caps-held = 0
   ps2-kbd-ctrl = 0
   return 0
 }
@@ -859,6 +867,7 @@ fn ps2-kbd-has-data() -> Int {
 fn ps2-scancode-ascii(sc: Int) -> Int {
   if sc == 0x01 { return 27 }
   if sc == 0x0E { return 8 }
+  if sc == 0x0F { return 9 }
   if sc == 0x1C { return 10 }
   if sc == 0x49 { return 128 } // PageUp
   if sc == 0x51 { return 129 } // PageDown
@@ -914,21 +923,22 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
 }
 
 fn ps2-kbd-getchar() -> Int {
-  if ps2-kbd-has-data() == 0 {
-    return -1
-  }
+  if ps2-kbd-has-data() == 0 { return -1 }
   let sc = inb(PS2-DATA)
   if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
   if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
-  if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
+  if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
+  if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
+  if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }
+  if sc == 0xB6 { ps2-kbd-shift = ps2-kbd-shift & -3; return -1 }
+  if sc == 0x3A {
+    if ps2-kbd-caps-held == 0 { ps2-kbd-caps = ps2-kbd-caps ^ 1 }
+    ps2-kbd-caps-held = 1
     return -1
   }
-  if (sc & 0x80) != 0 {
-    return -1
-  }
-  let ch = ps2-scancode-ascii(sc)
-  if ps2-kbd-ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
-  return ch
+  if sc == 0xBA { ps2-kbd-caps-held = 0; return -1 }
+  if (sc & 0x80) != 0 { return -1 }
+  return ps2-modified-ascii(ps2-scancode-ascii(sc), ps2-kbd-shift, ps2-kbd-caps, ps2-kbd-ctrl)
 }
 
 // --- component entry --------------------------------------------------------

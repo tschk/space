@@ -273,3 +273,117 @@ dead-domain, pending/malformed-ring, no-consume, overconsume and no-replay contr
 The old pixel proof and one-service input proof remain separate regressions.
 This is one fixed client recipient, not a focus manager, app isolation boundary,
 scheduler, authenticated multi-client seat or complete desktop environment.
+
+## Bounded two-client session (2026-10-24)
+
+`components/gui-clients.in` extends the synchronous integration path with two
+kernel-owned retained SCI instance records and generation tokens. The manager
+accepts only a fixed local surface0/pool0 protocol, validates the complete reply
+batch before dispatch and translates it to the instance's compositor surface and
+pool. Guests receive no record pointer, arbitrary ring selector or compositor
+pool allocation authority. Keyboard delivery requires the focused token; pointer
+button hit testing changes focus and delivers one typed seat frame.
+
+The loader allocates/maps each client's pixel and ring pages. The client writes
+its pixel page while synchronously executing, consumes one event and returns a
+complete bounded attach/damage/commit batch; the compositor reads only after
+return and validation. This single-flight ownership rule has no asynchronous
+buffer-release fence. Close detaches the owned surface/pool and retires the
+token; it does not reclaim domain/page allocations. The manager is kernel-linked
+and clients use existing CPL0 clone domains, so this proves neither hostile-code
+hardware isolation nor general multi-client SPDP authorization. Foreign GUI
+applications remain a separate protected process/adapter milestone.
+
+`scripts/check-gui-clients.py` builds a temporary root around
+`fixtures/gui-clients/session.in`, input SCI and two independently emitted client
+SCI images. Its acceptance sequence checks every client pixel and its border:
+left keyboard render, real PS/2 pointer click focusing/rendering right, right
+keyboard render, right Escape close, stale-token refusal and surviving left
+keyboard render. It also checks guest-context and stale-capability refusal, unfocused input
+refusal, complete malformed batch
+refusal before compositor changes and stable post-initialization allocation
+counters. This fixture is a native integration workload, not an upstream GUI app.
+The original single-client SPDP/input tests remain independent regressions.
+
+Initial execution exposed shared leaf page tables in `create-shared-domain-pml4`:
+a later loader mapping could replace an earlier client's ring mapping. Clones now
+copy present non-huge leaf PTs into individually owned frames, preserving flags;
+large identity leaves remain copied values. Those CPL0 clone table allocations
+retain the existing domain lifetime and are not reclaimed by this session.
+
+Fresh local execution with source-built Inauguration 0.9.322 passed the full
+three-SCI QEMU sequence, including genuine pointer focus and exact pixels after
+all five interactions. The unchanged `check-sci-seat.py` also passed default,
+lean and harden guard profiles. Artifacts, compiler/source hashes, serial log and
+six full-resolution screenshots are retained under the selected build directory
+(default `/tmp/space-gui-clients`). This native fixture checkpoint does not
+complete the real-application GUI corpus in the full compatibility goal.
+
+### Useful bounded native GUI applications
+
+`components/app-gui-calc.in` and `components/app-gui-editor.in` build independent
+SCI applications with named memory/display declarations. `gui-widget.in` imports
+the existing `font.in` assets and glyph lookup into each SCI image, allocates font
+state in its own heap and writes only its granted pixel page. It introduces no
+new font parser or shaper. The calculator accepts an eight-character single
+binary integer expression with `+`, `-`, `*` or `/`, computes on Enter and renders
+its answer or a bounded error. The editor accepts eight printable characters and
+Backspace in an in-memory field. These are small native apps, with no save/reopen,
+full notes application, foreign application or CPL3 isolation claim.
+
+`scripts/pack-gui-sci.py` has an explicit two-identity policy, validating exact
+`GuiMemory(map)` / `GuiDisplay(present)` metadata before reusing the checked SCI
+ordinal/envelope translation. Unknown identities, entry points, interfaces,
+operations and mismatched export metadata are negative packaging cases.
+
+`scripts/check-gui-apps.py` uses a separate temporary-root orchestration; it keeps
+the synthetic retained-client checker unchanged. Its real PS/2 scenario enters
+`6*7`, checks exact existing-font glyph pixels for `42`, clicks the other SCI
+surface, edits/backspaces a field to `notes`, checks calculator pixels remain
+unchanged, closes the editor, refuses its token, then computes `6*8` → `48` in the
+surviving calculator. It then checks `1/0` renders `err` and the same instance
+recovers to compute `6+7` → `13`. Every client pixel and border is compared with the glyph
+assets, while domain/capability/allocation counters stay stable after setup.
+
+The workflow exposed missing Shift normalization in input SCI. Kernel and SCI
+PS/2 decoders now reuse `protocol/keyboard.in`: separate left/right Shift bits,
+shifted US punctuation, Caps Lock letters with repeat-make suppression, and
+existing Ctrl-letter normalization. Releasing one Shift keeps the other active;
+releasing both restores unshifted input. The launcher gate executes both actual
+decoders under default/lean/harden with those sequences. Normalized key-down
+routing still does not provide raw key releases, repeat policy, right-Ctrl/Alt,
+IME or general keyboard-layout support.
+
+### Eventual buffer retirement and reclaim boundary
+
+Current close means a drained exchange, compositor detach, zeroed owned pool
+reference and retired session token. In-flight writes finish when synchronous
+client entry returns; no compositor read overlaps that entry. Retiring a token
+does not revoke the domain's mappings or capability, terminate hostile CPL0 code,
+free a heap, release page tables or make its physical pages reusable.
+
+Safe reclaim requires the loader/supervisor to retain an allocation ledger for
+each instance, including clone-owned leaf PTs, heap frames, shared ring/pixel
+frames and kernel aliases. It must stop entry, detach all consumers, revoke and
+unmap every alias, verify no active presentation/read reference remains and only
+then release owned frames. The empty CPL3-tree teardown is not applicable to
+identity-map clones. Do not traverse/free these clone trees as though every
+present physical mapping belonged to the instance. A future reusable supervisor
+must test repeated create/close/fault/reopen, fresh generation identities,
+post-close buffer refusal and allocator baselines before claiming reclamation.
+
+### Standard-image session integration
+
+The ordinary standard image now packages explicit optional GUI kinds20/21/22.
+The full shell's `gui apps` action delegates to `components/gui-session.in`; no
+fixture source is imported into the kernel and no foreign application code lives
+in the shell. This service launches input/calculator/editor from the boot-image
+registry through explicit `sci-load-retained-component` activation, routes pointer/Tab focus and keyboard events, and runs until both apps
+are closed. It preserves the surviving client after one closes. Reopening clears
+only retired manager records, reuses its tables and mints fresh tokens; SCI backing
+remains retained. Preflight domain/capacity checks refuse before partial admission
+when the current monotonic tables cannot fit a session.
+
+`check-standard-gui.py` exercises the distributable build, including same-boot
+close/reopen and minimal-image refusal. See [native GUI session usage and limits](native-gui-session.md).
+This product entry point is independent of the temporary-root proof orchestration.

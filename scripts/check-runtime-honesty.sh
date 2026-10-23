@@ -95,7 +95,7 @@ def main() -> int:
     loader = read("components/sci-loader.in")
     kernel = read("kernel/kernel-root.in")
     sched = read("components/sched.in")
-    shell = read("components/shell.in")
+    shell = read("components/shell.in") + "\n" + read("components/shell-common.in")
 
     print("[1/6] TCP is one global connection; ISN and close are honest...")
     for name in (

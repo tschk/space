@@ -498,7 +498,10 @@ fn dyn-register-kernel-exports(port: Int) -> Int {
   let i = 0
   while i < count && dyn-count < DYN-MAX-EXPORTS {
     let rec = table + 8 + i * 16
-    dyn-add(table + load64(rec + 0), KERNEL-CODE-BASE + load64(rec + 8), 0, 0, 0)
+    let name = table + load64(rec + 0)
+    if dyn-str-eq(name,"sci-load-retained-component") == 0 {
+      dyn-add(name, KERNEL-CODE-BASE + load64(rec + 8), 0, 0, 0)
+    }
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: kernel exports registered: ")
@@ -641,6 +644,13 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
   serial-write-cstr(port, " imports")
   serial-nl(port)
   return 0
+}
+
+// Kernel supervisor-only retained activation. Native SCI imports do not
+// receive this symbol through the dynamic registry.
+fn sci-load-retained-component(port: Int, load-addr: Int, name: Int, grants: Int, args: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
+  return sci-load-runtime-component(port,load-addr,name,grants,2,args)
 }
 
 fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {

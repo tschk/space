@@ -82,6 +82,12 @@ sci "$SPACE_DIR/components/app-sysinfo.in" app-sysinfo-entry "$SYSINFO_BASE" "$B
 
 echo "[3/3] Compiling kernels and assembling images..."
 if [ "$VARIANT" != minimal ]; then
+# Optional native GUI artifacts are only built and packed into standard.
+sci "$SPACE_DIR/components/input.in" input-poll-entry 0x50000000 "$BUILD_DIR/gui-seat.sci"
+sci "$SPACE_DIR/components/app-gui-calc.in" client-entry 0x48000000 "$BUILD_DIR/gui-calc.raw.sci"
+sci "$SPACE_DIR/components/app-gui-editor.in" client-entry 0x49000000 "$BUILD_DIR/gui-editor.raw.sci"
+python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-calc.raw.sci" "$BUILD_DIR/gui-calc.raw.component-metadata.json" "$BUILD_DIR/gui-calc.sci"
+python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-editor.raw.sci" "$BUILD_DIR/gui-editor.raw.component-metadata.json" "$BUILD_DIR/gui-editor.sci"
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -92,7 +98,8 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-standard.bin" "$BUILD
   "8:$BUILD_DIR/dynmod.sci" "9:$BUILD_DIR/app-calc.sci" "10:$BUILD_DIR/app-notes.sci" \
   "11:$BUILD_DIR/app-hd.sci" "12:$BUILD_DIR/app-sysmon.sci" "13:$BUILD_DIR/app-bench.sci" \
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
-  "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci"
+  "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci" \
+  "20:$BUILD_DIR/gui-calc.sci" "21:$BUILD_DIR/gui-editor.sci" "22:$BUILD_DIR/gui-seat.sci"
 
 fi
 

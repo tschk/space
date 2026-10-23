@@ -1,0 +1,61 @@
+package space.kernel
+
+fn gui-apps-proof(port: Int) -> Int {
+  if gui-init() != 1 { return 0 }
+  if sci-load-retained-component(port, 0x280000, "apps-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
+  let input-page = sci-sync-page
+  if sci-load-retained-component(port, 0x290000, "gui-calc", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let calc = gui-admit(0)
+  if calc == 0 { return 0 }
+  if sci-load-retained-component(port, 0x2A0000, "gui-editor", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let editor = gui-admit(1)
+  if editor == 0 { return 0 }
+  let message = alloc(8)
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  let events = 0
+  serial-write-cstr(port, "apps: calculator and editor ready")
+  serial-nl(port)
+  while true {
+    if sci-proof-poll-input() != 0 { return 0 }
+    let received = input-page-recv(input-page, message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(message)
+      let type = event & 255
+      if type == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        if gui-key(gui-focused, ticks, code) != 1 { return 0 }
+        events += 1
+        if code == 27 {
+          if gui-record(editor) != 0 || gui-record(calc) == 0 || gui-event(editor, SPDP-SEAT-KEYBOARD-KEY, ticks, 97) != 0 { return 0 }
+          gui-focused = calc
+        }
+        serial-write-cstr(port, "apps: rendered event ")
+        serial-write-dec-wide(port, events)
+        serial-nl(port)
+      }
+      if type == INPUT-EVT-MOUSE-BUTTON && ((event >> 8) & 1) == 1 {
+        if gui-pointer(ticks, (event >> 32) & 65535, (event >> 48) & 65535) != 1 || gui-focused != editor { return 0 }
+        events += 1
+        serial-write-cstr(port, "apps: editor focused event ")
+        serial-write-dec-wide(port, events)
+        serial-nl(port)
+      }
+      received = input-page-recv(input-page, message)
+      if received < 0 { return 0 }
+    }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    if events == 30 {
+      if gui-record(calc) == 0 || gui-record(editor) != 0 { return 0 }
+      serial-write-cstr(port, "apps: independent calculation/edit/close/survivor PASS")
+      serial-nl(port)
+      return 1
+    }
+    pause()
+  }
+  return 0
+}

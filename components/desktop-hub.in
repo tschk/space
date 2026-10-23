@@ -14,6 +14,8 @@ package space.kernel
 import "usb.in"
 import "display.in"
 import "mouse.in"
+import "gui-clients.in"
+import "gui-session.in"
 
 fn desktop-hub-usb-init(port: Int) -> Int {
   let usb-rc = xhci-init()

@@ -1,0 +1,27 @@
+package space.app.gui
+import "gui-widget.in"
+
+component GuiEditor {
+  target "x86_64-unknown-none"
+  capability memory: GuiMemory(map)
+  capability display: GuiDisplay(present)
+}
+
+// An eight-character in-memory field. No filesystem/persistence claim.
+fn client-entry(info: Int) -> Int {
+  if widget-info-valid(info) != 1 { return 1 }
+  let args = load64(info + 64)
+  if args != 0 && load8(args) == 105 {
+    if widget-start(info) != 1 { return 2 }
+    store8(0x80000010, 101); store8(0x80000011, 100); store8(0x80000012, 105); store8(0x80000013, 116)
+  } else {
+    let code = widget-event()
+    if code < 0 { return 3 }
+    if code == 27 { return widget-close() }
+    let length = load64(0x80000080)
+    if code == 8 && length > 0 { length -= 1; store8(0x80000000 + length, 0) }
+    if code >= 32 && code < 127 && length < 8 { store8(0x80000000 + length, code); length += 1 }
+    store64(0x80000080, length)
+  }
+  return widget-draw()
+}

@@ -1,0 +1,37 @@
+// Pure US ASCII modifier normalization shared by kernel and SCI PS/2 decoders.
+// Shift is a left/right bitmask; Caps Lock changes letters only. Ctrl letters
+// preserve the existing control-code contract. No raw modifier events are sent.
+fn ps2-modified-ascii(ch: Int, shift: Int, caps: Int, ctrl: Int) -> Int {
+  if ch < 0 { return -1 }
+  if ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
+  if ch >= 97 && ch <= 122 {
+    let upper = caps
+    if shift != 0 { upper = upper ^ 1 }
+    if upper != 0 { return ch - 32 }
+    return ch
+  }
+  if shift != 0 {
+    if ch == 49 { return 33 }
+    if ch == 50 { return 64 }
+    if ch == 51 { return 35 }
+    if ch == 52 { return 36 }
+    if ch == 53 { return 37 }
+    if ch == 54 { return 94 }
+    if ch == 55 { return 38 }
+    if ch == 56 { return 42 }
+    if ch == 57 { return 40 }
+    if ch == 48 { return 41 }
+    if ch == 45 { return 95 }
+    if ch == 61 { return 43 }
+    if ch == 91 { return 123 }
+    if ch == 93 { return 125 }
+    if ch == 59 { return 58 }
+    if ch == 39 { return 34 }
+    if ch == 96 { return 126 }
+    if ch == 92 { return 124 }
+    if ch == 44 { return 60 }
+    if ch == 46 { return 62 }
+    if ch == 47 { return 63 }
+  }
+  return ch
+}

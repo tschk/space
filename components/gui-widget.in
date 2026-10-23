@@ -1,0 +1,72 @@
+package space.app.gui
+
+import "../protocol/display.in"
+import "font.in"
+
+// Shared client-side drawing, using the existing built-in typeface assets.
+// All state/font allocations and output writes belong to the current SCI heap.
+interface GuiMemory { fn map() -> void }
+interface GuiDisplay { fn present() -> void }
+interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {}
+interrupt fn chan-page-recv-frame(page: Int, message: Int) -> Int {}
+var widget-next: Int = 0
+fn alloc(size: Int) -> Int {
+  let result = widget-next
+  let aligned = (size + 15) & -16
+  if size < 0 || aligned < size || result < 0x80001000 || result > 0x80200000 || aligned > 0x80200000 - result { return 0 }
+  widget-next = result + aligned
+  return result
+}
+
+fn widget-info-valid(info: Int) -> Int {
+  if load64(info) != 20 || load64(info + 8) != 0 { return 0 }
+  if load64(info + 16) != 0x80000000 || load64(info + 32) != 0x70000000 || load64(info + 72) != 0x70001000 || load64(info + 80) != 4096 || load64(info + 88) != 0 { return 0 }
+  return 1
+}
+
+fn widget-start(info: Int) -> Int {
+  widget-next = 0x80001000
+  fb-font-init()
+  let i = 0
+  while i < 256 { store8(0x80000000 + i, 0); i += 1 }
+  return chan-page-send-frame(0x70000000, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0)
+}
+
+// Returns normalized key, 0 for pointer focus, -1 for malformed input.
+fn widget-event() -> Int {
+  let message = 0x80000100
+  if chan-page-recv-frame(0x70000000, message) != 1 { return -1 }
+  if load64(message) != SPDP-OBJ-SEAT || load64(message + 16) < 0 || load64(0x70000000) != load64(0x70000008) { return -1 }
+  let opcode = load64(message + 8)
+  let packed = load64(message + 24)
+  if (packed >> 32) != 1 { return -1 }
+  if opcode == SPDP-SEAT-POINTER-BUTTON && (packed & 0xFFFFFFFF) == 1 { return 0 }
+  if opcode != SPDP-SEAT-KEYBOARD-KEY { return -1 }
+  return packed & 0xFFFFFFFF
+}
+
+fn widget-close() -> Int {
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-DESTROY, 0, 0) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SHM, SPDP-SHM-POOL-DESTROY, 0, 0) != 1 { return 1 }
+  return 42
+}
+
+fn widget-draw() -> Int {
+  let row = 0
+  while row < 16 {
+    let column = 0
+    while column < 64 {
+      let ch = load8(0x80000000 + (row / 8) * 16 + column / 8)
+      let bits = fb-glyph8(ch, row % 8)
+      let color = 0xFF202020
+      if (bits & (128 >> (column % 8))) != 0 { color = 0xFFFFFFFF }
+      store32(0x70001000 + (row * 64 + column) * 4, color)
+      column += 1
+    }
+    row += 1
+  }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, (64 << 16) | 16) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 1 }
+  return 42
+}

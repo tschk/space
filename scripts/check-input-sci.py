@@ -20,8 +20,8 @@ compiler = Path(args.compiler).resolve()
 compiler_hash = hashlib.sha256(compiler.read_bytes()).hexdigest()
 (out/'compiler.json').write_text(json.dumps({'path': str(compiler), 'sha256': compiler_hash,
     'version': subprocess.check_output([str(compiler), '--version'], text=True).strip()}, indent=2)+'\n')
-sources = [root/'components/input.in', root/'components/channel.in', root/'protocol/input.in',
-           root/'components/sci-loader.in', root/'components/shell.in']
+sources = [root/'protocol/keyboard.in', root/'components/input.in', root/'components/channel.in', root/'protocol/input.in',
+           root/'components/sci-loader.in', root/'components/shell.in', root/'components/shell-common.in']
 snapshot = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
 # Execute the actual bounded mouse parser with a continuous synthetic device:
 # 32-byte boundaries intentionally split three-byte packets across calls.

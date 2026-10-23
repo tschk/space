@@ -1,5 +1,13 @@
 // Raw machine ABI for CPU stubs and SCI component entries.
 import "../components/native-call.in"
+import "../components/cpu.in"
+import "../components/libc.in"
+import "../components/channel.in"
+import "../components/sched.in"
+import "../components/preempt.in"
+import "../components/syscall.in"
+import "../components/nvme-unavailable.in"
+import "../protocol/display.in"
 import "../components/serial.in"
 import "../components/memory.in"
 import "../components/object.in"
@@ -16,12 +24,10 @@ import "../components/fs2-path.in"
 import "../components/fs2-file.in"
 import "../components/filesystem.in"
 import "../components/vfs.in"
-import "../components/vfs-test.in"
-import "../components/posix.in"
 import "../components/process.in"
 import "../components/editor.in"
 import "../services/time.in"
-import "../components/shell.in"
+import "../components/shell-minimal.in"
 
 // Minimal nanokernel root: the same dynamic nanokernel as kernel-root.in,
 // but without network, storage drivers, personalities, or display/input.
@@ -66,6 +72,9 @@ var ticks: Int = 0
 var idt-base: Int = 0
 var realm-grants: Int = 0
 var boot-quiet: Int = 1
+var redir-buf: Int = 0
+var redir-pos: Int = 0
+var redir-max: Int = 0
 
 // --- kernel accessors (published via the kernel export table) ---------------
 // Dynamic apps bind these to read live kernel state; the underlying values
@@ -118,6 +127,8 @@ fn kernel-entry(mb-info: Int) -> Int {
   load-arena-init(4 * 1024 * 1024)
 
   fs-init()
+  vfs-init()
+  proc-init(16)
   time-init()
 
   shell(port)

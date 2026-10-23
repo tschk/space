@@ -1,0 +1,88 @@
+package space.kernel
+
+// Optional full-image native application session. The shell only requests it;
+// this service owns launch, retained endpoints, focus and lifetime routing.
+fn gui-session-run(port: Int) -> Int {
+  if domain-get-current() != 0 || fb-ready == 0 { return 0 }
+  let input-image = boot-image-find(BOOT-IMAGE-GUI-SEAT)
+  let calc-image = boot-image-find(BOOT-IMAGE-GUI-CALC)
+  let editor-image = boot-image-find(BOOT-IMAGE-GUI-EDITOR)
+  if input-image == 0 || calc-image == 0 || editor-image == 0 {
+    serial-write-cstr(port, "gui: native application artifacts unavailable")
+    serial-nl(port)
+    return 0
+  }
+  // Current clone lifetimes are not reclaimed. Refuse before partially loading
+  // a session when the monotonic domain/capability tables cannot admit all3.
+  if domain-count > MAX-DOMAINS - 3 || cap-count > cap-table-cap - 3 {
+    serial-write-cstr(port, "gui: retained instance capacity exhausted; reboot required")
+    serial-nl(port)
+    return 0
+  }
+  if gui-reopen() != 1 { return 0 }
+  if sci-load-retained-component(port, input-image, "gui-seat", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
+  let input-page = sci-sync-page
+  if sci-load-retained-component(port, calc-image, "gui-calc", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let calc = gui-admit(0)
+  if calc == 0 { return 0 }
+  if sci-load-retained-component(port, editor-image, "gui-editor", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let editor = gui-admit(1)
+  if editor == 0 { return 0 }
+  let message = alloc(8)
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  serial-write-cstr(port, "gui: calculator left, text editor right; click or Tab to focus, Escape closes focused app")
+  serial-nl(port)
+  while gui-record(calc) != 0 || gui-record(editor) != 0 {
+    if sci-proof-poll-input() != 0 { return 0 }
+    let received = input-page-recv(input-page, message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(message)
+      let type = event & 255
+      if type == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        if code == 9 {
+          if gui-focused == calc && gui-record(editor) != 0 { gui-focused = editor }
+          else if gui-record(calc) != 0 { gui-focused = calc }
+          serial-write-cstr(port, "gui: focus ")
+          serial-write-dec-wide(port, gui-focused)
+          serial-nl(port)
+        } else {
+          let recipient = gui-focused
+          if gui-key(recipient, ticks, code) != 1 { return 0 }
+          if code == 27 {
+            if gui-record(recipient) != 0 || gui-event(recipient, SPDP-SEAT-KEYBOARD-KEY, ticks, 97) != 0 { return 0 }
+            if gui-record(calc) != 0 { gui-focused = calc }
+            else if gui-record(editor) != 0 { gui-focused = editor }
+            serial-write-cstr(port, "gui: focused app closed, retired token refused")
+          } else {
+            serial-write-cstr(port, "gui: app rendered key ")
+            serial-write-dec-wide(port, code)
+          }
+          serial-nl(port)
+        }
+      }
+      if type == INPUT-EVT-MOUSE-BUTTON && ((event >> 8) & 1) == 1 {
+        if gui-pointer(ticks, (event >> 32) & 65535, (event >> 48) & 65535) == 1 {
+          serial-write-cstr(port, "gui: pointer focused app ")
+          serial-write-dec-wide(port, gui-focused)
+          serial-nl(port)
+        }
+      }
+      received = input-page-recv(input-page, message)
+      if received < 0 { return 0 }
+    }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    pause()
+  }
+  // Retire the session's input handle; loader backing remains retained.
+  sci-proof-input.unit = 0
+  sci-sync-ring-unit = 0
+  serial-write-cstr(port, "gui: both applications closed; stable session counters; returning to shell")
+  serial-nl(port)
+  return 1
+}
