@@ -8,34 +8,44 @@ interrupt fn gui-note-read(buffer: Int, maximum: Int) -> Int {}
 interrupt fn gui-note-write(buffer: Int, size: Int) -> Int {}
 
 // Eight-character persistent field behind a fixed-file capability API.
-fn gui-editor-status(text: Int) -> void {
+fn gui-editor-status-at(memory: Int, text: Int) -> void {
   let i = 0
   while i < 8 {
     let ch = load8(text + i)
-    store8(0x80000010 + i, ch)
+    store8((memory + 16) + i, ch)
     i += 1
-    if ch == 0 { while i < 8 { store8(0x80000010 + i, 0); i += 1 }; return }
+    if ch == 0 { while i < 8 { store8((memory + 16) + i, 0); i += 1 }; return }
   }
   return
 }
-fn gui-editor-load() -> void {
-  gui-editor-status("edit")
-  let count = gui-note-read(0x80000000, 8)
-  if count >= 0 && count <= 8 { store64(0x80000080, count); gui-editor-status("loaded") }
-  if count == -13 { gui-editor-status("denied") }
-  if count == -27 { gui-editor-status("too long") }
+fn gui-editor-load-at(memory: Int) -> void {
+  gui-editor-status-at(memory, "edit")
+  let count = gui-note-read(memory, 8)
+  if count >= 0 && count <= 8 { store64((memory + 128), count); gui-editor-status-at(memory, "loaded") }
+  if count == -13 { gui-editor-status-at(memory, "denied") }
+  if count == -27 { gui-editor-status-at(memory, "too long") }
 }
 
-fn gui-editor-key(code: Int) -> void {
-  let length = load64(0x80000080)
-  if code == 8 && length > 0 { length -= 1; store8(0x80000000 + length, 0); gui-editor-status("edit") }
-  if code >= 32 && code < 127 && length < 8 { store8(0x80000000 + length, code); length += 1; gui-editor-status("edit") }
-  store64(0x80000080, length)
+fn gui-editor-key-at(memory: Int, code: Int) -> void {
+  let length = load64((memory + 128))
+  if code == 8 && length > 0 { length -= 1; store8(memory + length, 0); gui-editor-status-at(memory, "edit") }
+  if code >= 32 && code < 127 && length < 8 { store8(memory + length, code); length += 1; gui-editor-status-at(memory, "edit") }
+  store64((memory + 128), length)
   if code == 19 {
-    let result = gui-note-write(0x80000000, length)
-    gui-editor-status("error")
-    if result == 0 { gui-editor-status("saved") }
-    if result == -13 { gui-editor-status("denied") }
-    if result == -19 { gui-editor-status("no disk") }
+    let result = gui-note-write(memory, length)
+    gui-editor-status-at(memory, "error")
+    if result == 0 { gui-editor-status-at(memory, "saved") }
+    if result == -13 { gui-editor-status-at(memory, "denied") }
+    if result == -19 { gui-editor-status-at(memory, "no disk") }
   }
+}
+
+fn gui-editor-status(text: Int) -> void {
+  gui-editor-status-at(0x80000000, text)
+}
+fn gui-editor-load() -> void {
+  gui-editor-load-at(0x80000000)
+}
+fn gui-editor-key(code: Int) -> void {
+  gui-editor-key-at(0x80000000, code)
 }

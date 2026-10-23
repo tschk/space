@@ -1,0 +1,17 @@
+package space.kernel
+import "gui-note-store.in"
+
+// Private native bridge callback. Request and bounce are supervisor-owned;
+// the runtime validates the full guest extent before invoking this function.
+// Actual current-cap/domain remain the protected caller's live authority.
+fn gui-protected-note-service(request: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if request == 0 { return -22 }
+  let operation = load64(request)
+  let bounce = load64(request + 8)
+  let bytes = load64(request + 16)
+  if bounce == 0 || bytes < 0 || bytes > 8 { return -22 }
+  if operation == 15 { return gui-note-store-read-buffer(bounce, bytes) }
+  if operation == 16 { return gui-note-store-write-buffer(bounce, bytes) }
+  return -22
+}

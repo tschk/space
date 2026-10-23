@@ -19,9 +19,10 @@ fn gui-note-buffer-valid(buffer: Int, size: Int) -> Int {
   return 1
 }
 
-fn gui-note-read(buffer: Int, maximum: Int) -> Int {
+// Private supervisor-buffer backend; never exported as a guest pointer API.
+fn gui-note-store-read-buffer(buffer: Int, maximum: Int) -> Int {
   if gui-note-store-authorized() != 1 { return -13 }
-  if maximum != 8 || gui-note-buffer-valid(buffer, maximum) != 1 { return -22 }
+  if maximum != 8 || buffer == 0 { return -22 }
   if nvme-ready == 0 || sf-mem-disk != 0 || sf-disk-ready == 0 { return -19 }
   gui-note-store-epoch += 1
   if gui-note-store-stat == 0 { gui-note-store-stat = alloc(64) }
@@ -31,10 +32,23 @@ fn gui-note-read(buffer: Int, maximum: Int) -> Int {
   return fs-read-file("/gui-note.txt", buffer, maximum)
 }
 
-fn gui-note-write(buffer: Int, size: Int) -> Int {
+fn gui-note-store-write-buffer(buffer: Int, size: Int) -> Int {
   if gui-note-store-authorized() != 1 { return -13 }
-  if gui-note-buffer-valid(buffer, size) != 1 { return -22 }
+  if size < 0 || size > 8 || buffer == 0 { return -22 }
   if nvme-ready == 0 || sf-mem-disk != 0 || sf-disk-ready == 0 { return -19 }
   gui-note-store-epoch += 1
   return fs-write-file("/gui-note.txt", buffer, size)
+}
+
+// Trusted CPL0 client wrappers retain their original authority and heap guard.
+fn gui-note-read(buffer: Int, maximum: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if maximum != 8 || gui-note-buffer-valid(buffer, maximum) != 1 { return -22 }
+  return gui-note-store-read-buffer(buffer, maximum)
+}
+
+fn gui-note-write(buffer: Int, size: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if gui-note-buffer-valid(buffer, size) != 1 { return -22 }
+  return gui-note-store-write-buffer(buffer, size)
 }

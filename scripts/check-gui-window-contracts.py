@@ -13,8 +13,9 @@ a = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 source = (root / 'protocol/display.in').read_text() + (root / 'protocol/gui-canvas.in').read_text()
 source += re.sub(r'(?m)^import .*?$', '', (root / 'protocol/gui-window.in').read_text())
-widget = (root / 'components/gui-window-widget.in').read_text()
-for name in ('window-info-valid', 'window-configure', 'window-event', 'window-fill'):
+widget = ''.join((root / ('components/' + name)).read_text() for name in
+                 ('gui-window-widget.in', 'gui-window-state.in', 'gui-window-paint.in'))
+for name in ('window-info-valid', 'window-configure', 'window-event', 'window-event-at', 'window-fill'):
     start = widget.index('fn ' + name + '(')
     source += widget[start:widget.index('\n}', start) + 2] + '\n'
 source += '''

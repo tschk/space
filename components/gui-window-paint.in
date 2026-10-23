@@ -1,0 +1,89 @@
+package space.app.gui
+import "gui-window-state.in"
+import "font.in"
+
+// Existing bounded bitmap raster path, now targeting the granted canvas stride.
+// Font assets and advances come from font.in; this adds no font parser/engine.
+fn window-fill(x: Int, y: Int, width: Int, height: Int, color: Int) -> void {
+  if x < 0 || y < 0 || width < 0 || height < 0 || x > window-width || y > window-height { return }
+  if width > window-width - x || height > window-height - y { return }
+  let row = 0
+  while row < height {
+    let column = 0
+    while column < width {
+      store32(0x70001000 + (y + row) * SCI-CANVAS-STRIDE + (x + column) * 4, color)
+      column += 1
+    }
+    row += 1
+  }
+}
+
+fn window-text(face: Int, x: Int, y: Int, text: Int, maximum: Int, color: Int) -> void {
+  let index = 0
+  let cursor = x
+  while index < maximum && index < 64 {
+    let ch = load8(text + index)
+    if ch == 0 { return }
+    if ch < 32 || ch > 126 { ch = 63 }
+    let advance = 8
+    let bitmap = fb-font
+    if face == FONT-FACE-SANS { bitmap = fb-font-sans; advance = load8(fb-font-sans-adv + ch) }
+    if cursor + 8 * window-scale > window-width { return }
+    let row = 0
+    while row < 8 {
+      let bits = load8(bitmap + ch * 8 + row)
+      let column = 0
+      while column < 8 {
+        if (bits & (128 >> column)) != 0 {
+          window-fill(cursor + column * window-scale, y + row * window-scale, window-scale, window-scale, color)
+        }
+        column += 1
+      }
+      row += 1
+    }
+    cursor += advance * window-scale
+    index += 1
+  }
+}
+
+fn window-draw-at(kind: Int, memory: Int) -> Int {
+  let s = window-scale
+  window-fill(0, 0, window-width, window-height, 0xFF1C2430)
+  window-fill(0, 0, window-width, 16 * s, 0xFF263246)
+  let border = 0xFF4D5666
+  if window-focused == 1 { border = 0xFF88B5FF }
+  window-fill(0, 0, window-width, s, border)
+  window-fill(0, window-height - s, window-width, s, border)
+  window-fill(0, 0, s, window-height, border)
+  window-fill(window-width - s, 0, s, window-height, border)
+  if kind == 0 {
+    window-text(FONT-FACE-SANS, 8 * s, 4 * s, "Calculator", 16, 0xFFF3F5F8)
+    window-text(FONT-FACE-SANS, 8 * s, 24 * s, "Expression", 16, 0xFFB5C2D6)
+  } else {
+    window-text(FONT-FACE-SANS, 8 * s, 4 * s, "Notes", 16, 0xFFF3F5F8)
+    window-text(FONT-FACE-SANS, 8 * s, 24 * s, "Text (8 chars)", 16, 0xFFB5C2D6)
+  }
+  window-fill(6 * s, 34 * s, window-width - 12 * s, 14 * s, 0xFF111721)
+  window-text(FONT-FACE-MONO, 8 * s, 37 * s, memory, 8, 0xFFF3F5F8)
+  if window-focused == 1 { window-fill((8 + load64((memory + 128)) * 8) * s, 37 * s, s, 8 * s, 0xFF88B5FF) }
+  if kind == 0 {
+    window-text(FONT-FACE-SANS, 8 * s, 58 * s, "Result", 8, 0xFFB5C2D6)
+    window-text(FONT-FACE-MONO, 8 * s, 74 * s, (memory + 16), 8, 0xFFF3F5F8)
+    window-text(FONT-FACE-SANS, 8 * s, 94 * s, "Enter to calculate", 24, 0xFFB5C2D6)
+  } else {
+    window-text(FONT-FACE-SANS, 8 * s, 58 * s, "File /gui-note.txt", 24, 0xFFB5C2D6)
+    window-text(FONT-FACE-MONO, 8 * s, 74 * s, (memory + 16), 8, 0xFF8AD6AE)
+    window-text(FONT-FACE-SANS, 8 * s, 94 * s, "Ctrl+S save", 16, 0xFFB5C2D6)
+  }
+  window-text(FONT-FACE-SANS, 8 * s, 106 * s, "Tab focus | Esc close", 24, 0xFFB5C2D6)
+  window-text(FONT-FACE-SANS, 8 * s, 118 * s, "Ctrl+G size | Ctrl+O mode", 32, 0xFFB5C2D6)
+  let geometry = (window-width << 16) | window-height
+  if window-ack == 1 {
+    if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-CONFIGURE-ACK-V1, window-generation, gui-window-config-word(window-width, window-height, window-scale)) != 1 { return 1 }
+    window-ack = 0
+  }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, geometry) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 1 }
+  return 42
+}

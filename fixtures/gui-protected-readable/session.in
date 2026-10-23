@@ -1,0 +1,40 @@
+package space.kernel
+import "../../components/gui-protected-session.in"
+
+// Temporary integration orchestration; not a shell action or default profile.
+fn gui-protected-demo(port: Int) -> void {
+  if gui-protected-bootstrap() != 1 { panic("protected GUI launch bootstrap") }
+  let caller = current-cap
+  let backend = native-protected-note-backend
+  native-protected-note-backend = gui-protected-note-service
+  if out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI output mode") }
+  let iteration = 0
+  while iteration < 2 {
+    let result = gui-protected-session-owned(port, boot-image-find(22), boot-image-find(270), boot-image-find(271))
+    let slot = 0
+    while slot < 2 {
+      let record = gui-protected-records + slot * 96
+      if load64(record) != 0 && gui-protected-retire(record) != 1 { panic("protected GUI cleanup") }
+      slot += 1
+    }
+    let handle = gui-session-input-handle
+    if handle != 0 {
+      if runtime-instance-retire(handle) != 0 { panic("protected GUI input retire") }
+      sci-proof-input.unit = 0
+      sci-proof-input.handle = 0
+      sci-sync-ring-unit = 0
+      sci-sync-handle = 0
+      store64(gui-session-input-page, 0)
+      store64(gui-session-input-page + 8, 0)
+      if runtime-instance-release(handle) != 0 { panic("protected GUI input release") }
+      gui-session-input-handle = 0
+      gui-session-input-page = 0
+    }
+    if result != 1 || current-cap != caller { panic("protected GUI session failed") }
+    serial-write-cstr(port, "gui: both applications closed; stable session counters; returning to shell")
+    serial-nl(port)
+    iteration += 1
+  }
+  native-protected-note-backend = backend
+  serial-write-cstr(port, "gui-protected: actual CPL3 readable session PASS"); serial-nl(port)
+}

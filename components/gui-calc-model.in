@@ -1,8 +1,8 @@
 package space.app.gui
 
 // Bounded integer calculator: one binary +,-,*,/ expression, Enter evaluates.
-fn gui-calc-evaluate() -> void {
-  let length = load64(0x80000080)
+fn gui-calc-evaluate-at(memory: Int) -> void {
+  let length = load64((memory + 128))
   let i = 0
   let first = 0
   let second = 0
@@ -10,7 +10,7 @@ fn gui-calc-evaluate() -> void {
   let valid = 1
   let digits = 0
   while i < length {
-    let ch = load8(0x80000000 + i)
+    let ch = load8(memory + i)
     if ch >= 48 && ch <= 57 {
       if operator == 0 { first = first * 10 + ch - 48 } else { second = second * 10 + ch - 48 }
       digits += 1
@@ -28,28 +28,35 @@ fn gui-calc-evaluate() -> void {
   if operator == 42 { result = first * second }
   if operator == 47 { if second == 0 { valid = 0 } else { result = first / second } }
   i = 0
-  while i < 8 { store8(0x80000010 + i, 0); i += 1 }
+  while i < 8 { store8((memory + 16) + i, 0); i += 1 }
   if valid == 0 || result > 9999999 || result < -999999 {
-    store8(0x80000010, 101); store8(0x80000011, 114); store8(0x80000012, 114)
+    store8((memory + 16), 101); store8((memory + 17), 114); store8((memory + 18), 114)
     return
   }
   let start = 0
-  if result < 0 { store8(0x80000010, 45); result = 0 - result; start = 1 }
+  if result < 0 { store8((memory + 16), 45); result = 0 - result; start = 1 }
   let count = 0
   while result > 0 || count == 0 {
-    store8(0x80000040 + count, 48 + result % 10)
+    store8((memory + 64) + count, 48 + result % 10)
     result = result / 10
     count += 1
   }
   i = 0
-  while i < count { store8(0x80000010 + start + i, load8(0x80000040 + count - 1 - i)); i += 1 }
+  while i < count { store8((memory + 16) + start + i, load8((memory + 64) + count - 1 - i)); i += 1 }
   return
 }
 
+fn gui-calc-key-at(memory: Int, code: Int) -> void {
+  let length = load64((memory + 128))
+  if code == 8 && length > 0 { length -= 1; store8(memory + length, 0) }
+  if code >= 32 && code < 127 && length < 8 { store8(memory + length, code); length += 1 }
+  store64((memory + 128), length)
+  if code == 10 || code == 13 { gui-calc-evaluate-at(memory) }
+}
+
+fn gui-calc-evaluate() -> void {
+  gui-calc-evaluate-at(0x80000000)
+}
 fn gui-calc-key(code: Int) -> void {
-  let length = load64(0x80000080)
-  if code == 8 && length > 0 { length -= 1; store8(0x80000000 + length, 0) }
-  if code >= 32 && code < 127 && length < 8 { store8(0x80000000 + length, code); length += 1 }
-  store64(0x80000080, length)
-  if code == 10 || code == 13 { gui-calc-evaluate() }
+  gui-calc-key-at(0x80000000, code)
 }

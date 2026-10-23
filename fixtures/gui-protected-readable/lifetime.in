@@ -1,0 +1,82 @@
+package space.fixture
+import "../../components/gui-protected-clients.in"
+
+fn gui-protected-free-count() -> Int {
+  let cursor = free-list
+  let count = 0
+  while cursor != 0 {
+    if cursor < 0x100000 || cursor >= heap-end || (cursor & 4095) != 0 || count > 1048576 { panic("protected GUI frame list") }
+    count += 1
+    cursor = load64(cursor)
+  }
+  return count
+}
+
+fn gui-protected-lifetime-round(port: Int, generation: Int, order: Int) -> void {
+  if gui-protected-init(generation) != 1 { panic("protected GUI lifetime init") }
+  let caller = current-cap
+  let calc-image = boot-image-find(270)
+  let editor-image = boot-image-find(271)
+  let calc = gui-protected-open(port, 0, calc-image, runtime-instance-image-boot-size(calc-image))
+  let editor = gui-protected-open(port, 1, editor-image, runtime-instance-image-boot-size(editor-image))
+  if calc <= 0 || editor <= 0 || current-cap != caller { panic("protected GUI lifetime open") }
+  let old-handle = load64(gui-protected-record(calc))
+  let calc-parent = runtime-instance-view-parent(load64(gui-protected-record(calc) + 24))
+  let editor-parent = runtime-instance-view-parent(load64(gui-protected-record(editor) + 24))
+  if gui-protected-key(editor, 97) != 0 || gui-protected-key(calc, 54) != 1 || gui-protected-key(calc, 42) != 1 || gui-protected-key(calc, 55) != 1 || gui-protected-key(calc, 10) != 1 { panic("protected GUI lifetime focused calculation") }
+  let first = calc
+  let last = editor
+  if order == 1 { first = editor; last = calc }
+  if gui-protected-focus(first) != 1 || gui-protected-key(first, 27) != 1 || gui-protected-record(first) != 0 { panic("protected GUI lifetime first close") }
+  if gui-protected-key(first, 97) != 0 || gui-protected-focus(last) != 1 || gui-protected-key(last, 97) != 1 || gui-protected-key(last, 27) != 1 { panic("protected GUI lifetime survivor") }
+  if load64(calc-parent) != 0 || load64(editor-parent) != 0 || native-protected-ring(old-handle) != 0 || native-protected-present(old-handle, 1) != -1 || native-protected-run(old-handle, 1) != -1 || gui-protected-record(calc) != 0 || gui-protected-record(editor) != 0 { panic("protected GUI lifetime stale identity") }
+}
+
+fn gui-protected-lifetime-check(port: Int) -> void {
+  if gui-protected-bootstrap() != 1 || out-set-bga-mode(port, 1024, 768, 100, 100) <= 0 { panic("protected GUI lifetime bootstrap") }
+  let callback = native-protected-note-backend
+  native-protected-note-backend = gui-protected-note-service
+  // First admission must preserve an already initialized independent DSP.
+  dsp-init()
+  let foreign = dsp-create-surface()
+  let surfaces = dsp-surfaces
+  let pools = dsp-pools
+  let sizes = dsp-pool-sizes
+  let highwater = dsp-surface-count
+  let buffer = alloc(16)
+  store64(buffer, 0x6162636465666768)
+  store64(dsp-pools, buffer)
+  store64(dsp-pool-sizes, 16)
+  if gui-protected-init(1) != 0 || dsp-surfaces != surfaces || dsp-pools != pools || dsp-pool-sizes != sizes || dsp-surface-count != highwater || dsp-surface-valid(foreign) != 1 || load64(dsp-pools) != buffer || load64(dsp-pool-sizes) != 16 || load64(buffer) != 0x6162636465666768 { panic("protected GUI first init discarded foreign owner") }
+  dsp-surface-destroy(foreign)
+  // A pool alone still owns its reservation and must refuse takeover.
+  if gui-protected-init(1) != 0 || load64(dsp-pools) != buffer || load64(dsp-pool-sizes) != 16 { panic("protected GUI pool ownership ignored") }
+  dsp-shm-destroy-pool(0)
+  if gui-protected-init(1) != 1 { panic("protected GUI cohort initial") }
+  foreign = dsp-create-surface()
+  highwater = dsp-surface-count
+  if foreign < 0 || gui-protected-init(2) != 0 || dsp-surface-count != highwater || dsp-surface-valid(foreign) != 1 { panic("protected GUI foreign surface discarded") }
+  dsp-surface-destroy(foreign)
+  gui-protected-lifetime-round(port, 1, 0)
+  let heap = heap-next
+  let frames = gui-protected-free-count()
+  let caps = cap-count
+  let domains = domain-count
+  let objects = obj-arena-next
+  let live = runtime-instance-live
+  let old-token = gui-protected-generation
+  let cycle = 0
+  while cycle < 129 {
+    gui-protected-lifetime-round(port, cycle + 2, cycle & 1)
+    if gui-protected-key(old-token, 97) != 0 || heap-next != heap || gui-protected-free-count() != frames || cap-count != caps || domain-count != domains || obj-arena-next != objects || runtime-instance-live != live { panic("protected GUI lifetime stable resources") }
+    cycle += 1
+  }
+  // Revocation is final: refusal must neither remint nor borrow another scope.
+  let caller = current-cap
+  let count = cap-count
+  cap-revoke(gui-protected-launch-cap)
+  let image = boot-image-find(270)
+  if gui-protected-bootstrap() != 0 || gui-protected-launch(port, image, runtime-instance-image-boot-size(image), 20, gui-protected-args) != -1 || current-cap != caller || cap-count != count { panic("protected GUI launch revoke reminted") }
+  native-protected-note-backend = callback
+  serial-write-cstr(port, "gui-protected: actual readable clients 129 sessions 258 instances resources ABA launch-revocation PASS"); serial-nl(port)
+}

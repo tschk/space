@@ -1,0 +1,244 @@
+package space.kernel
+import "native-protected.in"
+import "gui-protected-launch.in"
+import "gui-window-layout.in"
+import "gui-protected-note.in"
+
+// Kernel-owned protected client supervisor. Only exact generation projections
+// cross the runtime boundary; records and startup sources stay supervisor-owned.
+// Record96: handle/domain/ring/snapshot/token/surface, then48-byte config.
+// Runtime ledgers/cap slots are deliberately absent.
+var gui-protected-records: Int = 0
+var gui-protected-replies: Int = 0
+var gui-protected-layout: Int = 0
+var gui-protected-args: Int = 0
+var gui-protected-lifetime: Int = 0
+var gui-protected-generation: Int = 0
+var gui-protected-focused: Int = 0
+const GUI-PROTECTED-RECORD-SIZE = 96
+
+fn gui-protected-init(generation: Int) -> Int {
+  if domain-get-current() != 0 || fb-ready == 0 { return 0 }
+  if gui-protected-records == 0 {
+    gui-protected-records = alloc(192)
+    gui-protected-replies = alloc(128)
+    gui-protected-layout = alloc(64)
+    gui-protected-args = alloc(16)
+    let i = 0
+    while i < 192 { store64(gui-protected-records + i, 0); i += 8 }
+    if dsp-surfaces == 0 { dsp-init() }
+  }
+  if dsp-surfaces == 0 || dsp-pools == 0 || dsp-pool-sizes == 0 || dsp-strides == 0 { return 0 }
+  if load64(dsp-pools) != 0 || load64(dsp-pools + 8) != 0 || load64(dsp-pool-sizes) != 0 || load64(dsp-pool-sizes + 8) != 0 { return 0 }
+  if load64(gui-protected-records) != 0 || load64(gui-protected-records + 96) != 0 { return 0 }
+  let previous = 0
+  while previous < 2 {
+    let record = gui-protected-records + previous * 96
+    if load64(record + 16) != 0 || load64(record + 24) != 0 || load64(record + 32) != 0 { return 0 }
+    previous += 1
+  }
+  // This bounded session owns the compositor while active. Reuse IDs only
+  // after all old surfaces are destroyed; refuse a live external surface.
+  let surface = 0
+  while surface < dsp-surface-count {
+    if dsp-surface-valid(surface) != 0 { return 0 }
+    surface += 1
+  }
+  dsp-surface-count = 0
+  if gui-window-layout-fill(gui-protected-layout, fb-width, fb-height, fb-font-scale, generation) != 1 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let record = gui-protected-records + slot * 96
+    store64(record + 40, -1)
+    let i = 0
+    while i < 40 { store64(record + 48 + i, load64(gui-protected-layout + i)); i += 8 }
+    store64(record + 88, 1 - slot)
+    slot += 1
+  }
+  gui-protected-focused = 0
+  dsp-background = 0x0011161F
+  return 1
+}
+
+fn gui-protected-config(record: Int) -> Int {
+  if domain-get-current() != 0 || gui-protected-records == 0 { return 0 }
+  if record != gui-protected-records && record != gui-protected-records + 96 { return 0 }
+  if load64(record + 48) != GUI-WINDOW-CONFIG-MAGIC { return 0 }
+  return record + 48
+}
+
+fn gui-protected-valid(record: Int) -> Int {
+  if gui-protected-config(record) == 0 { return 0 }
+  let handle = load64(record)
+  if handle <= 0 || native-protected-profile(handle) != 3 || native-protected-pixel-bytes(handle) != SCI-CANVAS-BYTES { return 0 }
+  if native-protected-domain(handle) != load64(record + 8) || native-protected-ring(handle) != load64(record + 16) || native-protected-pixels(handle) != load64(record + 24) { return 0 }
+  return 1
+}
+
+fn gui-protected-record(token: Int) -> Int {
+  if domain-get-current() != 0 || gui-protected-records == 0 || token <= 0 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let record = gui-protected-records + slot * 96
+    if load64(record + 32) == token && gui-protected-valid(record) == 1 { return record }
+    slot += 1
+  }
+  return 0
+}
+
+// Retirement fences entry before routing, ring and compositor references are
+// withdrawn. No projection pointer is read after exact-generation release.
+fn gui-protected-retire(record: Int) -> Int {
+  if gui-protected-valid(record) != 1 { return 0 }
+  let handle = load64(record)
+  if runtime-instance-retire(handle) != 0 { return 0 }
+  if gui-protected-focused == load64(record + 32) { gui-protected-focused = 0 }
+  store64(record + 32, 0)
+  let page = load64(record + 16)
+  store64(page, 0)
+  store64(page + 8, 0)
+  if load64(record + 40) >= 0 { dsp-surface-destroy(load64(record + 40)) }
+  dsp-shm-destroy-pool((record - gui-protected-records) / 96)
+  dsp-composite()
+  if runtime-instance-release(handle) != 0 { return 0 }
+  gui-protected-lifetime += 1
+  store64(record, 0)
+  store64(record + 16, 0)
+  store64(record + 24, 0)
+  store64(record + 40, -1)
+  return 1
+}
+
+fn gui-protected-reply(record: Int, initial: Int, closing: Int, configured: Int) -> Int {
+  let config = gui-protected-config(record)
+  if config == 0 || initial < 0 || initial > 1 || closing < 0 || closing > 1 || configured < 0 || configured > 1 || initial + closing + configured > 1 { return 0 }
+  if gui-protected-valid(record) != 1 { return 0 }
+  let handle = load64(record)
+  let width = load64(config + 16)
+  let height = load64(config + 24)
+  let geometry = (width << 16) | height
+  let word = gui-window-config-word(width, height, load64(config + 32))
+  if word == 0 { return 0 }
+  let count = 3 + initial + configured
+  if closing == 1 { count = 2 }
+  let page = load64(record + 16)
+  if chan-page-frame-valid(page) == 0 { return 0 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  if load64(page + 8) != (head + count * 4) % capacity { return 0 }
+  let i = 0
+  while i < count {
+    if chan-page-recv-frame(page, gui-protected-replies + i * 32) != 1 { return 0 }
+    i += 1
+  }
+  i = 0
+  while i < count {
+    let message = gui-protected-replies + i * 32
+    let object = SPDP-OBJ-SURFACE
+    let opcode = SPDP-SURFACE-ATTACH
+    let arg0 = 0
+    let arg1 = 0
+    if closing == 1 {
+      opcode = SPDP-SURFACE-DESTROY
+      if i == 1 { object = SPDP-OBJ-SHM; opcode = SPDP-SHM-POOL-DESTROY }
+    } else {
+      let index = i - initial - configured
+      if index == -1 {
+        if initial == 1 { object = SPDP-OBJ-COMPOSITOR; opcode = SPDP-COMPOSITOR-CREATE-SURFACE }
+        else { opcode = SPDP-SURFACE-CONFIGURE-ACK-V1; arg0 = load64(config + 8); arg1 = word }
+      }
+      if index == 1 { opcode = SPDP-SURFACE-DAMAGE; arg1 = geometry }
+      if index == 2 { opcode = SPDP-SURFACE-COMMIT }
+    }
+    if load64(message) != object || load64(message + 8) != opcode || load64(message + 16) != arg0 || load64(message + 24) != arg1 { return 0 }
+    i += 1
+  }
+  if closing == 1 { return gui-protected-retire(record) }
+  if native-protected-present(handle, native-protected-epoch(handle)) != 0 { return 0 }
+  let slot = (record - gui-protected-records) / GUI-PROTECTED-RECORD-SIZE
+  let sid = load64(record + 40)
+  if initial == 1 {
+    sid = dsp-create-surface()
+    if sid < 0 { return 0 }
+    store64(record + 40, sid)
+    store64(dsp-pools + slot * 8, load64(record + 24))
+    store64(dsp-pool-sizes + slot * 8, SCI-CANVAS-BYTES)
+  }
+  dsp-surface-attach(sid, slot << 32)
+  if dsp-surface-stride(sid, SCI-CANVAS-STRIDE) != 1 { return 0 }
+  let x = load64(gui-protected-layout + 40 + slot * 8)
+  let y = load64(gui-protected-layout + 56)
+  dsp-surface-geometry(sid, (x << 48) | (y << 32) | geometry)
+  dsp-surface-commit(sid)
+  dsp-composite()
+  return 1
+}
+
+fn gui-protected-open(port: Int, slot: Int, image: Int, available: Int) -> Int {
+  if domain-get-current() != 0 || gui-protected-records == 0 || slot < 0 || slot > 1 { return 0 }
+  let record = gui-protected-records + slot * 96
+  if load64(record) != 0 { return 0 }
+  store64(gui-protected-args, record + 48)
+  store64(gui-protected-args + 8, 48)
+  let grants = 20
+  if slot == 1 { grants = 52 }
+  let handle = gui-protected-launch(port, image, available, grants, gui-protected-args)
+  if handle <= 0 { return 0 }
+  store64(record, handle)
+  store64(record + 8, native-protected-domain(handle))
+  store64(record + 16, native-protected-ring(handle))
+  store64(record + 24, native-protected-pixels(handle))
+  if gui-protected-valid(record) != 1 || native-protected-grants(handle) != grants { gui-protected-retire(record); return 0 }
+  let peer = gui-protected-records + (1 - slot) * 96
+  if load64(peer) != 0 && (load64(peer + 8) == load64(record + 8) || load64(peer + 16) == load64(record + 16) || load64(peer + 24) == load64(record + 24)) { gui-protected-retire(record); return 0 }
+  if native-protected-run(handle, 100) != 42 || gui-protected-reply(record, 1, 0, 0) != 1 { gui-protected-retire(record); return 0 }
+  if native-protected-set-arguments(handle, 0, 0) != 0 { gui-protected-retire(record); return 0 }
+  gui-protected-generation += 1
+  let token = gui-protected-generation
+  store64(record + 32, token)
+  if gui-protected-focused == 0 { gui-protected-focused = token }
+  return token
+}
+
+fn gui-protected-event(token: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {
+  let record = gui-protected-record(token)
+  if record == 0 { return 0 }
+  if object == SPDP-OBJ-SEAT {
+    if opcode == SPDP-SEAT-KEYBOARD-KEY || opcode == SPDP-SEAT-POINTER-BUTTON {
+      if token != gui-protected-focused || arg0 < 0 || (arg1 >> 32) != 1 { return 0 }
+    } else if opcode != SPDP-SEAT-FOCUS-V1 { return 0 }
+  } else if object != SPDP-OBJ-SURFACE || opcode != SPDP-SURFACE-CONFIGURE-V1 { return 0 }
+  let page = load64(record + 16)
+  if chan-page-frame-valid(page) != 1 || load64(page) != load64(page + 8) { return 0 }
+  let capacity = load64(page + 16)
+  let consumed = (load64(page) + 4) % capacity
+  if chan-page-send-frame(page, object, opcode, arg0, arg1) != 1 { return 0 }
+  let handle = load64(record)
+  if native-protected-run(handle, 100) != 42 { gui-protected-retire(record); return 0 }
+  if load64(page + 16) != capacity || load64(page) != consumed { gui-protected-retire(record); return 0 }
+  let closing = 0
+  let configured = 0
+  if object == SPDP-OBJ-SEAT && opcode == SPDP-SEAT-KEYBOARD-KEY && (arg1 & 0xFFFFFFFF) == 27 { closing = 1 }
+  if object == SPDP-OBJ-SURFACE { configured = 1 }
+  if gui-protected-reply(record, 0, closing, configured) != 1 { gui-protected-retire(record); return 0 }
+  return 1
+}
+
+fn gui-protected-focus(token: Int) -> Int {
+  let record = gui-protected-record(token)
+  if record == 0 { return 0 }
+  let old = gui-protected-record(gui-protected-focused)
+  if old != 0 && old != record {
+    let previous = gui-protected-focused
+    if gui-protected-event(previous, SPDP-OBJ-SEAT, SPDP-SEAT-FOCUS-V1, load64(old + 56), 0) != 1 && gui-protected-record(previous) != 0 { return 0 }
+    store64(old + 88, 0)
+  }
+  gui-protected-focused = token
+  if gui-protected-event(token, SPDP-OBJ-SEAT, SPDP-SEAT-FOCUS-V1, load64(record + 56), 1) != 1 { return 0 }
+  store64(record + 88, 1)
+  return 1
+}
+
+fn gui-protected-key(token: Int, code: Int) -> Int {
+  return gui-protected-event(token, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, ticks, (1 << 32) | code)
+}
