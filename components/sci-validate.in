@@ -1,0 +1,82 @@
+package space.kernel
+
+// Allocation-free validation of the bounded native SCI byte format. The caller
+// supplies a trusted readable extent; a self-declared image size is not proof
+// that backing memory exists. This establishes bounds, not code isolation.
+const RUNTIME-INSTANCE-IMAGE-MAX = 0x200000
+const RUNTIME-INSTANCE-IMAGE-EXPORTS = 4096
+const RUNTIME-INSTANCE-IMAGE-IMPORTS = 512
+const RUNTIME-INSTANCE-IMAGE-NAME = 255
+
+fn runtime-instance-image-table(size: Int, offset: Int, count: Int, maximum: Int) -> Int {
+  if count < 0 || count > maximum || offset < 0 || offset > size { return 0 }
+  if count == 0 { if offset == 0 || offset >= 64 { return 1 }; return 0 }
+  if offset < 64 || (offset & 7) != 0 || count > (size - offset) / 16 { return 0 }
+  return 1
+}
+
+fn runtime-instance-image-name(image: Int, size: Int, start: Int, offset: Int) -> Int {
+  if offset < start || offset >= size { return 0 }
+  let i = 0
+  while i <= RUNTIME-INSTANCE-IMAGE-NAME && i < size - offset {
+    if load8(image + offset + i) == 0 { if i > 0 { return 1 }; return 0 }
+    i = i + 1
+  }
+  return 0
+}
+
+fn runtime-instance-image-valid(image: Int, available: Int) -> Int {
+  if image <= 0 || available < 32 || available > RUNTIME-INSTANCE-IMAGE-MAX || image > 0x100000000 - available { return 0 }
+  let magic = load64(image)
+  let header = 32
+  if magic == 0x5343490000000002 { header = 64 }
+  else if magic != 0x5343490000000001 { return 0 }
+  if available < header { return 0 }
+  let size = load64(image + 24)
+  let entry = load64(image + 16)
+  if size <= header || size > available || entry < header { return 0 }
+  let base = entry - header
+  let rounded = (size + 4095) & -4096
+  if (base & 4095) != 0 || base > 0x100000000 - rounded { return 0 }
+  if header == 32 { return 1 }
+  let exports = load64(image + 32)
+  let export-table = load64(image + 40)
+  let imports = load64(image + 48)
+  let import-table = load64(image + 56)
+  if runtime-instance-image-table(size,export-table,exports,RUNTIME-INSTANCE-IMAGE-EXPORTS) == 0 { return 0 }
+  if runtime-instance-image-table(size,import-table,imports,RUNTIME-INSTANCE-IMAGE-IMPORTS) == 0 { return 0 }
+  let export-end = export-table + exports * 16
+  let import-end = import-table + imports * 16
+  if exports > 0 && imports > 0 && export-table < import-end && import-table < export-end { return 0 }
+  let payload-end = size
+  if export-table >= 64 && export-table < payload-end { payload-end = export-table }
+  if import-table >= 64 && import-table < payload-end { payload-end = import-table }
+  if payload-end <= 64 { return 0 }
+  let names = 64
+  if exports > 0 && export-end > names { names = export-end }
+  if imports > 0 && import-end > names { names = import-end }
+  let i = 0
+  while i < exports {
+    let record = image + export-table + i * 16
+    if runtime-instance-image-name(image,size,names,load64(record)) == 0 { return 0 }
+    let target = load64(record + 8)
+    if target < 0 || target >= payload-end - 64 { return 0 }
+    i = i + 1
+  }
+  i = 0
+  while i < imports {
+    let record = image + import-table + i * 16
+    if runtime-instance-image-name(image,size,names,load64(record)) == 0 { return 0 }
+    let site = load64(record + 8)
+    if site < 0 || payload-end - 64 < 5 || site > payload-end - 64 - 5 { return 0 }
+    if load8(image + 64 + site) != 0xE8 { return 0 }
+    let j = 0
+    while j < i {
+      let other = load64(image + import-table + j * 16 + 8)
+      if site < other + 5 && other < site + 5 { return 0 }
+      j = j + 1
+    }
+    i = i + 1
+  }
+  return 1
+}
