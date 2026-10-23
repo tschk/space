@@ -15,7 +15,8 @@ command-bar launch and parent-desktop regression checks. Its editor remains an
 eight-byte ASCII field. Original macOS/Windows applications and foreign GUI
 applications remain required, unfulfilled goals.
 
-The immutable649-file122-gate run at `/workspace/lab122/report.json` is active.
+The immutable649-file122-gate run at `/workspace/lab122/report.json` finished
+119 passed/3 failed, with source/compiler/application integrity passed.
 Three original harness failures are retained: two omitted imported fixtures and
 one QEMU socket-readiness race. Committed harness repairs (`3d0b565`) pass both
 330-entry compiler corpora and the380-entry Windows environment gate separately;
@@ -26,7 +27,13 @@ receipts never turn that initial integration run into an all-pass result.
 Bounded shared-vfork is now committed in `0c51464` after14 final both-root gates,
 including47 actual upstream xargs launches per root and constructor/publication
 ownership review. See [the vfork contract](../linux-vfork.md). It remains
-separate from the older122-gate integration source.
+separate from the older122-gate integration source. The newer657-file131-gate
+run at `/workspace/lab131/report.json`, committed source f54a293, is active and
+includes both harness repairs, shared vfork/xargs and keyboard/cursor editing.
+Counted-entry/fbv work is committed in58ce59e and has its own later source and
+focused receipts:44 original CLI entries plus66 synthetic startup entries per
+root. The viewer GUI is unimplemented; its full source/provenance and remaining
+adapter boundary are in [the framebuffer checkpoint](2026-10-24-linux-framebuffer-app.md).
 
 ## Historical initial execution checkpoint
 

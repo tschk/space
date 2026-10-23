@@ -40,7 +40,7 @@ def main():
     parser.add_argument('--in', dest='compiler', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True, help='New or empty evidence directory')
     parser.add_argument('--apps-dir', type=Path, required=True, help='Pinned upstream application cache')
-    for name in ['lua', 'busybox', 'sqlite']:
+    for name in ['lua', 'busybox', 'sqlite', 'fbv']:
         parser.add_argument('--' + name, type=Path,
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
     parser.add_argument('--busybox-vfork', type=Path, help='Separate pinned upstream xargs ELF; otherwise cache busybox-vfork or --download builds it')
@@ -65,7 +65,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures (no viewer GUI coverage), protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -165,7 +165,7 @@ def main():
                     temporary.unlink(missing_ok=True)
             applications[app['personality']] = require_artifact(app, path)
         for name, version, filename in [('lua', 'lua-5.4.7', 'lua'), ('busybox', 'busybox-1.36.1', 'busybox'),
-                                        ('sqlite', 'sqlite-3.46.1', 'sqlite3')]:
+                                        ('sqlite', 'sqlite-3.46.1', 'sqlite3'), ('fbv', 'fbv-1.1', 'fbv')]:
             explicit = getattr(args, name)
             path = explicit.resolve() if explicit else args.apps_dir / filename
             if not path.exists() and args.download and not explicit:
@@ -267,6 +267,12 @@ def main():
               '--manifest', ROOT / 'fixtures/applications/busybox-1.36.1-vfork.json',
               '--case-config', ROOT / 'fixtures/applications/busybox-1.36.1-vfork-cases.json',
               '--suite', '--input-suite', '--out', args.out / gate)
+    for variant in ['standard', 'minimal']:
+        gate = 'linux-fbv-cli-' + variant
+        # Original viewer startup is distinct from the separately counted ELF
+        # stack probes and does not certify framebuffer/GUI presentation.
+        check(gate, 'check-linux-fbv.py', '--in', args.compiler, '--root', variant,
+              '--app', applications['fbv'], '--out', args.out / gate)
     check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',
           '--app', applications['darwin'], '--out', args.out / 'darwin-process')
     check('darwin-startup-owner', 'check-darwin-startup-owner.py', '--in', args.compiler,

@@ -50,6 +50,15 @@ Arbitrary shared clone/thread flags remain refused. See the [vfork contract](lin
 and
 [Linux owned VM evidence](linux-owned-vm.md) for exact profiles and counts.
 
+Original fbv1.1 adds a smaller intermediate GUI-program startup corpus:44 real
+protected CLI activations per root now pass with unchanged host help/no-argument
+output and status. Its initial argc mismatch drove an explicit argc1..3 launcher;
+66 separately counted startup ELF entries per root check argv/envp/auxv, high
+immutable sources and unused-pointer refusal. Three clean unmodified-source
+builds are byte-identical. The viewer has not rendered pixels or received GUI
+input on Space; this does not complete any FLTK or foreign GUI row. See the
+[framebuffer workload checkpoint](plans/2026-10-24-linux-framebuffer-app.md).
+
 Protected Mach-O supports checked raw Darwin calls and finite typed libSystem
 imports, including a separate eleven-service allocator revision. Protected PE
 has a composed43-name KERNEL32 service profile while retaining the32-import

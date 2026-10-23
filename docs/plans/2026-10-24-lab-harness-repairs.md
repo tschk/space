@@ -1,8 +1,8 @@
 # Preserved122-gate failures and focused harness repairs
 
 The immutable122-gate run at `/workspace/lab122/report.json` uses committed
-`eea9cce` (649 tracked files) and source-built Inauguration0.9.325. The run is
-still active. Its first three failures are preserved, with the exact original
+`eea9cce` (649 tracked files) and source-built Inauguration0.9.325. The run finished119 passed/3 failed, with integrity passed and no changed source,
+compiler or application artifacts. Its first three failures are preserved, with the exact original
 logs and generated artifacts. Focused repair receipts do not rewrite that run.
 
 ## Compiler corpus: omitted fixture dependency
