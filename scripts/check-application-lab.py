@@ -194,7 +194,7 @@ def main():
         check(name, script, *command)
     check('linux-sqlite-files', 'check-linux-corpus.py', '--in', args.compiler,
           '--application', 'sqlite', '--app', applications['sqlite'], '--suite', '--input-suite',
-          '--out', args.out / 'linux-sqlite-files')
+          '--wall-timeout', '600', '--out', args.out / 'linux-sqlite-files', timeout=660)
     check('linux-sqlite-nvme', 'check-linux-persistence.py', '--in', args.compiler,
           '--app', applications['sqlite'], '--out', args.out / 'linux-sqlite-nvme')
     for variant in ['standard', 'minimal']:
@@ -217,7 +217,10 @@ def main():
     for name, script in [('windows-parameters', 'check-windows-parameters.py'),
                          ('windows-identity', 'check-windows-identity.py'),
                          ('windows-pe-view', 'check-windows-pe-view.py'),
-                         ('windows-filetime', 'check-windows-filetime.py')]:
+                         ('windows-filetime', 'check-windows-filetime.py'),
+                         ('windows-environment', 'check-windows-environment.py'),
+                         ('windows-counter', 'check-windows-counter.py'),
+                         ('windows-heap', 'check-windows-heap.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
@@ -228,7 +231,11 @@ def main():
                          ('native-stat-identity', 'check-fs-stat-identity.py'),
                          ('native-nvme-flush', 'check-nvme-flush.py'),
                          ('native-time-model', 'check-time-service.py'),
-                         ('native-time-rtc', 'check-time-rtc.py')]:
+                         ('native-time-rtc', 'check-time-rtc.py'),
+                         ('native-counter-owner', 'check-counter-owner.py'),
+                         ('native-counter-hardware', 'check-hardware-counter.py'),
+                         ('native-discard-owner', 'check-vfs-discard.py'),
+                         ('native-discard-runtime', 'check-vfs-discard-runtime.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('native-lifecycle', 'check-native-lifecycle.py', '--in', args.compiler, '--out', args.out / 'native-lifecycle')
     check('native-retained', 'check-native-retained.py', '--in', args.compiler,
@@ -253,7 +260,12 @@ def main():
     check('sci-byte-validation', 'check-sci-validation.py', '--in', args.compiler,
           '--out', args.out / 'sci-byte-validation',
           '--artifacts', *sorted((args.out / 'images').glob('*.sci')), dependency=built)
+    for name, script in [('sci-bindings', 'check-sci-bindings.py'),
+                         ('sci-admission', 'check-sci-admission.py')]:
+        check(name, script, '--in', args.compiler, '--out', args.out / name)
     for cpu in ['qemu64', 'max']:
+        check('user-context-' + cpu, 'check-user-context.py', '--in', args.compiler,
+              '--cpu', cpu, '--out', args.out / ('user-context-' + cpu))
         check('sanitized-registers-' + cpu, 'check-user-initial-state.py', '--in', args.compiler,
               '--cpu', cpu, '--out', args.out / ('sanitized-registers-' + cpu))
     check('runtime-failure', 'check-runtime-failure.py', '--in', args.compiler, '--out', args.out / 'runtime-failure')

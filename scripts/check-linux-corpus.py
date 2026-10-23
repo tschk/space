@@ -25,10 +25,12 @@ parser.add_argument('--root', choices=['standard','minimal'], default='standard'
 parser.add_argument('--input-suite', action='store_true', help='also exercise real VFS stdin and file I/O')
 parser.add_argument('--budget-ticks', type=int, default=100, help='actual guest PIT interrupt budget per activation')
 parser.add_argument('--repeat', type=int, default=21, help='repeated original app launches after warm-up')
+parser.add_argument('--wall-timeout', type=int, help='external QEMU wall-clock seconds (1..3600); does not alter actual guest IRQ budget')
 args = parser.parse_args()
 args.out = args.out.resolve(); args.app = args.app.resolve()
 if not 1 <= args.budget_ticks <= 10000: parser.error('--budget-ticks must be 1..10000')
 if not 1 <= args.repeat <= 100: parser.error('--repeat must be 1..100')
+if args.wall_timeout is not None and not 1 <= args.wall_timeout <= 3600: parser.error('--wall-timeout must be 1..3600')
 if args.out.exists() and any(args.out.iterdir()):
     parser.error('--out must be new or empty')
 version={'jq':'jq-1.8.1','lua':'lua-5.4.7','busybox':'busybox-1.36.1','sqlite':'sqlite-3.46.1'}[args.application]
@@ -307,7 +309,9 @@ qcommand=['qemu-system-x86_64','-cpu','max','-kernel',str(args.out/'kernel.bin')
 with (args.out/'qemu.log').open('w') as log:
     qemu=subprocess.Popen(qcommand,stdout=log,stderr=subprocess.STDOUT)
     try:
-        deadline=time.monotonic()+max(90, args.repeat * 8)
+        wall_timeout = args.wall_timeout if args.wall_timeout is not None else max(90, args.repeat * 8)
+        qemu_started = time.monotonic()
+        deadline = qemu_started + wall_timeout
         while time.monotonic()<deadline:
             data=(args.out/'serial.log').read_bytes() if (args.out/'serial.log').exists() else b''
             if b'linux-real-app: regression passed ' in data or b'PANIC' in data or b'nanokernel fault handler halting' in data:break
@@ -326,13 +330,15 @@ with (args.out/'qemu.log').open('w') as log:
             results.append({'filter':case['filter'],'combined_serial_output':before_exit,'exit':status,
                             'passed':status==case['exit'] and before_exit==case.get('space_expected_stdout',case['stdout'])+case['stderr']})
         regression=f'linux-real-app: regression passed {args.repeat}\n' in text
+        qemu_elapsed = time.monotonic() - qemu_started
+        wall_timeout_hit = not regression and qemu_elapsed >= wall_timeout and qemu.poll() is None
         warmup_activations=sum('linux-process-run' in item for item in input_repeat)
         actual_activations=len(cases)+warmup_activations+args.repeat*(1+warmup_activations)+1
         report={'space_status':'passed' if all(case['passed'] for case in results) and regression else 'failed',
                 'environment':{'LC_ALL':'C','HOME':'/'},'working_directory':'/','umask':'022','source_receipt':str(ROOT/'receipt.json'),'source_receipt_sha256':hashlib.sha256((ROOT/'receipt.json').read_bytes()).hexdigest(),
                 'root':args.root,'application':version+' unmodified static Linux ELF','application_sha256':app['sha256'],
                 'reference':cases,'infinite_reference':infinite_reference, 'space':{'cases':results,'repeat_cleanup_and_denial_passed':regression,
-                'repeat_count':args.repeat,'actual_application_activations':actual_activations,'file_transition_warmup_activations':warmup_activations,'guest_budget_ticks':args.budget_ticks,'guest_irq_cancellation_passed':'linux-real-app: actual guest IRQ cancellation passed' in text,'other_domain_same_va_sentinel_passed':'linux-real-app: other domain same-VA sentinel passed' in text,'hardware_faults_per_cycle':7,'caller_fs_canary':4194304,'caller_gs_canary':4194304,'qemu_command':qcommand,'kernel_sha256':hashlib.sha256((args.out/'kernel.bin').read_bytes()).hexdigest()},
+                'repeat_count':args.repeat,'external_wall_timeout_seconds':wall_timeout,'external_wall_timeout_hit':wall_timeout_hit,'qemu_elapsed_seconds':qemu_elapsed,'actual_application_activations':actual_activations,'file_transition_warmup_activations':warmup_activations,'guest_budget_ticks':args.budget_ticks,'guest_irq_cancellation_passed':'linux-real-app: actual guest IRQ cancellation passed' in text,'other_domain_same_va_sentinel_passed':'linux-real-app: other domain same-VA sentinel passed' in text,'hardware_faults_per_cycle':7,'caller_fs_canary':4194304,'caller_gs_canary':4194304,'qemu_command':qcommand,'kernel_sha256':hashlib.sha256((args.out/'kernel.bin').read_bytes()).hexdigest()},
                 'personality_sha256':hashlib.sha256((ROOT/'components/linux-process.in').read_bytes()).hexdigest(),
                 'anonymous_memory_sha256':hashlib.sha256((ROOT/'components/linux-process-mmap.in').read_bytes()).hexdigest(),
                 'file_adapter_sha256':hashlib.sha256((ROOT/'components/linux-process-files.in').read_bytes()).hexdigest(),
