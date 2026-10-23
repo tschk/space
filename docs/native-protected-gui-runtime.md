@@ -109,3 +109,36 @@ Repeat `scripts/check-native-protected-gui.py --in /explicit/.325/in --out
 /new/output`, adding `--mode oom` for constrained memory. Readable protected
 calculator/editor input/render/scale/persistence/session proofs belong to the
 GUI consumer integration plan and are not implied by the core fixtures.
+
+## Failed trusted input activation ownership
+
+The GUI input provider remains a trusted CPL0 retained component. A normal
+nonzero entry result can still publish a retained owner, and a zero result can
+leave an invalid ring header. Neither result transfers ownership to an older
+last-loaded peer.
+
+Before synchronous loading, the supervisor captures
+`runtime-instance-retained-watermark()`. Afterward,
+`runtime-instance-new-trusted-retained(watermark)` returns only the exact latest
+live trusted owner whose generation is newer than that watermark. Older,
+unrelated, protected, active and invalid records refuse. An early loader-wrapper
+refusal therefore cannot turn a prior global handle into cleanup authority.
+
+For an owner not yet admitted, routed, attached or otherwise exposed,
+`runtime-instance-discard-new-trusted(handle,watermark)` retires that exact new
+owner, discards pending ring contents through validated owned backing and
+releases it. It does not derive addresses from a malformed ring header. The
+caller clears only matching loader observation identities after success. A
+failed teardown retains the opaque owner for retry or quarantine; it does not
+publish a malformed page to GUI routing. These runtime helpers remain private
+to kernel supervision under the existing `runtime-instance-*` registry filter.
+There is no change to the loader ABI or to protected GUI execution semantics.
+
+`/workspace/local-evidence/gui-protected-startup-cleanup-second/report.json`
+passes 140 actual failed input starts (70 normal nonzero returns and 70 zero
+returns with malformed headers), exact resource reclamation and unrelated live
+input-peer resumption. Actual negative controls cover old/wrong tokens,
+negative/future watermarks, protected kind, both activity guards, unchanged ring
+and frame state on refusal, and a quarantined-owner cleanup retry. The same
+actual gate exercises readable GUI session fault recovery with the peer still
+accepting input.

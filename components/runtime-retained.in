@@ -148,3 +148,40 @@ fn runtime-instance-release(handle: Int) -> Int {
   if runtime-instance-last-handle == handle { runtime-instance-last-handle = 0 }
   return 0
 }
+
+// A synchronous trusted activation may publish an owned handle even when its
+// entry returns a nonzero status. Capture this watermark before calling a
+// loader, then inspect only its exact newly published owner. Early wrapper
+// refusal leaves prior publications outside this ownership scope.
+fn runtime-instance-retained-watermark() -> Int {
+  if runtime-instance-kernel-context() == 0 { return -1 }
+  return runtime-instance-generation
+}
+
+fn runtime-instance-new-trusted-retained(watermark: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || watermark < 0 || watermark > runtime-instance-generation { return 0 }
+  let handle = runtime-instance-last-handle
+  let record = runtime-instance-record(handle,1)
+  if record == 0 || load64(record + 8) <= watermark || load64(record + 8) != runtime-instance-generation { return 0 }
+  let state = load64(record)
+  if load64(state + 120) != 0 || load64(state + 296) != 0 || runtime-instance-active == state { return 0 }
+  return handle
+}
+
+// Only for a newly returned owner that the caller has not admitted, routed,
+// attached or otherwise exposed. A typed admission failure can leave the ring
+// header malformed; discard its contents through owned backing, never through
+// header-derived pointers. No older/unrelated or protected owner is eligible.
+// Caller invalidates any matching loader observation globals after success;
+// projections guarded by the released catalog token already refuse.
+fn runtime-instance-discard-new-trusted(handle: Int, watermark: Int) -> Int {
+  if handle <= 0 || runtime-instance-new-trusted-retained(watermark) != handle { return -1 }
+  let record = runtime-instance-record(handle,1)
+  if record == 0 { return -1 }
+  let state = load64(record)
+  let page = load64(state + 32)
+  if page != 0 && (page < 0x100000 || page >= heap-end || (page & 4095) != 0) { return -1 }
+  if runtime-instance-retire(handle) != 0 { return -1 }
+  if page != 0 { store64(page,0); store64(page + 8,0) }
+  return runtime-instance-release(handle)
+}
