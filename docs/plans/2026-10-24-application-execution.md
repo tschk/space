@@ -5,9 +5,30 @@ testing until the full goal works. The authoritative destination and completion
 matrix are [compatibility-coverage-goal.md](../compatibility-coverage-goal.md).
 This checkpoint does not close that goal or narrow its required outcomes.
 
-## Verified implementation
+## Current work and evidence scope
 
-All evidence below comes from local execution, with source-built frozen
+The latest committed Linux migration (`d9d1db9`) passes28 final gates using the
+shared native owned address-space object. The protected standard GUI is the
+ordinary default; keyboard/cursor editing (`27df866`) additionally passes real
+six-mode PS/2 input/pixels, five NVMe boots,129 sessions, hostile-peer recovery,
+command-bar launch and parent-desktop regression checks. Its editor remains an
+eight-byte ASCII field. Original macOS/Windows applications and foreign GUI
+applications remain required, unfulfilled goals.
+
+The immutable649-file122-gate run at `/workspace/lab122/report.json` is active.
+Three original harness failures are retained: two omitted imported fixtures and
+one QEMU socket-readiness race. Committed harness repairs (`3d0b565`) pass both
+330-entry compiler corpora and the380-entry Windows environment gate separately;
+Windows guest image bytes are identical. See the
+[harness evidence](2026-10-24-lab-harness-repairs.md) and
+[keyboard/editing evidence](2026-10-24-keyboard-editing.md). Separate passing
+receipts never turn that initial integration run into an all-pass result.
+Shared-vfork work is undergoing additional ownership review and real upstream
+checks; it is not yet an accepted integration checkpoint.
+
+## Historical initial execution checkpoint
+
+The initial evidence in this section uses source-built frozen
 Inauguration0.9.324, SHA256
 `43b5a2f166efb28ea3123e8030c549d1eac9e90ee7c642d013457ff7ade09168`.
 It is not a claim of a single latest whole-tree regression run. Application
