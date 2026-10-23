@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "upstream": "https://www.lua.org/",
+  "version": "5.4.7",
+  "license": "MIT",
+  "source": {
+    "url": "https://www.lua.org/ftp/lua-5.4.7.tar.gz",
+    "sha256": "9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30",
+    "checksum_reference": "https://www.lua.org/ftp/",
+    "modified": false
+  },
+  "build": {
+    "profile": "upstream generic, static x86_64 Linux ELF",
+    "command": [
+      "make",
+      "-C",
+      "src",
+      "-j4",
+      "lua",
+      "MYLDFLAGS=-static"
+    ],
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "configuration": "Upstream Makefile defaults; LUA_COMPAT_5_3, -std=gnu99 -O2 -Wall -Wextra; generic platform without readline/dlopen. No Space source patches.",
+    "link_command": "gcc -std=gnu99 -o lua -static lua.o liblua.a -lm"
+  },
+  "apps": [
+    {
+      "id": "lua-5.4.7-linux-x86_64-generic-static",
+      "name": "lua",
+      "version": "5.4.7",
+      "personality": "linux",
+      "filename": "lua",
+      "sha256": "941f7a886bdc40a4403dd6991390158fcacb1698905f228fc2b78ee486cb382d",
+      "size_bytes": 1458872,
+      "scenario": {
+        "args": [
+          "-e",
+          "print(6*7)"
+        ],
+        "exit_code": 0,
+        "stdout": "42\n"
+      }
+    }
+  ]
+}

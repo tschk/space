@@ -1,0 +1,563 @@
+package space.kernel
+import "linux-process-files.in"
+import "linux-process-mmap.in"
+
+// Bounded, single-thread Linux static ELF process. Foreign semantics stay here;
+// strict CPU transitions and page-table ownership stay in the domain runtime.
+const LINUX-PROCESS-MAX-PAGES = 4096
+const LINUX-PROCESS-STACK-BASE = 0x4F000000
+const LINUX-PROCESS-STACK-SIZE = 0x100000
+const LINUX-PROCESS-BRK-BASE = 0x10000000
+const LINUX-PROCESS-BRK-LIMIT = 0x10800000
+var linux-process-ledger: Int = 0
+var linux-process-context: Int = 0
+var linux-process-pages: Int = 0
+var linux-process-domain: Int = 0
+var linux-process-active: Int = 0
+var linux-process-brk: Int = LINUX-PROCESS-BRK-BASE
+var linux-process-brk-mapped: Int = LINUX-PROCESS-BRK-BASE
+var linux-process-clear-tid: Int = 0
+var linux-process-stdout-open: Int = 1
+var linux-process-stderr-open: Int = 1
+var linux-process-output-bytes: Int = 0
+var linux-process-syscalls: Int = 0
+var linux-process-trace: Int = 0
+var linux-process-authority: Int = -1
+var linux-process-exe: Int = 0
+var linux-process-budget-ticks: Int = 100
+
+fn linux-process-load16(address: Int) -> Int {
+  return load8(address) | (load8(address + 1) << 8)
+}
+
+fn linux-process-page-index(address: Int) -> Int {
+  let page = address & -4096
+  let i = 0
+  while i < linux-process-pages {
+    if load64(linux-process-ledger + i * 24) == page { return i }
+    i = i + 1
+  }
+  return -1
+}
+
+fn linux-process-physical(address: Int, writable: Int) -> Int {
+  let index = linux-process-page-index(address)
+  if index < 0 { return 0 }
+  let row = linux-process-ledger + index * 24
+  let prot = load64(row + 16)
+  if (prot & 4) == 0 || (writable != 0 && (prot & 2) == 0) { return 0 }
+  return load64(row + 8) + (address & 4095)
+}
+
+fn linux-process-range(address: Int, length: Int, writable: Int) -> Int {
+  if address <= 0 || length < 0 || length > 0x1000000 || address > 0x7FFFFFFF - length { return 0 }
+  if length == 0 { return 1 }
+  let page = address & -4096
+  let end = address + length
+  while page < end {
+    if linux-process-physical(page, writable) == 0 { return 0 }
+    page = page + 4096
+  }
+  return 1
+}
+
+fn linux-process-string-valid(address: Int) -> Int {
+  let i = 0
+  while i < 4096 {
+    if linux-process-range(address + i, 1, 0) == 0 { return 0 }
+    if linux-process-read8(address + i) == 0 { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-read8(address: Int) -> Int {
+  return load8(linux-process-physical(address, 0))
+}
+
+fn linux-process-store8(address: Int, value: Int) -> void {
+  store8(linux-process-physical(address, 1), value)
+  return
+}
+
+fn linux-process-store64(address: Int, value: Int) -> void {
+  let i = 0
+  while i < 8 {
+    linux-process-store8(address + i, (value >> (i * 8)) & 255)
+    i = i + 1
+  }
+  return
+}
+
+fn linux-process-read32(address: Int) -> Int {
+  let value = 0
+  let i = 0
+  while i < 4 {
+    value = value | (linux-process-read8(address + i) << (i * 8))
+    i = i + 1
+  }
+  return value
+}
+
+fn linux-process-string-is(address: Int, text: Int) -> Int {
+  let i = 0
+  while i < 4096 {
+    if linux-process-range(address + i, 1, 0) == 0 { return 0 }
+    let ch = linux-process-read8(address + i)
+    if ch != load8(text + i) { return 0 }
+    if ch == 0 { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-map-page(address: Int, prot: Int) -> Int {
+  if linux-process-pages >= LINUX-PROCESS-MAX-PAGES || (address & 4095) != 0 { return -12 }
+  if linux-process-page-index(address) >= 0 { return -22 }
+  let frame = frame-alloc()
+  let row = linux-process-ledger + linux-process-pages * 24
+  store64(row, address)
+  store64(row + 8, frame)
+  store64(row + 16, prot)
+  linux-process-pages = linux-process-pages + 1
+  if prot == 5 { domain-map-user-code(linux-process-domain, address, frame) }
+  else if prot == 4 { domain-map-user-readonly(linux-process-domain, address, frame) }
+  else { domain-map-user-data(linux-process-domain, address, frame) }
+  return frame
+}
+
+fn linux-process-elf-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 64 || size > 0x1000000 || image > 0x100000000 - size { return -8 }
+  if (load64(image) & 0x00FFFFFFFFFFFFFF) != 0x00010102464C457F { return -8 }
+  // Both System V and GNU identify the ordinary Linux x86_64 static ABI.
+  if load8(image + 7) != 0 && load8(image + 7) != 3 { return -8 }
+  if load8(image + 8) != 0 || linux-process-load16(image + 16) != 2 || linux-process-load16(image + 18) != 62 { return -8 }
+  if load32(image + 20) != 1 || linux-process-load16(image + 52) != 64 || linux-process-load16(image + 54) != 56 { return -8 }
+  let phoff = load64(image + 32)
+  let count = linux-process-load16(image + 56)
+  if phoff < 64 || count < 1 || count > 32 || phoff > size - count * 56 { return -8 }
+  let entry = load64(image + 24)
+  let entry-ok = 0
+  let loads = 0
+  let total = 0
+  let i = 0
+  while i < count {
+    let p = image + phoff + i * 56
+    let kind = load32(p)
+    if kind == 3 || kind == 2 { return -8 }
+    if kind == 1 {
+      loads = loads + 1
+      let flags = load32(p + 4)
+      let off = load64(p + 8)
+      let va = load64(p + 16)
+      let file = load64(p + 32)
+      let memory = load64(p + 40)
+      if flags != 4 && flags != 5 && flags != 6 { return -8 }
+      if memory <= 0 || memory > 0x800000 || va < 0x400000 || va > 0x10000000 - memory { return -8 }
+      if off < 0 || file < 0 || file > memory || off > size || file > size - off { return -8 }
+      if (va & 4095) != (off & 4095) { return -8 }
+      let lo = va & -4096
+      let hi = (va + memory + 4095) & -4096
+      total = total + (hi - lo) / 4096
+      if total > 2048 { return -8 }
+      let j = 0
+      while j < i {
+        let other = image + phoff + j * 56
+        if load32(other) == 1 {
+          let a = load64(other + 16) & -4096
+          let b = (load64(other + 16) + load64(other + 40) + 4095) & -4096
+          if lo < b && a < hi { return -8 }
+        }
+        j = j + 1
+      }
+      if flags == 5 && entry >= va && entry < va + file { entry-ok = 1 }
+    }
+    i = i + 1
+  }
+  if loads == 0 || entry-ok == 0 { return -8 }
+  return entry
+}
+
+fn linux-process-map-elf(image: Int) -> Int {
+  let phoff = load64(image + 32)
+  let count = linux-process-load16(image + 56)
+  let i = 0
+  while i < count {
+    let p = image + phoff + i * 56
+    if load32(p) == 1 {
+      let va = load64(p + 16)
+      let memory = load64(p + 40)
+      let off = load64(p + 8)
+      let file = load64(p + 32)
+      let page = va & -4096
+      let end = (va + memory + 4095) & -4096
+      while page < end {
+        let frame = linux-process-map-page(page, load32(p + 4))
+        if frame <= 0 { return -12 }
+        let j = 0
+        while j < 4096 {
+          let current = page + j
+          if current >= va && current - va < file {
+            store8(frame + j, load8(image + off + current - va))
+          }
+          j = j + 1
+        }
+        page = page + 4096
+      }
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-stack-string(address: Int, text: Int) -> void {
+  let i = 0
+  while load8(text + i) != 0 {
+    linux-process-store8(address + i, load8(text + i))
+    i = i + 1
+  }
+  linux-process-store8(address + i, 0)
+  return
+}
+
+fn linux-process-random(buffer: Int, length: Int) -> Int {
+  if length < 0 || length > 256 { return -22 }
+  if linux-process-range(buffer, length, 1) == 0 { return -14 }
+  let random = load64(0x4170)
+  if random == 0 { return -38 }
+  let done = 0
+  while done < length {
+    let result = invoke1(random, linux-process-context + 32)
+    if result != 0 {
+      if done > 0 { return done }
+      return result
+    }
+    let n = length - done
+    if n > 8 { n = 8 }
+    let i = 0
+    while i < n {
+      linux-process-store8(buffer + done + i, load8(linux-process-context + 32 + i))
+      i = i + 1
+    }
+    done = done + n
+  }
+  return done
+}
+
+fn linux-process-stack(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int {
+  let page = LINUX-PROCESS-STACK-BASE
+  while page < LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE {
+    if linux-process-map-page(page, 6) <= 0 { return -12 }
+    page = page + 4096
+  }
+  let strings = LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 4096
+  linux-process-stack-string(strings, arg0)
+  linux-process-stack-string(strings + 256, arg1)
+  linux-process-stack-string(strings + 512, arg2)
+  linux-process-stack-string(strings + 1024, "LC_ALL=C")
+  linux-process-stack-string(strings + 1100, "HOME=/")
+  // Linux startup: argc, argv[], NULL, envp[], NULL, then auxiliary pairs.
+  let entropy = linux-process-random(strings + 2048, 16)
+  if entropy != 16 { if entropy < 0 { return entropy } return -11 }
+  let stack = strings - 512
+  linux-process-store64(stack, 3)
+  linux-process-store64(stack + 8, strings)
+  linux-process-store64(stack + 16, strings + 256)
+  linux-process-store64(stack + 24, strings + 512)
+  linux-process-store64(stack + 32, 0)
+  linux-process-store64(stack + 40, strings + 1024)
+  linux-process-store64(stack + 48, strings + 1100)
+  linux-process-store64(stack + 56, 0)
+  // AT_PHDR must name the actually mapped ELF program header table.
+  let phdr = 0
+  let i = 0
+  while i < linux-process-load16(image + 56) {
+    let p = image + load64(image + 32) + i * 56
+    if load32(p) == 1 && load64(p + 8) == 0 { phdr = load64(p + 16) + load64(image + 32) }
+    i = i + 1
+  }
+  linux-process-store64(stack + 64, 3); linux-process-store64(stack + 72, phdr)
+  linux-process-store64(stack + 80, 4); linux-process-store64(stack + 88, 56)
+  linux-process-store64(stack + 96, 5); linux-process-store64(stack + 104, linux-process-load16(image + 56))
+  linux-process-store64(stack + 112, 6); linux-process-store64(stack + 120, 4096)
+  linux-process-store64(stack + 128, 7); linux-process-store64(stack + 136, 0)
+  linux-process-store64(stack + 144, 9); linux-process-store64(stack + 152, load64(image + 24))
+  linux-process-store64(stack + 160, 11); linux-process-store64(stack + 168, 0)
+  linux-process-store64(stack + 176, 12); linux-process-store64(stack + 184, 0)
+  linux-process-store64(stack + 192, 13); linux-process-store64(stack + 200, 0)
+  linux-process-store64(stack + 208, 14); linux-process-store64(stack + 216, 0)
+  linux-process-store64(stack + 224, 23); linux-process-store64(stack + 232, 0)
+  linux-process-store64(stack + 240, 25); linux-process-store64(stack + 248, strings + 2048)
+  linux-process-store64(stack + 256, 31); linux-process-store64(stack + 264, strings)
+  linux-process-store64(stack + 272, 0); linux-process-store64(stack + 280, 0)
+  return stack
+}
+
+fn linux-process-remove-page(page: Int) -> Int {
+  let index = linux-process-page-index(page)
+  if index < 0 || domain-unmap-user(linux-process-domain,page) != 0 { return -1 }
+  let row = linux-process-ledger + index * 24
+  frame-free(load64(row + 8))
+  linux-process-pages = linux-process-pages - 1
+  let last = linux-process-ledger + linux-process-pages * 24
+  store64(row,load64(last)); store64(row + 8,load64(last + 8)); store64(row + 16,load64(last + 16))
+  store64(last,0); store64(last + 8,0); store64(last + 16,0)
+  return 0
+}
+
+fn linux-process-brk-call(request: Int) -> Int {
+  if request == 0 { return linux-process-brk }
+  if request < LINUX-PROCESS-BRK-BASE || request > LINUX-PROCESS-BRK-LIMIT { return linux-process-brk }
+  let end = (request + 4095) & -4096
+  if end > linux-process-brk-mapped {
+    if cap-check(linux-process-authority,cap-memory()) == 0 { return linux-process-brk }
+    let extra = (end - linux-process-brk-mapped) / 4096
+    if extra > LINUX-PROCESS-MAX-PAGES - linux-process-pages { return linux-process-brk }
+  }
+  while linux-process-brk-mapped < end {
+    if linux-process-map-page(linux-process-brk-mapped, 6) <= 0 { return linux-process-brk }
+    linux-process-brk-mapped = linux-process-brk-mapped + 4096
+  }
+  while linux-process-brk-mapped > end {
+    let page = linux-process-brk-mapped - 4096
+    if linux-process-remove-page(page) != 0 { return linux-process-brk }
+    linux-process-brk-mapped = page
+  }
+  linux-process-brk = request
+  return request
+}
+
+fn linux-process-mprotect(address: Int, length: Int, protection: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (address & 4095) != 0 || length < 0 || length > 0x1000000 { return -22 }
+  if protection != 1 && protection != 3 { return -22 }
+  let end = (address + length + 4095) & -4096
+  if address <= 0 || end < address || end > 0x7FFFFFFF { return -22 }
+  let page = address
+  while page < end {
+    let idx = linux-process-page-index(page)
+    if idx < 0 { return -12 }
+    // Never turn an executable page writable.
+    if (load64(linux-process-ledger + idx * 24 + 16) & 1) != 0 { return -13 }
+    page = page + 4096
+  }
+  page = address
+  while page < end {
+    let idx = linux-process-page-index(page)
+    let row = linux-process-ledger + idx * 24
+    let prot = 4
+    if protection == 3 { prot = 6 }
+    store64(row + 16, prot)
+    if prot == 4 { domain-map-user-readonly(linux-process-domain, page, load64(row + 8)) }
+    else { domain-map-user-data(linux-process-domain, page, load64(row + 8)) }
+    page = page + 4096
+  }
+  return 0
+}
+
+fn linux-process-fstat(fd: Int, buffer: Int) -> Int {
+  if fd != 1 && fd != 2 { return linux-process-file-stat(fd, buffer) }
+  if fd != 1 && fd != 2 { return -9 }
+  if (fd == 1 && linux-process-stdout-open == 0) || (fd == 2 && linux-process-stderr-open == 0) { return -9 }
+  if linux-process-range(buffer, 144, 1) == 0 { return -14 }
+  let i = 0
+  while i < 144 { linux-process-store8(buffer + i, 0); i = i + 1 }
+  linux-process-store64(buffer + 16, 1)
+  linux-process-store64(buffer + 24, 0x2180)
+  linux-process-store64(buffer + 56, 4096)
+  return 0
+}
+
+fn linux-process-dispatch(frame: Int) -> Int {
+  let number = load64(frame + 112)
+  let first = load64(frame + 72)
+  let second = load64(frame + 80)
+  let third = load64(frame + 88)
+  let fourth = load64(frame + 40)
+  let result = -38
+  let resume = 1
+  linux-process-syscalls = linux-process-syscalls + 1
+  if linux-process-trace != 0 {
+    serial-write-cstr(com1(), "linux-process: syscall "); serial-write-dec-wide(com1(), number); serial-nl(com1())
+  }
+  if number == 60 || number == 231 { result = first & 255; resume = 0 }
+  else if number == 0 { result = linux-process-file-read(first, second, third) }
+  else if number == 8 { result = linux-process-file-seek(first, second, third) }
+  else if number == 17 { result = linux-process-file-positional(first,second,third,fourth,0) }
+  else if number == 18 { result = linux-process-file-positional(first,second,third,fourth,1) }
+  else if number == 21 { result = linux-process-file-access(first,second) }
+  else if number == 87 { result = linux-process-file-unlink(first) }
+  else if number == 9 { result = linux-process-mmap(first,second,third,fourth,load64(frame + 56),load64(frame + 48)) }
+  else if number == 11 { result = linux-process-munmap(first,second) }
+  else if number == 72 {
+    if second == 3 { result = linux-process-descriptor-flags(first) }
+    else { result = -38 }
+  }
+  else if number == 12 { result = linux-process-brk-call(first) }
+  else if number == 158 {
+    if first != 0x1002 { result = -22 }
+    else if linux-process-range(second, 1, 1) == 0 { result = -14 }
+    else { wrmsr64(0xC0000100, second); result = 0 }
+  } else if number == 218 {
+    if linux-process-range(first, 4, 1) == 0 { result = -14 }
+    else { linux-process-clear-tid = first; result = 1000 + linux-process-domain }
+  } else if number == 273 { result = -38 }
+  else if number == 302 {
+    if first != 0 { result = -3 }
+    else if second != 3 || third != 0 { result = -22 }
+    else if linux-process-range(fourth, 16, 1) == 0 { result = -14 }
+    else {
+      linux-process-store64(fourth, LINUX-PROCESS-STACK-SIZE)
+      linux-process-store64(fourth + 8, LINUX-PROCESS-STACK-SIZE)
+      result = 0
+    }
+  } else if number == 267 || number == 89 {
+    let path = first
+    let buffer = second
+    let count = third
+    if number == 267 { path = second; buffer = third; count = fourth }
+    if number == 267 && (first & 0xFFFFFFFF) != 0xFFFFFF9C { result = -9 }
+    else if linux-process-string-valid(path) == 0 { result = -14 }
+    else if linux-process-string-is(path, "/proc/self/exe") == 0 { result = -2 }
+    else if count <= 0 { result = -22 }
+    else if linux-process-range(buffer, count, 1) == 0 { result = -14 }
+    else {
+      let text = linux-process-exe
+      let n = count
+      if n > strlen(text) { n = strlen(text) }
+      let i = 0
+      while i < n { linux-process-store8(buffer + i, load8(text + i)); i = i + 1 }
+      result = n
+    }
+  } else if number == 318 {
+    if third != 0 && third != 1 { result = -22 }
+    else { result = linux-process-random(first, second) }
+  } else if number == 334 { result = -38 }
+  else if number == 228 { result = -38 }
+  else if number == 10 { result = linux-process-mprotect(first, second, third) }
+  else if number == 16 { if first == 1 || first == 2 { result = -25 } else { result = -9 } }
+  else if number == 79 {
+    if second < 2 { result = -34 }
+    else if linux-process-range(first, 2, 1) == 0 { result = -14 }
+    else { linux-process-store8(first, 47); linux-process-store8(first + 1, 0); result = 2 }
+  } else if number == 202 {
+    if linux-process-range(first, 4, 1) == 0 { result = -14 }
+    else if second == 129 { result = 0 }
+    else if second == 128 && linux-process-read32(first) != third { result = -11 }
+    else { result = -38 }
+  } else if number == 5 { result = linux-process-fstat(first, second) }
+  else if number == 1 {
+    if first != 1 && first != 2 { result = linux-process-file-write(first,second,third) }
+    else if (first == 1 && linux-process-stdout-open == 0) || (first == 2 && linux-process-stderr-open == 0) { result = -9 }
+    else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
+    else if second < 0 || third < 0 || third > 65536 { result = -22 }
+    else if linux-process-range(second, third, 0) == 0 { result = -14 }
+    else {
+      let i = 0
+      while i < third { serial-put(com1(), linux-process-read8(second + i)); i = i + 1 }
+      linux-process-output-bytes = linux-process-output-bytes + third
+      result = third
+    }
+  } else if number == 3 {
+    if first == 1 && linux-process-stdout-open != 0 { linux-process-stdout-open = 0; result = 0 }
+    else if first == 2 && linux-process-stderr-open != 0 { linux-process-stderr-open = 0; result = 0 }
+    else { result = linux-process-file-close(first) }
+  } else if number == 257 {
+    if linux-process-string-valid(second) == 0 { result = -14 }
+    else if (first & 0xFFFFFFFF) != 0xFFFFFF9C { result = -9 }
+    else { result = linux-process-file-open-mode(second,third,fourth) }
+  } else if number == 2 {
+    if linux-process-string-valid(first) == 0 { result = -14 }
+    else { result = linux-process-file-open-mode(first,second,third) }
+  } else if number == 262 {
+    if linux-process-string-valid(second) == 0 { result = -14 }
+    else { result = -13 }
+  }
+  else if number == 39 || number == 186 { result = 1000 + linux-process-domain }
+  if linux-process-trace != 0 {
+    serial-write-cstr(com1(), "linux-process: result "); serial-write-dec-wide(com1(), result); serial-nl(com1())
+  }
+  store64(frame + 112, result)
+  let flag = load64(0x4168)
+  if flag != 0 { store64(flag, resume) }
+  return resume
+}
+
+fn linux-process-release() -> Int {
+  if domain-destroy-user(linux-process-domain) != 0 { return -1 }
+  let i = 0
+  while i < linux-process-pages {
+    frame-free(load64(linux-process-ledger + i * 24 + 8))
+    store64(linux-process-ledger + i * 24, 0)
+    store64(linux-process-ledger + i * 24 + 8, 0)
+    store64(linux-process-ledger + i * 24 + 16, 0)
+    i = i + 1
+  }
+  linux-process-pages = 0
+  linux-process-files-release()
+  linux-process-domain = 0
+  linux-process-active = 0
+  linux-process-authority = -1
+  linux-process-exe = 0
+  return 0
+}
+
+fn linux-process-run(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int) -> Int {
+  return linux-process-run-input(image, size, arg0, arg1, arg2, authority, -1)
+}
+
+// A borrowed read-only VFS file is duplicated into guest stdin. Its open-file
+// offset is shared (normal dup semantics); the caller retains its descriptor
+// and path lifetime. Only the execution-owned duplicate is closed on exit.
+fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int) -> Int {
+  let entry = linux-process-elf-entry(image, size)
+  if entry < 0 { return entry }
+  if cap-check(authority, cap-memory() | cap-serial()) == 0 { return -13 }
+  if strlen(arg0) > 255 || strlen(arg1) > 255 || strlen(arg2) > 511 { return -22 }
+  if domain-current != 0 || linux-process-active != 0 || domain-user-syscall-hook != 0 { return -16 }
+  if linux-process-budget-ticks < 1 || linux-process-budget-ticks > 10000 { return -22 }
+  if load64(0x4190) == 0 || load64(0x4168) == 0 { return -38 }
+  if heap-end - heap-next < 0x2000000 { return -12 }
+  if image < heap-next + 0x2000000 && image + size > heap-next { return -22 }
+  if linux-process-ledger == 0 {
+    linux-process-ledger = alloc(LINUX-PROCESS-MAX-PAGES * 24)
+    linux-process-context = alloc(48)
+  }
+  linux-process-domain = domain-create-user()
+  if linux-process-domain <= 0 { linux-process-domain = 0; return -12 }
+  linux-process-active = 1
+  linux-process-authority = authority
+  linux-process-exe = arg0
+  linux-process-pages = 0
+  linux-process-brk = LINUX-PROCESS-BRK-BASE
+  linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE
+  linux-process-clear-tid = 0
+  linux-process-stdout-open = 1
+  linux-process-stderr-open = 1
+  linux-process-output-bytes = 0
+  linux-process-syscalls = 0
+  domain-set-cap(linux-process-domain, -1)
+  let status = linux-process-files-init(input)
+  if status == 0 { status = linux-process-map-elf(image) }
+  let stack = 0
+  if status == 0 { stack = linux-process-stack(image, arg0, arg1, arg2); if stack < 0 { status = stack } }
+  let fs = rdmsr(0xC0000100)
+  let gs = rdmsr(0xC0000101)
+  if status == 0 {
+    // The caller's thread pointer is privileged execution state, not part of
+    // a new Linux process. glibc installs its own TLS through ARCH_SET_FS.
+    wrmsr64(0xC0000100,0)
+    wrmsr64(0xC0000101,0)
+    domain-user-syscall-hook = linux-process-dispatch
+    status = domain-enter-user-budgeted(entry, 0, linux-process-domain, stack, linux-process-context, linux-process-budget-ticks)
+    domain-user-syscall-hook = 0
+  }
+  wrmsr64(0xC0000100, fs)
+  wrmsr64(0xC0000101, gs)
+  if linux-process-clear-tid != 0 && linux-process-range(linux-process-clear-tid, 4, 1) != 0 {
+    let i = 0
+    while i < 4 { linux-process-store8(linux-process-clear-tid + i, 0); i = i + 1 }
+  }
+  if linux-process-release() != 0 { return -5 }
+  return status
+}

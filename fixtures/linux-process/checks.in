@@ -1,0 +1,305 @@
+package space.kernel
+var linux-check-file-path: Int = 0
+
+fn linux-check(expect: Int, actual: Int) -> void {
+  if expect != actual {
+    serial-write-cstr(com1(), "linux-real-app: assertion expected ")
+    serial-write-dec-wide(com1(), expect)
+    serial-write-cstr(com1(), " actual ")
+    serial-write-dec-wide(com1(), actual)
+    serial-nl(com1())
+    panic("Linux process regression")
+  }
+}
+
+fn linux-check-free-count() -> Int {
+  let n = 0
+  let page = free-list
+  while page != 0 {
+    n = n + 1
+    if n > 16384 { panic("Linux process free-list cycle") }
+    page = load64(page)
+  }
+  return n
+}
+
+fn linux-check-fs-used() -> Int {
+  if sf-mem-disk == 0 { return -1 }
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  let i = 0
+  let used = 0
+  while i < total { used = used + sf-block-used(i); i = i + 1 }
+  return used
+}
+
+fn linux-check-call(frame: Int, number: Int, a: Int, b: Int, c: Int) -> Int {
+  store64(frame + 112, number)
+  store64(frame + 72, a)
+  store64(frame + 80, b)
+  store64(frame + 88, c)
+  linux-process-dispatch(frame)
+  return load64(frame + 112)
+}
+
+fn linux-check-file-denials(fixture: Int, revocable: Int) -> void {
+  if linux-check-file-path == 0 { return }
+  let authority = linux-process-authority
+  linux-process-stack-string(0x20000000,"/this-name-exceeds-limit-24")
+  linux-check(-36,linux-process-file-open-mode(0x20000000,0x241,0x1B6))
+  linux-process-stack-string(0x20000000,"//.sqliterc")
+  linux-check(-2,linux-process-file-open(0x20000000,0))
+  linux-check(-2,linux-process-file-access(0x20000000,0))
+  linux-check(-2,linux-process-file-unlink(0x20000000))
+  linux-process-stack-string(0x20000000, linux-check-file-path)
+  linux-check(0,linux-process-file-access(0x20000000,0))
+  linux-check(-38,linux-process-file-access(0x20000000,4))
+  linux-check(-22, linux-process-file-open(0x20000000,3))
+  linux-check(-20,linux-process-file-open(0x20000000,0x10000))
+  let nofollow = linux-process-file-open(0x20000000,0x20000)
+  linux-check(3,nofollow)
+  linux-check(0,linux-process-file-close(nofollow))
+  linux-process-stack-string(0x20000000,"/")
+  let directory = linux-process-file-open(0x20000000,0)
+  linux-check(3,directory)
+  linux-check(-21,linux-process-file-read(directory,0x20000200,1))
+  linux-check(0,linux-process-file-close(directory))
+  linux-check(-21,linux-process-file-open(0x20000000,2))
+  linux-process-stack-string(0x20000000,linux-check-file-path)
+  let guest = linux-process-file-open(0x20000000,0)
+  linux-check(3,guest)
+  linux-check(-16,linux-process-file-unlink(0x20000000))
+  let host = linux-process-file-host(guest)
+  linux-check(0,linux-process-descriptor-flags(guest))
+  linux-check(-9,linux-process-descriptor-flags(4))
+  linux-check(0,vfs-fd-offset(host))
+  linux-check(-14,linux-process-file-read(guest,fixture,1))
+  linux-check(-14,linux-process-file-read(guest,0x20001000,1))
+  linux-check(0,vfs-fd-offset(host))
+  linux-check(-9,linux-process-file-read(4,0x20000200,1))
+  linux-check(1,linux-process-file-read(guest,0x20000200,1))
+  linux-check(123,linux-process-read8(0x20000200))
+  linux-check(0,linux-process-file-seek(guest,0,0))
+  linux-check(-22,linux-process-file-seek(guest,0,3))
+  linux-check(0,linux-process-file-stat(guest,0x20000200))
+  linux-check(45,linux-process-read32(0x20000200+48))
+  let writable = linux-process-file-open(0x20000000,2)
+  linux-check(4,writable)
+  linux-check(2,linux-process-descriptor-flags(writable))
+  linux-check(-9,linux-process-file-write(guest,0x20000200,1))
+  linux-check(-14,linux-process-file-write(writable,fixture,1))
+  linux-check(-22,linux-process-file-write(writable,0x20000200,65537))
+  linux-check(-17,linux-process-file-open-mode(0x20000000,0xC2,0x1B6))
+  linux-check(0,vfs-fd-offset(linux-process-file-host(writable)))
+  linux-check(7,linux-process-file-seek(guest,7,0))
+  linux-check(1,linux-process-file-positional(guest,0x20000200,1,0,0))
+  linux-check(123,linux-process-read8(0x20000200))
+  linux-check(7,vfs-fd-offset(host))
+  linux-check(0,linux-process-file-positional(guest,0x20000200,1,45,0))
+  linux-check(-22,linux-process-file-positional(guest,0x20000200,1,-1,0))
+  linux-check(-14,linux-process-file-positional(guest,fixture,1,0,0))
+  linux-check(7,vfs-fd-offset(host))
+  linux-check(-9,linux-process-file-positional(guest,0x20000200,1,0,1))
+  linux-process-store8(0x20000200,125)
+  linux-check(1,linux-process-file-positional(writable,0x20000200,1,0,1))
+  linux-check(1,linux-process-file-positional(guest,0x20000201,1,0,0))
+  linux-check(125,linux-process-read8(0x20000201))
+  // Restore the original byte for subsequent real application runs.
+  linux-process-store8(0x20000200,123)
+  linux-check(1,linux-process-file-positional(writable,0x20000200,1,0,1))
+  linux-check(0,vfs-fd-offset(linux-process-file-host(writable)))
+  linux-check(0,linux-process-file-seek(guest,0,0))
+  let slot = cap-table-base + revocable * 16
+  let target = load64(slot)
+  linux-process-authority = revocable
+  linux-check(0,cap-revoke(revocable))
+  linux-check(-13,linux-process-file-read(guest,0x20000200,1))
+  linux-check(-13,linux-process-file-seek(guest,0,0))
+  linux-check(-13,linux-process-file-stat(guest,0x20000200))
+  linux-check(-13,linux-process-file-open(0x20000000,0))
+  linux-check(-13,linux-process-file-access(0x20000000,0))
+  linux-check(-13,linux-process-file-unlink(0x20000000))
+  linux-check(-13,linux-process-file-write(writable,0x20000200,1))
+  linux-check(-13,linux-process-file-positional(guest,0x20000200,1,0,0))
+  linux-check(-13,linux-process-file-positional(writable,0x20000200,1,0,1))
+  linux-check(0,linux-process-file-close(writable))
+  linux-check(-9,linux-process-descriptor-flags(writable))
+  linux-check(0,linux-process-file-close(guest))
+  linux-check(-9,linux-process-file-read(guest,0x20000200,1))
+  store64(slot,target)
+  store64(slot+8,cap-memory()|cap-serial()|cap-storage())
+  linux-process-authority = authority
+  linux-process-stack-string(0x20000000,"/absent-json-file")
+  linux-check(-2,linux-process-file-open(0x20000000,0))
+  linux-process-stack-string(0x20000000,linux-check-file-path)
+  linux-check(3,linux-process-file-open(0x20000000,0))
+  // Leave this owned descriptor open: release must close it even without a
+  // cooperative guest close (as on fault and early process termination).
+  return
+}
+
+fn linux-check-elf-field(image: Int, size: Int, offset: Int, value: Int, wide: Int, authority: Int) -> void {
+  let saved = load8(image + offset)
+  if wide != 0 { saved = load64(image + offset); store64(image + offset,value) }
+  else { store8(image + offset,value) }
+  linux-check(-8,linux-process-run(image,size,"/invalid","-e","0",authority))
+  if wide != 0 { store64(image + offset,saved) }
+  else { store8(image + offset,saved) }
+  return
+}
+
+fn linux-check-anonymous() -> void {
+  linux-check(-22,linux-process-mmap(0,0,3,0x22,-1,0))
+  linux-check(-13,linux-process-mmap(0,4096,7,0x22,-1,0))
+  linux-check(-22,linux-process-mmap(0,4096,3,2,-1,0))
+  linux-check(-22,linux-process-mmap(0,4096,3,0x22,0,0))
+  linux-check(-22,linux-process-munmap(0x400000,4096))
+  let first = linux-process-mmap(0,12288,3,0x22,-1,0)
+  linux-check(LINUX-PROCESS-MMAP-BASE,first)
+  linux-check(PAGE-NX|7,domain-page-flags(linux-process-domain,first))
+  linux-process-store8(first+4096,123)
+  linux-check(0,linux-process-mprotect(first+4096,4096,1))
+  linux-check(0,linux-process-range(first+4096,1,1))
+  linux-check(0,linux-process-munmap(first+4096,4095))
+  linux-check(0,domain-page-flags(linux-process-domain,first+4096))
+  let reused = linux-process-mmap(0,4096,3,0x22,-1,0)
+  linux-check(first+4096,reused)
+  linux-check(0,linux-process-read8(reused))
+  linux-check(0,linux-process-munmap(first,12288))
+  linux-check(0,linux-process-munmap(first,12288))
+  let readonly = linux-process-mmap(0,1,1,0x22,-1,0)
+  linux-check(first,readonly)
+  linux-check(PAGE-NX|5,domain-page-flags(linux-process-domain,readonly))
+  linux-check(0,linux-process-range(readonly,1,1))
+  linux-check(0,linux-process-munmap(readonly,1))
+  let authority = linux-process-authority
+  linux-process-authority = -1
+  linux-check(-13,linux-process-mmap(0,4096,3,0x22,-1,0))
+  linux-check(-13,linux-process-munmap(first,4096))
+  linux-check(-13,linux-process-mprotect(0x20000000,4096,1))
+  linux-check(linux-process-brk,linux-process-brk-call(LINUX-PROCESS-BRK-BASE+4096))
+  linux-process-authority = authority
+  return
+}
+
+fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocable: Int, authority: Int) -> void {
+  linux-check(-13, linux-process-run(image,size,"/jq","-nc","0",-1))
+  let saved = load64(image)
+  store64(image, 0)
+  linux-check(-8, linux-process-run(image,size,"/jq","-nc","0",authority))
+  store64(image, saved)
+  let phoff = load64(image + 32)
+  let flags = load32(image + phoff + 4)
+  store32(image + phoff + 4, 7)
+  linux-check(-8, linux-process-run(image,size,"/jq","-nc","0",authority))
+  store32(image + phoff + 4, flags)
+  linux-check-elf-field(image,size,4,1,0,authority)
+  linux-check-elf-field(image,size,7,9,0,authority)
+  linux-check-elf-field(image,size,8,1,0,authority)
+  linux-check-elf-field(image,size,24,0x400000,1,authority)
+  linux-check-elf-field(image,size,32,size,1,authority)
+  linux-check-elf-field(image,size,56,33,0,authority)
+  linux-check-elf-field(image,size,phoff,3,0,authority)
+  linux-check-elf-field(image,size,phoff+8,1,1,authority)
+  linux-check-elf-field(image,size,phoff+16,0x1000,1,authority)
+  linux-check-elf-field(image,size,phoff+40,0,1,authority)
+
+  // Synthetic ELF is labelled separately from the pinned, unmodified app.
+  let i = 0
+  while i < 4096 { store8(fixture + i, 0); i = i + 1 }
+  store64(fixture, 0x00010102464C457F)
+  store32(fixture + 16, 0x003E0002)
+  store32(fixture + 20, 1)
+  store64(fixture + 24, 0x400100)
+  store64(fixture + 32, 64)
+  store32(fixture + 52, 0x00380040)
+  store8(fixture + 56, 1)
+  store64(fixture + 64, 0x0000000500000001)
+  store64(fixture + 80, 0x400000)
+  store64(fixture + 96, 4096)
+  store64(fixture + 104, 4096)
+  store64(fixture + 112, 4096)
+  store8(fixture + 256, 15); store8(fixture + 257, 11)
+  linux-check(134, linux-process-run(fixture,4096,"/fault","-nc","0",authority))
+  // Actual CPL3 kernel-memory read, executable-page write, NX-stack execution
+  // and privileged I/O must fault and unwind through the same owned teardown.
+  store8(fixture + 256, 0x48); store8(fixture + 257, 0xA1)
+  store64(fixture + 258, 0x1000)
+  linux-check(142, linux-process-run(fixture,4096,"/read-kernel","-nc","0",authority))
+  store8(fixture + 256, 0xC6); store8(fixture + 257, 0x05)
+  store32(fixture + 258, -7); store8(fixture + 262, 0)
+  linux-check(142, linux-process-run(fixture,4096,"/write-code","-nc","0",authority))
+  store8(fixture + 256, 0x48); store8(fixture + 257, 0xB8)
+  store64(fixture + 258, LINUX-PROCESS-STACK-BASE)
+  store8(fixture + 266, 0xFF); store8(fixture + 267, 0xE0)
+  linux-check(142, linux-process-run(fixture,4096,"/execute-stack","-nc","0",authority))
+  store8(fixture + 256, 0xE6); store8(fixture + 257, 0x80)
+  linux-check(141, linux-process-run(fixture,4096,"/privileged-io","-nc","0",authority))
+
+  // A leaked caller FS=0x400000 would read this guest's valid ELF header and
+  // exit42. A fresh process FS=0 instead faults at null. This distinguishes
+  // initialization from supervisor-page denial with a kernel-only canary.
+  store8(fixture + 256,0x64); store8(fixture + 257,0x48); store8(fixture + 258,0xA1)
+  store64(fixture + 259,0)
+  store8(fixture + 267,0xBF); store32(fixture + 268,42)
+  store8(fixture + 272,0xB8); store32(fixture + 273,60)
+  store8(fixture + 277,15); store8(fixture + 278,5)
+  let saved-fs = rdmsr(0xC0000100)
+  wrmsr64(0xC0000100,0x400000)
+  linux-check(142,linux-process-run(fixture,4096,"/initial-fs","-nc","0",authority))
+  linux-check(0x400000,rdmsr(0xC0000100))
+  wrmsr64(0xC0000100,saved-fs)
+  let saved-gs = rdmsr(0xC0000101)
+  wrmsr64(0xC0000101,0x400000)
+  store8(fixture + 256,0x65)
+  linux-check(142,linux-process-run(fixture,4096,"/initial-gs","-nc","0",authority))
+  linux-check(0x400000,rdmsr(0xC0000101))
+  wrmsr64(0xC0000101,saved-gs)
+
+  linux-process-domain = domain-create-user()
+  linux-process-active = 1
+  linux-process-authority = authority
+  linux-process-pages = 0
+  linux-process-map-page(0x20000000, 6)
+  linux-process-map-page(0x20001000, 5)
+  linux-check-anonymous()
+  linux-check-file-denials(fixture,revocable)
+  linux-process-stdout-open = 1
+  linux-check(-14, linux-check-call(frame,1,1,0x1000,4))
+  linux-check(-14, linux-check-call(frame,1,1,0x20001FFE,4))
+  linux-check(-9, linux-check-call(frame,1,42,0x20000000,4))
+  linux-process-authority = -1
+  linux-check(-13, linux-check-call(frame,1,1,0x20000000,1))
+  let cap-slot = cap-table-base + revocable * 16
+  let target = load64(cap-slot)
+  linux-process-authority = revocable
+  linux-check(0, cap-revoke(revocable))
+  linux-check(-13, linux-check-call(frame,1,1,0x20000000,1))
+  linux-check(-13, linux-process-run(image,size,"/jq","-nc","0",revocable))
+  store64(cap-slot, target)
+  store64(cap-slot + 8, cap-memory() | cap-serial() | cap-storage())
+  linux-process-authority = authority
+  linux-check(-13, linux-process-mprotect(0x20001000,4096,3))
+  linux-check(-22, linux-process-mprotect(0x20000001,4096,1))
+  linux-check(-14, linux-process-random(0x20001000,8))
+  linux-check(0, linux-process-mprotect(0x20000000,4096,1))
+  linux-check(0, linux-process-range(0x20000000,1,1))
+  linux-check(1, linux-process-range(0x20000000,1,0))
+  linux-check(-14, linux-check-call(frame,5,1,0x20000000,0))
+  store64(fixture + 600, 0x123456789ABCDEF0)
+  linux-check(-14, linux-check-call(frame,5,1,fixture + 600,0))
+  linux-check(0x123456789ABCDEF0, load64(fixture + 600))
+  linux-check(-14, linux-check-call(frame,257,-100,0x1000,0))
+  linux-check(-38, linux-check-call(frame,99999,0,0,0))
+  linux-process-brk = LINUX-PROCESS-BRK-BASE
+  linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE
+  linux-check(LINUX-PROCESS-BRK-BASE + 8192, linux-process-brk-call(LINUX-PROCESS-BRK-BASE + 8192))
+  linux-process-store8(LINUX-PROCESS-BRK-BASE + 4096, 123)
+  linux-check(LINUX-PROCESS-BRK-BASE + 1, linux-process-brk-call(LINUX-PROCESS-BRK-BASE + 1))
+  linux-check(0, domain-page-flags(linux-process-domain, LINUX-PROCESS-BRK-BASE + 4096))
+  linux-check(0, linux-process-range(LINUX-PROCESS-BRK-BASE + 4096, 1, 0))
+  linux-check(LINUX-PROCESS-BRK-BASE + 8192, linux-process-brk-call(LINUX-PROCESS-BRK-BASE + 8192))
+  linux-check(0, linux-process-read8(LINUX-PROCESS-BRK-BASE + 4096))
+  linux-check(0, linux-process-release())
+  linux-check(0, domain-user-syscall-hook)
+  linux-check(0, domain-current)
+}
