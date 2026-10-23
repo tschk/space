@@ -279,6 +279,12 @@ def main():
               '--mode', mode, '--out', args.out / ('native-protected-gui-' + mode))
     check('gui-protected-package', 'check-gui-protected-profile.py', '--in', args.compiler,
           '--out', args.out / 'gui-protected-package')
+    for name, script in [('gui-protected-client-model', 'check-gui-protected-client.py'),
+                         ('gui-protected-windows', 'check-gui-protected-windows.py'),
+                         ('gui-protected-persistence', 'check-gui-protected-persistence.py'),
+                         ('gui-protected-lifetime', 'check-gui-protected-lifetime.py'),
+                         ('gui-protected-faults', 'check-gui-protected-faults.py')]:
+        check(name, script, '--in', args.compiler, '--out', args.out / name, timeout=1200)
     check('standard-gui', 'check-standard-gui.py', '--in', args.compiler, '--build-dir', args.out / 'standard-gui')
     check('native-gui-apps', 'check-gui-apps.py', '--in', args.compiler, '--build-dir', args.out / 'gui-apps')
     check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')

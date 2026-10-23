@@ -127,8 +127,11 @@ loader remains trusted CPL0; the new protected GUI integration is in progress. P
 writable staging and separate immutable accepted presentation frames pass
 actual hostile-write, lifetime and low-memory checks. The opt-in real calculator
 and editor now pass all six output/scale modes and129 sessions/258 instances.
-Manager fault recovery and persistence gates are being finalized before default
-launch integration. Original Darwin/Windows applications and foreign GUI
+The consumer checkpoint is committed in `aa16a9e`, with final six-mode,
+five-boot persistence,129-session and six-fault recovery gates passing from one
+frozen541-file source. The separate startup ownership fix (`8e5c4f6`) passes140
+failed starts with exact cleanup and a surviving peer. Default launch
+integration is the next active step. Original Darwin/Windows applications and foreign GUI
 workloads remain open. Eager Mach-O chained imports are committed in `174d708`
 with254 actual executions and malformed/unused-import refusal controls; the new
 Darwin heap adapter is committed separately in `eef4ea8`:275 actual CPL3
