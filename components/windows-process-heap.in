@@ -1,0 +1,89 @@
+package space.kernel
+
+// Explicit bounded process heap. Native ledger is never guest-mapped; only the
+// owned RW/NX arena is visible. No exception-raising or executable heap flags.
+const WINDOWS-PARAMETERS-HEAP-BASE = 0x4D000000
+const WINDOWS-PARAMETERS-HEAP-BYTES = 262144
+var windows-parameters-heap-authority:Int=-1
+var windows-parameters-heap-active:Int=0
+var windows-parameters-heap-records:Int=0
+var windows-parameters-heap-handle:Int=0
+var windows-parameters-heap-generation:Int=0
+fn windows-parameters-heap-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-import-id(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"GetProcessHeap")!=0{return 24;}
+ if windows-protected-name(image,size,name+2,"HeapAlloc")!=0{return 25;}
+ if windows-protected-name(image,size,name+2,"HeapFree")!=0{return 26;}
+ if windows-protected-name(image,size,name+2,"HeapReAlloc")!=0{return 27;}
+ if windows-protected-name(image,size,name+2,"HeapSize")!=0{return 28;}
+ return -1;
+}
+fn windows-parameters-heap-prepare(domain:Int)->void{
+ windows-parameters-heap-records=frame-alloc();windows-parameters-heap-generation=windows-parameters-heap-generation+1;
+ windows-parameters-heap-handle=0x484500000000+windows-parameters-heap-generation;
+ let i=0;while i<64{let va=WINDOWS-PARAMETERS-HEAP-BASE+i*4096;let page=windows-protected-frame(va);domain-map-user-data(domain,va,page);i=i+1;}
+ store64(windows-protected-physical(WINDOWS-STARTUP-TEB+4096+48),windows-parameters-heap-handle);
+}
+fn windows-parameters-heap-release()->void{
+ if windows-parameters-heap-records!=0{frame-free(windows-parameters-heap-records);windows-parameters-heap-records=0;}windows-parameters-heap-handle=0;
+}
+fn windows-parameters-heap-extent(size:Int)->Int{if size<0 || size>WINDOWS-PARAMETERS-HEAP-BYTES{return -1;}if size==0{return 16;}return (size+15)&(-16);}
+fn windows-parameters-heap-find(address:Int)->Int{
+ let i=0;while i<128{let row=windows-parameters-heap-records+i*24;if load64(row+16)!=0 && load64(row)==address{return row;}i=i+1;}return 0;
+}
+fn windows-parameters-heap-room(start:Int,bytes:Int,ignore:Int)->Int{
+ if start<WINDOWS-PARAMETERS-HEAP-BASE || bytes<0 || bytes>WINDOWS-PARAMETERS-HEAP-BYTES || start - WINDOWS-PARAMETERS-HEAP-BASE>WINDOWS-PARAMETERS-HEAP-BYTES - bytes{return 0;}
+ let i=0;while i<128{let row=windows-parameters-heap-records+i*24;let extent=load64(row+16);if row!=ignore && extent!=0{let address=load64(row);if start<address+extent && address<start+bytes{return 0;}}i=i+1;}return 1;
+}
+fn windows-parameters-heap-zero(address:Int,bytes:Int)->void{
+ let done=0;while done<bytes{let n=4096-((address+done)&4095);if n>bytes - done{n=bytes - done;}let physical=windows-protected-physical(address+done);let i=0;while i<n{store8(physical+i,0);i=i+1;}done=done+n;}
+}
+fn windows-parameters-heap-copy(target:Int,source:Int,bytes:Int)->void{
+ let done=0;while done<bytes{let n=4096-((target+done)&4095);let from=4096-((source+done)&4095);if from<n{n=from;}if n>bytes - done{n=bytes - done;}let a=windows-protected-physical(target+done);let b=windows-protected-physical(source+done);let i=0;while i<n{store8(a+i,load8(b+i));i=i+1;}done=done+n;}
+}
+fn windows-parameters-heap-reserve(size:Int)->Int{
+ let extent=windows-parameters-heap-extent(size);if extent<0{return 0;}let empty=0;let i=0;
+ while i<128{let row=windows-parameters-heap-records+i*24;if load64(row+16)==0 && empty==0{empty=row;}i=i+1;}if empty==0{return 0;}
+ let candidate=WINDOWS-PARAMETERS-HEAP-BASE;let attempt=0;
+ while attempt<=128{
+  let next=candidate;i=0;
+  while i<128{let row=windows-parameters-heap-records+i*24;let bytes=load64(row+16);let address=load64(row);if bytes!=0 && candidate<address+bytes && address<candidate+extent{if address+bytes>next{next=address+bytes;}}i=i+1;}
+  if next==candidate{if windows-parameters-heap-room(candidate,extent,0)==0{return 0;}store64(empty,candidate);store64(empty+8,size);store64(empty+16,extent);windows-parameters-heap-zero(candidate,extent);return candidate;}
+  candidate=next;attempt=attempt+1;
+ }return 0;
+}
+fn windows-parameters-heap-dispatch(frame:Int,num:Int)->Int{
+ let allocate=0;if num==0x100019 || num==0x10001B{allocate=1;}
+ let failure=0;if num==0x10001C{failure=-1;}
+ if windows-parameters-heap-active==0 || cap-check(windows-parameters-heap-authority,cap-memory())==0{if allocate==0{windows-protected-error=5;}return failure;}
+ if num==0x100018{return windows-parameters-heap-handle;}
+ if num==0x10001A && load64(frame+56)==0{return 1;}
+ if load64(frame+96)!=windows-parameters-heap-handle{if allocate==0{windows-protected-error=6;}return failure;}
+ let flags=load64(frame+88)&0xffffffff;let allowed=1;if allocate!=0{allowed=9;}if num==0x10001B{allowed=25;}
+ if (flags&(0xffffffff^allowed))!=0{if allocate==0{windows-protected-error=87;}return failure;}
+ let address=load64(frame+56);
+ if num==0x100019{return windows-parameters-heap-reserve(address);}
+ let row=windows-parameters-heap-find(address);if row==0{if allocate==0{windows-protected-error=87;}return failure;}
+ if num==0x10001C{return load64(row+8);}
+ if num==0x10001A{store64(row,0);store64(row+8,0);store64(row+16,0);return 1;}
+ let size=load64(frame+48);let extent=windows-parameters-heap-extent(size);if extent<0{return 0;}
+ let old=load64(row+8);let oldextent=load64(row+16);
+ if extent<=oldextent || windows-parameters-heap-room(address,extent,row)!=0{
+  if size>old{windows-parameters-heap-zero(address+old,size - old);}store64(row+8,size);store64(row+16,extent);return address;
+ }
+ if (flags&16)!=0{return 0;}
+ let next=windows-parameters-heap-reserve(size);if next==0{return 0;}let count=old;if size<count{count=size;}windows-parameters-heap-copy(next,address,count);
+ store64(row,0);store64(row+8,0);store64(row+16,0);return next;
+}
+fn windows-command-heap-run(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int)->Int{
+ if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0{return -16;}
+ let entry=windows-startup-entry-mode(image,size,5);if entry<0{return entry;}
+ if windows-parameters-line-valid(line,bytes)==0{return -22;}
+ if cap-check(memory,cap-memory())==0{return -13;}
+ if windows-parameters-heap-generation>=0x7fffffff{return -12;}
+ if authority>=0 && cap-check(authority,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}
+ windows-parameters-heap-authority=memory;windows-parameters-heap-active=1;
+ let result=windows-command-run-profile(image,size,authority,storage,line,bytes,7);
+ windows-parameters-heap-release();windows-parameters-heap-authority=-1;windows-parameters-heap-active=0;return result;
+}

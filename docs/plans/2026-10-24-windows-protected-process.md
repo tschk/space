@@ -227,3 +227,20 @@ bounded Windows heap contract with real allocation/reallocation/free/size and
 negative/lifecycle tests, followed by execution-local TLS/FLS and synchronization.
 It must not bind these imports to successful stand-ins. Original Windows SQLite,
 7za and jq have no version/help result yet.
+
+
+## Owned heap checkpoint
+
+[Profile 7](../windows-heap-checks.md) adds five real heap APIs behind an explicit
+borrowed memory grant, with a 256KiB private RW/NX arena, native-only 128-record
+ledger, per-activation opaque handle, 16-byte alignment, exact logical HeapSize,
+zero-size allocation and atomic in-place/moving realloc. Unsupported exception
+flags/imports remain refused. Memory authority is rechecked for every operation;
+owned cleanup does not depend on the grant remaining live. Prior profiles do not
+admit the new imports. The actual focused gate performs 485 protected executions
+and seven allocation-free admission refusals, with real NX/native-ledger CPU
+faults, overflow/bad-free/stale-handle/arena+record exhaustion, live revocation,
+deadline and fresh activation evidence. The original SQLite/7za refusal gate
+now checks eight profiles, 336 repeated refusals. This is still bounded runtime
+fixture coverage: original applications remain unexecuted and their import-slot,
+directory, TLS/FLS and synchronization requirements remain explicit blockers.

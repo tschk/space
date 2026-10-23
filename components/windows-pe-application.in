@@ -152,6 +152,7 @@ fn windows-application-entry-mode(image: Int, size: Int, startup: Int) -> Int {
       if startup == 3 { id = windows-parameters-time-import(image, size, name) }
       if startup == 4 { id = windows-parameters-env-import(image, size, name) }
       if startup == 5 { id = windows-parameters-counter-import(image, size, name) }
+      if startup == 6 { id = windows-parameters-heap-import(image, size, name) }
       if i == 32 || id < 0 { return -8 }
       i = i + 1
     }

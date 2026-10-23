@@ -437,6 +437,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   else if num >= 0x10000A && num <= 0x100010 && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
   else if (num == 0x100012 || num == 0x100013) && windows-protected-profile == 6 { result = windows-parameters-counter-dispatch(frame, num) }
   else if num >= 0x100014 && num <= 0x100017 && windows-protected-profile == 5 && windows-parameters-env-active != 0 { result = windows-parameters-env-dispatch(frame, num) }
+  else if num >= 0x100018 && num <= 0x10001C && windows-protected-profile == 7 { result = windows-parameters-heap-dispatch(frame, num) }
   else { result = 0; windows-protected-error = 120 }
   if windows-protected-profile >= 2 { store32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104), windows-protected-error) }
   store64(frame + 112, result)
@@ -464,6 +465,10 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     if windows-parameters-time-active == 0 || windows-parameters-active == 0 { return -22 }
     entry = windows-startup-entry-mode(image, size, 4)
   }
+  if profile == 7 {
+    if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 5)
+  }
   if entry < 0 { return entry }
   if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
   if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
@@ -471,6 +476,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   if load64(0x4160) == 0 { return -38 }
   let needed = 80
   if profile >= 1 { needed = windows-application-pages(image) + 80 }
+  if profile == 7 { needed = needed + 67 }
   let available = (heap-end - ((heap-next + 4095) & -4096)) / 4096
   let free = free-list
   while free != 0 && available < needed { available = available + 1; free = load64(free) }
@@ -534,7 +540,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
-  while i < 24 {
+  while i < 29 {
     let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
     i = i + 1
@@ -557,6 +563,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
       if profile == 4 { index = windows-parameters-time-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile == 5 { index = windows-parameters-env-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       if profile == 6 { index = windows-parameters-counter-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 7 { index = windows-parameters-heap-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
     }
   }
@@ -577,6 +584,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   if profile >= 3 { windows-parameters-prepare(domain) }
   if profile == 5 { windows-parameters-env-prepare(domain) }
+  if profile == 7 { windows-parameters-heap-prepare(domain) }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FF8, windows-protected-context, windows-protected-budget)
   wrmsr64(0xC0000100, caller-fs)
@@ -584,6 +592,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   domain-user-syscall-hook = 0
   windows-protected-files-release()
   if profile == 5 { windows-parameters-env-release() }
+  if profile == 7 { windows-parameters-heap-release() }
   if domain-destroy-user(domain) != 0 { return -5 }
   i = 0
   while i < windows-protected-count {
