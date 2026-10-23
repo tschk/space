@@ -44,11 +44,13 @@ same disk without formatting. Without NVMe the apps remain usable and Ctrl-S
 reports `no disk`.
 
 The bounded session uses synchronous CPL0 clone domains; it does not prove
-hostile-code isolation. Close detaches compositor references and retires tokens.
-The loader retains instance/domain/page backing, so repeated sessions consume
-resources. Launch refuses before the monotonic domain/capability tables cannot
-admit all three instances. Reboot restores capacity. Physical reclaim requires
-the ownership/alias ledger described in [compositor/client ownership](compositor-client-split.md).
+hostile-code isolation. Each private manager record captures an opaque runtime
+generation handle. Close retires that exact instance, withdraws input routing,
+drains its exchange and detaches compositor surfaces/pools before releasing its
+owned image, heap, ring/pixel and clone-table backing. The other client remains
+live. Closing both also retires/releases the input instance. Reopen reuses the
+bounded manager/event storage and free runtime slots with fresh generations;
+admission counts reusable capacity. See [compositor/client ownership](compositor-client-split.md).
 The [full application goal](compatibility-coverage-goal.md) remains active.
 
 ## Build and test contract
@@ -102,4 +104,19 @@ out-of-bounds and unavailable-backend cases cause no FS calls or allocations.
 Authorized saves may allocate filesystem service cache/metadata. The session
 accepts an allocation-baseline update only when its trusted file-service epoch
 advances once for editor Ctrl-S; ordinary input and domain/capability counters
-remain stable. This is separate from eventual retained SCI backing reclamation.
+remain stable. A validated close updates the free-list baseline only when the
+trusted lifetime epoch advances exactly once; the independent lifetime observer
+checks actual reclaimed ownership and resource counts.
+
+The lifetime gate runs at least129 same-boot standard sessions, with real input,
+exact pixels, both close orders, survivor edits and fresh reopen. Its optional
+private observer wraps the actual product functions in a temporary kernel root;
+it checks reclaimed frames, retired authority, zero live ledgers after each
+session, stable resource counts after warmup, stale handles against recycled
+canary/new-client memory, wrong-owner and guest refusal, and kernel alias ABA.
+The uninstrumented distributable session remains an independent gate.
+
+```bash
+python scripts/check-gui-lifecycle.py --in /path/to/source-built/in --out /tmp/new-gui-lifetime
+python scripts/check-gui-lifecycle.py --in /path/to/source-built/in --observe --out /tmp/new-gui-ownership
+```

@@ -32,6 +32,8 @@ fn gui-apps-proof(port: Int) -> Int {
         events += 1
         if code == 27 {
           if gui-record(editor) != 0 || gui-record(calc) == 0 || gui-event(editor, SPDP-SEAT-KEYBOARD-KEY, ticks, 97) != 0 { return 0 }
+          if load64(gui-records + GUI-RECORD-SIZE + GUI-HANDLE) != 0 || load64(dsp-pools + 8) != 0 { return 0 }
+          free = free-list
           gui-focused = calc
         }
         serial-write-cstr(port, "apps: rendered event ")

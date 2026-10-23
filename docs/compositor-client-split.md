@@ -288,8 +288,9 @@ The loader allocates/maps each client's pixel and ring pages. The client writes
 its pixel page while synchronously executing, consumes one event and returns a
 complete bounded attach/damage/commit batch; the compositor reads only after
 return and validation. This single-flight ownership rule has no asynchronous
-buffer-release fence. Close detaches the owned surface/pool and retires the
-token; it does not reclaim domain/page allocations. The manager is kernel-linked
+buffer-release fence. Close retires the exact runtime generation, withdraws its
+token/routing, drains its owned exchange and detaches/composites the surface/pool
+before releasing owned backing. The manager is kernel-linked
 and clients use existing CPL0 clone domains, so this proves neither hostile-code
 hardware isolation nor general multi-client SPDP authorization. Foreign GUI
 applications remain a separate protected process/adapter milestone.
@@ -308,8 +309,9 @@ The original single-client SPDP/input tests remain independent regressions.
 Initial execution exposed shared leaf page tables in `create-shared-domain-pml4`:
 a later loader mapping could replace an earlier client's ring mapping. Clones now
 copy present non-huge leaf PTs into individually owned frames, preserving flags;
-large identity leaves remain copied values. Those CPL0 clone table allocations
-retain the existing domain lifetime and are not reclaimed by this session.
+large identity leaves remain copied values. The runtime's explicit clone-owned
+ledger now releases those private table frames without freeing borrowed identity
+mappings.
 
 Fresh local execution with source-built Inauguration 0.9.322 passed the full
 three-SCI QEMU sequence, including genuine pointer focus and exact pixels after
@@ -355,23 +357,34 @@ decoders under default/lean/harden with those sequences. Normalized key-down
 routing still does not provide raw key releases, repeat policy, right-Ctrl/Alt,
 IME or general keyboard-layout support.
 
-### Eventual buffer retirement and reclaim boundary
+### Retained buffer retirement and reclaim boundary
 
-Current close means a drained exchange, compositor detach, zeroed owned pool
-reference and retired session token. In-flight writes finish when synchronous
-client entry returns; no compositor read overlaps that entry. Retiring a token
-does not revoke the domain's mappings or capability, terminate hostile CPL0 code,
-free a heap, release page tables or make its physical pages reusable.
+The private runtime catalog owns each retained instance through a generation
+handle bound to its exact component ID, private capability, domain and ledger.
+GUI records capture that handle alongside the physical endpoint snapshot.
+Before event publication, the manager checks that the handle still identifies
+that exact entry/capinfo/ring/pixel owner. Resume establishes the instance's
+allocator and domain context. Retire prevents further entry; the GUI then
+withdraws token/focus routing, drains/discards the owned ring and removes every
+surface/pool consumer before release. In-flight writes finish when synchronous
+entry returns; no compositor read overlaps it. Failed exchanges use the same
+one-way fence. Closed endpoints are never dereferenced after release.
 
-Safe reclaim requires the loader/supervisor to retain an allocation ledger for
-each instance, including clone-owned leaf PTs, heap frames, shared ring/pixel
-frames and kernel aliases. It must stop entry, detach all consumers, revoke and
-unmap every alias, verify no active presentation/read reference remains and only
-then release owned frames. The empty CPL3-tree teardown is not applicable to
-identity-map clones. Do not traverse/free these clone trees as though every
-present physical mapping belonged to the instance. A future reusable supervisor
-must test repeated create/close/fault/reopen, fresh generation identities,
-post-close buffer refusal and allocator baselines before claiming reclamation.
+The loader records private image/import copies, heap frames, ring/pixel frames
+and explicitly clone-owned tables. Kernel ring/pixel aliases and the temporary
+root-realm edge are restored immediately after initial activation, before
+publishing the handle; teardown cannot later restore a freed predecessor's
+alias. The empty CPL3-tree teardown remains inapplicable to identity-map clones.
+Only the explicit ledger's private frames are released. This remains trusted
+CPL0 lifecycle management, not termination of hostile native code.
+
+`check-gui-lifecycle.py --observe` instruments product entry/close calls in a
+temporary root and requires more than128 sessions with stable resource counts,
+actual backing release, stale-generation/canary/new-client refusal, wrong-owner
+and guest denial, and no kernel alias referencing a free frame. Its ordinary
+mode tests the unchanged distributable image separately. See the
+[lifetime plan](plans/2026-10-24-retained-gui-lifetime.md) for the recorded
+19-session capacity baseline and ownership contract.
 
 ### Standard-image session integration
 
@@ -381,9 +394,10 @@ fixture source is imported into the kernel and no foreign application code lives
 in the shell. This service launches input/calculator/editor from the boot-image
 registry through explicit `sci-load-retained-component` activation, routes pointer/Tab focus and keyboard events, and runs until both apps
 are closed. It preserves the surviving client after one closes. Reopening clears
-only retired manager records, reuses its tables and mints fresh tokens; SCI backing
-remains retained. Preflight domain/capacity checks refuse before partial admission
-when the current monotonic tables cannot fit a session.
+only fully released manager records, reuses its tables/event scratch and mints
+fresh GUI/runtime tokens. The input instance is fenced and released after both
+clients close. Preflight checks count reusable runtime/domain/private-cap slots;
+partial launch and failed exchanges retire already admitted instances.
 
 `check-standard-gui.py` exercises the distributable build, including same-boot
 close/reopen and minimal-image refusal. See [native GUI session usage and limits](native-gui-session.md).

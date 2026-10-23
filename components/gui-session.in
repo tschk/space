@@ -2,7 +2,56 @@ package space.kernel
 
 // Optional full-image native application session. The shell only requests it;
 // this service owns launch, retained endpoints, focus and lifetime routing.
+var gui-session-message: Int = 0
+var gui-session-input-handle: Int = 0
+var gui-session-input-page: Int = 0
+var gui-session-pending-handle: Int = 0
+
 fn gui-session-run(port: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if gui-session-input-handle != 0 || gui-session-pending-handle != 0 { return 0 }
+  let result = gui-session-run-owned(port)
+  let cleaned = 1
+  if gui-records != 0 {
+    let slot = 0
+    while slot < 2 {
+      let record = gui-records + slot * GUI-RECORD-SIZE
+      if load64(record + GUI-HANDLE) != 0 && gui-retire(record) != 1 { cleaned = 0 }
+      slot += 1
+    }
+  }
+  if gui-session-pending-handle != 0 {
+    let handle = gui-session-pending-handle
+    // Admission may already have fenced/released a malformed initial reply.
+    if runtime-instance-record(handle, 1) != 0 || runtime-instance-record(handle, 2) != 0 {
+      if runtime-instance-retire(handle) != 0 || runtime-instance-release(handle) != 0 { cleaned = 0 }
+    }
+    gui-session-pending-handle = 0
+  }
+  if gui-session-input-handle != 0 {
+    let handle = gui-session-input-handle
+    if runtime-instance-retire(handle) != 0 { return 0 }
+    // No future input polls can execute this identity. Withdraw the snapshot
+    // and discard queued device words before its exact owned page is released.
+    sci-proof-input.unit = 0
+    sci-proof-input.handle = 0
+    sci-sync-ring-unit = 0
+    sci-sync-handle = 0
+    store64(gui-session-input-page, 0)
+    store64(gui-session-input-page + 8, 0)
+    if runtime-instance-release(handle) != 0 { return 0 }
+    gui-session-input-handle = 0
+    gui-session-input-page = 0
+  }
+  if cleaned != 1 { return 0 }
+  if result == 1 {
+    serial-write-cstr(port, "gui: both applications closed; stable session counters; returning to shell")
+    serial-nl(port)
+  }
+  return result
+}
+
+fn gui-session-run-owned(port: Int) -> Int {
   if domain-get-current() != 0 || fb-ready == 0 { return 0 }
   let input-image = boot-image-find(BOOT-IMAGE-GUI-SEAT)
   let calc-image = boot-image-find(BOOT-IMAGE-GUI-CALC)
@@ -12,24 +61,32 @@ fn gui-session-run(port: Int) -> Int {
     serial-nl(port)
     return 0
   }
-  // Current clone lifetimes are not reclaimed. Refuse before partially loading
-  // a session when the monotonic domain/capability tables cannot admit all3.
-  if domain-count > MAX-DOMAINS - 3 || cap-count > cap-table-cap - 3 {
-    serial-write-cstr(port, "gui: retained instance capacity exhausted; reboot required")
+  if runtime-instance-can-admit(3) != 1 {
+    serial-write-cstr(port, "gui: retained instance capacity exhausted")
     serial-nl(port)
     return 0
   }
   if gui-reopen() != 1 { return 0 }
-  if sci-load-retained-component(port, input-image, "gui-seat", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if gui-session-message == 0 { gui-session-message = alloc(8) }
+  let input-result = sci-load-retained-component(port, input-image, "gui-seat", SCI-INPUT-GRANTS, 0)
+  gui-session-input-handle = runtime-instance-last-handle
+  gui-session-input-page = sci-sync-page
+  if input-result != 0 || gui-session-input-handle == 0 { return 0 }
   if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
   let input-page = sci-sync-page
-  if sci-load-retained-component(port, calc-image, "gui-calc", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  let calc-result = sci-load-retained-component(port, calc-image, "gui-calc", cap-memory() | cap-display(), "init")
+  gui-session-pending-handle = runtime-instance-last-handle
+  if calc-result != 42 { return 0 }
   let calc = gui-admit(0)
   if calc == 0 { return 0 }
-  if sci-load-retained-component(port, editor-image, "gui-editor", cap-memory() | cap-display() | cap-storage(), "init") != 42 { return 0 }
+  gui-session-pending-handle = 0
+  let editor-result = sci-load-retained-component(port, editor-image, "gui-editor", cap-memory() | cap-display() | cap-storage(), "init")
+  gui-session-pending-handle = runtime-instance-last-handle
+  if editor-result != 42 { return 0 }
   let editor = gui-admit(1)
   if editor == 0 { return 0 }
-  let message = alloc(8)
+  gui-session-pending-handle = 0
+  let message = gui-session-message
   let domains = domain-count
   let caps = cap-count
   let heap = heap-next
@@ -54,7 +111,12 @@ fn gui-session-run(port: Int) -> Int {
         } else {
           let recipient = gui-focused
           let store-epoch = gui-note-store-epoch
+          let lifetime-epoch = gui-lifetime-epoch
           if gui-key(recipient, ticks, code) != 1 { return 0 }
+          if gui-lifetime-epoch != lifetime-epoch {
+            if code != 27 || gui-lifetime-epoch != lifetime-epoch + 1 { return 0 }
+            free = free-list
+          }
           if gui-note-store-epoch != store-epoch {
             if code != 19 || recipient != editor || gui-note-store-epoch != store-epoch + 1 { return 0 }
             // Authorized filesystem work may allocate service cache/metadata.
@@ -87,10 +149,5 @@ fn gui-session-run(port: Int) -> Int {
     if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
     pause()
   }
-  // Retire the session's input handle; loader backing remains retained.
-  sci-proof-input.unit = 0
-  sci-sync-ring-unit = 0
-  serial-write-cstr(port, "gui: both applications closed; stable session counters; returning to shell")
-  serial-nl(port)
   return 1
 }
