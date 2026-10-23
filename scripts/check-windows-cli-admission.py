@@ -41,7 +41,7 @@ for i,app in enumerate(apps):
     source+=''' let heapINDEX=heap-next;let freeINDEX=free-list;let domainsINDEX=domain-count;let ownedINDEX=domain-user-owned;
  DIAGNOSTIC
  let cycleINDEX=0;while cycleINDEX<21{
-  let profile=0;while profile<11{
+  let profile=0;while profile<12{
    let result=-8;if profile<3{result=windows-protected-run-profile(BASE,SIZE,-1,-1,profile);}
    else if profile==3{let line="APPLICATION -version";result=windows-command-run(BASE,SIZE,-1,-1,line,strlen(line)+1);}
    else if profile==4{let line="APPLICATION -version";result=windows-command-time-run(BASE,SIZE,-1,-1,timer,line,strlen(line)+1);}
@@ -50,7 +50,7 @@ for i,app in enumerate(apps):
    else if profile==7{let line="APPLICATION -version";result=windows-command-heap-run(BASE,SIZE,-1,-1,memory,line,strlen(line)+1);}
    else if profile==8{let line="APPLICATION -version";result=windows-command-local-run(BASE,SIZE,-1,-1,memory,line,strlen(line)+1);}
    else if profile==9{let line="APPLICATION -version";result=windows-command-critical-run(BASE,SIZE,-1,-1,memory,line,strlen(line)+1);}
-   else{let line="APPLICATION -version";result=windows-cli-composed-refuse(BASE,SIZE,config,memory,timer,line,env);}
+   else{let line="APPLICATION -version";result=windows-cli-composed-refuse(BASE,SIZE,config,memory,timer,line,env,profile);}
    if result!=-8{panic("Original Windows CLI unexpectedly admitted");}
    if heap-next!=heapINDEX || free-list!=freeINDEX || domain-count!=domainsINDEX || domain-user-owned!=ownedINDEX || windows-protected-busy!=0{panic("Original Windows CLI refusal changed ownership");}
    profile=profile+1;
@@ -58,7 +58,7 @@ for i,app in enumerate(apps):
  }
 '''.replace('INDEX',str(i)).replace('BASE',str(base)).replace('SIZE',str(len(data))).replace('APPLICATION',app['filename']).replace('DIAGNOSTIC',diagnostic)
 source+=' cap-revoke(timer);cap-revoke(memory);serial-write-cstr(port,"windows-cli-admission: official SQLite and 7za unchanged refusals before allocation PASS");serial-nl(port);}\n'
-source+='''\nfn windows-cli-composed-refuse(image:Int,size:Int,config:Int,memory:Int,timer:Int,line:Int,env:Int)->Int{store64(config,1);store64(config+8,96);store64(config+16,-1);store64(config+24,-1);store64(config+32,memory);store64(config+40,timer);store64(config+48,line);store64(config+56,strlen(line)+1);store64(config+64,env);store64(config+72,2);store64(config+80,1);store64(config+88,0);return windows-command-composed-run(image,size,config); }\n'''
+source+='''\nfn windows-cli-composed-refuse(image:Int,size:Int,config:Int,memory:Int,timer:Int,line:Int,env:Int,profile:Int)->Int{store64(config,1);store64(config+8,96);store64(config+16,-1);store64(config+24,-1);store64(config+32,memory);store64(config+40,timer);store64(config+48,line);store64(config+56,strlen(line)+1);store64(config+64,env);store64(config+72,2);store64(config+80,1);store64(config+88,0);if profile==11{return windows-command-unicode-run(image,size,config);}return windows-command-composed-run(image,size,config); }\n'''
 (out/'kernel.in').write_text(source)
 commands=[['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(out/'trampoline.bin')],[a.compiler,'compile','--path',str(out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(out/'kernel.bin')]]
 with (out/'compile.log').open('w') as log:
@@ -90,5 +90,5 @@ with (out/'qemu.log').open('w') as log:
         qemu.terminate()
         try:qemu.wait(timeout=5)
         except subprocess.TimeoutExpired:qemu.kill();qemu.wait()
-report=dict(status='passed',refusals=462,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',composed_first_unsupported_import_index=3,composed_first_unsupported_import='SetCurrentDirectoryW',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
+report=dict(status='passed',refusals=504,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',composed_first_unsupported_import_index=3,composed_first_unsupported_import='SetCurrentDirectoryW',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report['apps']))

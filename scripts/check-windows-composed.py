@@ -15,6 +15,7 @@ ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in',dest='compiler',type=Path,required=True)
 p.add_argument('--out',type=Path,required=True)
+p.add_argument('--profile',type=int,choices=[10,11],default=10,help='11 additionally exercises explicit UTF8 services in main and callback')
 a=p.parse_args();out=a.out.resolve();a.compiler=a.compiler.resolve()
 assert not out.exists() or not any(out.iterdir()),'--out must be new or empty'
 out.mkdir(parents=True,exist_ok=True)
@@ -38,6 +39,9 @@ var windows-composed-test-line:Int=0
 var windows-composed-test-env:Int=0
 var windows-composed-test-rb:Int=-1
 var windows-composed-test-observed:Int=0
+var windows-composed-test-executions:Int=0
+var windows-composed-test-rtc-unavailable:Int=0
+var windows-composed-test-transient:Int=0
 fn windows-composed-test-dispatch(frame:Int)->Int{
  let num=load64(frame+112);
  if windows-protected-profile!=10 || windows-protected-count!=87 || windows-protected-owned-pages(0x10000000,10)!=87{panic("Composed owned ledger mismatch");}
@@ -46,7 +50,7 @@ fn windows-composed-test-dispatch(frame:Int)->Int{
  let i=0;while i<windows-protected-count{if load64(windows-protected-frames+i*8)==private{panic("Composed config aliases user page");}i=i+1;}
  if private==windows-parameters-local-data || private==windows-parameters-critical-data || private==windows-parameters-heap-records || private==windows-parameters-env-data || private==windows-parameters-env-work{panic("Composed private backing alias");}
  if windows-composed-test-observed==0{
-  windows-composed-test-observed=1;
+  windows-composed-test-observed=1;windows-composed-test-executions=windows-composed-test-executions+1;
   // Mutating the borrowed caller configuration and inputs after entry must
   // not change owned grants, line, canonical environment or private config.
   store64(windows-composed-test-config+32,-1);store64(windows-composed-test-config+40,-1);store64(windows-composed-test-config+80,0);
@@ -59,6 +63,7 @@ fn windows-composed-test-dispatch(frame:Int)->Int{
   store64(frame+112,0);return 1;
  }
  let previous=counter-last;let control=windows-protected-dispatch(frame);
+ if num==0x100011 && control==0 && load64(frame+112)==125{windows-composed-test-rtc-unavailable=1;}
  if num==0x100012 && load64(frame+96)==0 && (counter-last!=previous || load64(frame+112)!=0){panic("Composed invalid pointer read provider");}
  return control;
 }
@@ -72,7 +77,7 @@ fn windows-composed-test-reset(memory:Int,timer:Int,flags:Int)->void{
  store64(p+48,windows-composed-test-line);store64(p+56,12);store64(p+64,windows-composed-test-env);store64(p+72,11);store64(p+80,flags);store64(p+88,0);
  let line="sqlite3.exe";let env="ALPHA=one";let i=0;while i<12{store8(windows-composed-test-line+i,load8(line+i));i=i+1;}
  i=0;while i<10{store8(windows-composed-test-env+i,load8(env+i));i=i+1;}store8(windows-composed-test-env+10,0);
- windows-composed-test-observed=0;
+ windows-composed-test-observed=0;windows-composed-test-rtc-unavailable=0;
 }
 fn windows-composed-test-run(memory:Int,timer:Int,flags:Int,mode:Int)->Int{
  windows-composed-test-reset(memory,timer,flags);store64(0x10000000+7680,mode);
@@ -81,6 +86,10 @@ fn windows-composed-test-run(memory:Int,timer:Int,flags:Int,mode:Int)->Int{
  let available=0;if counter-frequency-authorized(timer)>0{available=1;}store64(0x10000000+7680+8,available);
  let result=windows-command-composed-run(0x10000000,9728,windows-composed-test-config);
  if windows-composed-test-rb>=0{outb(0x70,0x0b);outb(0x71,windows-composed-test-rb);windows-composed-test-rb=-1;}
+ if result==125{
+  if windows-composed-test-rtc-unavailable!=1{panic("Composed untyped125 must not be retried");}
+  if mode!=12 && mode!=13{windows-composed-test-transient=windows-composed-test-transient+1;windows-composed-test-clean();}
+ }
  return result;
 }
 fn windows-composed-check(port:Int)->void{
@@ -107,7 +116,7 @@ fn windows-composed-check(port:Int)->void{
  heap-end=heap-next+26912;let cold-attempt=0;let refused=-11;while refused==-11 && cold-attempt<32{refused=windows-command-composed-run(image,9728,windows-composed-test-config);cold-attempt=cold-attempt+1;}heap-end=original-end;
  if refused!=-12 || heap-next!=before || free-list!=free || domain-count!=domains || windows-protected-frames!=0{panic("Composed cold refusal mutated");}windows-composed-test-clean();
  frame-free(load64(held+171*8));
- let attempt=0;let result=-11;while result==-11 && attempt<32{heap-end=heap-next+26912;result=windows-composed-test-run(memory,timer,1,0);heap-end=original-end;attempt=attempt+1;}
+ let attempt=0;let result=-11;while (result==-11 || result==125) && attempt<32{heap-end=heap-next+26912;result=windows-composed-test-run(memory,timer,1,0);heap-end=original-end;attempt=attempt+1;}
  if result!=42 || heap-next!=before+26912 || windows-composed-test-free()!=172{serial-write-dec-wide(port,result);panic("Composed exact cold recovery failed");}windows-composed-test-clean();
  i=172;while i<200{frame-free(load64(held+i*8));i=i+1;}
  serial-write-cstr(port,"windows-composed-cold:171 frames refuse172 recover exact26912 retained bytes PASS");serial-nl(port);
@@ -115,7 +124,7 @@ fn windows-composed-check(port:Int)->void{
  let cycle=0;let heap=0;let pool=0;let count=0;let caller-cap=current-cap;let pic=inb(0x21);
  while cycle<21{let mode=0;while mode<14{if mode!=5 && mode!=6{
   if mode==3 || mode==4{windows-protected-budget=5;}
-  attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(memory,timer,1,mode);attempt=attempt+1;}windows-protected-budget=100;
+  attempt=0;result=-11;while (result==-11 || (result==125 && mode!=12 && mode!=13)) && attempt<32{result=windows-composed-test-run(memory,timer,1,mode);attempt=attempt+1;}windows-protected-budget=100;
   let expected=42;if mode==2 || mode==8 || mode==9 || mode==10{expected=142;}if mode==3 || mode==4{expected=124;}if mode==11{expected=127;}if mode==12 || mode==13{expected=125;}
   if result!=expected{serial-write-dec-wide(port,mode);serial-put(port,32);serial-write-dec-wide(port,result);panic("Composed mixed result mismatch");}
   if windows-composed-test-observed!=1{panic("Composed guest not entered");}windows-composed-test-clean();
@@ -123,32 +132,36 @@ fn windows-composed-check(port:Int)->void{
  }mode=mode+1;}
  if cycle==0{heap=heap-next;pool=windows-composed-test-free();domains=domain-count;}else{if heap!=heap-next || pool!=windows-composed-test-free() || domains!=domain-count{panic("Composed repeated cleanup leaked");}}cycle=cycle+1;}
  let live-timer=cap-mint(root-realm,cap-timer());let live-memory=cap-mint(root-realm,cap-memory());
- attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(memory,live-timer,1,5);attempt=attempt+1;}if result!=42 || cap-check(live-timer,cap-timer())!=0{panic("Composed live timer revoke failed");}windows-composed-test-clean();
- attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(live-memory,timer,1,6);attempt=attempt+1;}if result!=42 || cap-check(live-memory,cap-memory())!=0{panic("Composed live memory revoke failed");}windows-composed-test-clean();
+ attempt=0;result=-11;while (result==-11 || result==125) && attempt<32{result=windows-composed-test-run(memory,live-timer,1,5);attempt=attempt+1;}if result!=42 || cap-check(live-timer,cap-timer())!=0{panic("Composed live timer revoke failed");}windows-composed-test-clean();
+ attempt=0;result=-11;while (result==-11 || (result==125 && cap-check(live-memory,cap-memory())!=0)) && attempt<32{result=windows-composed-test-run(live-memory,timer,1,6);attempt=attempt+1;}if result!=42 || cap-check(live-memory,cap-memory())!=0{panic("Composed live memory revoke failed");}windows-composed-test-clean();
  let required=42;if counter-frequency-authorized(timer)<0{required=-38;}
- attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(memory,timer,3,0);attempt=attempt+1;}if result!=required{panic("Composed required hardware policy mismatch");}windows-composed-test-clean();
- attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(memory,timer,1,0);attempt=attempt+1;}if result!=42{panic("Composed fresh activation failed");}windows-composed-test-clean();
+ attempt=0;result=-11;while (result==-11 || result==125) && attempt<32{result=windows-composed-test-run(memory,timer,3,0);attempt=attempt+1;}if result!=required{panic("Composed required hardware policy mismatch");}windows-composed-test-clean();
+ attempt=0;result=-11;while (result==-11 || result==125) && attempt<32{result=windows-composed-test-run(memory,timer,1,0);attempt=attempt+1;}if result!=42{panic("Composed fresh activation failed");}windows-composed-test-clean();
  if heap!=heap-next || pool!=windows-composed-test-free() || domains!=domain-count{panic("Composed revoke fresh cleanup leaked");}
  // A separate declared memory-only fixture imports no clocks. No timer
  // authority is needed; the original mixed import graph still refusesflags0.
  i=0;while i<9728{store8(image+i,load8(0x12000000+i));i=i+1;}
- attempt=0;result=-11;while result==-11 && attempt<32{result=windows-composed-test-run(memory,-1,0,0);attempt=attempt+1;}if result!=42{panic("Composed memory-only no timer failed");}windows-composed-test-clean();
+ attempt=0;result=-11;while (result==-11 || result==125) && attempt<32{result=windows-composed-test-run(memory,-1,0,0);attempt=attempt+1;}if result!=42{panic("Composed memory-only no timer failed");}windows-composed-test-clean();
  if heap!=heap-next || pool!=windows-composed-test-free() || domains!=domain-count{panic("Composed memory-only cleanup leaked");}
  wrmsr64(0xc0000100,callerfs);wrmsr64(0xc0000101,callergs);cap-revoke(memory);cap-revoke(timer);cap-revoke(weak);
+ serial-write-cstr(port,"windows-composed-receipt:");serial-write-dec-wide(port,windows-composed-test-executions);serial-put(port,32);serial-write-dec-wide(port,windows-composed-test-transient);serial-nl(port);
  serial-write-cstr(port,"windows-composed:257 mixed activations optional required hardware grants callbacks snapshots faults deadlines cleanup PASS");serial-nl(port);
 }
 '''
 
 names=['components/windows-process-composed.in','components/windows-process-local.in','components/windows-protected.in','components/windows-pe-application.in','components/windows-process-parameters.in','components/windows-pe-startup.in','components/windows-pe-view.in','fixtures/windows-protected/composed.asm','fixtures/windows-protected/composed-private.in']
+if a.profile==11:names+=['components/text-unicode.in','components/windows-process-unicode.in','fixtures/windows-protected/unicode-mixed.asm','fixtures/windows-protected/unicode-private.in']
 source_hashes={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in names}
+if a.profile==11:
+ source=source.replace('windows-command-composed-run(', 'windows-command-unicode-run(').replace('windows-protected-profile!=10','windows-protected-profile!=11').replace('9728','10752').replace('7680','8704')
 (out/'kernel.in').write_text(source)
-commands=[['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(out/'trampoline.bin')],['nasm','-f','bin',str(ROOT/'fixtures/windows-protected/composed.asm'),'-o',str(out/'process.exe')],[str(a.compiler),'compile','--path',str(out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(out/'kernel.bin')]]
-commands.insert(0,['nasm','-DNO_CLOCK=1','-f','bin',str(ROOT/'fixtures/windows-protected/composed.asm'),'-o',str(out/'memory.exe')])
-commands.insert(0,[str(a.compiler),'compile','--path',str(ROOT/'fixtures/windows-protected/composed-private.in'),'--entry','private-entry','--emit','sci','--base','0x7a000000','--target','native','--target-triple','x86_64-unknown-none','--out',str(out/'private.sci')])
+commands=[['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(out/'trampoline.bin')],['nasm','-f','bin',str(ROOT/('fixtures/windows-protected/unicode-mixed.asm' if a.profile==11 else 'fixtures/windows-protected/composed.asm')),'-o',str(out/'process.exe')],[str(a.compiler),'compile','--path',str(out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(out/'kernel.bin')]]
+commands.insert(0,['nasm','-DNO_CLOCK=1','-f','bin',str(ROOT/('fixtures/windows-protected/unicode-mixed.asm' if a.profile==11 else 'fixtures/windows-protected/composed.asm')),'-o',str(out/'memory.exe')])
+commands.insert(0,[str(a.compiler),'compile','--path',str(ROOT/('fixtures/windows-protected/unicode-private.in' if a.profile==11 else 'fixtures/windows-protected/composed-private.in')),'--entry','private-entry','--emit','sci','--base','0x7a000000','--target','native','--target-triple','x86_64-unknown-none','--out',str(out/'private.sci')])
 commands.append(['python',str(ROOT/'scripts/pack-sci-image.py'),str(out/'kernel.bin'),str(out/'combined.bin'),f'254:{out}/private.sci'])
 with (out/'compile.log').open('w') as log:
  for command in commands:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=240)
-kernel=(out/'combined.bin').read_bytes();payload=(out/'process.exe').read_bytes();assert len(payload)==9728 and 0x100000+len(kernel)<0x10000000
+kernel=(out/'combined.bin').read_bytes();payload=(out/'process.exe').read_bytes();assert len(payload)==(10752 if a.profile==11 else 9728) and 0x100000+len(kernel)<0x10000000
 runs=[]
 for label,machine in [('pc','pc'),('q35','q35'),('no-hpet','pc,hpet=off')]:
  run=out/label;run.mkdir();path=run/'serial.sock';received=bytearray();serial=None
@@ -167,7 +180,9 @@ for label,machine in [('pc','pc'),('q35','q35'),('no-hpet','pc,hpet=off')]:
      if b'PANIC' in received or b'nanokernel fault handler halting' in received:break
     except socket.timeout:
      if qemu.poll() is not None:break
-   text=received.decode(errors='replace');assert 'INVALID private composed entry' not in text and 'windows-composed-registry: actual valid SCI private helper import refused before allocation PASS' in text,text
+   text=received.decode(errors='replace')
+   if a.profile==11:assert 'DENIED unresolved import windows-command-unicode-run' in text,text
+   assert 'INVALID private composed entry' not in text and 'windows-composed-registry: actual valid SCI private helper import refused before allocation PASS' in text,text
    assert 'windows-composed-cold:171 frames refuse172 recover exact26912 retained bytes PASS' in text,text
    assert 'windows-composed:257 mixed activations optional required hardware grants callbacks snapshots faults deadlines cleanup PASS' in text and 'space> ' in text,text
   finally:
@@ -176,6 +191,7 @@ for label,machine in [('pc','pc'),('q35','q35'),('no-hpet','pc,hpet=off')]:
    qemu.terminate()
    try:qemu.wait(timeout=5)
    except subprocess.TimeoutExpired:qemu.kill();qemu.wait()
- runs.append(dict(machine=machine,command=command,executions=258 if label!='no-hpet' else 257,required_counter='refused-before-entry' if label=='no-hpet' else 'executed'))
-report=dict(status='passed',runs=runs,executions=sum(x['executions'] for x in runs),compiler_sha256=hashlib.sha256(a.compiler.read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),fixture_sha256=hashlib.sha256(payload).hexdigest(),source_sha256=source_hashes,source_changed=[name for name,value in source_hashes.items() if hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=value],commands=commands)
+ receipt=re.search(r'windows-composed-receipt:(\d+) (\d+)',text);assert receipt,text
+ runs.append(dict(machine=machine,command=command,executions=int(receipt[1]),natural_rtc_terminal125=int(receipt[2]),required_counter='refused-before-entry' if label=='no-hpet' else 'executed'))
+report=dict(status='passed',profile=a.profile,runs=runs,executions=sum(x['executions'] for x in runs),compiler_sha256=hashlib.sha256(a.compiler.read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),fixture_sha256=hashlib.sha256(payload).hexdigest(),source_sha256=source_hashes,source_changed=[name for name,value in source_hashes.items() if hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=value],commands=commands)
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print('PASS Windows composed mixed services pc q35 noHPET')

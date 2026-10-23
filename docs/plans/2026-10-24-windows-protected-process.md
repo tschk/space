@@ -346,3 +346,21 @@ unsupported, with first unknown SetCurrentDirectoryW at one-based slot3. No
 original Windows SQLite/7za/jq execution is claimed. Next implement strict
 UTF8/UTF16/count/error and truthful code-page metadata; locale/collation, wide
 file APIs, dynamic resolution and PE metadata semantics remain separate work.
+
+## Explicit UTF8 checkpoint
+
+[Profile11](../windows-unicode-checks.md) implements six observed original SQLite
+encoding imports in a separate pure scalar provider plus Windows guest-memory/
+authority policy. Its declared ANSI/OEM codepages are65001; UTF8/UTF16 count/query,
+strict/replacement, surrogate and bounded failure semantics are executable. It
+adds no activation pages or per-call allocations and keeps profile10 admission
+unchanged. A narrow clock-scan fix reads the existing terminator for exactly32
+imports, with no33rd import admitted.
+
+The independent scalar oracle executes3410 cases per compiler profile under
+default/lean/harden; actualQEMU separately executes3410 scalar vectors and4921
+CPL3 activations. The mixed32-import fixture adds Unicode roundtrip/metadata in
+main and actualFLS callback across773 PC/Q35/noHPET activations. All17 older
+Windows gates pass again, including sixNVMe boots and504 original SQLite/7za
+refusals across12 profiles. Locale/collation, wide file/module APIs and admitted
+PE metadata remain next dependencies; no originalWindowsCLI executes.

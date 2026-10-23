@@ -4,7 +4,7 @@ package space.kernel
 // loading or general PEB/TEB service contract is implied by these owned pages.
 const WINDOWS-STARTUP-TEB = 0x4E000000
 
-fn windows-startup-peb()->Int{if (windows-protected-profile==8 || windows-protected-profile==10){return WINDOWS-STARTUP-TEB+20480;}return WINDOWS-STARTUP-TEB+4096;}
+fn windows-startup-peb()->Int{if (windows-protected-profile==8 || windows-protected-profile>=10){return WINDOWS-STARTUP-TEB+20480;}return WINDOWS-STARTUP-TEB+4096;}
 
 fn windows-startup-memory(image: Int, rva: Int, bytes: Int, writable: Int) -> Int {
   let i = 0
@@ -73,7 +73,7 @@ fn windows-startup-prepare(image: Int, size: Int, stub: Int, domain: Int, entry:
   }
   let teb = windows-protected-physical(WINDOWS-STARTUP-TEB)
   let peb-va = windows-startup-peb()
-  if (windows-protected-profile == 8 || windows-protected-profile == 10) { let frame = windows-protected-frame(peb-va); domain-map-user-data(domain, peb-va, frame) }
+  if (windows-protected-profile == 8 || windows-protected-profile >= 10) { let frame = windows-protected-frame(peb-va); domain-map-user-data(domain, peb-va, frame) }
   let peb = windows-protected-physical(peb-va)
   let vector = windows-protected-physical(WINDOWS-STARTUP-TEB + 8192)
   let tls = windows-protected-physical(WINDOWS-STARTUP-TEB + 12288)

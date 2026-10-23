@@ -16,7 +16,7 @@ fn windows-parameters-composed-needs-clock(image:Int,size:Int)->Int{
  let rva=load32(windows-application-opt(image)+120);if rva==0{return 0;}
  let desc=windows-protected-rva(image,size,rva,40);if desc<0{return 1;}
  let lookup=load32(image+desc);if lookup==0{lookup=load32(image+desc+16);}
- let i=0;while i<32{let off=windows-protected-rva(image,size,lookup+i*8,8);if off<0{return 1;}let name=load64(image+off);if name==0{return 0;}let id=windows-parameters-composed-import(image,size,name);if id>=17 && id<=19{return 1;}i=i+1;}return 1;
+ let i=0;while i<=32{let off=windows-protected-rva(image,size,lookup+i*8,8);if off<0{return 1;}let name=load64(image+off);if name==0{return 0;}if i==32{return 1;}let id=windows-parameters-composed-import(image,size,name);if id>=17 && id<=19{return 1;}i=i+1;}return 1;
 }
 fn windows-parameters-composed-prepare()->void{
  let data=frame-alloc();windows-parameters-composed-data=data;
@@ -27,9 +27,10 @@ fn windows-parameters-composed-prepare()->void{
  store64(data+80,windows-parameters-composed-flags);store64(data+88,0);
 }
 fn windows-parameters-composed-release()->void{if windows-parameters-composed-data!=0{frame-free(windows-parameters-composed-data);windows-parameters-composed-data=0;}}
-fn windows-command-composed-run(image:Int,size:Int,config:Int)->Int{
+fn windows-command-composed-run-profile(image:Int,size:Int,config:Int,profile:Int)->Int{
+ if profile!=10 && profile!=11{return -22;}
  if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-heap-active!=0 || windows-parameters-env-active!=0 || windows-parameters-time-active!=0 || windows-parameters-composed-active!=0{return -16;}
- let entry=windows-startup-entry-mode(image,size,8);if entry<0{return entry;}
+ let mode=8;if profile==11{mode=9;}let entry=windows-startup-entry-mode(image,size,mode);if entry<0{return entry;}
  // Native caller owns a readable descriptor/input block for the synchronous
  // call. Copy validated fields into locals before touching execution state.
  if config<=0 || (config&7)!=0 || config>0x100000000 - 96{return -22;}
@@ -49,7 +50,7 @@ fn windows-command-composed-run(image:Int,size:Int,config:Int)->Int{
  windows-parameters-heap-authority=memory;windows-parameters-heap-active=1;
  windows-parameters-env-active=1;windows-parameters-env-input=env;windows-parameters-env-input-bytes=envbytes;
  if (flags&1)!=0{windows-parameters-time-active=1;windows-parameters-time-authority=timer;windows-parameters-time-anchor=seconds;}
- let result=windows-command-run-profile(image,size,serial,storage,line,bytes,10);
+ let result=windows-command-run-profile(image,size,serial,storage,line,bytes,profile);
  windows-parameters-composed-release();windows-parameters-env-release();windows-parameters-heap-release();
  windows-parameters-composed-active=0;windows-parameters-composed-flags=0;
  windows-parameters-env-active=0;windows-parameters-env-input=0;windows-parameters-env-input-bytes=0;
@@ -57,3 +58,5 @@ fn windows-command-composed-run(image:Int,size:Int,config:Int)->Int{
  windows-parameters-time-active=0;windows-parameters-time-authority=-1;windows-parameters-time-anchor=0;
  return result;
 }
+
+fn windows-command-composed-run(image:Int,size:Int,config:Int)->Int{return windows-command-composed-run-profile(image,size,config,10);}
