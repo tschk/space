@@ -523,6 +523,7 @@ fn dyn-kernel-exportable(name: Int) -> Int {
   if dyn-name-prefix(name,"darwin-startup-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-eager-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-heap-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-image-") != 0 { return 0 }
   if dyn-name-prefix(name,"user-context-") != 0 { return 0 }
   if dyn-name-prefix(name,"counter-") != 0 && dyn-str-eq(name,"counter-service-read") == 0 && dyn-str-eq(name,"counter-service-frequency") == 0 { return 0 }
   if dyn-name-prefix(name,"vfs-discard-") != 0 || dyn-str-eq(name,"vfs-dup-file-into") != 0 { return 0 }

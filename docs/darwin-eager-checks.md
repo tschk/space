@@ -164,3 +164,8 @@ remains a separate goal.
 A separate [owned heap profile](darwin-owned-heap-checks.md) adds four bounded
 allocator APIs under a new descriptor revision. This seven-service revision1
 profile and its unknown-import refusals remain unchanged.
+
+The separate [original image plan](darwin-image-plan-checks.md) now validates
+pinned upstream jq layout and its full chained fixup geometry, then refuses
+unavailable imports before mapping. It does not widen this finite eager profile
+or establish original application execution.

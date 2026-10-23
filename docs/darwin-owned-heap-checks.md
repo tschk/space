@@ -117,7 +117,7 @@ provenance, locally computed hashes and build/license assurance limits are in
 [the inspection manifest](../fixtures/applications/lua-5.2.4-macos.json).
 `inspect-lua-macos.py` verifies these hashes before read-only parsing. The
 unmodified lua52/luac52 binaries are x86_64 Mach-O, embed Lua5.2.4, target macOS
-10.11 and have97/44 undefined imports respectively. Lua52 also requires libedit;
+10.11 and have97/44 undefined imports respectively. Both also declare libedit;
 both use classic dyld-info fixups, outside this chained profile. Neither was
 executed on the host or Space. This intermediate inspection does not replace
 the Lua5.4.7 goal or count as application execution coverage.

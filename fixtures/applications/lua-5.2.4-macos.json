@@ -23,5 +23,16 @@
       "sha256": "938cd8c9e1db5f022a125092bc07bba6e6389a254fd2108481818278d518ac06"
     }
   ],
-  "full_goal_limit": "Intermediate Lua5.2.4 inspection does not replace the Lua5.4.7 goal or count as application execution."
+  "full_goal_limit": "Intermediate Lua5.2.4 inspection does not replace the Lua5.4.7 goal or count as application execution.",
+  "inspection_dependencies": {
+    "lua52": [
+      "/usr/lib/libedit.3.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ],
+    "luac52": [
+      "/usr/lib/libedit.3.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ]
+  },
+  "inspection_dependency_limit": "Both executables declare libedit even when no libedit symbol appears in luac52 undefined imports; no dependency is silently omitted."
 }
