@@ -5,7 +5,9 @@ explicit, timer-authorized startup profile. It binds `GetSystemTimeAsFileTime`
 to the [native UTC RTC service](../components/time.in), without supplying QPC,
 PIT-based elapsed time, cached success or an invented timestamp. Earlier
 strict/general/TLS/command profiles keep refusing this import. The original
-Windows SQLite and 7za still do not execute.
+Windows SQLite and 7za still do not execute. A separate
+[profile 6](windows-counter-checks.md) now adds hardware-backed QPC; this
+profile 4 continues to refuse those imports.
 
 ## Authority and failure contract
 

@@ -103,7 +103,7 @@ python3 scripts/check-windows-parameters.py \
   --out /tmp/space-windows-parameters-final-evidence
 ```
 
-The original-app admission gate proves 168 refusals (two applications, four
+The original-app admission gate now proves 294 refusals (two applications, seven
 profiles, 21 repeats) with exact heap/free-list/domain/owned-tree preservation.
 Its report explicitly records `executed:false`. The parameter gate exercises 275
 actual CPL3 launches, including exact ASCII/UTF16 command lines, empty and 1024-byte
@@ -123,3 +123,12 @@ no version marker has been obtained by removing dependencies or success shims.
 The fifth [timer-granted FILETIME profile](windows-filetime-checks.md) adds a real
 RTC prerequisite and expands original-app refusal receipts to 210 checks. This
 still does not execute original Windows SQLite or 7za.
+
+The bounded [environment profile](windows-environment-checks.md) and
+[native-counter profile](windows-counter-checks.md) add real startup contracts.
+The original SQLite/7za gate now checks all seven profiles (294 repeated
+allocation-free refusals); neither original application executes. The existing
+command-only diagnostic still identifies import 2, GetEnvironmentVariableA,
+as its first unsupported import. Supporting that API in a separate explicit
+profile does not remove the original image's remaining directory, 32-import
+limit, heap, synchronization, TLS/FLS and other API barriers.

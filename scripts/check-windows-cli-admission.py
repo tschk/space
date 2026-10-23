@@ -22,7 +22,7 @@ source=(ROOT/'kernel/kernel-root.in').read_text()
 source=re.sub(r'import "\.\./([^"]+)"',lambda m:'import '+json.dumps(str(ROOT/m.group(1))),source)
 assert source.count('  shell(port)')==1
 source=source.replace('  shell(port)','  windows-cli-admission-check(port)\n  shell(port)')
-source+='\nfn windows-cli-admission-check(port:Int)->void{\n if heap-next>=0x10000000{panic("CLI staging collides with heap");}heap-end=0x10000000;let timer=cap-mint(root-realm,cap-timer());\n'
+source+='\nfn windows-cli-admission-check(port:Int)->void{\n if heap-next>=0x10000000{panic("CLI staging collides with heap");}heap-end=0x10000000;let timer=cap-mint(root-realm,cap-timer());let env=alloc(2);store8(env,0);store8(env+1,0);\n'
 loaders=[]
 for i,app in enumerate(apps):
     path=(a.apps/app['filename']).resolve();data=path.read_bytes()
@@ -40,10 +40,12 @@ for i,app in enumerate(apps):
     source+=''' let heapINDEX=heap-next;let freeINDEX=free-list;let domainsINDEX=domain-count;let ownedINDEX=domain-user-owned;
  DIAGNOSTIC
  let cycleINDEX=0;while cycleINDEX<21{
-  let profile=0;while profile<5{
+  let profile=0;while profile<7{
    let result=-8;if profile<3{result=windows-protected-run-profile(BASE,SIZE,-1,-1,profile);}
    else if profile==3{let line="APPLICATION -version";result=windows-command-run(BASE,SIZE,-1,-1,line,strlen(line)+1);}
-   else{let line="APPLICATION -version";result=windows-command-time-run(BASE,SIZE,-1,-1,timer,line,strlen(line)+1);}
+   else if profile==4{let line="APPLICATION -version";result=windows-command-time-run(BASE,SIZE,-1,-1,timer,line,strlen(line)+1);}
+   else if profile==5{let line="APPLICATION -version";result=windows-command-environment-run(BASE,SIZE,-1,-1,line,strlen(line)+1,env,2);}
+   else{let line="APPLICATION -version";result=windows-command-counter-run(BASE,SIZE,-1,-1,timer,line,strlen(line)+1);}
    if result!=-8{panic("Original Windows CLI unexpectedly admitted");}
    if heap-next!=heapINDEX || free-list!=freeINDEX || domain-count!=domainsINDEX || domain-user-owned!=ownedINDEX || windows-protected-busy!=0{panic("Original Windows CLI refusal changed ownership");}
    profile=profile+1;
@@ -82,5 +84,5 @@ with (out/'qemu.log').open('w') as log:
         qemu.terminate()
         try:qemu.wait(timeout=5)
         except subprocess.TimeoutExpired:qemu.kill();qemu.wait()
-report=dict(status='passed',refusals=210,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
+report=dict(status='passed',refusals=294,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report['apps']))

@@ -1,0 +1,151 @@
+package space.kernel
+
+// Process-owned ASCII environment, never host inheritance. Native inputs are
+// validated before allocation; UTF16 API input is admitted only in this profile.
+const WINDOWS-PARAMETERS-ENV-SNAPSHOT = 0x4E010000
+var windows-parameters-env-active:Int=0
+var windows-parameters-env-input:Int=0
+var windows-parameters-env-input-bytes:Int=0
+var windows-parameters-env-data:Int=0
+var windows-parameters-env-work:Int=0
+var windows-parameters-env-bytes:Int=0
+var windows-parameters-env-count:Int=0
+var windows-parameters-env-snapshots:Int=0
+
+fn windows-parameters-env-fold(c:Int)->Int{if c>=97 && c<=122{return c - 32;}return c;}
+fn windows-parameters-env-keycmp(a:Int,b:Int)->Int{
+ let i=0;while i<64{
+  let x=load8(a+i);let y=load8(b+i);if x==61{x=0;}if y==61{y=0;}
+  x=windows-parameters-env-fold(x);y=windows-parameters-env-fold(y);
+  if x!=y{return x - y;}if x==0{return 0;}i=i+1;
+ }return 0;
+}
+fn windows-parameters-env-valid(env:Int,bytes:Int)->Int{
+ if env<=0 || bytes<2 || bytes>2048 || env>0x100000000 - bytes{return 0;}
+ if load8(env+bytes - 1)!=0 || load8(env+bytes - 2)!=0{return 0;}
+ let pos=0;let count=0;
+ while pos<bytes - 1{
+  if load8(env+pos)==0{if count==0 && bytes==2{return 1;}return 0;}
+  if count>=16{return 0;}let start=pos;let equal=-1;
+  while pos<bytes - 1 && load8(env+pos)!=0{
+   let c=load8(env+pos);if c>127{return 0;}if c==61 && equal<0{equal=pos;}pos=pos+1;
+  }
+  if pos>=bytes - 1 || equal<=start || equal - start>63 || pos - equal - 1>255{return 0;}
+  let prev=0;while prev<start{
+   if windows-parameters-env-keycmp(env+prev,env+start)==0{return 0;}
+   while load8(env+prev)!=0{prev=prev+1;}prev=prev+1;
+  }pos=pos+1;count=count+1;
+ }if pos!=bytes - 1{return 0;}return 1;
+}
+fn windows-parameters-env-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-import-id(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"GetEnvironmentVariableA")!=0{return 20;}
+ if windows-protected-name(image,size,name+2,"GetEnvironmentStringsW")!=0{return 21;}
+ if windows-protected-name(image,size,name+2,"FreeEnvironmentStringsW")!=0{return 22;}
+ if windows-protected-name(image,size,name+2,"SetEnvironmentVariableW")!=0{return 23;}
+ return -1;
+}
+fn windows-parameters-env-prepare(domain:Int)->void{
+ windows-parameters-env-data=frame-alloc();windows-parameters-env-work=frame-alloc();
+ let i=0;while i<windows-parameters-env-input-bytes{store8(windows-parameters-env-data+i,load8(windows-parameters-env-input+i));i=i+1;}
+ windows-parameters-env-bytes=windows-parameters-env-input-bytes;windows-parameters-env-count=0;windows-parameters-env-snapshots=0;
+ i=0;while load8(windows-parameters-env-data+i)!=0{
+  windows-parameters-env-count=windows-parameters-env-count+1;while load8(windows-parameters-env-data+i)!=0{i=i+1;}i=i+1;
+ }
+ i=0;while i<4{
+  let va=WINDOWS-PARAMETERS-ENV-SNAPSHOT+i*4096;let page=windows-protected-frame(va);domain-map-user-readonly(domain,va,page);i=i+1;
+ }
+}
+fn windows-parameters-env-release()->void{
+ if windows-parameters-env-data!=0{frame-free(windows-parameters-env-data);windows-parameters-env-data=0;}
+ if windows-parameters-env-work!=0{frame-free(windows-parameters-env-work);windows-parameters-env-work=0;}
+ windows-parameters-env-bytes=0;windows-parameters-env-count=0;windows-parameters-env-snapshots=0;
+}
+fn windows-parameters-env-copy-guest(addr:Int,target:Int,max:Int,wide:Int)->Int{
+ if addr==0{windows-protected-error=87;return -1;}let i=0;let stride=1;if wide!=0{stride=2;}
+ while i<max{
+  if windows-protected-span(addr+i*stride,stride,0)==0{windows-protected-error=998;return -1;}
+  let c=load8(windows-protected-physical(addr+i*stride));
+  if wide!=0 && load8(windows-protected-physical(addr+i*stride+1))!=0{windows-protected-error=1113;return -1;}
+  if c>127{windows-protected-error=1113;return -1;}store8(target+i,c);if c==0{return i;}i=i+1;
+ }windows-protected-error=206;return -1;
+}
+fn windows-parameters-env-find(name:Int)->Int{
+ let pos=0;while pos<windows-parameters-env-bytes - 1 && load8(windows-parameters-env-data+pos)!=0{
+  if windows-parameters-env-keycmp(windows-parameters-env-data+pos,name)==0{return pos;}
+  while load8(windows-parameters-env-data+pos)!=0{pos=pos+1;}pos=pos+1;
+ }return -1;
+}
+fn windows-parameters-env-name-valid(name:Int,length:Int)->Int{
+ if length<1 || length>63{return 0;}let i=0;while i<length{if load8(name+i)==61{return 0;}i=i+1;}return 1;
+}
+fn windows-parameters-env-get(frame:Int)->Int{
+ let key=windows-parameters-env-work;let n=windows-parameters-env-copy-guest(load64(frame+96),key,64,0);if n<0{return 0;}
+ if windows-parameters-env-name-valid(key,n)==0{windows-protected-error=87;return 0;}
+ let pos=windows-parameters-env-find(key);if pos<0{windows-protected-error=203;return 0;}
+ while load8(windows-parameters-env-data+pos)!=61{pos=pos+1;}pos=pos+1;
+ let len=0;while load8(windows-parameters-env-data+pos+len)!=0{len=len+1;}
+ let size=load64(frame+56)&0xFFFFFFFF;if size<len+1{return len+1;}
+ let out=load64(frame+88);if windows-protected-span(out,len+1,1)==0{windows-protected-error=998;return 0;}
+ let i=0;while i<=len{store8(windows-protected-physical(out+i),load8(windows-parameters-env-data+pos+i));i=i+1;}
+ return len;
+}
+fn windows-parameters-env-snapshot()->Int{
+ let slot=0;while slot<4 && (windows-parameters-env-snapshots&(1<<slot))!=0{slot=slot+1;}
+ if slot==4{windows-protected-error=8;return 0;}
+ let va=WINDOWS-PARAMETERS-ENV-SNAPSHOT+slot*4096;let page=windows-protected-physical(va);let i=0;while i<4096{store8(page+i,0);i=i+1;}
+ let used=0;let selected=0;let out=0;
+ while selected<windows-parameters-env-count{
+  let pos=0;let index=0;let best=-1;let best-index=0;
+  while index<windows-parameters-env-count{
+   if (used&(1<<index))==0{if best<0 || windows-parameters-env-keycmp(windows-parameters-env-data+pos,windows-parameters-env-data+best)<0{best=pos;best-index=index;}}
+   while load8(windows-parameters-env-data+pos)!=0{pos=pos+1;}pos=pos+1;index=index+1;
+  }
+  used=used|(1<<best-index);let done=0;
+  while done==0{let c=load8(windows-parameters-env-data+best);store16(page+out*2,c);out=out+1;best=best+1;if c==0{done=1;}}
+  selected=selected+1;
+ }
+ store16(page+out*2,0);windows-parameters-env-snapshots=windows-parameters-env-snapshots|(1<<slot);return va;
+}
+fn windows-parameters-env-set(frame:Int)->Int{
+ let key=windows-parameters-env-work;let value=key+128;let next=key+512;
+ let n=windows-parameters-env-copy-guest(load64(frame+96),key,64,1);if n<0{return 0;}
+ if windows-parameters-env-name-valid(key,n)==0{windows-protected-error=87;return 0;}
+ let deleting=0;let len=0;
+ if load64(frame+88)==0{deleting=1;}else{len=windows-parameters-env-copy-guest(load64(frame+88),value,256,1);if len<0{return 0;}}
+ let found=windows-parameters-env-find(key);if deleting!=0 && found<0{return 1;}
+ let count=windows-parameters-env-count;if found>=0{count=count - 1;}if deleting==0{count=count+1;}
+ if count>16{windows-protected-error=8;return 0;}
+ let pos=0;let size=0;
+ while pos<windows-parameters-env-bytes - 1 && load8(windows-parameters-env-data+pos)!=0{
+  let start=pos;while load8(windows-parameters-env-data+pos)!=0{pos=pos+1;}
+  if start!=found{let i=start;while i<=pos{store8(next+size,load8(windows-parameters-env-data+i));size=size+1;i=i+1;}}
+  pos=pos+1;
+ }
+ if deleting==0{
+  if size+n+len+3>2048{windows-protected-error=8;return 0;}
+  let i=0;while i<n{store8(next+size,load8(key+i));size=size+1;i=i+1;}store8(next+size,61);size=size+1;
+  i=0;while i<=len{store8(next+size,load8(value+i));size=size+1;i=i+1;}
+ }
+ store8(next+size,0);size=size+1;if count==0{store8(next+size,0);size=size+1;}
+ let i=0;while i<size{store8(windows-parameters-env-data+i,load8(next+i));i=i+1;}
+ windows-parameters-env-count=count;windows-parameters-env-bytes=size;return 1;
+}
+fn windows-parameters-env-dispatch(frame:Int,num:Int)->Int{
+ if num==0x100014{return windows-parameters-env-get(frame);}
+ if num==0x100015{return windows-parameters-env-snapshot();}
+ if num==0x100017{return windows-parameters-env-set(frame);}
+ let va=load64(frame+96);if va<WINDOWS-PARAMETERS-ENV-SNAPSHOT || va>=WINDOWS-PARAMETERS-ENV-SNAPSHOT+16384 || ((va - WINDOWS-PARAMETERS-ENV-SNAPSHOT)&4095)!=0{windows-protected-error=87;return 0;}
+ let slot=(va - WINDOWS-PARAMETERS-ENV-SNAPSHOT)/4096;if (windows-parameters-env-snapshots&(1<<slot))==0{windows-protected-error=87;return 0;}
+ windows-parameters-env-snapshots=windows-parameters-env-snapshots&(15^(1<<slot));return 1;
+}
+fn windows-command-environment-run(image:Int,size:Int,authority:Int,storage:Int,line:Int,bytes:Int,env:Int,envbytes:Int)->Int{
+ if domain-current!=0 || windows-protected-busy!=0 || windows-parameters-active!=0 || windows-parameters-env-active!=0 || windows-parameters-time-active!=0{return -16;}
+ let entry=windows-startup-entry-mode(image,size,3);if entry<0{return entry;}
+ if windows-parameters-line-valid(line,bytes)==0 || windows-parameters-env-valid(env,envbytes)==0{return -22;}
+ if authority>=0 && cap-check(authority,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}
+ windows-parameters-env-input=env;windows-parameters-env-input-bytes=envbytes;windows-parameters-env-active=1;
+ let result=windows-command-run-profile(image,size,authority,storage,line,bytes,5);
+ windows-parameters-env-release();windows-parameters-env-active=0;windows-parameters-env-input=0;windows-parameters-env-input-bytes=0;return result;
+}

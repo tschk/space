@@ -179,3 +179,51 @@ The [bounded PE view and identity/error checkpoint](../windows-pe-view-checks.md
 adds variable checked PE header layout and larger protected-image bounds, plus
 actual process/thread/pseudo-handle/TEB LastError behavior. The original strict
 fixture admission and unknown-import/directory execution guards remain.
+
+
+## Owned environment and native performance counter checkpoint
+
+[Profile 5](../windows-environment-checks.md) now provides four bounded environment
+APIs over an explicit caller-provided map. Canonical/scratch frames are native
+only; immutable guest snapshots are owned RO/NX pages. The actual gate exercises
+380 protected processes including mutation, snapshot lifetime, atomic failure,
+CPU page denials and deadline cleanup. No host environment is inherited.
+
+[Profile 6](../windows-counter-checks.md) now provides QueryPerformanceCounter and
+QueryPerformanceFrequency through the native live-authorized HPET counter.
+The Windows edge does no hardware discovery or reset. On PC/q35 the focused
+proof executes 592 protected processes with exact native samples, counts beyond
+2^32, IF0 advancement independent of PIT IRQ delivery, authority/pointer errors,
+real backward/sign-bit provider failures and stable teardown. With HPET disabled,
+21 counter admissions refuse without allocation and the independent FILETIME
+profile executes successfully. Trusted destructive hardware fault-test recovery
+creates new test epochs; no production monotonic recovery is claimed.
+
+Fresh receipts for this checkpoint:
+
+- `/tmp/space-windows-counter-complete/report.json`: 593 actual protected
+  executions, three QEMU machine variants, unchanged source hashes.
+- `/tmp/space-windows-environment-env-counter-regression/report.json`: 380.
+- `/tmp/space-windows-{protected,files,write,application,startup,parameters,identity,pe-view}-env-counter-regression/report.json`:
+  507/527/527/317/171/275/126/81 actual executions respectively, original jq
+  refusal retained.
+- `/tmp/space-windows-filetime-env-counter-regression/report.json`: 848 required
+  executions against four actual UTC RTC epochs, no natural runtime failures.
+- `/tmp/space-windows-persistence-env-counter-regression/report.json`: six actual
+  independent NVMe boots, exact file bytes and durable truncate/reopen behavior.
+- `/tmp/space-windows-cli-admission-env-counter-regression/report.json`: 294
+  original SQLite/7za refusals across all seven profiles, before allocation.
+
+The pinned original SQLite security-cookie startup calls FILETIME at
+`0x140234e74`, current thread/process identity at `0x140234e82`/`0x140234e8e`,
+and QPC at `0x140234e9e`. The bounded profiles now exercise those individual
+contracts; this is not an original SQLite execution trace. Its unchanged PE still
+has unsupported directory mask `0x46c`, 157 imports against the admitted limit of
+32, and required heap, FLS/TLS, synchronization, encoding and other real APIs.
+Read-only disassembly also identifies GetProcessHeap via `0x1402c91f8`, HeapAlloc
+via `0x1402b3f96`/`0x1402b93d5`, HeapFree via `0x1402b3f22`, and critical-section
+initialization via `0x1402435bf`/`0x1402babb6`. A coherent next slice is an owned
+bounded Windows heap contract with real allocation/reallocation/free/size and
+negative/lifecycle tests, followed by execution-local TLS/FLS and synchronization.
+It must not bind these imports to successful stand-ins. Original Windows SQLite,
+7za and jq have no version/help result yet.
