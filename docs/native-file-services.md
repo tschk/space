@@ -26,11 +26,13 @@ It accepts native permission bits 0..511, including decimal 384 (`0600`), and
 returns 0/-1. Failed writes restore the old in-memory mode and return an error;
 this does not claim rollback of arbitrary partial hardware writes.
 
-`fs-sync-path(path)` currently returns 0 only for an existing regular file or
+At checkpoint `46b4593`, `fs-sync-path(path)` returned 0 only for an existing regular file or
 directory on the synchronous RAM SparkFS backend. The RAM writer has already
-completed each memory copy. NVMe and asynchronous Volume currently return -1:
+completed each memory copy. NVMe and asynchronous Volume returned -1:
 a completed NVMe write is not a controller FLUSH or a power-loss durability
-promise. No adapter should report durable NVMe fsync from this version.
+promise. That checkpoint does not support durable NVMe fsync. Current NVMe sync now uses
+a real namespace FLUSH; see [NVMe FLUSH checks](nvme-flush-checks.md) for the
+new implementation, errors and actual application/reboot evidence.
 
 ## Advisory range ownership
 

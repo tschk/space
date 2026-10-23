@@ -25,12 +25,26 @@ disk=a.out/'owned-nvme.img'
 with disk.open('xb') as f:f.truncate(64*1024*1024)
 base=(ROOT/'kernel/kernel-root.in').read_text()
 base=re.sub(r'import "\.\./([^"]+)"',lambda m:'import '+json.dumps(str(ROOT/m.group(1))),base)
+# Only this generated provider can inject an invalid namespace for FLUSH.
+# Hardware still completes the real command; no completion/status is fabricated.
+provider=(ROOT/'components/storage.in').read_text()
+assert provider.count('  store32(sqe + 4, 1)')==1
+provider=provider.replace('  store32(sqe + 4, 1)','  store32(sqe + 4, 1)\n  if opcode == NVME-CMD-FLUSH && file-service-flush-invalid-namespace != 0 { store32(sqe + 4, 2) }')
+provider+='\nvar file-service-flush-invalid-namespace: Int = 0\n'
+(a.out/'storage.in').write_text(provider)
+forward=(ROOT/'components/nvme.in').read_text().replace('import "storage.in"','import '+json.dumps(str(a.out/'storage.in')))
+(a.out/'nvme.in').write_text(forward)
+hub=(ROOT/'components/storage-hub.in').read_text()
+hub=re.sub(r'import "([^"]+)"',lambda m:'import '+json.dumps(str((ROOT/'components'/m.group(1)).resolve())),hub)
+hub=hub.replace(json.dumps(str(ROOT/'components/nvme.in')),json.dumps(str(a.out/'nvme.in')))
+(a.out/'storage-hub.in').write_text(hub)
+base=base.replace(json.dumps(str(ROOT/'components/storage-hub.in')),json.dumps(str(a.out/'storage-hub.in')))
 base='import '+json.dumps(str(ROOT/'fixtures/native-file-services/check.in'))+'\n'+base
 assert base.count('  shell(port)')==1
 report={'status':'running','compiler':str(a.compiler),'compiler_sha256':persistence.sha(a.compiler),
         'boots':[],
         'source_sha256':{str(p.relative_to(ROOT)):persistence.sha(p) for p in
-                         [ROOT/'components/fs2-block.in',ROOT/'components/fs2-inode.in',ROOT/'components/fs2-file.in',ROOT/'components/fs2-dir.in',ROOT/'components/fs2-path.in',ROOT/'components/filesystem.in',ROOT/'components/file-range-leases.in',ROOT/'components/fs2-layout.in',ROOT/'fixtures/native-file-services/check.in',Path(__file__).resolve()]}}
+                         [ROOT/'components/storage.in',ROOT/'components/nvme.in',ROOT/'components/fs2-block.in',ROOT/'components/fs2-inode.in',ROOT/'components/fs2-file.in',ROOT/'components/fs2-dir.in',ROOT/'components/fs2-path.in',ROOT/'components/filesystem.in',ROOT/'components/file-range-leases.in',ROOT/'components/fs2-layout.in',ROOT/'fixtures/native-file-services/check.in',Path(__file__).resolve()]}}
 try:
     subprocess.run(['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(a.out/'trampoline.bin')],check=True)
     for label,write in [('RAM',-1),('A',1),('B',0),('C',2)]:

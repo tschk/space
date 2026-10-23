@@ -137,13 +137,16 @@ fn fs-set-mode(path: Int, permissions: Int) -> Int {
   return 0
 }
 
-// RAM block writes complete synchronously. NVMe write-through completion is
-// not FLUSH: refuse that durability claim until the backend implements it.
+// RAM writes complete synchronously. NVMe requires an actual namespace FLUSH
+// after metadata writes; ordinary write completion alone is not this barrier.
 fn fs-sync-path(path: Int) -> Int {
-  if volume-ready != 0 || sf-disk-ready == 0 || sf-mem-disk == 0 { return -1 }
+  if volume-ready != 0 || sf-disk-ready == 0 { return -1 }
   let inode = sf-lookup-path(path)
   if inode < 0 { return -1 }
   let kind = load32(sf-inode-addr(inode) + SF-IN-TYPE)
   if kind != SF-TYPE-FILE && kind != SF-TYPE-DIR { return -1 }
+  if sf-mem-disk != 0 { return 0 }
+  if sf-flush-bitmap() != 0 { return -1 }
+  if nvme-flush() != 0 { return -1 }
   return 0
 }

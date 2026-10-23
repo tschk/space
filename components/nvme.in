@@ -60,7 +60,11 @@ fn nvme-start-storage-component(port: Int) -> Int {
 }
 
 fn nvme-submit(op: Int, lba: Int, count: Int) -> Int {
+  let waiting = 0
   while load64(storage-mailbox + STORAGE-OP-OFF) != 0 {
+    if waiting >= 5000000 { return -1 }
+    pause()
+    waiting = waiting + 1
   }
   store64(storage-mailbox + STORAGE-LBA-OFF, lba)
   store64(storage-mailbox + STORAGE-COUNT-OFF, count)
@@ -93,6 +97,7 @@ fn nvme-init() -> Int {
 }
 
 fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
+  if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }
   if nvme-ready == 0 {
     if nvme-init() != 0 {
       return -1
@@ -110,6 +115,7 @@ fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
 }
 
 fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
+  if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }
   if nvme-ready == 0 {
     if nvme-init() != 0 {
       return -1
@@ -123,6 +129,13 @@ fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
     }
   }
   return nvme-submit(STORAGE-OP-WRITE, lba, count)
+}
+
+// Real namespace FLUSH, no DMA buffer or logical block range.
+// Preserve controller completion status for callers to check explicitly.
+fn nvme-flush() -> Int {
+  if nvme-ready == 0 || storage-ready != 1 { return -1 }
+  return nvme-submit(STORAGE-OP-FLUSH, 0, 0)
 }
 
 fn nvme-dump16(port: Int, buf: Int) -> void {

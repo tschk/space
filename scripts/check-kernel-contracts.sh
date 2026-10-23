@@ -95,9 +95,30 @@ def main() -> int:
         is not None,
     )
     check("chan-valid exists before send/recv", "fn chan-valid" in channel)
+    io_submit = storage[storage.index("fn nvme-io-submit("):storage.index("// --- PCI initialization")]
     check(
-        "nvme-io-submit rejects count<=0 and clamps to 8 sectors",
-        "if count <= 0" in storage and "if count > 8" in storage and "count = 8" in storage,
+        "NVMe read/write reject outside 1..8 sectors before SQ publication",
+        "if opcode != NVME-CMD-READ && opcode != NVME-CMD-WRITE { return -1 }" in io_submit
+        and "if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }" in io_submit
+        and io_submit.index("count > 8") < io_submit.index("let sqe =")
+        and "count = 8" not in io_submit,
+    )
+    check(
+        "NVMe FLUSH accepts only zero LBA/count/buffer and encodes no data fields",
+        "if opcode == NVME-CMD-FLUSH" in io_submit
+        and "if lba != 0 || count != 0 || buf != 0 { return -1 }" in io_submit
+        and "while i < 16" in io_submit and "store32(sqe + i * 4, 0)" in io_submit
+        and "if opcode != NVME-CMD-FLUSH {" in io_submit
+        and "store32(sqe + 4, 1)" in io_submit
+        and io_submit.index("store32(sqe + i * 4, 0)") < io_submit.index("store32(sqe + 0, opcode"),
+    )
+    check(
+        "NVMe success checks CQ CID/SQID/status before its FLUSH witness",
+        "(dw3 & 0xFFFF) != nvme-cid" in io_submit
+        and "((load32(cqe + 8) >> 16) & 0xFFFF) != 1" in io_submit
+        and "if opcode == NVME-CMD-FLUSH && status == 0" in io_submit
+        and "storage-ready = 0" in io_submit
+        and (ROOT / "scripts/check-nvme-flush.py").is_file(),
     )
     check(
         "tcp-parse-data treats RST as failure",
