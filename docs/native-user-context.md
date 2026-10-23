@@ -44,7 +44,7 @@ is terminal. Kernel callers can inspect the explicit frame; untrusted SCI import
 cannot resolve the `user-context-*` helper prefix.
 
 Resume validates exact user segment selectors, canonical mapped executable RIP,
-canonical mapped writable/NX RSP, bounded RFLAGS without IOPL/TF/NT/AC, mapped
+canonical mapped writable/NX RSP, bounded RFLAGS including architectural RF and excluding IOPL/TF/NT/AC, mapped
 FS/GS and supported MXCSR bits before restoring the CPU. It scopes the existing
 IRQ0 budget, PIC mask, current capability, logical domain and syscall hook. The
 caller FS/GS and observer publication restore on return. Assembly saves the
@@ -56,7 +56,7 @@ caller-owned memory. Both kernel
 and guest GP/FX images survive ordinary syscall continuation. Fault entry now
 saves GP/FX before touching registers or discarding guest floating-point faults.
 
-`/tmp/space-user-context-remaining/report.json` passes 62 actual CPL3 executions:
+`/tmp/space-user-context-rf/report.json` passes 62 actual CPL3 executions:
 a cold check immediately after domain-init and before any user entry, rejecting
 reserved MXCSR without executing FXRSTOR; ten real syscall suspensions,
 independent child/parent continuations (the child overwrites RBX/XMM15/x87
@@ -75,3 +75,10 @@ This is synchronous cooperative suspension plus scoped cancellation. It does not
 add a general scheduler, address-space cloning, descriptor duplication, CPL0
 preemption or a complete native process model. Linux child scheduling and native
 component execution ownership remain separate policy layers.
+
+A preserved Windows callback failure captured legitimate RF in RFLAGS `0x10283`
+at `/tmp/space-windows-local-context-refusal2/5/contexts.json`. The earlier
+validator rejected RF, preventing a suspended context from being reused. The
+mask now admits RF, and twenty actual child/parent IRET continuations restore
+that flag while TF/IOPL/NT/AC negative controls still refuse. The flag may clear
+after executing the resumed instruction according to the CPU architecture.

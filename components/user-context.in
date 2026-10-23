@@ -9,6 +9,9 @@ const USER-CONTEXT-EXIT = 1
 const USER-CONTEXT-FAULT = 2
 const USER-CONTEXT-DEADLINE = 3
 const USER-CONTEXT-SUSPEND = 4
+// RF is architectural user resume state, observed in real suspended Windows
+// frames. Restoring it cannot grant privilege; TF/IOPL/NT/AC remain excluded.
+const USER-CONTEXT-RFLAGS-MASK = 0x10ed7
 var user-context-active: Int = 0
 
 // Actual guest IRQ0 ticks left after the last admitted run. This deliberately
@@ -31,7 +34,7 @@ fn user-context-valid(context: Int) -> Int {
   if user-context-domain-valid(domain) == 0 { return 0 }
   if load64(context + 128) != 0x1b || load64(context + 152) != 0x23 { return 0 }
   let flags = load64(context + 136)
-  if (flags & 0x202) != 0x202 || (flags & -3800) != 0 { return 0 }
+  if (flags & 0x202) != 0x202 || (flags & (-1 ^ USER-CONTEXT-RFLAGS-MASK)) != 0 { return 0 }
   let rip = load64(context + 120)
   let rsp = load64(context + 144)
   if rip < 0 || rip >= 0x800000000000 || rsp < 0 || rsp >= 0x800000000000 { return 0 }

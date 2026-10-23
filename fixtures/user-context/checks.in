@@ -51,6 +51,10 @@ fn user-context-check(port:Int)->void{
   if user-context-resume(context,100)!=4 || load64(context+720)!=84 || load64(context+112)!=84 || load64(context+104)!=0x1122334455667788 || load64(context+24)!=0x123456789abcdef0 || load64(context+96)!=load64(context+120) || load64(context+32)!=load64(context+136) || load64(context+672)!=0x44000000 || load64(context+680)!=0x44000000{panic("context actual suspend registers");}
   context-scope-check(port,4,context,cap,pic,flags,tls,child-tls,fxbefore,fxafter);
   if user-context-remaining(context)<=0 || user-context-remaining(context)>100{panic("context suspend remaining budget");}
+  // The actual Windows suspension regression contains RF (RFLAGS0x10283).
+  // Restore that architectural user flag through both real IRET continuations.
+  store64(context+136,load64(context+136)|0x10000);
+  if user-context-valid(context)!=1{panic("context architectural RF refused");}
   let i=0;while i<4096{store8(child-stack+i,load8(stack+i));i=i+1;}
   if user-context-clone(cloned,768,context,child)!=0 || load64(cloned+112)!=0 || user-context-remaining(cloned)!=user-context-remaining(context){panic("context clone");}
   if user-context-resume(cloned,100)!=1 || load64(cloned+720)!=43 || load64(cloned+104)!=0x4348494c44465831{panic("context child execution or private GP state");}
@@ -80,6 +84,9 @@ fn user-context-check(port:Int)->void{
  // Malformed restored CPU state must refuse before IRET/FXRSTOR.
  if user-context-init(context,768,parent,0x42000000,0,0x43000ff0)!=0{panic("context negative init");}
  store64(context+136,0x3202);if user-context-resume(context,100)!=-1{panic("context IOPL admitted");}store64(context+136,0x202);
+ store64(context+136,0x302);if user-context-resume(context,100)!=-1{panic("context TF admitted");}
+ store64(context+136,0x4202);if user-context-resume(context,100)!=-1{panic("context NT admitted");}
+ store64(context+136,0x40202);if user-context-resume(context,100)!=-1{panic("context AC admitted");}store64(context+136,0x202);
  store64(context+760,12);
  store64(context+184,0x80000000);if user-context-resume(context,100)!=-1{panic("context MXCSR admitted");}store64(context+184,0x1f80);
  if user-context-remaining(context)!=12{panic("context refused resume changed budget");}
