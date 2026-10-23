@@ -49,6 +49,7 @@ jobs:
         python3 scripts/check-mmap-lifetime.py --in "$IN_BIN"
         python3 scripts/check-windows-wait-result.py --in "$IN_BIN"
         python3 scripts/check-commandbar.py --in "$IN_BIN" --target jit --out /tmp/space-command-model-ci
+        python3 scripts/check-hd-byte.py --in "$IN_BIN"
         python3 scripts/check-ps2-mouse-init.py --in "$IN_BIN"
         IN="$IN_BIN" bash scripts/check-darwin-personality.sh
         IN="$IN_BIN" bash scripts/check-windows-personality.sh

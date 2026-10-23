@@ -31,6 +31,7 @@ def gates(compiler, output):
         ("abi", "contracts", "source-contract", ["bash", "scripts/check-personality-abi.sh"]),
         ("architecture", "contracts", "source-contract", ["bash", "scripts/check-architecture-boundaries.sh"]),
         ("shared-offset", "model", "isolated-functions", model("check-vfs-shared-offset")),
+        ("native-hex-format", "model", "isolated-app-function", model("check-hd-byte")),
         ("darwin-pipe", "model", "isolated-functions", model("check-darwin-pipe-lifetime")),
         ("local-stream", "model", "isolated-functions", model("check-local-stream") + ["--build-dir", str(output / "local-stream")]),
         ("posix-wait", "model", "isolated-functions", model("check-posix-wait-status")),
