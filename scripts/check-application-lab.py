@@ -60,11 +60,14 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children and blocking pipelines are included, along with opt-in protected native SCI and GUI ownership. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
-    environment = dict(os.environ, IN=str(args.compiler), BUILD_DIR=str(args.out / 'images'))
+    # Retain explicit trusted baseline gates; dedicated default GUI gates clear
+    # this choice and build the shipped protected image independently.
+    environment = dict(os.environ, IN=str(args.compiler), BUILD_DIR=str(args.out / 'images'),
+                       GUI_PROFILE='window')
     if args.compiler.parts[-4:] in [('in-cli', 'target', 'release', 'in'), ('in-cli', 'target', 'debug', 'in')]:
         environment['INAUGURATION_DIR'] = str(args.compiler.parents[3])
 
@@ -96,7 +99,7 @@ def main():
             save()
             return False
         if not dependency:
-            entry.update(status='blocked', reason='required image build failed')
+            entry.update(status='blocked', reason='required prior gate failed')
             save()
             return False
         entry['status'] = 'running'
@@ -251,6 +254,13 @@ def main():
                          ('windows-critical', 'check-windows-critical.py'),
                          ('windows-composed', 'check-windows-composed.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name)
+    unicode_ok = check('windows-unicode', 'check-windows-unicode.py', '--in', args.compiler,
+                       '--out', args.out / 'windows-unicode', timeout=900)
+    check('unicode-scalars', 'check-unicode-scalars.py', '--in', args.compiler,
+          '--oracles', args.out / 'windows-unicode/oracles.bin',
+          '--out', args.out / 'unicode-scalars', dependency=unicode_ok)
+    check('windows-unicode-mixed', 'check-windows-composed.py', '--in', args.compiler,
+          '--profile', '11', '--out', args.out / 'windows-unicode-mixed')
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
     check('windows-nvme', 'check-windows-persistence.py', '--in', args.compiler, '--out', args.out / 'windows-nvme')
@@ -285,6 +295,19 @@ def main():
                          ('gui-protected-lifetime', 'check-gui-protected-lifetime.py'),
                          ('gui-protected-faults', 'check-gui-protected-faults.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name, timeout=1200)
+    check('desktop-launcher', 'check-desktop-launcher.py', '--in', args.compiler,
+          '--build-dir', args.out / 'desktop-launcher', timeout=900)
+    run('desktop-damage', ['env', 'BUILD_DIR=' + str(args.out / 'desktop-damage'),
+                           'KERNEL_BIN=' + str(args.out / 'images/kernel-standard.bin'),
+                           'bash', ROOT / 'scripts/check-desktop-damage.sh'], dependency=built)
+    check('gui-default', 'check-gui-default.py', '--in', args.compiler,
+          '--out', args.out / 'gui-default', timeout=1200)
+    check('gui-default-faults', 'check-gui-default-faults.py', '--in', args.compiler,
+          '--out', args.out / 'gui-default-faults', timeout=1200)
+    check('gui-default-persistence', 'check-gui-persistence.py', '--in', args.compiler,
+          '--default-gui', '--out', args.out / 'gui-default-persistence', timeout=1200)
+    check('gui-default-lifecycle', 'check-gui-lifecycle.py', '--in', args.compiler,
+          '--default-gui', '--observe', '--out', args.out / 'gui-default-lifecycle', timeout=1200)
     check('standard-gui', 'check-standard-gui.py', '--in', args.compiler, '--build-dir', args.out / 'standard-gui')
     check('native-gui-apps', 'check-gui-apps.py', '--in', args.compiler, '--build-dir', args.out / 'gui-apps')
     check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')
@@ -313,6 +336,12 @@ def main():
               '--cpu', cpu, '--out', args.out / ('user-context-' + cpu))
         check('sanitized-registers-' + cpu, 'check-user-initial-state.py', '--in', args.compiler,
               '--cpu', cpu, '--out', args.out / ('sanitized-registers-' + cpu))
+    for variant in ['standard', 'minimal']:
+        check('user-space-' + variant, 'check-user-space.py', '--in', args.compiler,
+              '--root', variant, '--out', args.out / ('user-space-' + variant))
+        check('user-space-claim-' + variant, 'check-user-space.py', '--in', args.compiler,
+              '--root', variant, '--claim-failure-control',
+              '--out', args.out / ('user-space-claim-' + variant))
     check('runtime-failure', 'check-runtime-failure.py', '--in', args.compiler, '--out', args.out / 'runtime-failure')
     check('user-budget', 'check-user-budget.py', '--in', args.compiler, '--out', args.out / 'user-budget')
     return finish()

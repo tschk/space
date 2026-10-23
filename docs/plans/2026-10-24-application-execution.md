@@ -318,3 +318,43 @@ host parser, checks1357 genuine links/136 imports, unknown commands and malforme
 metadata, and returns unavailable-import -38 before mapping. Original jq and
 Lua are never entered. Native address-space ownership is now being implemented
 as a reusable mechanism before the larger high-VA mapper or Linux vfork.
+
+
+## Default protected desktop and native VM ownership
+
+`f09df34` changes ordinary standard builds to protected native calculator/editor
+artifacts at boot kinds23/24, with the trusted seat at22. Both `gui apps` and
+the command bar call the same profile dispatcher; missing/denied protected
+artifacts never fall back to the trusted profile. Actual command-bar sessions
+restore output geometry, existing window rectangles and desktop keyboard routing.
+A controlled startup refusal visibly renders a dismissible error row and leaves
+the desktop/CLI usable. Minimal and explicit trusted profiles remain available.
+
+`/workspace/local-evidence/gui-default-final-handoff.json` records the exact25
+reviewed paths and receipts. The scoped source is committed `9af5500` plus those
+overrides at `/workspace/gui-default-synchronized-source`; unrelated foundation
+work was excluded. Default six-mode interaction, five NVMe boots, observed129
+sessions, hostile-peer failures, minimal/legacy regressions, launcher and322 fps
+damage all pass. A preserved screenshot failure shows a horizontal partial
+repaint. The unchanged quiescent control passes, and a bounded capture poll
+retains the entire unchanged pixel oracle; a permanent wrong-pixel control still
+fails. This synchronization change does not claim atomic scanout.
+
+`4a4b631` adds the generic native address-space object. Both final roots pass143
+actual CPL3 entries each, with shared/distinct backing,33 genuine page faults
+and11 IRQ deadlines per root. Cold cache/frame admission, exact owner teardown,
+checked active/stopped copies, stale/reinitialized contexts and release-commit
+ambiguity controls also pass. Metadata projections let a consumer distinguish
+a retained binding from a detached binding whose VM is quarantined. Cleanup
+never infers ownership by walking another component's catalog. The original
+CPU62 and copied-Linux child46 narrow regressions pass. Linux migration and
+vfork remain unimplemented at this checkpoint.
+
+`f90ec18` separately pins a reproducible upstream BusyBox xargs profile and
+additive builder options. Two clean builds agree; all three host controls pass.
+The default BusyBox build still reproduces its unchanged hash/all12 host cases.
+Actual Space syscall58 refusal remains a failed baseline, not vfork coverage.
+
+The next application lab revision adds default desktop, Unicode and native VM
+gates to the prior completed83. It must run from a new committed archive; these
+focused checkpoints do not retroactively widen `/workspace/lab83/report.json`.

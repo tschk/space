@@ -50,12 +50,20 @@ partial-overwrite, truncate, reclaim and remount checks, plus24-byte filename
 boundaries. This proves the tested completed-write/remount behavior; crash
 atomicity and journaling remain open.
 
-The distributable standard image includes separate native SCI GUI calculator
+The standard image now defaults to protected CPL3 calculator/editor clients
+(`f09df34`), launched through `gui apps` or the real command bar. Six display
+modes, five NVMe boots,129 sessions, hostile-peer recovery and parent desktop
+restoration pass. Launch errors visibly render and can be dismissed. The input
+driver remains trusted SCI and the supervisor/compositors remain kernel-linked.
+The bounded two-app session temporarily owns scanout; concurrent integration
+into the desktop tiling model and a larger editor remain full-goal work.
+
+The earlier distributable standard-image checkpoint includes separate native SCI GUI calculator
 and editor applications. Actual keyboard, shifted operators, pointer focus,
 close-one/keep-other-running and exact client glyph checks pass. The editor's
 explicit storage capability saves at most eight bytes and reopens them across
 five real NVMe boots; a stripped-grant image cannot change the file. These
-native clients remain trusted CPL0. The old retained lifecycle failed on
+earlier native clients run trusted CPL0 in explicit legacy/window profiles. The old retained lifecycle failed on
 session20 after19 completed sessions. Private image/global ownership and
 physical close reclamation now pass129 sessions with real input/pixels and
 resource/ABA checks; capability/domain/page/surface identities are withdrawn
@@ -120,13 +128,15 @@ unexecuted; execution-local wide paths/cwd are the next slice.
 
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
-self-update pass; the existing Space toolchain remains frozen at0.9.324 until
-new-profile integration is verified. Darwin startup is committed in `168e01f`, with344 actual CPL3 executions,
+self-update pass. Historical CLI receipts retain their0.9.324 compiler; the
+new protected default requires valid0.9.325+ layout metadata. No compiler
+publication or toolchain-symlink change is implied. Darwin startup is committed in `168e01f`, with344 actual CPL3 executions,
 exact first-cache memory admission/recovery and unchanged483/548 old gates.
 Protected native SCI profiles are committed in `78fdae6`, with separate
 paged279/immutable274 actual invocation proofs,140 protected lifecycle
 instances per profile and exact32MiB refusal/recovery. The shipped native GUI
-loader remains trusted CPL0; the new protected GUI integration is in progress. Protected GUI core3 is committed in `f3e12fd`: owned read-only input rings,
+loader has a historical trusted profile; the protected default is now verified
+and committed separately in `f09df34`. Protected GUI core3 is committed in `f3e12fd`: owned read-only input rings,
 writable staging and separate immutable accepted presentation frames pass
 actual hostile-write, lifetime and low-memory checks. The opt-in real calculator
 and editor now pass all six output/scale modes and129 sessions/258 instances.
@@ -134,7 +144,8 @@ The consumer checkpoint is committed in `aa16a9e`, with final six-mode,
 five-boot persistence,129-session and six-fault recovery gates passing from one
 frozen541-file source. The separate startup ownership fix (`8e5c4f6`) passes140
 failed starts with exact cleanup and a surviving peer. Default launch
-integration is the next active step. Original Darwin/Windows applications and foreign GUI
+integration is committed in `f09df34`, with actual ordinary-image and
+command-bar interaction, persistence, lifecycle, faults and visible errors. Original Darwin/Windows applications and foreign GUI
 workloads remain open. Eager Mach-O chained imports are committed in `174d708`
 with254 actual executions and malformed/unused-import refusal controls; the new
 Darwin heap adapter is committed separately in `eef4ea8`:275 actual CPL3
