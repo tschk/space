@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "upstream": "https://www.fltk.org/",
+  "version": "1.3.9",
+  "license": "GNU Library General Public License version2 with the FLTK exceptions in COPYING",
+  "source": {
+    "url": "https://www.fltk.org/pub/fltk/1.3.9/fltk-1.3.9-source.tar.gz",
+    "sha256": "d736b0445c50d607432c03d5ba5e82f3fba2660b10bc1618db8e077a42d9511b",
+    "checksum_provenance": "SHA256 measured from acquired official release archive; not an independently authenticated upstream checksum",
+    "git_revision": "a66273e72621887fcbd0ee5dca2dd133356d5d8a",
+    "modified": false
+  },
+  "build": {
+    "profile": "upstream Linux x86_64 X11 backend; static FLTK libraries with dynamic system dependencies",
+    "compiler": "g++ (Debian 14.2.0-19) 14.2.0",
+    "configure": [
+      "./configure",
+      "--disable-gl",
+      "--disable-xft",
+      "--disable-xinerama",
+      "--disable-xdbe",
+      "--disable-xfixes",
+      "--disable-xcursor",
+      "--disable-xrender",
+      "--disable-shared"
+    ],
+    "commands": [
+      "make -j4 -C src",
+      "make -j4 -C jpeg",
+      "make -j4 -C zlib",
+      "make -j4 -C png",
+      "make -j4 -C fluid"
+    ],
+    "environment": "CPPFLAGS/LDFLAGS point to separately extracted Debian13 X11 development packages; runtime X11/system C++/C libraries remain dynamic. No source patches. Local exact environment in host-reference report.",
+    "byte_reproducibility": "not yet verified from a second clean build"
+  },
+  "apps": [
+    {
+      "id": "fltk-1.3.9-fluid-linux-x86_64-x11",
+      "name": "fluid",
+      "personality": "linux",
+      "version": "1.3.9",
+      "filename": "fluid",
+      "sha256": "c09ad9fa6243714a8cea10b79a616cc616841911c29dcc1c3906fba100abb048",
+      "size_bytes": 1909464,
+      "scenario": {
+        "input_project": "upstream test/resize.fl",
+        "edit_label": "SpaceGUIReference42",
+        "required": [
+          "open form",
+          "edit visible label using keyboard and pointer",
+          "save and reopen in a fresh process",
+          "resize",
+          "two independent instances",
+          "focused input",
+          "crash and close cleanup"
+        ],
+        "space_status": "not executed; dynamic ELF loading and X11 GUI service compatibility remain open"
+      }
+    }
+  ]
+}
