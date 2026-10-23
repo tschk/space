@@ -1,0 +1,50 @@
+package space.app.gui
+component GuiProtectedWindowEditor {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability memory: GuiMemory(map)
+ capability display: GuiDisplay(present,window)
+ capability storage: GuiNoteFile(read,write)
+ export entry: GuiEntry
+}
+interface GuiMemory { fn map()->void }
+interface GuiDisplay { fn present()->void
+ fn window()->void }
+interface GuiNoteFile { fn read()->void
+ fn write()->void }
+interface GuiEntry { fn client-entry(info:Int)->Int }
+interrupt fn chan-page-send-frame(page:Int,object:Int,opcode:Int,arg0:Int,arg1:Int)->Int{}
+interrupt fn chan-page-recv-frame(page:Int,destination:Int)->Int{}
+interrupt fn abort()->void{}
+interrupt fn gui-note-read(pointer:Int,bytes:Int)->Int{}
+interrupt fn gui-note-write(pointer:Int,bytes:Int)->Int{}
+var protected-gui-counter:Int=10
+fn client-entry(info:Int)->Int{
+ let heap=0x69000000;let mode=load64(heap+8);let pointer=load64(heap+24);
+ if info!=0x6b000000 || load64(info+8)!=0 || load64(info+16)!=heap || load64(info+24)!=0x200000 || load64(info+32)!=0x70000000 || load64(info+72)!=0x70001000 || load64(info+80)!=1179648{return -101;}
+ if mode==0{
+  protected-gui-counter=protected-gui-counter+1;
+  store64(0x70001000,protected-gui-counter);store64(0x70120ff8,protected-gui-counter+1);
+  if chan-page-send-frame(0x70000000,77,88,protected-gui-counter,99)!=1{return -102;}
+  return protected-gui-counter;
+ }
+ if mode==1{
+  let result=chan-page-recv-frame(0x70000000,heap+4090);
+  if result!=1{return -103;}
+  return load64(heap+4090)+load64(heap+4098)+load64(heap+4106)+load64(heap+4114);
+ }
+ if mode==2{return chan-page-recv-frame(0x70000000,heap+0x200000 - 16);}
+ if mode==3{return chan-page-send-frame(pointer,77,88,99,100);}
+ if mode==4{store64(0x70001000,pointer);store64(0x70120ff8,pointer+1);return 42;}
+ if mode==5{store64(pointer,0);return -105;}
+ if mode==6{store64(0x70000000,0);return -106;}
+ if mode==7{store8(0x70001000,0xc3);return invoke-native1(0x70001000,0);}
+ if mode==8{while true{}return -108;}
+ if mode==9{abort();store64(heap+16,0xdeadbeef);return -109;}
+ if mode==10{return chan-page-recv-frame(0x70000000,pointer);}
+ if mode==12{return gui-note-read(pointer,8);}
+ if mode==13{return gui-note-write(pointer,8);}
+ if mode==11{return invoke-native2(0x6c0000f0,heap+256,8);}
+ return -100;
+}

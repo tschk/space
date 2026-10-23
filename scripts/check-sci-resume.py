@@ -11,7 +11,7 @@ parser.add_argument('--in', dest='compiler', required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 functions = []
-for filename, names in [('runtime-retained.in', ['runtime-instance-kernel-context','runtime-instance-record','runtime-instance-resume']), ('runtime-pixels.in', ['runtime-instance-pixel-bytes']), ('domain.in', ['domain-restore-service-context']), ('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync', 'sci-resume-sync-unit', 'sci-sync-provenance-valid', 'sci-sync-enter', 'sci-admit-input-sync', 'sci-resume-input-sync'])]:
+for filename, names in [('runtime-retained.in', ['runtime-instance-kernel-context','runtime-instance-record','runtime-instance-resume']), ('runtime-pixels.in', ['runtime-instance-canvas-slot','runtime-instance-pixel-bytes']), ('domain.in', ['domain-restore-service-context']), ('channel.in', ['chan-page-frame-header-valid']), ('sci-loader.in', ['sci-display-cap-info', 'sci-sync-pixels', 'sci-sync-restore-info', 'sci-resume-sync', 'sci-resume-sync-unit', 'sci-sync-provenance-valid', 'sci-sync-enter', 'sci-admit-input-sync', 'sci-resume-input-sync'])]:
     text = (root/'components'/filename).read_text()
     for name in names:
         start = text.index('fn '+name+'(')
@@ -21,7 +21,7 @@ for name in ('input-page-header-valid', 'input-page-send', 'input-page-recv'):
     start = text.index('fn '+name+'(')
     functions.append(text[start:text.index('\n}', start)+2])
 source = 'var memory:[Int]=[' + ','.join(['0']*20000) + '];\n' + '''
-var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
+var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const NATIVE-PROTECTED-GUI-PAGED=3;const NATIVE-PROTECTED-EXTRA-MAGIC=0x5350434e4c454447;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
 const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
 var runtime-instance-catalog:Int=16000;var runtime-instance-active:Int=0;var runtime-aborted:Int=0;
 var sci-sync-handle:Int=257;var current-cap:Int=0;var model-root:Int=4096;

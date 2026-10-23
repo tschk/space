@@ -17,14 +17,14 @@ for name in ('chan-page-frame-header-valid', 'chan-page-frame-valid', 'chan-page
 display = (Path(__file__).resolve().parent.parent / 'components/display.in').read_text() + '\n' + (Path(__file__).resolve().parent.parent / 'components/display-spdp.in').read_text()
 start = display.index('fn dsp-drain-page(')
 functions.append(display[start:display.index('\n}', start) + 2])
-for filename, names in [('runtime-retained.in', ('runtime-instance-kernel-context','runtime-instance-record')), ('runtime-pixels.in', ('runtime-instance-pixel-bytes',)), ('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
+for filename, names in [('runtime-retained.in', ('runtime-instance-kernel-context','runtime-instance-record')), ('runtime-pixels.in', ('runtime-instance-canvas-slot','runtime-instance-pixel-bytes')), ('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
     module = (Path(__file__).resolve().parent.parent / 'components' / filename).read_text()
     for name in names:
         start = module.index('fn '+name+'(')
         functions.append(module[start:module.index('\n}', start)+2])
 source = 'var memory:[Int]=[' + ','.join(['0'] * 20000) + '];\n' + '''
 const COMP-PIXEL-VIRT=0x70001000;
-var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
+var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const NATIVE-PROTECTED-GUI-PAGED=3;const NATIVE-PROTECTED-EXTRA-MAGIC=0x5350434e4c454447;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
 const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
 var domain-current:Int=0;var runtime-instance-catalog:Int=16000;var sci-sync-handle:Int=257;
 var cap-count:Int=1;var cap-table-base:Int=1904;

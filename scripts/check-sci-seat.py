@@ -33,7 +33,7 @@ for filename, names in [
             "chan-page-recv-frame",
         ],
     ),
-    ("components/runtime-pixels.in", ["runtime-instance-pixel-bytes"]),
+    ("components/runtime-pixels.in", ["runtime-instance-canvas-slot", "runtime-instance-pixel-bytes"]),
     ("components/runtime-retained.in", ["runtime-instance-kernel-context", "runtime-instance-record", "runtime-instance-resume"]),
     ("components/domain.in", ["domain-restore-service-context"]),
     ("protocol/input.in", ["input-page-header-valid"]),
@@ -69,7 +69,7 @@ source = (
     + "];\n"
     + """
 const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
-var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
+var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const NATIVE-PROTECTED-GUI-PAGED=3;const NATIVE-PROTECTED-EXTRA-MAGIC=0x5350434e4c454447;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
 const SCI-INPUT-GRANTS=3;const SCI-V2-HEADER=64;const DOMAIN-ACTIVE=1;
 const COMP-HEAP-VIRT=0x80000000;const COMP-HEAP-SIZE=0x200000;
 const COMP-SHARED-VIRT=0x70000000;const COMP-PIXEL-VIRT=0x70001000;

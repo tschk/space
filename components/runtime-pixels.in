@@ -37,10 +37,21 @@ fn runtime-instance-view-pde(virt: Int) -> Int {
   return (e3 & PAGE-ADDRESS-MASK) + ((virt >> 21) & 511) * 8
 }
 
+// The protected profile keeps its extra ledger at state+112. Its compositor
+// front and guest staging ledgers remain distinct; only the front has a view.
+fn runtime-instance-canvas-slot(state: Int) -> Int {
+  if load64(state + 120) == 0 { return state + 112 }
+  if load64(state + 120) != NATIVE-PROTECTED-KIND { return 0 }
+  let extra = load64(state + 112)
+  if extra == 0 || load64(extra + 840) != NATIVE-PROTECTED-EXTRA-MAGIC || load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED { return 0 }
+  return extra + 1008
+}
+
 fn runtime-instance-canvas-new(state: Int) -> Int {
   if runtime-instance-kernel-context() == 0 || state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE { return 0 }
   let domain = load64(state)
-  if domain <= 0 || domain >= MAX-DOMAINS || load64(state + 40) != 0 || load64(state + 112) != 0 { return 0 }
+  let slot = runtime-instance-canvas-slot(state)
+  if domain <= 0 || domain >= MAX-DOMAINS || load64(state + 40) != 0 || slot == 0 || load64(slot) != 0 { return 0 }
   let view = RUNTIME-INSTANCE-PIXEL-SERVER-BASE + domain * RUNTIME-INSTANCE-PIXEL-SLOT-BYTES
   let parent = runtime-instance-view-parent(view)
   if parent == 0 || load64(parent) != 0 { return 0 }
@@ -51,7 +62,9 @@ fn runtime-instance-canvas-new(state: Int) -> Int {
   store64(ledger + 4072,directory)
   store64(ledger + 4080,parent)
   store64(ledger + 4088,table)
-  store64(state + 112,ledger)
+  store64(slot,ledger)
+  let staging = 0
+  if load64(state + 120) == NATIVE-PROTECTED-KIND { staging = frame-alloc(); store64(load64(state + 112) + 1016,staging) }
   store64(state + 312,pde)
   store64(state + 40,view)
   let i = 0
@@ -60,7 +73,9 @@ fn runtime-instance-canvas-new(state: Int) -> Int {
     store64(ledger + i * 8,physical)
     store64(state + 304,i + 1)
     store64(table + i * 8,physical | PAGE-NX | 3)
-    domain-map-user-data(domain,COMP-PIXEL-VIRT + i * 4096,physical)
+    let user-physical = physical
+    if staging != 0 { user-physical = frame-alloc(); store64(staging + i * 8,user-physical) }
+    domain-map-user-data(domain,COMP-PIXEL-VIRT + i * 4096,user-physical)
     i = i + 1
   }
   store64(pde,table | 3)
@@ -71,7 +86,9 @@ fn runtime-instance-canvas-new(state: Int) -> Int {
 
 fn runtime-instance-pixel-bytes(state: Int) -> Int {
   if state == 0 || load64(state + 40) == 0 { return 0 }
-  let ledger = load64(state + 112)
+  let slot = runtime-instance-canvas-slot(state)
+  if slot == 0 { return 0 }
+  let ledger = load64(slot)
   let pages = load64(state + 304)
   if ledger == 0 && pages == 1 { return 4096 }
   if ledger != 0 && pages == RUNTIME-INSTANCE-PIXEL-PAGES { return SCI-CANVAS-BYTES }
@@ -81,7 +98,9 @@ fn runtime-instance-pixel-bytes(state: Int) -> Int {
 fn runtime-instance-pixels-release(state: Int) -> Int {
   let pixels = load64(state + 40)
   if pixels == 0 { return 0 }
-  let ledger = load64(state + 112)
+  let slot = runtime-instance-canvas-slot(state)
+  if slot == 0 { return -1 }
+  let ledger = load64(slot)
   if ledger == 0 {
     if load64(state + 304) != 1 { return -1 }
     frame-free(pixels)
@@ -97,8 +116,15 @@ fn runtime-instance-pixels-release(state: Int) -> Int {
   if pixels != view || pde == 0 || pde != load64(state + 312) || table == 0 || (load64(pde) & -97) != (table | 3) { return -1 }
   let pages = load64(state + 304)
   if pages != RUNTIME-INSTANCE-PIXEL-PAGES { return -1 }
+  let staging = 0
+  if load64(state + 120) == NATIVE-PROTECTED-KIND { staging = load64(load64(state + 112) + 1016) }
+  if load64(state + 120) == NATIVE-PROTECTED-KIND && (staging < 0x100000 || staging >= heap-end || (staging & 4095) != 0) { return -1 }
   let i = 0
   while i < pages {
+    if staging != 0 {
+      let user-physical = load64(staging + i * 8)
+      if user-physical < 0x100000 || user-physical >= heap-end || (user-physical & 4095) != 0 { return -1 }
+    }
     let physical = load64(ledger + i * 8)
     if physical == 0 || (physical & 4095) != 0 || (load64(table + i * 8) & -97) != (physical | PAGE-NX | 3) { return -1 }
     i = i + 1
@@ -109,6 +135,12 @@ fn runtime-instance-pixels-release(state: Int) -> Int {
   cr3-write(load64(domain-table))
   i = 0
   while i < pages { frame-free(load64(ledger + i * 8)); i = i + 1 }
+  if staging != 0 {
+    i = 0
+    while i < pages { frame-free(load64(staging + i * 8)); i = i + 1 }
+    frame-free(staging); store64(load64(state + 112) + 1016,0)
+  }
+  store64(slot,0); store64(state + 40,0); store64(state + 304,0); store64(state + 312,0)
   frame-free(table)
   frame-free(directory)
   frame-free(ledger)

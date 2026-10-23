@@ -120,6 +120,7 @@ fn runtime-instance-dispose(state: Int) -> Int {
     if payload != 0 { chan-heap-free(payload - 8) }
     allocation = allocation + 1
   }
+  if runtime-instance-pixels-release(state) != 0 { return -1 }
   if kind == NATIVE-PROTECTED-KIND && runtime-instance-protected-dispose(state) != 0 { return -1 }
   let pages = load64(state + 24)
   let i = 0
@@ -130,7 +131,6 @@ fn runtime-instance-dispose(state: Int) -> Int {
   }
   let shared = load64(state + 32)
   if shared != 0 { frame-free(shared) }
-  if runtime-instance-pixels-release(state) != 0 { return -1 }
   if component != 0 { runtime-instance-release-component(component) }
   frame-free(pages)
   if load64(state + 232) != 0 { frame-free(load64(state + 232)) }

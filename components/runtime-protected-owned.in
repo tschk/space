@@ -5,9 +5,12 @@ import "../protocol/native-protected.in"
 // state+120=2 selects an owned user tree. state+112 is an extra frame:
 // 0..767 user context; 768 trap frame; 776 allocator metadata frame;
 // 784 stack page count; 792 entry RSP; 800 profile; 808 last stop kind;
-// 816 abort marker; 824 service calls; 832 reserved; 840 extra magic;
+// 816 abort marker; 824 service calls; 832 admitted service bitmap; 840 extra magic;
 // 848..975 sixteen stack backing frame addresses. state+32 owns capinfo.
 // 976 args byte count; 984 allocator-backing ledger; 992 its live page count.
+// GUI3 only:1000 ring,1008 front ledger,1016 staging ledger;1024..2047 args;
+// 2048 note bounce,2080 note request,2176 recv bounce;2320 completed run
+// epoch,2328 accepted snapshot epoch. Front teardown precedes this extra frame.
 fn runtime-instance-protected-valid(state: Int) -> Int {
   let extra = load64(state + 112)
   if extra == 0 { return 1 }
@@ -36,6 +39,8 @@ fn runtime-instance-protected-valid(state: Int) -> Int {
     if frame != 0 && (frame < 0x100000 || frame >= heap-end || (frame & 4095) != 0) { return 0 }
     i = i + 8
   }
+  let ring = load64(extra + 1000)
+  if ring != 0 && (ring < 0x100000 || ring >= heap-end || (ring & 4095) != 0 || load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED) { return 0 }
   return 1
 }
 
@@ -53,6 +58,7 @@ fn runtime-instance-protected-dispose(state: Int) -> Int {
   i = 0
   while i < load64(extra + 992) { frame-free(load64(backing + i * 8)); i = i + 1 }
   if backing != 0 { frame-free(backing) }
+  if load64(extra + 1000) != 0 { frame-free(load64(extra + 1000)) }
   frame-free(extra)
   store64(state + 112,0)
   return 0

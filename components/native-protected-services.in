@@ -1,6 +1,7 @@
 package space.kernel
 import "native-protected-heap.in"
 import "native-protected-image.in"
+import "native-protected-gui.in"
 var native-protected-active: Int = 0
 
 fn native-protected-console(state: Int, pointer: Int) -> Int {
@@ -38,13 +39,14 @@ fn native-protected-syscall(frame: Int) -> Int {
   let id = number - NATIVE-PROTECTED-SERVICE-BASE
   let extra = load64(state + 112)
   store64(extra + 824,load64(extra + 824) + 1)
-  if id < 0 || id > 12 || load64(frame + 120) != NATIVE-PROTECTED-TRAPS + id * 16 + 10 { store64(frame + 112,-38); return 1 }
+  if id < 0 || id > 16 || load64(frame + 120) != NATIVE-PROTECTED-TRAPS + id * 16 + 10 { store64(frame + 112,-38); return 1 }
   if id == 0 { store64(frame + 112,load64(frame + 72)); return 0 }
   if (load64(extra + 832) & (1 << id)) == 0 { store64(frame + 112,-38); return 1 }
   let rights = native-protected-import-right(id)
   if rights != 0 && cap-check(current-cap,rights) == 0 {
     let denied = -1
     if (id >= 2 && id <= 4) || id == 12 { denied = 0 }
+    if id == 15 || id == 16 { denied = -13 }
     store64(frame + 112,denied); return 1
   }
   if id == 1 { store64(extra + 816,1); store64(frame + 112,RUNTIME-ABORT-STATUS); return 0 }
@@ -75,6 +77,8 @@ fn native-protected-syscall(frame: Int) -> Int {
       }
     }
   }
+  if id == 13 || id == 14 { result = native-protected-gui-frame(state,id,frame) }
+  if id == 15 || id == 16 { result = native-protected-gui-note(state,id,first,second) }
   store64(frame + 112,result)
   return 1
 }
