@@ -6,6 +6,18 @@ Source review: 2026-10-23. Space baseline:
 This is a source-based integration proposal. No Rosemary code is imported and
 no Rosemary build, macOS application execution or new Space runtime gate was run.
 
+That review baseline is historical. Subsequent Space work now provides native
+owned address spaces and a separate finite high-address Darwin mapper, with318
+actual CPL3 fixture entries and147 setup refusals on each standard/minimal test
+root. It validates original Mach-O layout/chains and refuses original jq at
+`__DefaultRuneLocale` before native allocation. See the
+[mapper checkpoint](plans/2026-10-24-darwin-owned-mapper.md) and
+[full application goal](compatibility-coverage-goal.md). These are Space's own
+mechanisms; no Rosemary implementation code or host runtime was imported.
+Original Darwin applications, Objective-C/framework behavior and foreign GUI
+integration remain open. Native protected calculator/editor sessions are the
+current local GUI test foundation, with their scope recorded in that full goal.
+
 ## Recommendation
 
 Use Rosemary as a reference for the user-space macOS stack: Mach-O loading and
