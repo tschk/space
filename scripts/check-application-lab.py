@@ -227,6 +227,12 @@ def main():
           '--out', args.out / 'darwin-eager-owner')
     check('darwin-eager', 'check-darwin-eager.py', '--in', args.compiler,
           '--app', applications['darwin'], '--out', args.out / 'darwin-eager')
+    check('darwin-heap-owner', 'check-darwin-heap-owner.py', '--in', args.compiler,
+          '--out', args.out / 'darwin-heap-owner')
+    check('darwin-heap-import-baseline', 'check-darwin-heap-import-baseline.py', '--in', args.compiler,
+          '--app', applications['darwin'], '--out', args.out / 'darwin-heap-import-baseline')
+    check('darwin-heap', 'check-darwin-heap.py', '--in', args.compiler,
+          '--app', applications['darwin'], '--out', args.out / 'darwin-heap')
     check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
     check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
           '--app', applications['windows'], '--out', args.out / 'windows-process')
@@ -242,7 +248,8 @@ def main():
                          ('windows-counter', 'check-windows-counter.py'),
                          ('windows-heap', 'check-windows-heap.py'),
                          ('windows-local', 'check-windows-local.py'),
-                         ('windows-critical', 'check-windows-critical.py')]:
+                         ('windows-critical', 'check-windows-critical.py'),
+                         ('windows-composed', 'check-windows-composed.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')

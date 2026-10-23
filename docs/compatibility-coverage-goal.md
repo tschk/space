@@ -37,9 +37,10 @@ independent host database integrity checks after commit/update/rollback.
 General process scheduling, crash atomicity and the broader database acceptance
 rows remain open.
 
-Protected Mach-O supports checked raw Darwin calls and typed libSystem imports;
-protected PE supports ten typed KERNEL32 imports and a broader validated section
-profile. Windows strict507/read527/write527/general317 activation gates and six
+Protected Mach-O supports checked raw Darwin calls and finite typed libSystem
+imports, including a separate eleven-service allocator revision. Protected PE
+has a composed43-name KERNEL32 service profile while retaining the32-import
+execution bound and explicit unknown-directory refusal. Windows strict507/read527/write527/general317 activation gates and six
 NVMe boots pass after register sanitization. Original macOS/Windows jq remain
 explicitly refused and unexecuted; general dyld/UCRT/framework support is open.
 
@@ -63,7 +64,8 @@ real pointer/edit/resize checks,129 resource/ABA sessions and five NVMe boots,
 including server canvas views above4GiB. Low-memory refusal/recovery also passes, and this profile is now the product
 default (`cf2ccbb`). Final real tests pass129 sessions, six output/scale modes
 and saved-text resize plus five NVMe boots from one435-file snapshot. Broader
-desktop quality and protected native execution remain open.
+desktop quality and default protected native launch remain open; the reviewed
+opt-in CPL3 runtime and client proofs are recorded below.
 
 Source-built Inauguration0.9.324 passes its required compiler checks, including
 119 conformance cases and Linux differential62 agreements/27 explicit refusals
@@ -77,8 +79,9 @@ those gates. That subsequent52-gate run now passes in full at
 unchanged source/compiler/application artifacts. Its435-file scoped snapshot
 explicitly excludes newer CPU/context, native HPET, Windows environment/QPC and
 Linux child-process work; their separate proofs do not retroactively extend it.
-General foreign GUI applications, protected native clients, full desktop text/
-layout behavior and the rest of the acceptance matrix below remain open.
+General foreign GUI applications, default protected native launch, full
+desktop text/layout behavior and the rest of the acceptance matrix below remain
+open. The opt-in native client proofs below do not claim default integration.
 
 
 ## New slices and integration work
