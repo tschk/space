@@ -33,13 +33,18 @@ fn linux-process-pipes-init() -> void {
 }
 
 fn linux-process-pipe-state() -> void {
-  if linux-process-pipe-owners != 0 { return }
-  linux-process-pipe-owners = alloc(VFS-STREAM-MAX * 16)
-  linux-process-pipe-fdflags = alloc(VFS-MAX-FDS * 8)
-  let i = 0
-  while i < VFS-STREAM-MAX * 16 { store64(linux-process-pipe-owners + i,0); i = i + 8 }
-  i = 0
-  while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
+  if linux-process-pipe-owners == 0 {
+    linux-process-pipe-owners = alloc(VFS-STREAM-MAX * 16)
+    let i = 0
+    while i < VFS-STREAM-MAX * 16 { store64(linux-process-pipe-owners + i,0); i = i + 8 }
+  }
+  // Process records may already supply their own inherited descriptor flags.
+  // Initializing shared owner state must not replace or clear that buffer.
+  if linux-process-pipe-fdflags == 0 {
+    linux-process-pipe-fdflags = alloc(VFS-MAX-FDS * 8)
+    let i = 0
+    while i < VFS-MAX-FDS { store64(linux-process-pipe-fdflags + i * 8,0); i = i + 1 }
+  }
 }
 
 fn linux-process-pipe-host(fd: Int) -> Int {
@@ -237,16 +242,17 @@ fn linux-process-pipe-fcntl(fd: Int, command: Int, argument: Int) -> Int {
     let row = vfs-fd-table + host * 32
     let pair = load64(row)
     let side = load64(row + 8)
-    let i = 0
-    while i < VFS-MAX-FDS {
-      let alias = linux-process-pipe-host(i)
-      if alias >= 3 {
+    // The actual native endpoint is the shared open description. Include
+    // suspended relatives' owned native aliases, not only the active table.
+    let alias = 3
+    while alias < VFS-MAX-FDS {
+      if vfs-stream-valid(alias) != 0 {
         let item = vfs-fd-table + alias * 32
         if load64(item) == pair && load64(item + 8) == side {
           store64(item + 16,(load64(item + 16) & 3) | (value & 0x800))
         }
       }
-      i = i + 1
+      alias = alias + 1
     }
     return 0
   }

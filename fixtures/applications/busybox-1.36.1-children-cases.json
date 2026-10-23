@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "classification": "new child-execution goals for the unchanged pinned upstream BusyBox ELF; distinct from the completed12-case baseline",
+  "infinite_argv": [
+    "/ash",
+    "-c",
+    "while :; do :; done"
+  ],
+  "cases": [
+    {
+      "name": "baseline-echo",
+      "argv": [
+        "/busybox",
+        "echo",
+        "child-process corpus"
+      ],
+      "expected_stdout": "child-process corpus\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "pipeline-bytes",
+      "argv": [
+        "/ash",
+        "-c",
+        "printf \"hello\\n\" | wc -c"
+      ],
+      "expected_stdout": "6\n",
+      "expected_exit": 0,
+      "expected_stderr": "",
+      "repeat": true
+    },
+    {
+      "name": "pipeline-words",
+      "argv": [
+        "/ash",
+        "-c",
+        "echo \"one two\" | wc -w"
+      ],
+      "expected_stdout": "2\n",
+      "expected_exit": 0,
+      "expected_stderr": ""
+    },
+    {
+      "name": "pipeline-empty-eof",
+      "argv": [
+        "/ash",
+        "-c",
+        "printf '' | wc -c"
+      ],
+      "expected_stdout": "0\n",
+      "expected_exit": 0,
+      "expected_stderr": ""
+    },
+    {
+      "name": "pipeline-three-stages",
+      "argv": [
+        "/ash",
+        "-c",
+        "printf \"hello\\n\" | cat | wc -c"
+      ],
+      "expected_stdout": "6\n",
+      "expected_exit": 0,
+      "expected_stderr": ""
+    },
+    {
+      "name": "pipeline-last-status",
+      "argv": [
+        "/ash",
+        "-c",
+        "printf x | (exit 23)"
+      ],
+      "expected_stdout": "",
+      "expected_exit": 23,
+      "expected_stderr": ""
+    },
+    {
+      "name": "subshell-private-state",
+      "argv": [
+        "/ash",
+        "-c",
+        "v=parent; (v=child; echo \"$v\"); echo \"$v\""
+      ],
+      "expected_stdout": "child\nparent\n",
+      "expected_exit": 0,
+      "expected_stderr": "",
+      "repeat": true
+    },
+    {
+      "name": "background-wait",
+      "argv": [
+        "/ash",
+        "-c",
+        "printf child & p=$!; wait \"$p\"; printf ':parent\\n'"
+      ],
+      "expected_stdout": "child:parent\n",
+      "expected_exit": 0,
+      "expected_stderr": ""
+    },
+    {
+      "name": "pipeline-file",
+      "argv": [
+        "/ash",
+        "-c",
+        "cat @FILE@ | wc -c"
+      ],
+      "file": "abcdef\n",
+      "expected_stdout": "7\n",
+      "expected_exit": 0,
+      "expected_stderr": "",
+      "repeat": true
+    }
+  ],
+  "pending_scenarios": [
+    {
+      "name": "pipeline-beyond-ring",
+      "argv": [
+        "/ash",
+        "-c",
+        "cat @FILE@ | wc -c"
+      ],
+      "file_size": 10902,
+      "expected_stdout": "10902\n",
+      "requires": "scheduler-backed blocking transfer; child-first producer alone cannot drain a full ring",
+      "status": "must remain failed until actual blocking and parent/consumer scheduling are implemented"
+    }
+  ]
+}

@@ -40,7 +40,7 @@ The first entry explicitly initializes FS and GS bases to zero before the
 application installs its own FS TLS. Nonzero caller bases are restored after
 finite execution, hardware faults and timer cancellation. Independent actual
 FS:[0] and GS:[0] probes seed the caller base with the valid guest ELF address:
-an inherited base would read successfully and exit42, whereas a fresh zero
+an inherited base would read successfully and exit 42, whereas a fresh zero
 base faults at null. Independent FS and GS negative-control snapshots removing
 only the corresponding initialization fail exactly142-versus42. Every real corpus launch also
 runs with nonzero caller FS/GS canaries; the added probes make seven actual
@@ -282,3 +282,75 @@ file metadata/permissions and more unmodified static applications, dynamic ELF l
 then GUI protocol/client execution. New support must increase observed real
 application coverage and preserve the negative/cleanup tests; admission or
 host-reference success alone is insufficient.
+
+The copied-child slice now runs real clone/fork, wait4 and self-exec through
+native owned CPU contexts. Each ordinary fork receives a new native domain and
+copied RX/R/RW backing pages. Process records own descriptor references and
+monotonic registered PIDs independently of reusable CPU domain slots. Children
+execute first; completed children retain typed zombie results until a checked
+wait reaps them. Native fault vectors and interrupt deadlines are translated
+separately from ordinary exit 134/141, so equal integer status values do not
+fabricate signal causes. A blocked SIGPIPE remains pending; clones inherit the
+mask while clearing pending signals. Unsupported handlers still return ENOSYS.
+
+Self-exec resolves only the activation's retained, unmodified image through
+`/proc/self/exe`. It validates and copies up to 16 arguments and 16 environment
+strings, each at most 511 bytes plus NUL, into private supervisor buffers. The
+replacement ELF and real argc/argv/env/auxv stack are prepared in a fresh native
+domain before revoking the old VM. PID and shared native open descriptions
+survive; private data and TLS reset, and only that process's CLOEXEC bindings
+close, including accepted serial stdout/stderr flags. Native EOF/discard objects supply actual zero-byte reads and counted
+writes; `/dev/null` is a Linux edge name for that provider, with no native POSIX
+pathname special case. Regular file and discard aliases use retained native
+open descriptions. Native description identities are scoped to an open object,
+shared by duplicates, and may be reused after final close.
+
+Both standard and minimal roots pass 23 synthetic child contracts over 21 measured
+cycles plus warmup: 506 parent activations each, with actual children and
+nested grandchildren. The cases cover copied registers/FX/data/TID, shared file
+offsets, two retained zombies, self-exec, private descriptor flags, native null
+inheritance, signal masks/pending SIGPIPE, typed faults/deadlines, bounds and
+refusals. The null adapter checks the complete guest range even for discarded
+or EOF I/O; this security profile is labelled separately because Linux may
+accept an unused invalid pointer. Native pairs, memory/frame/domain counts,
+leases, FS/GS and authority witnesses remain independent of application output.
+
+The unchanged official BusyBox ELF passes all nine child-corpus host oracles on
+both roots: 53 actual activations per root, including two- and three-stage
+pipelines, real wc self-exec, EOF, subshell state, exit statuses, file input and
+background wait. The failed predecessor with eight matches and a missing native
+null provider remains evidence of the original blocker. This coverage does not
+include arbitrary shell commands or general scheduling: eight process records
+including the root, depth 0..3, and at most eight exec replacements per process
+bound this profile. Reaped slots are retained until job cleanup. A separate cap of 32 admitted
+clone/exec preparations bounds failed-copy retries too. Actual remaining guest
+IRQ ticks carry across suspensions and exec; a child inherits its parent's
+remaining quantum. Kernel-service work has its separate finite preparation
+bound and is not reported as wall-clock IRQ accounting. Shared-VM
+clone/vfork, arbitrary executable resolution and handlers, and large blocking
+pipe transfers remain open goals and return explicit refusals.
+
+Teardown refusal fails closed: the record retains its domain, backing ledger
+and frame ownership, and new activations return EIO until trusted supervisor
+repair and explicit recovery complete. An exec replacement tracks both the old
+and fully prepared new VM until commit, so neither can disappear on a refused
+revocation. The kernel-only fault-injection test proves both mappings and
+frames remain unchanged during refusal, admission stops, and repair/recovery
+restores exact frame/domain/native-reference resources. A separate actual
+protected fixture forces native descriptor exhaustion after five successful
+inherited references; the parent retains its buffers/flags/peers and later
+performs a successful real clone after rollback.
+
+The final causal budget control uses the same synthetic retry ELF and a private
+snapshot omitting only the remaining-quantum carry. Production stops with a
+real typed ten-tick IRQ deadline 124 after actual suspensions; the control
+finishes with normal exit 42 and 32 real failed preparations. The preparation
+limit independently returns EAGAIN on the 33rd request while preserving parent
+pipes and descriptor state. These are labelled Space-profile and negative-
+control tests, separate from unmodified upstream app coverage. The final child
+proofs total 1,012 parent launches across both roots; the unchanged BusyBox
+child corpus contributes another 106 root launches plus its real child/exec
+executions. Earlier failed short external-wall-timeout SQLite attempts remain
+failed evidence. Its final 146-launch/21-cycle gate passed with an explicit
+600-second harness allowance and unchanged 100 delivered guest IRQ tick budget;
+that run completed in about 91 seconds.

@@ -3,9 +3,12 @@ import "linux-process-files.in"
 import "linux-process-mmap.in"
 import "linux-process-metadata.in"
 import "linux-process-pipes.in"
+import "linux-process-children.in"
+import "linux-process-descriptors.in"
 
-// Bounded, single-thread Linux static ELF process. Foreign semantics stay here;
-// strict CPU transitions and page-table ownership stay in the domain runtime.
+// Bounded static ELF process family with child-first, single-CPU execution.
+// Foreign semantics stay at this edge; CPU contexts and private page tables
+// remain native mechanisms with explicit per-record backing ownership.
 const LINUX-PROCESS-MAX-PAGES = 4096
 const LINUX-PROCESS-STACK-BASE = 0x4F000000
 const LINUX-PROCESS-STACK-SIZE = 0x100000
@@ -359,7 +362,8 @@ fn linux-process-mprotect(address: Int, length: Int, protection: Int) -> Int {
 
 fn linux-process-fstat(fd: Int, buffer: Int) -> Int {
   if linux-process-pipe-is(fd) != 0 { return linux-process-pipe-stat(fd,buffer) }
-  if fd != 1 && fd != 2 { return linux-process-file-stat(fd, buffer) }
+  if linux-process-discard-is(fd) != 0 { return linux-process-discard-stat(fd,buffer) }
+  if linux-process-file-host(fd) >= 3 || (fd != 1 && fd != 2) { return linux-process-file-stat(fd, buffer) }
   if fd != 1 && fd != 2 { return -9 }
   if (fd == 1 && linux-process-stdout-open == 0) || (fd == 2 && linux-process-stderr-open == 0) { return -9 }
   if linux-process-range(buffer, 144, 1) == 0 { return -14 }
@@ -427,19 +431,47 @@ fn linux-process-dispatch(frame: Int) -> Int {
   }
   else if number == 22 { result = linux-process-pipe-create(first,0) }
   else if number == 293 { result = linux-process-pipe-create(first,second) }
-  else if number == 32 { result = linux-process-pipe-dup(first,-1,0,0) }
-  else if number == 33 { result = linux-process-pipe-dup(first,second,0,0) }
+  else if number == 32 { result = linux-process-descriptor-dup(first,-1,0,0) }
+  else if number == 33 { result = linux-process-descriptor-dup(first,second,0,0) }
   else if number == 292 {
     if first == second { result = -22 }
-    else { result = linux-process-pipe-dup(first,second,third,0) }
+    else { result = linux-process-descriptor-dup(first,second,third,0) }
   }
   else if number == 13 { result = linux-process-pipe-sigaction(first,second,third,fourth) }
+  else if number == 14 { result = linux-process-signal-mask-call(linux-process-int32(first),second,third,fourth) }
+  else if number == 56 || number == 57 {
+    let flags = first
+    let stack = second
+    if number == 57 { flags = 17;stack = 0 }
+    result = linux-process-clone-request(flags,stack,fourth)
+    if result == 0 { resume = 2 }
+  }
+  else if number == 59 {
+    result = linux-process-exec-request(first,second,third)
+    if result == 0 { resume = 2 }
+  }
+  else if number == 61 { result = linux-process-wait(linux-process-int32(first),second,linux-process-int32(third),fourth) }
+  else if number == 110 {
+    result = 0
+    if linux-process-current-record != 0 { result = load64(linux-process-current-record + LPS-PARENT) }
+  }
   else if number == 21 { result = linux-process-file-access(first,second) }
   else if number == 87 { result = linux-process-file-unlink(first) }
   else if number == 9 { result = linux-process-mmap(first,second,third,fourth,linux-process-int32(load64(frame + 56)),load64(frame + 48)) }
   else if number == 11 { result = linux-process-munmap(first,second) }
   else if number == 72 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-fcntl(first,second,third) }
+    else if second == 0 || second == 1030 {
+      let flags = 0
+      if second == 1030 { flags = 0x80000 }
+      result = linux-process-descriptor-dup(first,-1,flags,linux-process-int32(third))
+    }
+    else if second == 1 || second == 2 {
+      let valid = linux-process-descriptor-flags(first)
+      if valid < 0 { result = valid }
+      else if second == 1 { result = load64(linux-process-file-fdflags + first * 8) }
+      else { store64(linux-process-file-fdflags + first * 8,linux-process-int32(third) & 1);result = 0 }
+    }
     else if second == 3 { result = linux-process-descriptor-flags(first) }
     else { result = linux-process-file-lock(first,second,third) }
   }
@@ -454,7 +486,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else { wrmsr64(0xC0000100, second); result = 0 }
   } else if number == 218 {
     if linux-process-range(first, 4, 1) == 0 { result = -14 }
-    else { linux-process-clear-tid = first; result = 1000 + linux-process-domain }
+    else { linux-process-clear-tid = first; result = linux-process-state-id() }
   } else if number == 273 { result = -38 }
   else if number == 302 {
     if first != 0 { result = -3 }
@@ -502,7 +534,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   } else if number == 5 { result = linux-process-fstat(first, second) }
   else if number == 1 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-write(first,second,third) }
-    else if first != 1 && first != 2 { result = linux-process-file-write(first,second,third) }
+    else if linux-process-file-host(first) >= 3 || (first != 1 && first != 2) { result = linux-process-file-write(first,second,third) }
     else if (first == 1 && linux-process-stdout-open == 0) || (first == 2 && linux-process-stderr-open == 0) { result = -9 }
     else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
     else if second < 0 || third < 0 || third > 65536 { result = -22 }
@@ -515,6 +547,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     }
   } else if number == 3 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-close(first) }
+    else if linux-process-file-host(first) >= 3 { result = linux-process-file-close(first) }
     else if first == 1 && linux-process-stdout-open != 0 { linux-process-stdout-open = 0; result = 0 }
     else if first == 2 && linux-process-stderr-open != 0 { linux-process-stderr-open = 0; result = 0 }
     else { result = linux-process-file-close(first) }
@@ -528,8 +561,8 @@ fn linux-process-dispatch(frame: Int) -> Int {
   } else if number == 262 {
     result = linux-process-file-stat-at(first,second,third,fourth)
   }
-  else if number == 39 || number == 186 { result = 1000 + linux-process-domain }
-  if linux-process-pipe-signal != 0 { result = 128 + linux-process-pipe-signal;resume = 0 }
+  else if number == 39 || number == 186 { result = linux-process-state-id() }
+  if linux-process-signal-deliver() != 0 { result = 128 + linux-process-pipe-signal;resume = 0 }
   if linux-process-trace != 0 {
     serial-write-cstr(com1(), "linux-process: result "); serial-write-dec-wide(com1(), result); serial-nl(com1())
   }
@@ -540,7 +573,16 @@ fn linux-process-dispatch(frame: Int) -> Int {
 }
 
 fn linux-process-release() -> Int {
-  if domain-destroy-user(linux-process-domain) != 0 { return -1 }
+  if linux-process-current-record != 0 {
+    linux-process-state-save(linux-process-current-record)
+    store64(load64(linux-process-current-record + LPS-USER-CONTEXT) + 736,0)
+  }
+  if domain-destroy-user(linux-process-domain) != 0 {
+    linux-process-cleanup-failed = 1
+    if linux-process-current-record != 0 { store64(linux-process-current-record + LPS-STATUS,LINUX-STATE-QUARANTINED) }
+    linux-process-active = 0
+    return -1
+  }
   let i = 0
   while i < linux-process-pages {
     frame-free(load64(linux-process-ledger + i * 24 + 8))
@@ -550,6 +592,10 @@ fn linux-process-release() -> Int {
     i = i + 1
   }
   linux-process-pages = 0
+  if linux-process-current-record != 0 {
+    store64(linux-process-current-record + LPS-DOMAIN,0)
+    store64(linux-process-current-record + LPS-PAGES,0)
+  }
   linux-process-files-release()
   linux-process-pipes-release()
   linux-process-domain = 0
@@ -567,6 +613,7 @@ fn linux-process-run(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, aut
 // offset is shared (normal dup semantics); the caller retains its descriptor
 // and path lifetime. Only the execution-owned duplicate is closed on exit.
 fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int) -> Int {
+  if linux-process-cleanup-failed != 0 { return -5 }
   let entry = linux-process-elf-entry(image, size)
   if entry < 0 { return entry }
   if cap-check(authority, cap-memory() | cap-serial()) == 0 { return -13 }
@@ -576,13 +623,27 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   if load64(0x4190) == 0 || load64(0x4168) == 0 { return -38 }
   if heap-end - heap-next < 0x2000000 { return -12 }
   if image < heap-next + 0x2000000 && image + size > heap-next { return -22 }
-  if linux-process-ledger == 0 {
-    linux-process-ledger = alloc(LINUX-PROCESS-MAX-PAGES * 24)
-    linux-process-context = alloc(48)
-  }
+  linux-process-state-reset()
+  linux-process-state-use-cache(linux-process-states)
   linux-process-domain = domain-create-user()
   if linux-process-domain <= 0 { linux-process-domain = 0; return -12 }
   linux-process-active = 1
+  let root-row = linux-process-states
+  let pid = linux-process-state-register(root-row,0,linux-process-domain,0)
+  if pid < 0 {
+    store64(root-row + LPS-DOMAIN,linux-process-domain)
+    store64(root-row + LPS-PAGES,0)
+    let cleanup = linux-process-state-drop-pages(root-row)
+    linux-process-domain = 0
+    linux-process-active = 0
+    if cleanup != 0 { return -5 }
+    return pid
+  }
+  linux-process-current-record = root-row
+  linux-process-current-pid = pid
+  store64(root-row + LPS-IMAGE,image)
+  store64(root-row + LPS-IMAGE-SIZE,size)
+  store64(root-row + LPS-BUDGET,linux-process-budget-ticks)
   linux-process-authority = authority
   linux-process-exe = arg0
   linux-process-pages = 0
@@ -594,6 +655,7 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
   linux-process-output-bytes = 0
   linux-process-syscalls = 0
   linux-process-pipes-init()
+  linux-process-pipe-family = pid
   domain-set-cap(linux-process-domain, -1)
   let status = linux-process-files-init(input)
   if status == 0 { status = linux-process-map-elf(image) }
@@ -607,7 +669,9 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
     wrmsr64(0xC0000100,0)
     wrmsr64(0xC0000101,0)
     domain-user-syscall-hook = linux-process-dispatch
-    status = domain-enter-user-budgeted(entry, 0, linux-process-domain, stack, linux-process-context, linux-process-budget-ticks)
+    linux-process-state-save(root-row)
+    status = user-context-init(load64(root-row + LPS-USER-CONTEXT),768,linux-process-domain,entry,0,stack)
+    if status == 0 { status = linux-process-family-resume(root-row) }
     domain-user-syscall-hook = 0
   }
   wrmsr64(0xC0000100, fs)
@@ -617,5 +681,9 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
     while i < 4 { linux-process-store8(linux-process-clear-tid + i, 0); i = i + 1 }
   }
   if linux-process-release() != 0 { return -5 }
+  linux-process-current-record = 0
+  linux-process-current-pid = 0
+  linux-process-signal-mask = 0
+  linux-process-signal-pending = 0
   return status
 }

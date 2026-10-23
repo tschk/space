@@ -27,13 +27,16 @@ fn linux-process-file-host(fd: Int) -> Int {
 
 fn linux-process-descriptor-flags(fd: Int) -> Int {
   if linux-process-pipe-is(fd) != 0 { return linux-process-pipe-flags(fd) }
-  if fd == 1 { if linux-process-stdout-open != 0 { return VFS-O-WRONLY } return -9 }
-  if fd == 2 { if linux-process-stderr-open != 0 { return VFS-O-WRONLY } return -9 }
   let host = linux-process-file-host(fd)
-  if host < 3 { return -9 }
-  // Access mode and append are the implemented open-file status flags.
+  if host < 3 {
+    if fd == 1 && linux-process-stdout-open != 0 { return VFS-O-WRONLY }
+    if fd == 2 && linux-process-stderr-open != 0 { return VFS-O-WRONLY }
+    return -9
+  }
+  if vfs-discard-valid(host) != 0 && cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  // Access mode, append and nonblocking are implemented open-file status flags.
   // Creation/truncation and CLOEXEC are not F_GETFL status bits.
-  return load64(vfs-fd-table + host * 32 + 16) & (3 | 0x400)
+  return load64(vfs-fd-table + host * 32 + 16) & (3 | 0xC00)
 }
 
 fn linux-process-files-init(input: Int) -> Int {
@@ -43,8 +46,10 @@ fn linux-process-files-init(input: Int) -> Int {
     linux-process-file-buffer = alloc(4096)
     linux-process-file-identities = alloc(VFS-MAX-FDS * 16)
   }
+  if linux-process-file-fdflags == 0 { linux-process-file-fdflags = alloc(VFS-MAX-FDS * 8) }
   let i = 0
   while i < VFS-MAX-FDS {
+    store64(linux-process-file-fdflags + i * 8,0)
     store64(linux-process-files + i * 8,-9)
     store64(linux-process-file-identities + i * 16,0)
     store64(linux-process-file-identities + i * 16 + 8,0)
@@ -65,7 +70,7 @@ fn linux-process-files-init(input: Int) -> Int {
 
 fn linux-process-files-release() -> void {
   if linux-process-files == 0 { return }
-  fs-range-release-owner(1000 + linux-process-domain)
+  fs-range-release-owner(linux-process-state-id())
   let i = 0
   while i < VFS-MAX-FDS {
     let fd = linux-process-file-host(i)
@@ -73,6 +78,7 @@ fn linux-process-files-release() -> void {
     store64(linux-process-files + i * 8, -9)
     store64(linux-process-file-identities + i * 16,0)
     store64(linux-process-file-identities + i * 16 + 8,0)
+    store64(linux-process-file-fdflags + i * 8,0)
     i = i + 1
   }
   return
@@ -105,6 +111,9 @@ fn linux-process-file-copy-path(path: Int, dest: Int) -> Int {
 }
 
 fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int {
+  let normalized = linux-process-file-copy-path(path,linux-process-file-buffer + 256)
+  if normalized < 0 { return normalized }
+  if strcmp(linux-process-file-buffer + 256,"/dev/null") == 0 { return linux-process-discard-open(flags) }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   let mode = flags & 3
@@ -147,6 +156,7 @@ fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int 
     }
     if linux-process-file-bind-identity(slot,fd) < 0 { vfs-close(fd);return -5 }
     store64(linux-process-files + slot * 8,fd)
+    store64(linux-process-file-fdflags + slot * 8,(flags >> 19) & 1)
     return slot
   }
   return fd
@@ -193,6 +203,7 @@ fn linux-process-file-unlink(path: Int) -> Int {
 fn linux-process-file-read(fd: Int, buffer: Int, length: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,0) }
   if (load64(vfs-fd-table + host * 32 + 16) & 0x10000) != 0 { return -21 }
   if length < 0 || length > 65536 { return -22 }
   if linux-process-range(buffer, length, 1) == 0 { return -14 }
@@ -216,6 +227,10 @@ fn linux-process-file-read(fd: Int, buffer: Int, length: Int) -> Int {
 fn linux-process-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 {
+    if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+    return vfs-lseek(host,offset,whence)
+  }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   if offset < -0x7FFFFFFF || offset > 0x7FFFFFFF { return -22 }
@@ -225,6 +240,7 @@ fn linux-process-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
 fn linux-process-file-write(fd: Int, buffer: Int, length: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,1) }
   let flags = load64(vfs-fd-table + host * 32 + 16)
   if (flags & 3) == VFS-O-RDONLY { return -9 }
   if length < 0 || length > 65536 { return -22 }
@@ -255,16 +271,20 @@ fn linux-process-file-close(fd: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
   let result = vfs-close(host)
-  if result == 0 { linux-process-file-unlock-close(fd);store64(linux-process-files + fd * 8, -9) }
+  if result == 0 { linux-process-file-unlock-close(fd);store64(linux-process-files + fd * 8, -9);store64(linux-process-file-fdflags + fd * 8,0) }
   return result
 }
 
 // Kernel services are synchronous with IF0 and this personality admits one
-// active execution. Temporarily selecting an offset therefore has no competing
+// active CPU execution at a time. Temporarily selecting an offset has no competing
 // observer. Restore the shared open-file offset even after short/error I/O.
 fn linux-process-file-positional(fd: Int, buffer: Int, length: Int, offset: Int, writing: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 {
+    if offset < 0 { return -22 }
+    return linux-process-discard-io(fd,buffer,length,writing)
+  }
   let flags = load64(vfs-fd-table + host * 32 + 16)
   if writing != 0 && (flags & 3) == VFS-O-RDONLY { return -9 }
   if writing == 0 && (flags & 3) == VFS-O-WRONLY { return -9 }
@@ -287,6 +307,7 @@ fn linux-process-file-positional(fd: Int, buffer: Int, length: Int, offset: Int,
 fn linux-process-file-stat(fd: Int, buffer: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-stat(fd,buffer) }
   if linux-process-range(buffer, 144, 1) == 0 { return -14 }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }

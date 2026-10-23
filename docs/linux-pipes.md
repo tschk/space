@@ -11,7 +11,9 @@ BusyBox pipeline probe. A working pipe does not establish a working shell pipeli
 The native VFS owns four stream pairs, their two 4096-byte rings and endpoint
 reference counts. The Linux adapter assigns one pair side to the read end and the
 other side to the write end, enforcing one-way access. A private table records
-which process owns each pair and its generation identity. Guest descriptor values
+which process family owns each pair and its generation identity. Each child must
+also inherit an actual owned native endpoint reference; the family token alone
+does not grant endpoint access. Guest descriptor values
 index the execution's 16-slot descriptor table; they never expose native descriptor
 numbers, pair addresses, ring addresses or privileged pointers.
 
@@ -47,7 +49,9 @@ client's pair remains independently owned and buffered.
   `EBADF`. `dup3` rejects a same-descriptor request, including flags zero.
 - Nonblocking status belongs to the shared endpoint description. `F_SETFL` updates
   all of its aliases. Close-on-exec is per guest descriptor, and ordinary `dup`
-  clears that bit. Exec remains unsupported, so no exec inheritance is claimed.
+  clears that bit. Copied children share native endpoint status while descriptor
+  flags remain per process. Self-exec closes only that process's CLOEXEC bindings;
+  see [protected children](linux-children.md) for the bounded execution contract.
 - `F_GETPIPE_SZ` reports the actual native capacity. `F_SETPIPE_SZ` accepts
   requests which round to the existing one-page capacity; growth returns
   `ENOSYS`. No allocation or capacity growth is claimed.
@@ -60,8 +64,8 @@ supports the kernel's four-word `rt_sigaction` layout for `SIGPIPE` only, with
 `sigsetsize=8` and default/ignored dispositions. Default disposition terminates the
 activation with status 141 and an explicit signal-13 cause, distinct from a CPU
 #GP which happens to share the numeric status. Ignored disposition returns `EPIPE`.
-Unimplemented signals, handlers and waiting/process operations return errors.
-There is no successful fork, clone, wait, exec or arbitrary signal-handler shim.
+Unimplemented signals and handlers return errors. The bounded child layer now
+implements real clone, wait and self-exec; arbitrary handlers remain unsupported.
 
 ## Executable evidence
 
@@ -77,7 +81,7 @@ against a host output/status oracle. Its failure makes the command fail, even
 when the separate pipe contract passes. The report preserves the actual next
 unsupported syscall; a failed pipeline is never counted as compatibility coverage.
 
-Fresh focused evidence:
+Completed pipe-slice evidence (before the child layer):
 
 - `/tmp/space-linux-pipes-standard21-final2/report.json`: 110 actual protected
   activations and 21 ownership/capability/capacity cycles under the standard root.
@@ -93,5 +97,8 @@ Fresh focused evidence:
   The host oracle exits 0 with `6\n`. Open pipe endpoints are reclaimed after
   these failures, without changing the unrelated buffered native pair.
 
-These reports describe specific fixtures and pinned upstream bytes. General
-blocking pipes, child processes and working ash pipelines remain open work.
+These historical reports describe specific fixtures and pinned upstream bytes.
+The later child layer executes small actual ash pipelines; its separate
+[contract and receipts](linux-children.md) distinguish this progress from the
+older clone-refusal evidence. General scheduler-backed blocking transfers remain
+open work.

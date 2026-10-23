@@ -1,0 +1,88 @@
+package space.kernel
+
+// Trusted supervisor fault injection, not a Linux-host ABI comparison. Force
+// the native domain owner to refuse teardown without changing its PTEs, then
+// prove both the current and prepared exec VM remain owned until repair.
+fn child-check-cleanup-retention() -> void {
+  linux-process-state-pool-init()
+  let iteration = 0
+  while iteration < 2 {
+    let baseline-heap = heap-next
+    let baseline-free = linux-check-free-count()
+    let baseline-owned = domain-user-owned
+    let baseline-domains = domain-count
+    let native = pipe-check-native-count()
+    let row = linux-process-states + (LINUX-STATE-MAX - 1) * LINUX-STATE-BYTES
+    linux-check(0,linux-process-state-use-cache(row))
+    linux-process-domain = domain-create-user()
+    if linux-process-domain <= 0 { panic("cleanup retained primary domain") }
+    let primary = linux-process-domain
+    linux-process-active = 1
+    linux-process-authority = pipe-check-authority
+    linux-process-pages = 0
+    linux-process-stdout-open = 1
+    linux-process-stderr-open = 1
+    linux-process-clear-tid = 0
+    linux-check(0,linux-process-files-init(-1))
+    linux-process-pipes-init()
+    let pid = linux-process-state-register(row,0,primary,0)
+    if pid <= 0 { panic("cleanup retained process record") }
+    linux-process-current-record = row
+    linux-process-current-pid = pid
+    let frame = linux-process-map-page(0x20000000,6)
+    if frame <= 0 { panic("cleanup retained primary frame") }
+    store64(frame,0x123456789ABCDEF)
+    linux-check(0,linux-process-state-save(row))
+    let secondary = domain-create-user()
+    if secondary <= 0 { panic("cleanup retained prepared domain") }
+    let spare = frame-alloc()
+    store64(spare,0x76543210ABCDEF)
+    domain-map-user-data(secondary,0x20000000,spare)
+    let ledger = load64(row + LPS-SPARE-LEDGER)
+    store64(ledger,0x20000000);store64(ledger + 8,spare);store64(ledger + 16,6)
+    store64(row + LPS-SPARE-DOMAIN,secondary)
+    store64(row + LPS-SPARE-PAGES,1)
+    store64(load64(row + LPS-USER-CONTEXT) + 736,USER-CONTEXT-MAGIC)
+    let heap = heap-next
+    let free = linux-check-free-count()
+    let owned = domain-user-owned
+    let domains = domain-count
+    let flags = domain-page-flags(primary,0x20000000)
+    let spare-flags = domain-page-flags(secondary,0x20000000)
+    // The actual CPU remains on the kernel root; the native admission check
+    // must refuse a non-kernel software domain before touching any table.
+    domain-current = primary
+    let result = linux-process-state-drop-pages(row)
+    domain-current = 0
+    linux-check(-5,result)
+    linux-check(1,linux-process-cleanup-failed)
+    linux-check(LINUX-STATE-QUARANTINED,load64(row + LPS-STATUS))
+    linux-check(primary,load64(row + LPS-DOMAIN))
+    linux-check(secondary,load64(row + LPS-SPARE-DOMAIN))
+    linux-check(1,load64(row + LPS-PAGES));linux-check(1,load64(row + LPS-SPARE-PAGES))
+    linux-check(frame,load64(load64(row + LPS-LEDGER) + 8))
+    linux-check(spare,load64(ledger + 8))
+    linux-check(0,load64(load64(row + LPS-USER-CONTEXT) + 736))
+    linux-check(flags,domain-page-flags(primary,0x20000000))
+    linux-check(spare-flags,domain-page-flags(secondary,0x20000000))
+    linux-check(0x123456789ABCDEF,load64(frame));linux-check(0x76543210ABCDEF,load64(spare))
+    linux-check(-5,linux-process-run(0,0,"/refused","","",pipe-check-authority))
+    linux-check(heap,heap-next);linux-check(free,linux-check-free-count())
+    linux-check(owned,domain-user-owned);linux-check(domains,domain-count)
+    linux-check(native,pipe-check-native-count())
+    linux-process-active = 0
+    linux-check(0,linux-process-cleanup-recover())
+    linux-check(0,linux-process-cleanup-failed)
+    linux-check(0,load64(row + LPS-DOMAIN));linux-check(0,load64(row + LPS-SPARE-DOMAIN))
+    linux-check(0,load64(row + LPS-PAGES));linux-check(0,load64(row + LPS-SPARE-PAGES))
+    linux-check(baseline-owned,domain-user-owned)
+    linux-check(native,pipe-check-native-count())
+    if iteration != 0 {
+      linux-check(baseline-heap,heap-next);linux-check(baseline-free,linux-check-free-count())
+      linux-check(baseline-domains,domain-count)
+    }
+    iteration = iteration + 1
+  }
+  serial-write-cstr(com1(),"child-corpus: retained teardown refusal and recovery passed")
+  serial-nl(com1())
+}

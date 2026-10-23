@@ -16,7 +16,7 @@ fn linux-process-file-unlock-close(fd: Int) -> void {
   let row = linux-process-file-identities + fd * 16
   let inode = load64(row)
   let mount = load64(row + 8)
-  if inode > 0 && mount > 0 { fs-range-release-owner-file(1000 + linux-process-domain,mount,inode) }
+  if inode > 0 && mount > 0 { fs-range-release-owner-file(linux-process-state-id(),mount,inode) }
   store64(row,0); store64(row + 8,0)
   return
 }
@@ -75,6 +75,7 @@ fn linux-process-file-stat-at(directory: Int, path: Int, buffer: Int, flags: Int
 fn linux-process-file-sync(fd: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 { return -22 }
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   // RAM is synchronous; direct NVMe requires a matched successful namespace
@@ -90,6 +91,7 @@ fn linux-process-file-load64(address: Int) -> Int {
 fn linux-process-file-lock(fd: Int, command: Int, record: Int) -> Int {
   let host = linux-process-file-host(fd)
   if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 { return -38 }
   if command != 6 { return -38 }
   if linux-process-range(record,32,0) == 0 { return -14 }
   let kind = linux-process-read8(record) | (linux-process-read8(record + 1) << 8)
@@ -102,7 +104,7 @@ fn linux-process-file-lock(fd: Int, command: Int, record: Int) -> Int {
   let ready = linux-process-files-ready()
   if ready < 0 { return ready }
   let row = linux-process-file-identities + fd * 16
-  let result = fs-range-lease(1000 + linux-process-domain,load64(row + 8),load64(row),start,length,kind)
+  let result = fs-range-lease(linux-process-state-id(),load64(row + 8),load64(row),start,length,kind)
   if result == -2 { return -11 }
   if result == -3 { return -37 }
   if result < 0 { return -22 }

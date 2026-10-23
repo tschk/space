@@ -21,6 +21,12 @@ fn pipe-check-native-count()->Int {
 fn pipe-check-init()->void {
  pipe-check-authority=cap-mint(root-realm,cap-memory()|cap-serial());
  pipe-check-revocable=cap-mint(root-realm,cap-memory());
+ // A cached process record can supply fdflags before shared owner setup.
+ let supplied=alloc(VFS-MAX-FDS*8);let f=0;
+ while f<VFS-MAX-FDS{store64(supplied+f*8,0);f=f+1;}
+ store64(supplied+15*8,1);linux-process-pipe-fdflags=supplied;
+ linux-process-pipe-state();
+ linux-check(supplied,linux-process-pipe-fdflags);linux-check(1,load64(supplied+15*8));
  pipe-check-witness-result=alloc(8);
  linux-check(0,vfs-stream-pair(1,1,0,pipe-check-witness-result));
  pipe-check-witness-reader=load32(pipe-check-witness-result);
@@ -86,6 +92,16 @@ fn pipe-check-negatives()->void {
  linux-process-authority=pipe-check-revocable;
  linux-check(0,linux-process-pipe-create(0x20000000,0x800));
  let reader=linux-process-read32(0x20000000);let writer=linux-process-read32(0x20000004);
+ // A retained native alias outside the active guest table models a suspended
+ // relative. Shared OFB flags must update it without touching another pair.
+ let oldhost=linux-process-pipe-host(writer);let external=vfs-stream-dup(oldhost);
+ if external<3{panic("pipe suspended alias");}
+ store64(vfs-fd-table+external*32+16,load64(vfs-fd-table+oldhost*32+16));
+ linux-check(0,linux-process-pipe-fcntl(writer,4,1));
+ linux-check(1,load64(vfs-fd-table+external*32+16));
+ linux-check(VFS-O-RDWR,load64(vfs-fd-table+pipe-check-witness-writer*32+16));
+ linux-check(0,linux-process-pipe-fcntl(writer,4,0x800));
+ linux-check(0x801,load64(vfs-fd-table+external*32+16));linux-check(0,vfs-close(external));
  linux-check(-9,linux-process-pipe-host(15));
  let caprow=cap-table-base+pipe-check-revocable*16;let target=load64(caprow);
  linux-check(0,cap-revoke(pipe-check-revocable));

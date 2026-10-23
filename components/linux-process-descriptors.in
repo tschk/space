@@ -1,0 +1,99 @@
+package space.kernel
+
+// The native VFS owns an EOF/discard open object and its shared description.
+// Only this foreign edge gives that object the Linux spelling /dev/null.
+fn linux-process-discard-is(fd: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return 0 }
+  return vfs-discard-valid(host)
+}
+
+fn linux-process-discard-open(flags: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (flags & 3) == 3 || (flags & 0xB8EC3) != flags { return -22 }
+  if (flags & 0x10000) != 0 { return -20 }
+  if (flags & 0xC0) == 0xC0 { return -17 }
+  let slot = 0
+  while slot < VFS-MAX-FDS && linux-process-pipe-slot-used(slot) != 0 { slot = slot + 1 }
+  if slot == VFS-MAX-FDS { return -24 }
+  let host = vfs-discard-open(flags & 3)
+  if host < 0 { return host }
+  store64(vfs-fd-table + host * 32 + 16,(flags & (3 | 0xC00)))
+  store64(linux-process-files + slot * 8,host)
+  store64(linux-process-file-fdflags + slot * 8,(flags >> 19) & 1)
+  store64(linux-process-file-identities + slot * 16,0)
+  store64(linux-process-file-identities + slot * 16 + 8,0)
+  return slot
+}
+
+fn linux-process-discard-io(fd: Int, buffer: Int, count: Int, writing: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if vfs-discard-valid(host) == 0 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  let mode = load64(vfs-fd-table + host * 32 + 16) & 3
+  if (writing == 0 && mode == 1) || (writing != 0 && mode == 0) { return -9 }
+  if count < 0 || count > 65536 { return -22 }
+  // Space validates the entire supplied guest range even when this particular
+  // object needs no data copy. Linux may accept an unused invalid pointer.
+  if linux-process-range(buffer,count,1 - writing) == 0 { return -14 }
+  if writing == 0 { return vfs-read(host,linux-process-file-buffer,count) }
+  return vfs-write(host,linux-process-file-buffer,count)
+}
+
+fn linux-process-discard-stat(fd: Int, buffer: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if vfs-discard-valid(host) == 0 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if linux-process-range(buffer,144,1) == 0 { return -14 }
+  let result = vfs-discard-stat(host,linux-process-file-buffer)
+  if result != 0 { return result }
+  let i = 0
+  while i < 144 { linux-process-store8(buffer + i,0);i = i + 1 }
+  linux-process-store64(buffer,load64(linux-process-file-buffer + 56))
+  linux-process-store64(buffer + 8,load64(linux-process-file-buffer + 48))
+  linux-process-store64(buffer + 16,load32(linux-process-file-buffer + 16))
+  linux-process-store64(buffer + 24,0x2000 | load32(linux-process-file-buffer + 4))
+  linux-process-store64(buffer + 40,0x103)
+  linux-process-store64(buffer + 56,4096)
+  return 0
+}
+
+fn linux-process-descriptor-dup(old: Int, chosen: Int, flags: Int, minimum: Int) -> Int {
+  if linux-process-pipe-is(old) != 0 { return linux-process-pipe-dup(old,chosen,flags,minimum) }
+  let host = linux-process-file-host(old)
+  if host < 3 { if linux-process-descriptor-flags(old) >= 0 { return -38 } return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if (flags & 0x80000) != flags { return -22 }
+  if chosen == -1 {
+    if minimum < 0 || minimum >= VFS-MAX-FDS { return -22 }
+    chosen = minimum
+    while chosen < VFS-MAX-FDS && linux-process-pipe-slot-used(chosen) != 0 { chosen = chosen + 1 }
+    if chosen >= VFS-MAX-FDS { return -24 }
+  }
+  if chosen < 0 || chosen >= VFS-MAX-FDS { return -9 }
+  if chosen == old { if flags != 0 { return -22 } return chosen }
+  let native = linux-process-file-host(chosen)
+  if native < 3 { native = vfs-fd-alloc();if native < 3 { return -24 } }
+  // Ensure source's shared description is retained before replacing a target.
+  // Native open/dup always has such a record; this also validates direct rows.
+  if vfs-fd-open-file(host) == 0 { return -24 }
+  if linux-process-pipe-is(chosen) != 0 { linux-process-pipe-close(chosen) }
+  else if linux-process-file-host(chosen) >= 3 { linux-process-file-unlock-close(chosen) }
+  let result = vfs-dup-file-into(host,native)
+  if result < 0 { return result }
+  if vfs-discard-valid(native) == 0 {
+    let path = load64(vfs-fd-table + host * 32)
+    let dest = linux-process-file-paths + chosen * 256
+    let i = 0
+    while i < 256 && load8(path + i) != 0 { store8(dest + i,load8(path + i));i = i + 1 }
+    if i == 256 { vfs-close(native);return -36 }
+    store8(dest + i,0)
+    store64(vfs-fd-table + native * 32,dest)
+  }
+  if chosen == 1 { linux-process-stdout-open = 0 }
+  if chosen == 2 { linux-process-stderr-open = 0 }
+  store64(linux-process-files + chosen * 8,native)
+  store64(linux-process-file-fdflags + chosen * 8,(flags >> 19) & 1)
+  linux-process-state-copy(linux-process-file-identities + chosen * 16,linux-process-file-identities + old * 16,16)
+  return chosen
+}
