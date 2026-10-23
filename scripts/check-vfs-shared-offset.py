@@ -24,7 +24,7 @@ source = "\n".join(
     for line in (root / "components/darwin.in").read_text().splitlines()
     if line.startswith("const DARWIN-")
 )
-source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\nconst VFS-O-RDONLY=0;\nconst VFS-O-WRONLY=1;\nconst VFS-O-RDWR=2;\n"
+source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\nconst VFS-O-RDONLY=0;\nconst VFS-O-WRONLY=1;\nconst VFS-O-RDWR=2;\nconst VFS-FD-DISCARD=4;\n"
 source += "var heap:[Int]=[" + ",".join(["0"] * 32768) + "];\n"
 source += """
 var cursor:Int=8;
@@ -74,6 +74,12 @@ for name in ["vfs-stream-pair-valid", "vfs-stream-valid", "vfs-stream-release",
              "vfs-stream-read", "vfs-stream-write"]:
     source += extract("vfs.in", name) + "\n"
 for name in [
+    "vfs-discard-tagged",
+    "vfs-discard-valid",
+    "vfs-discard-read",
+    "vfs-discard-write",
+    "vfs-discard-seek",
+    "vfs-dup-file-into",
     "vfs-fd-table-alloc",
     "vfs-fd-clear",
     "vfs-fd-open-file",

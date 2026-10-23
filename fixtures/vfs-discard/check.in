@@ -1,0 +1,106 @@
+// Runs against the actual owning VFS implementation, in JIT and native boot.
+fn discard-proof() -> Int {
+  let before = heap-next
+  let stat = alloc(80)
+  let warmed = heap-next
+  if vfs-discard-open(-1) != -22 || vfs-discard-open(3) != -22 { return 1 }
+  let ro = vfs-discard-open(0)
+  let wo = vfs-discard-open(1)
+  let rw = vfs-discard-open(2)
+  if ro < 3 || wo < 3 || rw < 3 { return 2 }
+  // The object never consumes a buffer, even at an inaccessible address.
+  if vfs-read(ro,0,9223372036854775807) != 0 || vfs-write(wo,0,9223372036854775807) != 9223372036854775807 { return 3 }
+  if vfs-read(wo,0,1) != -9 || vfs-write(ro,0,1) != -9 { return 4 }
+  if vfs-read(rw,0,-1) != -22 || vfs-write(rw,0,-1) != -22 { return 5 }
+  if vfs-read(rw,0,0) != 0 || vfs-write(rw,0,0) != 0 { return 6 }
+  let origin = 0
+  while origin < 3 {
+    if vfs-lseek(rw,-9223372036854775807,origin) != 0 || vfs-fd-offset(rw) != 0 { return 7 }
+    origin += 1
+  }
+  if vfs-lseek(rw,0,-1) != -22 || vfs-lseek(rw,0,3) != -22 { return 8 }
+  store64(stat,12345);store64(stat + 72,67890)
+  if vfs-discard-stat(rw,stat + 8) != 0 || load64(stat) != 12345 || load64(stat + 72) != 67890 { return 9 }
+  if load32(stat + 8) != 3 || load32(stat + 12) != 438 || load64(stat + 16) != 0 || load32(stat + 24) != 1 { return 10 }
+  if load64(stat + 32) != 0 || load64(stat + 40) != 0 || load64(stat + 48) != 0 || load64(stat + 56) <= 0 || load64(stat + 64) != 0 { return 11 }
+  let identity = load64(stat + 56)
+  if vfs-discard-stat(rw,0) != -14 { return 12 }
+  let copy = vfs-dup-file(rw)
+  if copy < 3 || vfs-discard-stat(copy,stat + 8) != 0 || load64(stat + 56) != identity { return 13 }
+  if vfs-close(rw) != 0 || vfs-write(copy,0,19) != 19 { return 14 }
+  if vfs-dup-file-into(copy,copy) != copy { return 15 }
+  // Replacing a sibling must retain the same live shared description.
+  let sibling = vfs-dup-file(copy)
+  if vfs-dup-file-into(copy,sibling) != sibling || vfs-close(copy) != 0 || vfs-read(sibling,0,1) != 0 { return 16 }
+  if vfs-close(sibling) != 0 || vfs-close(sibling) != -9 { return 17 }
+  if vfs-close(ro) != 0 || vfs-close(wo) != 0 { return 18 }
+  // Full-table replacement works without a temporary free descriptor.
+  let i = 3
+  while i < 16 { if vfs-discard-open(2) != i { return 19 }; i += 1 }
+  if vfs-discard-open(2) != -24 || vfs-dup-file(3) != -16 { return 20 }
+  let record = vfs-fd-open-file(3)
+  if vfs-dup-file-into(3,15) != 15 || load64(record + 8) != 2 { return 21 }
+  if vfs-close(3) != 0 || vfs-write(15,0,37) != 37 { return 22 }
+  i = 4
+  while i < 16 { if vfs-close(i) != 0 { return 23 }; i += 1 }
+  // Malformed tagged objects must refuse before ordinary pathname dispatch.
+  let bad = vfs-discard-open(2)
+  let mapping = vfs-fd-table + VFS-MAX-FDS * 32 + bad * 8
+  let actual = load64(mapping)
+  store64(mapping,1)
+  if vfs-read(bad,0,1) != -9 || vfs-write(bad,0,1) != -9 || vfs-lseek(bad,0,0) != -9 || vfs-close(bad) != -9 || vfs-dup-file(bad) != -9 { return 24 }
+  store64(mapping,actual)
+  if vfs-close(bad) != 0 { return 25 }
+  if vfs-dup-file-into(-1,3) != -9 || vfs-dup-file-into(3,16) != -9 || vfs-discard-stat(16,stat) != -9 { return 26 }
+  // Repeated reuse cannot grow the heap or retain description references.
+  i = 0
+  while i < 63 {
+    let a = vfs-discard-open(i % 3)
+    let b = vfs-dup-file(a)
+    if a != 3 || b != 4 || vfs-close(a) != 0 || vfs-close(b) != 0 { return 27 }
+    i += 1
+  }
+  let pool = vfs-fd-table + VFS-MAX-FDS * 40
+  i = 0
+  while i < 16 { if load64(pool + i * 16 + 8) != 0 { return 28 }; i += 1 }
+  if heap-next != warmed || warmed <= before { return 29 }
+  let one = vfs-discard-open(2)
+  let two = vfs-discard-open(2)
+  vfs-discard-stat(one,stat + 8)
+  let first-id = load64(stat + 56)
+  vfs-discard-stat(two,stat + 8)
+  if load64(stat + 56) == first-id { return 30 }
+  store64(vfs-fd-table + one * 32 + 16,2050)
+  if vfs-dup-file-into(one,two) != two || load64(vfs-fd-table + two * 32 + 16) != 2050 { return 31 }
+  vfs-discard-stat(two,stat + 8)
+  if load64(stat + 56) != first-id { return 32 }
+  vfs-close(one);vfs-close(two)
+  // A replaced stream endpoint releases its distinct endpoint ownership.
+  vfs-stream-init()
+  let stream-warm = heap-next
+  i = 0
+  while i < 21 {
+    if vfs-stream-pair(1,1,0,stat) != 0 { return 33 }
+    let left = load32(stat)
+    let right = load32(stat + 4)
+    let sink = vfs-discard-open(2)
+    if vfs-dup-file-into(sink,left) != left || vfs-stream-valid(left) != 0 || vfs-discard-valid(left) != 1 { return 34 }
+    if vfs-write(right,stat,1) != -32 { return 35 }
+    if vfs-close(right) != 0 || vfs-close(sink) != 0 || vfs-close(left) != 0 { return 36 }
+    i += 1
+  }
+  if heap-next != stream-warm { return 37 }
+  i = 0
+  while i < VFS-STREAM-MAX {
+    if vfs-stream-pairs[i].refs0 != 0 || vfs-stream-pairs[i].refs1 != 0 { return 38 }
+    i += 1
+  }
+  return 42
+}
+
+fn discard-runtime-proof(port: Int) -> Void {
+  let result = discard-proof()
+  serial-write-cstr(port,"discard: result ");serial-write-dec-wide(port,result);serial-write-cstr(port,"\n")
+  if result == 42 { serial-write-cstr(port,"discard: actual native EOF sink lifetime PASS\n") }
+  outb(0xF4,16)
+}

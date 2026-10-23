@@ -212,27 +212,43 @@ fn vfs-open-path(pathname: Int, flags: Int, copy: Int) -> Int {
   return fd
 }
 
-// Duplicate a regular-file descriptor while retaining its shared open-file offset.
-// Pipe endpoint lifetime belongs to its personality and must not use this helper.
-fn vfs-dup-file(fd: Int) -> Int {
-  if fd < 3 || vfs-fd-valid(fd) == 0 { return -9 }
+// Retain a shared native file/discard description before replacing a target.
+// Native console slots 0..2 are not descriptor-table ownership targets.
+fn vfs-dup-file-into(fd: Int, target: Int) -> Int {
+  if fd < 3 || fd >= VFS-MAX-FDS || target < 3 || target >= VFS-MAX-FDS || vfs-fd-valid(fd) == 0 { return -9 }
   let base = vfs-fd-table + fd * 32
-  if load64(base + 24) != 0 { return -9 }
-  let copy = vfs-fd-alloc()
-  if copy < 0 { return -16 }
+  let kind = load64(base + 24)
+  if kind != 0 && kind != VFS-FD-DISCARD { return -9 }
+  if kind == VFS-FD-DISCARD && vfs-discard-valid(fd) == 0 { return -9 }
+  if vfs-discard-tagged(target) != 0 && vfs-discard-valid(target) == 0 { return -9 }
+  if fd == target { return target }
   let record = vfs-fd-open-file(fd)
   if record == 0 { return -16 }
+  // Reserve source first: target may reference this same description.
   store64(record + 8, load64(record + 8) + 1)
-  let target = vfs-fd-table + copy * 32
-  store64(target, load64(base))
-  store64(target + 8, vfs-fd-offset(fd))
-  store64(target + 16, load64(base + 16))
-  store64(target + 24, 0)
-  store64(vfs-fd-table + VFS-MAX-FDS * 32 + copy * 8, record)
-  return copy
+  vfs-fd-clear(target)
+  let dest = vfs-fd-table + target * 32
+  store64(dest, load64(base))
+  store64(dest + 8, vfs-fd-offset(fd))
+  store64(dest + 16, load64(base + 16))
+  store64(dest + 24, kind)
+  store64(vfs-fd-table + VFS-MAX-FDS * 32 + target * 8, record)
+  return target
+}
+
+// Stream endpoints have a separate lifetime; they use vfs-stream-dup.
+fn vfs-dup-file(fd: Int) -> Int {
+  if fd < 3 || fd >= VFS-MAX-FDS || vfs-fd-valid(fd) == 0 { return -9 }
+  let kind = load64(vfs-fd-table + fd * 32 + 24)
+  if kind != 0 && kind != VFS-FD-DISCARD { return -9 }
+  if kind == VFS-FD-DISCARD && vfs-discard-valid(fd) == 0 { return -9 }
+  let copy = vfs-fd-alloc()
+  if copy < 0 { return -16 }
+  return vfs-dup-file-into(fd,copy)
 }
 
 fn vfs-close(fd: Int) -> Int {
+  if vfs-discard-tagged(fd) != 0 && vfs-discard-valid(fd) == 0 { return -9 }
   if vfs-fd-valid(fd) == 0 {
     return -9
   }
@@ -244,6 +260,7 @@ fn vfs-close(fd: Int) -> Int {
 }
 
 fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-discard-tagged(fd) != 0 { return vfs-discard-read(fd,count) }
   if vfs-stream-valid(fd) != 0 { return vfs-stream-read(fd, buf, count) }
   if vfs-fd-valid(fd) == 0 {
     return -9
@@ -282,6 +299,7 @@ fn vfs-read(fd: Int, buf: Int, count: Int) -> Int {
 }
 
 fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
+  if vfs-discard-tagged(fd) != 0 { return vfs-discard-write(fd,count) }
   if vfs-stream-valid(fd) != 0 { return vfs-stream-write(fd, buf, count) }
   if vfs-fd-valid(fd) == 0 {
     return -9
@@ -316,6 +334,7 @@ fn vfs-write(fd: Int, buf: Int, count: Int) -> Int {
 }
 
 fn vfs-lseek(fd: Int, offset: Int, whence: Int) -> Int {
+  if vfs-discard-tagged(fd) != 0 { return vfs-discard-seek(fd,offset,whence) }
   if vfs-stream-valid(fd) != 0 { return -29 }
   if vfs-fd-valid(fd) == 0 {
     return -9
@@ -519,4 +538,77 @@ fn vfs-stream-write(fd: Int, buf: Int, count: Int) -> Int {
   if peer==0 { vfs-stream-pairs[pair - 1].count0=n+put }
   else { vfs-stream-pairs[pair - 1].count1=n+put }
   return put
+}
+
+
+// Native empty input / discard output object. This has no pathname, file
+// storage or data buffer. Personality names and guest-buffer authority stay at
+// the edge. Tag dispatch must precede all ordinary pathname dereferences.
+const VFS-FD-DISCARD = 4
+const VFS-TYPE-DISCARD = 3
+
+fn vfs-discard-tagged(fd: Int) -> Int {
+  if vfs-fd-table == 0 || fd < 3 || fd >= VFS-MAX-FDS { return 0 }
+  if load64(vfs-fd-table + fd * 32 + 24) == VFS-FD-DISCARD { return 1 }
+  return 0
+}
+
+fn vfs-discard-valid(fd: Int) -> Int {
+  if vfs-discard-tagged(fd) == 0 { return 0 }
+  let row = vfs-fd-table + fd * 32
+  if load64(row) != 0 || (load64(row + 16) & 3) == 3 { return 0 }
+  let record = load64(vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8)
+  let pool = vfs-fd-table + VFS-MAX-FDS * 40
+  if record < pool || record >= pool + VFS-MAX-FDS * 16 || (record - pool) % 16 != 0 { return 0 }
+  if load64(record + 8) <= 0 || load64(record + 8) > VFS-MAX-FDS { return 0 }
+  return 1
+}
+
+fn vfs-discard-open(flags: Int) -> Int {
+  if vfs-fd-table == 0 { return -9 }
+  if flags < VFS-O-RDONLY || flags > VFS-O-RDWR { return -22 }
+  let fd = vfs-fd-alloc()
+  if fd < 0 { return -24 }
+  let row = vfs-fd-table + fd * 32
+  store64(row,0)
+  store64(row + 8,0)
+  store64(row + 16,flags)
+  store64(row + 24,VFS-FD-DISCARD)
+  if vfs-fd-open-file(fd) == 0 { vfs-fd-clear(fd); return -24 }
+  return fd
+}
+
+fn vfs-discard-read(fd: Int, count: Int) -> Int {
+  if vfs-discard-valid(fd) == 0 { return -9 }
+  if (load64(vfs-fd-table + fd * 32 + 16) & 3) == VFS-O-WRONLY { return -9 }
+  if count < 0 { return -22 }
+  return 0
+}
+
+fn vfs-discard-write(fd: Int, count: Int) -> Int {
+  if vfs-discard-valid(fd) == 0 { return -9 }
+  if (load64(vfs-fd-table + fd * 32 + 16) & 3) == VFS-O-RDONLY { return -9 }
+  if count < 0 { return -22 }
+  return count
+}
+
+fn vfs-discard-seek(fd: Int, offset: Int, origin: Int) -> Int {
+  if vfs-discard-valid(fd) == 0 { return -9 }
+  if origin < 0 || origin > 2 { return -22 }
+  // This object never has buffered bytes or a movable offset.
+  return 0
+}
+
+fn vfs-discard-stat(fd: Int, output: Int) -> Int {
+  if vfs-discard-valid(fd) == 0 { return -9 }
+  if output <= 0 { return -14 }
+  let i = 0
+  while i < 64 { store64(output + i,0); i = i + 8 }
+  store32(output + SF-ST-TYPE,VFS-TYPE-DISCARD)
+  store32(output + SF-ST-MODE,438)
+  store32(output + SF-ST-NLINK,1)
+  let record = load64(vfs-fd-table + VFS-MAX-FDS * 32 + fd * 8)
+  let pool = vfs-fd-table + VFS-MAX-FDS * 40
+  store64(output + SF-ST-INODE,(record - pool) / 16 + 1)
+  return 0
 }
