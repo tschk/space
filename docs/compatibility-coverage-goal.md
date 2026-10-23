@@ -25,14 +25,17 @@ actual CPU faults, timer cancellation, authority denial and resource checks.
 Actual owned pipes pass220 protected launches across standard/minimal images;
 the original BusyBox child corpus now passes nine cases on both standard and
 minimal images (106 upstream activations), including two/three-stage pipelines,
-self-exec, subshells and background wait. The larger 10902-byte pipeline remains
-a captured failure at the4096-byte pipe capacity; genuine blocked-process
-scheduling is the next requirement. SQLite now also completes
+self-exec, subshells and background wait. The new bounded blocking scheduler
+passes the original10902-byte pipeline and110000-byte count/exact-output
+pipelines on both roots, keeping the native ring at4096 bytes. Each root passes
+122 actual upstream BusyBox activations; original failure receipts remain
+preserved. SQLite now also completes
 real RAM-backed database transactions and separate-process reopen:14 cases,
 146 activations and21 repeated fault/cleanup cycles pass, including a9000-byte
 blob and rollback preserving its contents. Original SQLite also passes three actual NVMe boots, checked FLUSH and
 independent host database integrity checks after commit/update/rollback.
-Blocking pipelines, crash atomicity and the broader database acceptance rows remain open.
+General process scheduling, crash atomicity and the broader database acceptance
+rows remain open.
 
 Protected Mach-O supports checked raw Darwin calls and typed libSystem imports;
 protected PE supports ten typed KERNEL32 imports and a broader validated section
@@ -88,15 +91,23 @@ activations. These are separate checkpoint receipts, not an extension of the
 suspend-budget accounting gaps; the committed fix (`211be9e`) bounds activation
 preparations to32, carries the actual remaining delivered IRQ budget, and closes
 serial descriptors marked CLOEXEC on self-exec. A generated omission control
-proves the budget fix changes actual cancellation behavior. Larger blocking
-pipelines remain a visible failing case.
+proves the budget fix changes actual cancellation behavior. The subsequent
+blocking scheduler passes14 synthetic cases/308 activations per root, including
+actual suspension, EOF/SIGPIPE wakeup, atomic short writes and exact partial
+progress. It separately bounds kernel policy work at4096 units; policy
+cancellation126, deadlock125 and actual IRQ deadline124 remain distinct. The
+23-case child regression passes506 activations per root. The robust cumulative
+budget fixture now observes real delivered IRQs in an explicitly recorded
+test-only source profile; the earlier timing-dependent failure is retained.
 
 Windows environment and native hardware-counter translation are committed in
 `2de596c`; the private process heap is committed in `03fa931`. Their actual
 protected checks pass380 environment,593 counter/clock and485 heap launches,
 with explicit unavailable-counter and allocation/admission refusals. TLS/FLS
 callbacks are committed in `66d1290`, with3544 activations across eight fresh
-boots, all14 older regressions and exact cold-cache admission/recovery checks. Original Windows applications remain refused.
+boots, all14 older regressions and exact cold-cache admission/recovery checks. Recursive critical sections are committed in `96ef514`, with654 focused
+activations and all15 older regressions. Original Windows applications remain
+refused; composition of the verified API groups is being implemented.
 
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
@@ -106,8 +117,15 @@ exact first-cache memory admission/recovery and unchanged483/548 old gates.
 Protected native SCI profiles are committed in `78fdae6`, with separate
 paged279/immutable274 actual invocation proofs,140 protected lifecycle
 instances per profile and exact32MiB refusal/recovery. The shipped native GUI
-loader remains trusted CPL0; the new protected GUI integration is in progress. Protected GUI clients,
-original Darwin/Windows applications and foreign GUI workloads remain open.
+loader remains trusted CPL0; the new protected GUI integration is in progress. Protected GUI core3 is committed in `f3e12fd`: owned read-only input rings,
+writable staging and separate immutable accepted presentation frames pass
+actual hostile-write, lifetime and low-memory checks. The opt-in real calculator
+and editor now pass all six output/scale modes and129 sessions/258 instances.
+Manager fault recovery and persistence gates are being finalized before default
+launch integration. Original Darwin/Windows applications and foreign GUI
+workloads remain open. Eager Mach-O chained imports are committed in `174d708`
+with254 actual executions and malformed/unused-import refusal controls; the new
+Darwin heap adapter remains a separate in-progress checkpoint.
 
 The subsequent69-gate immutable run passes68 and fails one cumulative-budget
 test on the minimal image; source/compiler/application integrity passes. This

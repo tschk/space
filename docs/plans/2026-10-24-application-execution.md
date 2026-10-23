@@ -215,3 +215,42 @@ its eighth measured activation; earlier cycles and the standard counterpart
 pass. Preserve that test failure and replace its host-speed assumption with a
 robust actual-IRQ witness before claiming complete integration. The69-gate
 snapshot predates the native SCI and Windows TLS/FLS commits above.
+
+
+## Protected GUI and blocking-pipeline checkpoint under review
+
+Protected GUI core3 (`f3e12fd`) separates writable guest staging from immutable
+supervisor presentation frames. `/workspace/np-gui-final/report.json` proves
+140 protected lifecycle instances, real traps, stale/revoked epochs and hostile
+staging writes preserving accepted pixels. Exact low-memory refusal/recovery
+passes separately. The frozen-source standard GUI, desktop damage and desktop
+launcher regressions also pass; the interrupted launcher attempt is retained,
+with the completed rerun in `/workspace/np-gui-launcher-recovered.log`.
+
+The opt-in product calculator/editor use these actual protected services.
+`/workspace/local-evidence/gui-protected-readable-standalone/report.json` passes
+all six output/scale combinations with actual keyboard/pointer and exact pixels.
+`/workspace/local-evidence/gui-protected-readable-129-sixth/report.json` passes
+129 sessions/258 instances with exact resource recovery, peer interaction, stale
+identity refusal and no remint after revoking the launch grant. Earlier capacity
+and ownership failures remain preserved. Persistence and manager fault gates
+are being finalized; shipped default clients remain trusted CPL0.
+
+The final blocking scheduler keeps the native ring at4096 bytes and makes the
+previously failing upstream10902/110000-byte pipelines work. Standard evidence
+is `/tmp/space-linux-busybox-blocking-terminal-standard-final21/report.json`;
+minimal evidence is
+`/workspace/linux-blocking-app-terminal-minimal325-final21/report.json`.
+Each passes122 actual upstream activations. The exact110000-byte numbered output
+hash matches the input:
+`1c7898d6f3630eeddf65917d04f0a07a421f1192d6a6acd122108b5fc747af57`.
+The14-case blocking and23-case child suites pass308 and506 activations per root.
+[The focused evidence](../linux-blocking-tests.md) records terminal-priority,
+retry authority/mapping and actual IRQ controls. These are separate reviewed
+receipts; they do not turn the historical69-gate failure into a passing run.
+
+Windows critical sections (`96ef514`) pass654 focused activations and all15
+older gates. Eager Mach-O chained imports (`174d708`) pass254 executions and
+complete unused-import validation. Original Darwin/Windows applications still
+refuse admission. API composition and the separately owned Darwin heap are the
+next active implementation slices.

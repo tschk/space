@@ -60,7 +60,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children are included; blocking pipelines, arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children and blocking pipelines are included, along with opt-in protected native SCI and GUI ownership. Arbitrary upstream Darwin/Windows and foreign GUI applications remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -204,6 +204,11 @@ def main():
     for variant in ['standard', 'minimal']:
         check('linux-children-' + variant, 'check-linux-children.py', '--in', args.compiler,
               '--root', variant, '--out', args.out / ('linux-children-' + variant))
+        check('linux-blocking-' + variant, 'check-linux-blocking.py', '--in', args.compiler,
+              '--root', variant, '--out', args.out / ('linux-blocking-' + variant), timeout=660)
+        check('linux-busybox-blocking-' + variant, 'check-linux-blocking-pipeline.py',
+              '--in', args.compiler, '--busybox', applications['busybox'], '--root', variant,
+              '--out', args.out / ('linux-busybox-blocking-' + variant), timeout=660)
         check('linux-busybox-children-' + variant, 'check-linux-corpus.py', '--in', args.compiler,
               '--application', 'busybox', '--app', applications['busybox'], '--suite', '--input-suite',
               '--case-config', ROOT / 'fixtures/applications/busybox-1.36.1-children-cases.json',
@@ -218,6 +223,10 @@ def main():
           '--out', args.out / 'darwin-startup-owner')
     check('darwin-startup', 'check-darwin-startup.py', '--in', args.compiler,
           '--app', applications['darwin'], '--out', args.out / 'darwin-startup')
+    check('darwin-eager-owner', 'check-darwin-eager-owner.py', '--in', args.compiler,
+          '--out', args.out / 'darwin-eager-owner')
+    check('darwin-eager', 'check-darwin-eager.py', '--in', args.compiler,
+          '--app', applications['darwin'], '--out', args.out / 'darwin-eager')
     check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
     check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
           '--app', applications['windows'], '--out', args.out / 'windows-process')
@@ -231,7 +240,9 @@ def main():
                          ('windows-filetime', 'check-windows-filetime.py'),
                          ('windows-environment', 'check-windows-environment.py'),
                          ('windows-counter', 'check-windows-counter.py'),
-                         ('windows-heap', 'check-windows-heap.py')]:
+                         ('windows-heap', 'check-windows-heap.py'),
+                         ('windows-local', 'check-windows-local.py'),
+                         ('windows-critical', 'check-windows-critical.py')]:
         check(name, script, '--in', args.compiler, '--out', args.out / name)
     check('windows-files', 'check-windows-files.py', '--in', args.compiler, '--out', args.out / 'windows-files')
     check('windows-write', 'check-windows-write.py', '--in', args.compiler, '--out', args.out / 'windows-write')
@@ -251,6 +262,16 @@ def main():
     check('native-lifecycle', 'check-native-lifecycle.py', '--in', args.compiler, '--out', args.out / 'native-lifecycle')
     check('native-retained', 'check-native-retained.py', '--in', args.compiler,
           '--out', args.out / 'native-retained')
+    for profile in ['immutable', 'paged']:
+        check('native-protected-' + profile, 'check-native-protected.py', '--in', args.compiler,
+              '--profile', profile, '--out', args.out / ('native-protected-' + profile))
+    check('native-protected-oom', 'check-native-protected.py', '--in', args.compiler,
+          '--profile', 'paged', '--mode', 'oom', '--out', args.out / 'native-protected-oom')
+    for mode in ['full', 'oom']:
+        check('native-protected-gui-' + mode, 'check-native-protected-gui.py', '--in', args.compiler,
+              '--mode', mode, '--out', args.out / ('native-protected-gui-' + mode))
+    check('gui-protected-package', 'check-gui-protected-profile.py', '--in', args.compiler,
+          '--out', args.out / 'gui-protected-package')
     check('standard-gui', 'check-standard-gui.py', '--in', args.compiler, '--build-dir', args.out / 'standard-gui')
     check('native-gui-apps', 'check-gui-apps.py', '--in', args.compiler, '--build-dir', args.out / 'gui-apps')
     check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')
