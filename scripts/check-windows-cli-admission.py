@@ -22,7 +22,7 @@ source=(ROOT/'kernel/kernel-root.in').read_text()
 source=re.sub(r'import "\.\./([^"]+)"',lambda m:'import '+json.dumps(str(ROOT/m.group(1))),source)
 assert source.count('  shell(port)')==1
 source=source.replace('  shell(port)','  windows-cli-admission-check(port)\n  shell(port)')
-source+='\nfn windows-cli-admission-check(port:Int)->void{\n if heap-next>=0x10000000{panic("CLI staging collides with heap");}heap-end=0x10000000;\n'
+source+='\nfn windows-cli-admission-check(port:Int)->void{\n if heap-next>=0x10000000{panic("CLI staging collides with heap");}heap-end=0x10000000;let timer=cap-mint(root-realm,cap-timer());\n'
 loaders=[]
 for i,app in enumerate(apps):
     path=(a.apps/app['filename']).resolve();data=path.read_bytes()
@@ -40,16 +40,17 @@ for i,app in enumerate(apps):
     source+=''' let heapINDEX=heap-next;let freeINDEX=free-list;let domainsINDEX=domain-count;let ownedINDEX=domain-user-owned;
  DIAGNOSTIC
  let cycleINDEX=0;while cycleINDEX<21{
-  let profile=0;while profile<4{
+  let profile=0;while profile<5{
    let result=-8;if profile<3{result=windows-protected-run-profile(BASE,SIZE,-1,-1,profile);}
-   else{let line="APPLICATION -version";result=windows-command-run(BASE,SIZE,-1,-1,line,strlen(line)+1);}
+   else if profile==3{let line="APPLICATION -version";result=windows-command-run(BASE,SIZE,-1,-1,line,strlen(line)+1);}
+   else{let line="APPLICATION -version";result=windows-command-time-run(BASE,SIZE,-1,-1,timer,line,strlen(line)+1);}
    if result!=-8{panic("Original Windows CLI unexpectedly admitted");}
    if heap-next!=heapINDEX || free-list!=freeINDEX || domain-count!=domainsINDEX || domain-user-owned!=ownedINDEX || windows-protected-busy!=0{panic("Original Windows CLI refusal changed ownership");}
    profile=profile+1;
   }cycleINDEX=cycleINDEX+1;
  }
 '''.replace('INDEX',str(i)).replace('BASE',str(base)).replace('SIZE',str(len(data))).replace('APPLICATION',app['filename']).replace('DIAGNOSTIC',diagnostic)
-source+=' serial-write-cstr(port,"windows-cli-admission: official SQLite and 7za unchanged refusals before allocation PASS");serial-nl(port);}\n'
+source+=' cap-revoke(timer);serial-write-cstr(port,"windows-cli-admission: official SQLite and 7za unchanged refusals before allocation PASS");serial-nl(port);}\n'
 (out/'kernel.in').write_text(source)
 commands=[['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(out/'trampoline.bin')],[a.compiler,'compile','--path',str(out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(out/'kernel.bin')]]
 with (out/'compile.log').open('w') as log:
@@ -81,5 +82,5 @@ with (out/'qemu.log').open('w') as log:
         qemu.terminate()
         try:qemu.wait(timeout=5)
         except subprocess.TimeoutExpired:qemu.kill();qemu.wait()
-report=dict(status='passed',refusals=168,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
+report=dict(status='passed',refusals=210,sqlite_diagnostics=dict(structure_entry='0x140003a8a',mapped_pages=946,unsupported_directory_mask='0x46c',first_unsupported_import_index=2,first_unsupported_import='GetEnvironmentVariableA',import_slots=157,execution_import_slot_limit=32),apps=[dict(id=app['id'],sha256=app['sha256'],admission=-8,executed=False) for app in apps],compiler_sha256=hashlib.sha256(Path(a.compiler).read_bytes()).hexdigest(),kernel_sha256=hashlib.sha256(kernel).hexdigest(),commands=commands,qemu_command=qemu_command)
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report['apps']))

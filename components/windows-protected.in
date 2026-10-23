@@ -418,6 +418,7 @@ fn windows-protected-dispatch(frame: Int) -> Int {
   if windows-protected-busy == 0 || domain-current != windows-protected-domain { store64(frame + 112, -1); return 0 }
   if windows-protected-profile >= 2 { windows-protected-error = load32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104)) }
   let num = load64(frame + 112)
+  if num == 0x100011 && windows-protected-profile == 4 { return windows-parameters-time-dispatch(frame) }
   let result = 0
   if num == 0x100003 { store64(frame + 112, load64(frame + 96) & 0xFFFFFFFF); return 0 }
   if num == 0x100000 {
@@ -448,6 +449,10 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   else if profile == 3 {
     if windows-parameters-active == 0 { return -22 }
     entry = windows-startup-entry-mode(image, size, 1)
+  }
+  if profile == 4 {
+    if windows-parameters-time-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 2)
   }
   if entry < 0 { return entry }
   if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
@@ -519,7 +524,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
   }
   let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
   i = 0
-  while i < 17 {
+  while i < 18 {
     let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
     store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
     i = i + 1
@@ -538,7 +543,8 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     while i < 32 && load64(image + windows-protected-rva(image, size, lookup + i * 8, 8)) != 0 {
       let index = i
       if profile >= 1 { index = windows-application-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
-      if profile == 3 { index = windows-parameters-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 3 { index = windows-parameters-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 4 { index = windows-parameters-time-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
       store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
     }
   }
@@ -557,7 +563,7 @@ fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage:
     entry = windows-startup-prepare(image, size, stub, domain, entry)
     wrmsr64(0xC0000101, WINDOWS-STARTUP-TEB)
   }
-  if profile == 3 { windows-parameters-prepare(domain) }
+  if profile >= 3 { windows-parameters-prepare(domain) }
   domain-user-syscall-hook = windows-protected-dispatch
   let status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FF8, windows-protected-context, windows-protected-budget)
   wrmsr64(0xC0000100, caller-fs)

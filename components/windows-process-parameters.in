@@ -1,6 +1,7 @@
 package space.kernel
 
 import "windows-process-identity.in"
+import "windows-process-time.in"
 
 // Bounded, explicit process-parameter profile. The borrowed native input is
 // copied into an execution-owned RO user page before entry; no kernel pointer
@@ -75,21 +76,30 @@ fn windows-parameters-dispatch(frame: Int, num: Int) -> Int {
   return 0
 }
 
-fn windows-command-run(image: Int, size: Int, authority: Int, storage: Int, line: Int, bytes: Int) -> Int {
-  if domain-current != 0 || windows-protected-busy != 0 || windows-parameters-active != 0 { return -16 }
-  if line <= 0 || bytes < 1 || bytes > 1024 || line > 0x100000000 - bytes || load8(line + bytes - 1) != 0 { return -22 }
+fn windows-parameters-line-valid(line: Int, bytes: Int) -> Int {
+  if line <= 0 || bytes < 1 || bytes > 1024 || line > 0x100000000 - bytes || load8(line + bytes - 1) != 0 { return 0 }
   let i = 0
   while i < bytes - 1 {
     let c = load8(line + i)
-    if c == 0 || c > 127 { return -22 }
+    if c == 0 || c > 127 { return 0 }
     i = i + 1
   }
+  return 1
+}
+
+fn windows-command-run-profile(image: Int, size: Int, authority: Int, storage: Int, line: Int, bytes: Int, profile: Int) -> Int {
+  if domain-current != 0 || windows-protected-busy != 0 || windows-parameters-active != 0 { return -16 }
+  if windows-parameters-line-valid(line, bytes) == 0 { return -22 }
   windows-parameters-line = line
   windows-parameters-bytes = bytes
   windows-parameters-active = 1
-  let result = windows-protected-run-profile(image, size, authority, storage, 3)
+  let result = windows-protected-run-profile(image, size, authority, storage, profile)
   windows-parameters-line = 0
   windows-parameters-bytes = 0
   windows-parameters-active = 0
   return result
+}
+
+fn windows-command-run(image: Int, size: Int, authority: Int, storage: Int, line: Int, bytes: Int) -> Int {
+  return windows-command-run-profile(image, size, authority, storage, line, bytes, 3)
 }

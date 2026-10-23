@@ -1,0 +1,53 @@
+package space.kernel
+
+// UTC FILETIME translation of the native coherent RTC provider. Authority is a
+// live borrowed TimeSource represented by the existing native timer grant.
+// No QPC, elapsed-time, high-resolution, cache or fabricated fallback contract.
+var windows-parameters-time-authority: Int = -1
+var windows-parameters-time-active: Int = 0
+var windows-parameters-time-anchor: Int = 0
+
+fn windows-parameters-time-import(image: Int, size: Int, name: Int) -> Int {
+  let id = windows-parameters-import-id(image, size, name)
+  if id >= 0 { return id }
+  if windows-protected-rva(image, size, name, 2) < 0 { return -1 }
+  if windows-protected-name(image, size, name + 2, "GetSystemTimeAsFileTime") != 0 { return 17 }
+  return -1
+}
+
+// Return activation control (1 resumes, 0 terminates), never a pretend BOOL
+// result for the void Windows API. Failures leave every guest output byte alone.
+fn windows-parameters-time-dispatch(frame: Int) -> Int {
+  if windows-parameters-time-active == 0 || cap-check(windows-parameters-time-authority, cap-timer()) == 0 {
+    store64(frame + 112, 126);return 0
+  }
+  let output = load64(frame + 96)
+  if windows-protected-span(output, 8, 1) == 0 { store64(frame + 112, 142);return 0 }
+  let seconds = time-component-wallclock()
+  if seconds < 0 || seconds > 253402300799 { store64(frame + 112, 125);return 0 }
+  let value = (seconds + 11644473600) * 10000000
+  windows-protected-store32(output, value)
+  windows-protected-store32(output + 4, value >> 32)
+  store64(frame + 112, 0)
+  return 1
+}
+
+fn windows-command-time-run(image: Int, size: Int, authority: Int, storage: Int, timer: Int, line: Int, bytes: Int) -> Int {
+  if domain-current != 0 || windows-protected-busy != 0 || windows-parameters-active != 0 || windows-parameters-time-active != 0 { return -16 }
+  let entry = windows-startup-entry-mode(image, size, 2)
+  if entry < 0 { return entry }
+  if windows-parameters-line-valid(line, bytes) == 0 { return -22 }
+  if cap-check(timer, cap-timer()) == 0 { return -13 }
+  if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
+  if storage >= 0 && cap-check(storage, cap-storage()) == 0 { return -13 }
+  let seconds = time-component-wallclock()
+  if seconds < 0 || seconds > 253402300799 { return -11 }
+  windows-parameters-time-authority = timer
+  windows-parameters-time-anchor = seconds
+  windows-parameters-time-active = 1
+  let result = windows-command-run-profile(image, size, authority, storage, line, bytes, 4)
+  windows-parameters-time-authority = -1
+  windows-parameters-time-anchor = 0
+  windows-parameters-time-active = 0
+  return result
+}

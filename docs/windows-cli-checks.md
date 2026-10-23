@@ -119,3 +119,7 @@ structural progress and actual current-thread/process/LastError APIs. Native
 clock/heap/thread-local/encoding/file/synchronization contracts required by the
 linked CRT remain separate executable work. Unknown imports continue to refuse;
 no version marker has been obtained by removing dependencies or success shims.
+
+The fifth [timer-granted FILETIME profile](windows-filetime-checks.md) adds a real
+RTC prerequisite and expands original-app refusal receipts to 210 checks. This
+still does not execute original Windows SQLite or 7za.

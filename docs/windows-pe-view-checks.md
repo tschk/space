@@ -112,3 +112,7 @@ contracts and a deliberate policy for remaining PE metadata. In the original
 CRT cookie initializer, FILETIME at `0x140234e74` and QPC at `0x140234e9e` remain
 separate prerequisites. A coherent native RTC service can support an honest
 FILETIME translation; constant time or zero-success clock answers cannot.
+
+The following [FILETIME checkpoint](windows-filetime-checks.md) implements actual
+UTC RTC conversion under a borrowed timer grant with explicit terminal failures.
+QPC and the remaining original SQLite dependencies remain unavailable.
