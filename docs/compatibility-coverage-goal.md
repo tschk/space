@@ -23,12 +23,16 @@ BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,
 222 Lua,100 BusyBox and31 SQLite activations, each with21 measured cycles,
 actual CPU faults, timer cancellation, authority denial and resource checks.
 Actual owned pipes pass220 protected launches across standard/minimal images;
-the original BusyBox pipeline now fails at unsupported clone56. SQLite now also completes
+the original BusyBox child corpus now passes nine cases on both standard and
+minimal images (106 upstream activations), including two/three-stage pipelines,
+self-exec, subshells and background wait. The larger 10902-byte pipeline remains
+a captured failure at the4096-byte pipe capacity; genuine blocked-process
+scheduling is the next requirement. SQLite now also completes
 real RAM-backed database transactions and separate-process reopen:14 cases,
 146 activations and21 repeated fault/cleanup cycles pass, including a9000-byte
 blob and rollback preserving its contents. Original SQLite also passes three actual NVMe boots, checked FLUSH and
 independent host database integrity checks after commit/update/rollback.
-Pipelines, crash atomicity and the broader database acceptance rows remain open.
+Blocking pipelines, crash atomicity and the broader database acceptance rows remain open.
 
 Protected Mach-O supports checked raw Darwin calls and typed libSystem imports;
 protected PE supports ten typed KERNEL32 imports and a broader validated section
@@ -73,6 +77,29 @@ Linux child-process work; their separate proofs do not retroactively extend it.
 General foreign GUI applications, protected native clients, full desktop text/
 layout behavior and the rest of the acceptance matrix below remain open.
 
+
+## New slices under integration review
+
+Linux copied process families now pass924 parent activations across the standard
+and minimal roots, including partial descriptor-copy rollback and retained
+teardown recovery. The original BusyBox child corpus passes106 additional
+activations. These are separate checkpoint receipts, not an extension of the
+52-gate frozen integration result. Review identified repeated preparation and
+suspend-budget accounting gaps; their bounded fix is required before this slice
+is committed. Larger blocking pipelines remain a visible failing case.
+
+Windows environment and native hardware-counter translation are committed in
+`2de596c`; the private process heap is committed in `03fa931`. Their actual
+protected checks pass380 environment,593 counter/clock and485 heap launches,
+with explicit unavailable-counter and allocation/admission refusals. TLS/FLS
+callback work remains under test. Original Windows applications remain refused.
+
+Generic SCI layout metadata and page-separated mutable data are committed in
+Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
+self-update pass; the existing Space toolchain remains frozen at0.9.324 until
+new-profile integration is verified. Protected native SCI execution and Darwin
+startup have initial actual CPL3 proofs under review. Protected GUI clients,
+original Darwin/Windows applications and foreign GUI workloads remain open.
 
 ## Full completion goal
 

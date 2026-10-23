@@ -124,18 +124,26 @@ supervisor restoration. These are mechanisms, not general native SCI protection.
    and power-loss behavior remain open.
 4. BusyBox pipelines. Actual protected pipes now pass220 launches across standard/minimal
    profiles, including partial transfers, descriptor aliases, EOF and SIGPIPE.
-   The original BusyBox pipeline gets past pipe2 and fails at real clone56.
-   Implement copied process contexts, inherited descriptions, self-exec and
-   wait status before claiming a functioning pipeline; host-proven child
-   fixtures and the original failing pipeline remain distinct evidence.
+   The new copied-process checkpoint passes924 parent activations across
+   standard/minimal roots, including actual partial descriptor-copy rollback
+   and retained teardown recovery. Nine original BusyBox child cases pass
+   106 additional activations, including pipelines, self-exec and background
+   wait. Review requires bounded preparation retries and preservation of
+   remaining guest IRQ budget before committing. The larger10902-byte
+   pipeline remains a captured failure at4096 bytes; implement genuine blocked
+   producer/consumer scheduling without enlarging the ring to hide the gap.
 5. Original macOS/Windows startup. Original jq binaries remain refused and
    unexecuted. Windows dependency inspection finds immediate GS/TEB access and
    three TLS callbacks; typed PE fixture success is not UCRT/startup coverage.
    Darwin requires broader Mach-O/dyld/relocation/libc/framework support.
    Windows FILETIME now passes848 protected launches across four real RTC
    boots (`9e7e46e`), with one-second native resolution. Original SQLite/7za
-   still fail admission; QPC needs an actual validated native counter, now
-   being implemented without substituting IRQ-delivered ticks.
+   still fail admission. Actual native HPET-backed QPC and explicit owned
+   environment translation are committed in `2de596c`; their gates pass593
+   and380 activations respectively. The private process heap (`03fa931`)
+   passes485 actual launches and seven admission checks. Real TLS/FLS
+   callbacks are under test. A separate Darwin startup profile passes340 CPL3
+   invocations in review; this does not supply dyld/libSystem or execute jq.
 6. The52-gate lab now passes from the frozen source above. Extend the next
    lab revision to the subsequent native counter/context, Windows environment/
    QPC and Linux process slices after their review checkpoints. Retain exact
@@ -148,7 +156,10 @@ supervisor restoration. These are mechanisms, not general native SCI protection.
 ## Review and remote delivery
 
 Local review commits are on `compat/coverage-and-gui-foundation`. Generic compiler
-changes are committed separately in Inauguration (`f93ba40d`,0.9.324). The user
+changes are committed separately in Inauguration (`f93ba40d`,0.9.324, and
+`0a0a5a2b`,0.9.325). The latter emits generic verified SCI layouts and separates
+mutable data on page boundaries. Required checks, including isolated `in update`,
+pass; the default Space compiler remains frozen at0.9.324 pending integration. The user
 has already authorized opening a draft PR. GitHub currently returns HTTP401
 `Bad credentials`; pushing has also failed for missing usable authentication.
 No remote draft PR has been created. This delivery blocker does not stop local
