@@ -60,3 +60,32 @@ pixel checks, real keyboard/pointer effects, resize/scale, two independent
 instances, denial/fault/close cleanup and parent-desktop survival. Keep unavailable
 services and incomplete stages explicit. A framebuffer prototype or CLI help run
 must never be reported as FLTK, X11, Cocoa, Win32 or full desktop compatibility.
+
+## Observed BMP blocker, separate from accepted CLI coverage
+
+The additive `check-linux-fbv.py --bmp-probe` profile deliberately returns
+nonzero/blocked even when its diagnostic assertions hold. A real102-byte4x4 BMP
+is written through native filesystem APIs and read by the unmodified viewer.
+The original program reaches `open /dev/fb0: No such file or directory`, rather
+than its corrupt/unknown-image path. Saved file bytes and runtime ownership are
+checked after each invocation. No framebuffer pixels have been presented.
+
+The headless host error path is also unhealthy: after the missing framebuffer,
+upstream cleanup can abort with an invalid free. The source jumps to cleanup
+before initializing its image ownership field. This is retained as an unhealthy
+reference, with no application patch or fake successful device call. On Space,
+its unsupported abort path reaches a genuine GP fault (vector13), returns141,
+and still releases ownership and returns to the shell. Host and Space status/
+bytes are explicitly recorded as mismatches rather than a passing GUI scenario.
+
+`/workspace/fbv-bmp-first` retains the initial bad short-option/healthy-host
+assumption. `/workspace/fbv-bmp-second` and
+`/workspace/fbv-bmp-minimal-first` retain the two-root observed-blocker runs.
+The source contains correct short `-cy` flags; the host's optional long-y argument
+quirk is not used. The original default CLI gate remains strict and separately
+passes44 original entries after adding this diagnostic option at
+`/workspace/fbv-cli-probe-regression/report.json`.
+
+A healthy graphical reference requires an actual virtual framebuffer. Preparing
+a small Linux reference boot is comparison work only; it will never count as
+Space application or GUI execution. The actual Space adapter remains required.
