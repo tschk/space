@@ -16,6 +16,8 @@ var cr3-read-stub: Int = 0
 var cr3-write-stub: Int = 0
 // Only empty user trees created here may be retired by the user-tree teardown.
 var domain-user-owned: Int = 0
+// Exact runtime object generation, attached bindings and scoped revoke permit.
+var domain-user-object-table: Int = 0
 // Clone trees own private child tables but contain shared identity-map leaves.
 var domain-clone-owned: Int = 0
 // Supervisor-installed ABI edge dispatcher; zero keeps the native syscall ABI.
@@ -34,11 +36,15 @@ fn domain-set-cap(id: Int, cap-idx: Int) -> void {
 
 fn domain-init() -> void {
   domain-table = alloc(MAX-DOMAINS * 24)
+  domain-user-object-table = alloc(MAX-DOMAINS * 24)
   let i = 0
   while i < MAX-DOMAINS {
     store64(domain-table + i * 24 + 0, 0)
     store64(domain-table + i * 24 + 8, DOMAIN-FREE)
     store64(domain-table + i * 24 + 16, -1)
+    store64(domain-user-object-table + i * 24,0)
+    store64(domain-user-object-table + i * 24 + 8,0)
+    store64(domain-user-object-table + i * 24 + 16,0)
     i = i + 1
   }
   // The bootloader left the kernel PML4 at 0x1000, but the compiler may place
@@ -317,6 +323,7 @@ fn domain-create-user() -> Int {
     id = id + 1
   }
   if id >= MAX-DOMAINS { return -1 }
+  if domain-user-object-table != 0 && load64(domain-user-object-table + id * 24) != 0 { return -1 }
   let pml4 = create-user-domain-pml4()
   if pml4 == 0 { return -1 }
   store64(domain-table + id * 24 + 0, pml4)
@@ -332,6 +339,12 @@ fn domain-create-user() -> Int {
 fn domain-destroy-user(domain: Int) -> Int {
   if domain-current != 0 || domain <= 0 || domain >= domain-count { return -1 }
   if cr3-read() != load64(domain-table) { return -1 }
+  if domain-user-object-table != 0 {
+    let ownership = domain-user-object-table + domain * 24
+    let owner = load64(ownership)
+    if load64(ownership + 8) != 0 { return -1 }
+    if owner != 0 && load64(ownership + 16) != owner { return -1 }
+  }
   if (domain-user-owned & (1 << domain)) == 0 { return -1 }
   let root = load64(domain-table + domain * 24)
   if root == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
@@ -548,4 +561,45 @@ fn domain-unmap-user(domain: Int, virt: Int) -> Int {
   store64(slot, 0)
   invlpg(virt)
   return 0
+}
+
+fn domain-user-object-claim(domain: Int, owner: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != 0 || load64(row + 8) != 0 || load64(row + 16) != 0 { return -1 }
+  store64(row,owner)
+  return 0
+}
+
+fn domain-user-object-reference(domain: Int, owner: Int, change: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != owner || load64(row + 16) != 0 || (change != 1 && change != -1) { return -1 }
+  let count = load64(row + 8) + change
+  if count < 0 || count > 32 { return -1 }
+  store64(row + 8,count)
+  return 0
+}
+
+// Ownership stays installed across the walk and across any failure. The permit
+// is private, exact-owner and IRQ-scoped; legacy unowned teardown is unchanged.
+fn domain-user-object-revoke(domain: Int, owner: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != owner || load64(row + 8) != 0 || load64(row + 16) != 0 { return -1 }
+  let reader = load64(0x4198)
+  if reader == 0 { return -1 }
+  let flags = invoke1(reader,0)
+  cli()
+  store64(row + 16,owner)
+  let result = domain-destroy-user(domain)
+  store64(row + 16,0)
+  if result == 0 { store64(row,0) }
+  if (flags & 512) != 0 { sti() }
+  return result
 }

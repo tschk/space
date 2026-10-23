@@ -1,0 +1,140 @@
+package space.fixture
+import "../../components/user-address-space.in"
+import "negative.in"
+
+var us-authority: Int = -1
+var us-foreign: Int = -1
+var us-revocable: Int = -1
+var us-code: Int = 0
+var us-source: Int = 0
+var us-contexts: Int = 0
+var us-bindings: Int = 0
+var us-handles: Int = 0
+var us-executions: Int = 0
+var us-active-vm: Int = 0
+var us-active-binding: Int = 0
+var us-other-binding: Int = 0
+var us-sibling-binding: Int = 0
+
+fn us-check(expected:Int,actual:Int)->void {
+ if expected!=actual{
+  serial-write-cstr(com1(),"user-space: expected ");serial-write-dec-wide(com1(),expected);
+  serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);serial-nl(com1());
+  panic("native UserAddressSpace contract");
+ }
+}
+fn us-positive(value:Int)->Int {if value<=0{us-check(1,value);}return value;}
+fn us-context(index:Int)->Int{return load64(us-contexts+index*8);}
+fn us-free-count()->Int {
+ let count=0;let frame=free-list;
+ while frame!=0 && count<131072{count=count+1;frame=load64(frame);}
+ if frame!=0{panic("user-space free-list cycle");}
+ return count;
+}
+fn us-hook(frame:Int)->Int {
+ let number=load64(frame+112);
+ if number==900{store64(frame+112,84);return 2;}
+ if number==901{store64(frame+112,load64(frame+72));return 0;}
+ if number==903{
+  us-check(0,user-space-copy-in(us-active-binding,us-authority,0x44000000,us-source,8));us-check(100,load64(us-source));
+  us-check(-4,user-space-copy-in(us-sibling-binding,us-authority,0x44000000,us-source+16,8));
+  us-check(-4,user-space-copy-in(us-other-binding,us-authority,0x44000000,us-source+16,8));
+  us-check(-2,user-space-copy-in(us-active-binding,us-foreign,0x44000000,us-source+16,8));
+  us-check(-1,user-space-copy-in(us-active-binding,us-authority,0x44001FFC,us-source+16,8));
+  us-check(0x1122334455667788,load64(us-source+16));
+  us-check(-1,user-space-copy-out(us-active-binding,us-authority,0x42000000,us-source,8));
+  us-check(-1,user-space-copy-out(us-active-binding,us-authority,0x44001FFC,us-source,8));
+  store64(us-source,777);us-check(0,user-space-copy-out(us-active-binding,us-authority,0x44000000,us-source,8));
+  store64(frame+112,84);return 1;
+ }
+ if number==902{
+  us-check(-4,user-space-write(us-active-vm,us-authority,0x44000000,us-source,8));
+  us-check(-4,user-space-protect(us-active-vm,us-authority,0x44000000,USER-SPACE-READ));
+  us-check(-4,user-space-unmap(us-active-vm,us-authority,0x44000000));
+  us-check(-4,user-space-release-binding(us-active-binding,us-authority));
+  us-check(-4,user-space-release(us-active-vm,us-authority));
+  us-check(-4,user-space-resume(us-active-binding,us-authority,100));
+  store64(frame+112,46);return 0;
+ }
+ panic("user-space unexpected native fixture syscall");return 0;
+}
+fn us-run(binding:Int,authority:Int,kind:Int,status:Int,context:Int,budget:Int)->void {
+ let cap=current-cap;let pic=inb(0x21);let flags=invoke1(load64(0x4198),0);
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let before=ticks;
+ us-check(kind,user-space-resume(binding,authority,budget));us-executions=us-executions+1;
+ us-check(kind,load64(context+688));us-check(status,load64(context+720));
+ us-check(0,domain-current);us-check(load64(domain-table),cr3-read());us-check(cap,current-cap);
+ us-check(pic,inb(0x21));us-check(flags&512,invoke1(load64(0x4198),0)&512);
+ us-check(fs,rdmsr(0xC0000100));us-check(gs,rdmsr(0xC0000101));
+ us-check(0,user-context-active);us-check(0,user-budget-active);us-check(us-hook,domain-user-syscall-hook);
+ if kind==USER-CONTEXT-DEADLINE{us-check(0,user-context-remaining(context));if ticks - before<budget{panic("user-space genuine IRQ witness");}}
+}
+fn us-initialize()->void {
+ us-authority=cap-mint(root-realm,cap-memory());us-foreign=cap-mint(root-realm,cap-memory());
+ us-revocable=cap-mint(root-realm,cap-memory());
+ us-contexts=alloc(33*8);us-bindings=alloc(32*8);us-handles=alloc(USER-SPACE-MAX*8);us-source=alloc(64);
+ let i=0;while i<33{store64(us-contexts+i*8,(alloc(831)+63)&-64);i=i+1;}
+ us-code=alloc(4096);cpu-mem-copy64(us-code,0x10000000,512);
+
+}
+fn us-new(authority:Int)->Int {return us-new-limit(authority,3);}
+fn us-new-limit(authority:Int,limit:Int)->Int {
+ let vm=us-positive(user-space-create(authority,limit));
+ us-check(0,user-space-map-zero(vm,authority,0x42000000,USER-SPACE-EXECUTE));
+ us-check(0,user-space-map-zero(vm,authority,0x43000000,USER-SPACE-WRITE));
+ us-check(0,user-space-map-zero(vm,authority,0x44000000,USER-SPACE-WRITE));
+ us-check(0,user-space-populate(vm,authority,0x42000000,us-code,4096));
+ store64(us-source,100);us-check(0,user-space-write(vm,authority,0x44000000,us-source,8));
+ us-check(0,load64(user-space-frame(vm,authority,0x43000000)+128));
+ return vm;
+}
+fn us-prepare(vm:Int,authority:Int,index:Int,mode:Int)->Int {
+ let context=us-context(index);
+ us-check(0,user-context-init(context,768,user-space-domain(vm,authority),0x42000000,mode,0x43000FF0));
+ return us-positive(user-space-attach(vm,authority,context));
+}
+fn us-shared()->void {
+ let vm=us-new(us-authority);let independent=us-new(us-authority);
+ let parent=us-prepare(vm,us-authority,0,0);
+ us-check(2,user-space-refs(vm,us-authority));us-check(0,user-space-release(vm,us-authority));
+ us-check(1,user-space-refs(vm,us-authority));us-check(-1,user-space-release(vm,us-authority));
+ us-run(parent,us-authority,USER-CONTEXT-SUSPEND,84,us-context(0),100);
+ let original=user-space-frame(vm,us-authority,0x44000000);us-check(101,load64(original));
+ let copied=us-positive(user-space-create(us-authority,3));
+ us-check(0,user-space-copy-into(copied,vm,us-authority));
+ let private=user-space-frame(copied,us-authority,0x44000000);
+ if private==original || private==user-space-frame(independent,us-authority,0x44000000){panic("user-space independent backing alias");}
+ us-check(PAGE-NX|7,domain-page-flags(user-space-domain(copied,us-authority),0x44000000)&(PAGE-NX|7));
+ us-check(5,domain-page-flags(user-space-domain(copied,us-authority),0x42000000)&(PAGE-NX|7));
+ let copy-binding=us-prepare(copied,us-authority,2,2);us-check(0,user-space-release(copied,us-authority));
+ us-run(copy-binding,us-authority,USER-CONTEXT-EXIT,44,us-context(2),100);
+ us-check(601,load64(private));us-check(101,load64(original));
+ us-check(0,user-space-release-binding(copy-binding,us-authority));us-check(0,load64(us-context(2)+736));
+ us-check(-6,user-space-pages(copied,us-authority));
+ let child=us-positive(user-space-clone-binding(parent,us-authority,us-context(1),768));
+ us-check(2,user-space-refs(vm,us-authority));
+ us-check(user-space-domain(vm,us-authority),load64(us-context(1)+712));
+ us-run(child,us-authority,USER-CONTEXT-EXIT,43,us-context(1),100);
+ us-check(111,load64(original));us-check(0,user-space-release-binding(child,us-authority));
+ us-check(1,user-space-refs(vm,us-authority));us-check(-6,user-space-release-binding(child,us-authority));
+ us-run(parent,us-authority,USER-CONTEXT-EXIT,42,us-context(0),100);
+ us-check(211,load64(original));
+ let isolated=us-prepare(independent,us-authority,3,1);us-check(0,user-space-release(independent,us-authority));
+ us-run(isolated,us-authority,USER-CONTEXT-EXIT,45,us-context(3),100);
+ us-check(0,user-space-release-binding(isolated,us-authority));
+ us-check(0,user-space-release-binding(parent,us-authority));
+ us-check(0,load64(us-context(0)+736));us-check(0,load64(us-context(1)+736));
+ us-check(-6,user-space-refs(vm,us-authority));us-check(-6,user-space-resume(parent,us-authority,100));
+ serial-write-cstr(com1(),"user-space: shared VM independent CPU contexts and copied backing PASS");serial-nl(com1());
+}
+fn us-private-import(image-size:Int)->void {
+ if dyn-resolve-idx("user-space-resume")!=-1 || dyn-resolve-idx("domain-user-object-revoke")!=-1 || dyn-resolve-idx("serial-write-cstr")<0{panic("user-space private registry boundary");}
+ let table=alloc(48);store64(table,BOOT-IMAGE-TABLE-MAGIC);store64(table+8,1);
+ store64(table+16,254);store64(table+24,0x2F0000);store64(table+32,image-size);store64(table+40,0);
+ let previous=load64(0x40D0);store64(0x40D0,table);
+ let heap=heap-next;let caps=cap-count;let domains=domain-count;let live=runtime-instance-live;
+ us-check(-1,sci-load-runtime-component(com1(),0x2F0000,"private-address-space",1,1,0));
+ us-check(heap,heap-next);us-check(caps,cap-count);us-check(domains,domain-count);us-check(live,runtime-instance-live);
+ store64(0x40D0,previous);
+ serial-write-cstr(com1(),"user-space: real bounded SCI private imports refused before lifecycle PASS");serial-nl(com1());
+}
