@@ -1,0 +1,222 @@
+package space.kernel
+
+// personality-hub imports the protected mapping/dispatch provider first.
+import "user-context.in"
+
+// Trusted personality policy over generic owned CPU contexts. No dyld,
+// dependency initialization, constructors or TLV are admitted by this profile.
+const DARWIN-STARTUP-DATA = 0x4F005000
+var darwin-startup-context: Int = 0
+var darwin-startup-last-kind: Int = 0
+
+fn darwin-startup-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 200 || size > 0x200000 || image > 0x100000000 - size { return -8 }
+  if load32(image) != 0xFEEDFACF || load32(image + 4) != 0x1000007 || load32(image + 8) != 3 || load32(image + 12) != 2 { return -8 }
+  if load32(image + 16) != 3 || load32(image + 24) != 1 || load32(image + 28) != 0 { return -8 }
+  let kind = load32(image + 176)
+  if kind == 0x80000028 {
+    if load32(image + 32) != 0x19 || load32(image + 104) != 0x19 || load32(image + 92) != 5 || load32(image + 164) != 3 { return -8 }
+    return darwin-protected-entry(image,size)
+  }
+  if kind != 5 || load32(image + 20) != 328 || size < 360 { return -8 }
+  if load32(image + 180) != 184 || load32(image + 184) != 4 || load32(image + 188) != 42 { return -8 }
+  let word = 0
+  while word < 21 {
+    if word != 16 && load64(image + 192 + word * 8) != 0 { return -8 }
+    word += 1
+  }
+  let off = 32
+  while off < 176 {
+    let p = image + off
+    let prot = 5
+    if off == 104 { prot = 3 }
+    if load32(p) != 0x19 || load32(p + 4) != 72 || load32(p + 56) != prot || load32(p + 60) != prot || load64(p + 64) != 0 { return -8 }
+    let va = load64(p + 24)
+    let vm = load64(p + 32)
+    let file = load64(p + 40)
+    let bytes = load64(p + 48)
+    if va < DARWIN-PROTECTED-LOW || vm <= 0 || vm > DARWIN-PROTECTED-MAX-SEGMENT || va > DARWIN-PROTECTED-HIGH - vm || (va & 4095) != 0 || (vm & 4095) != 0 { return -8 }
+    if file < 0 || file > size || bytes < 0 || bytes > vm || bytes > size - file { return -8 }
+    if off == 32 && (file != 0 || bytes < 360) { return -8 }
+    off += 72
+  }
+  let tv = load64(image + 56)
+  let ts = load64(image + 64)
+  let dv = load64(image + 128)
+  let ds = load64(image + 136)
+  if tv < dv + ds && dv < tv + ts { return -8 }
+  if load64(image + 152) > 0 && load64(image + 144) < load64(image + 80) { return -8 }
+  let entry = load64(image + 320)
+  if entry < tv + 360 || entry >= tv + load64(image + 80) { return -8 }
+  return entry
+}
+
+fn darwin-startup-span(base: Int, bytes: Int, pointer: Int, count: Int) -> Int {
+  if count < 0 || pointer < base || pointer > base + bytes || count > base + bytes - pointer { return 0 }
+  return 1
+}
+
+// Header within the span: {argc,argv,envc,envp,applec,apple}, all 64-bit.
+// Every pointer and NUL must belong to that same caller-owned trusted span.
+fn darwin-startup-input(base: Int, bytes: Int) -> Int {
+  if base <= 0 || bytes < 48 || bytes > 4096 || base > 0x100000000 - bytes { return -14 }
+  let total = 0
+  let group = 0
+  while group < 3 {
+    let count = load64(base + group * 16)
+    let vector = load64(base + group * 16 + 8)
+    if count < 0 || count > 16 { return -22 }
+    if darwin-startup-span(base,bytes,vector,(count + 1) * 8) == 0 { return -14 }
+    if load64(vector + count * 8) != 0 { return -22 }
+    let i = 0
+    while i < count {
+      let text = load64(vector + i * 8)
+      let n = 0
+      let done = 0
+      while n < 256 && done == 0 {
+        if darwin-startup-span(base,bytes,text + n,1) == 0 { return -14 }
+        if load8(text + n) == 0 { done = 1 }
+        n += 1
+      }
+      if done == 0 { return -7 }
+      total += n
+      if total > 3072 { return -7 }
+      i += 1
+    }
+    group += 1
+  }
+  return 0
+}
+
+fn darwin-startup-copy(base: Int) -> void {
+  let text = DARWIN-STARTUP-DATA + 512
+  let group = 0
+  while group < 3 {
+    let count = load64(base + group * 16)
+    let vector = load64(base + group * 16 + 8)
+    let dest = DARWIN-STARTUP-DATA + group * 136
+    let i = 0
+    while i < count {
+      store64(darwin-protected-physical(dest + i * 8),text)
+      let source = load64(vector + i * 8)
+      let n = 0
+      let value = -1
+      while value != 0 {
+        value = load8(source + n)
+        store8(darwin-protected-physical(text),value)
+        n += 1
+        text += 1
+      }
+      i += 1
+    }
+    store64(darwin-protected-physical(dest + count * 8),0)
+    group += 1
+  }
+  return
+}
+
+fn darwin-startup-run(image: Int, size: Int, input: Int, bytes: Int, serial: Int, storage: Int, budget: Int) -> Int {
+  if budget <= 0 || budget > 10000 { return -22 }
+  let entry = darwin-startup-entry(image,size)
+  if entry < 0 { return entry }
+  let valid = darwin-startup-input(input,bytes)
+  if valid != 0 { return valid }
+  if domain-current != 0 || darwin-protected-busy != 0 || domain-user-syscall-hook != 0 || user-context-active != 0 { return -16 }
+  if serial >= 0 && cap-check(serial,cap-serial()) == 0 { return -13 }
+  if storage >= 0 && cap-check(storage,cap-storage()) == 0 { return -13 }
+  if load64(0x41a8) == 0 { return -38 }
+  // Retained scratch uses the bump allocator, not the frame free list. Reserve
+  // its exact rounded bytes separately, including first-use file-service state.
+  let retained = 0
+  if darwin-protected-frames == 0 { retained += DARWIN-PROTECTED-MAX-FRAMES * 16 + 32 }
+  if darwin-startup-context == 0 { retained += (USER-CONTEXT-BYTES + 30) & -16 }
+  if storage >= 0 && darwin-file-table == 0 { retained += VFS-MAX-FDS * 264 + 4096 }
+  if heap-next < 0 || heap-next > heap-end || retained > heap-end - heap-next { return -12 }
+  // At most39 owned pages and17 page-table frames, plus conservative slack.
+  // Count complete frame space only after reserving the retained bump bytes.
+  let available = (heap-end - ((heap-next + retained + 4095) & -4096)) / 4096
+  let free = free-list
+  while free != 0 && available < 65 { available += 1; free = load64(free) }
+  if available < 65 { return -12 }
+  if darwin-protected-frames == 0 {
+    darwin-protected-frames = alloc(DARWIN-PROTECTED-MAX-FRAMES * 8)
+    darwin-protected-context = alloc(32)
+    darwin-protected-virtuals = alloc(DARWIN-PROTECTED-MAX-FRAMES * 8)
+  }
+  if darwin-startup-context == 0 { darwin-startup-context = (alloc(USER-CONTEXT-BYTES + 15) + 15) & -16 }
+  let domain = domain-create-user()
+  if domain <= 0 { return -12 }
+  darwin-protected-busy = 1
+  darwin-protected-domain = domain
+  darwin-protected-last-domain = domain
+  darwin-protected-count = 0
+  darwin-protected-authority = serial
+  darwin-protected-storage = storage
+  if storage >= 0 { darwin-file-init() }
+  domain-set-cap(domain,-1)
+  let status = darwin-protected-map-segment(image,32,domain)
+  if status == 0 { status = darwin-protected-map-segment(image,104,domain) }
+  let page = 0
+  while status == 0 && page < 6 {
+    let frame = darwin-protected-take-frame()
+    if frame == 0 { status = -12 }
+    else {
+      let va = 0x4F000000 + page * 4096
+      domain-map-user-data(domain,va,frame)
+      store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,va)
+    }
+    page += 1
+  }
+  if status == 0 {
+    let stub = darwin-protected-take-frame()
+    if stub == 0 { status = -12 } else {
+      // mov rdi,rax; mov eax,0x2000001; syscall; ud2, owned user exit.
+      store8(stub,0x48);store8(stub + 1,0x89);store8(stub + 2,0xC7)
+      store8(stub + 3,0xB8);store32(stub + 4,0x2000001)
+      store8(stub + 8,0x0F);store8(stub + 9,0x05);store8(stub + 10,0x0F);store8(stub + 11,0x0B)
+      domain-map-user-code(domain,0x40006000,stub)
+      store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,0x40006000)
+      darwin-startup-copy(input)
+      let stack = 0x4F003FF8
+      let argc = load64(input)
+      if load32(image + 176) == 5 {
+        stack = 0x4F003E00
+        let cursor = stack
+        store64(darwin-protected-physical(cursor),argc);cursor += 8
+        let group = 0
+        while group < 3 {
+          let count = load64(input + group * 16)
+          let i = 0
+          while i <= count {
+            store64(darwin-protected-physical(cursor),load64(darwin-protected-physical(DARWIN-STARTUP-DATA + group * 136 + i * 8)))
+            cursor += 8;i += 1
+          }
+          group += 1
+        }
+      } else { store64(darwin-protected-physical(stack),0x40006000) }
+      status = user-context-init(darwin-startup-context,USER-CONTEXT-BYTES,domain,entry,0,stack)
+      if status == 0 {
+        if load32(image + 176) == 0x80000028 {
+          store64(darwin-startup-context + 72,argc)
+          store64(darwin-startup-context + 80,DARWIN-STARTUP-DATA)
+          store64(darwin-startup-context + 88,DARWIN-STARTUP-DATA + 136)
+          store64(darwin-startup-context + 96,DARWIN-STARTUP-DATA + 272)
+        }
+        domain-user-syscall-hook = darwin-protected-dispatch
+        darwin-startup-last-kind = user-context-resume(darwin-startup-context,budget)
+        domain-user-syscall-hook = 0
+        if darwin-startup-last-kind == USER-CONTEXT-EXIT { status = load64(darwin-startup-context + 720) }
+        else if darwin-startup-last-kind == USER-CONTEXT-DEADLINE { status = 124 }
+        else if darwin-startup-last-kind == USER-CONTEXT-FAULT { status = 128 + load64(darwin-startup-context + 696) }
+        else { status = -5 }
+      }
+    }
+  }
+  darwin-file-release()
+  if darwin-protected-release(domain) != 0 { return -5 }
+  darwin-protected-busy = 0
+  darwin-protected-domain = 0
+  darwin-protected-authority = -1
+  darwin-protected-storage = -1
+  return status
+}

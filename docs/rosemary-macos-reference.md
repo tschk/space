@@ -131,6 +131,13 @@ an executable dependency graph. Then drive a real macOS CLI binary and retain
 its unresolved-import/runtime failures. The full app and GUI acceptance rows
 remain in [the active coverage goal](compatibility-coverage-goal.md).
 
+The separate [protected startup profile](darwin-startup-checks.md) now proves
+owned argc/argv/envp/apple and distinct LC_MAIN/LC_UNIXTHREAD entry conventions
+through actual CPL3 fixtures. Its strict no-dependency admission does not run
+dyld, libSystem initializers, constructors or TLS/TLV. Original macOS jq remains
+refused; a pinned host trace records its 17 commands and 136 undefined symbols.
+The existing protected/file profiles remain unchanged.
+
 ## GUI contract to settle before slice 4
 
 Reuse [`protocol/display.in`](../protocol/display.in) and the existing channel /
