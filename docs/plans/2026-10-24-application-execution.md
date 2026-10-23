@@ -371,3 +371,17 @@ private to trusted callers and is refused through actual SCI import ingress.
 The original pinned macOS jq still refuses-38 before native object creation;
 original Darwin app entries remain zero. The finite fixture and snapshot-only
 failure controls are detailed in the [mapper plan](2026-10-24-darwin-owned-mapper.md).
+
+Windows wide paths are committed in `d925a30`:1326 CPL3 activations,63 across
+three independent NVMe boots,19 prior regressions and an actual pre-fix trailing
+separator regression control pass. The seven owned production hashes match the
+final receipt audit at `/workspace/wpath/audit.json`. Original Windows apps still
+refuse, with FindClose the next unknown import in the SQLite filesystem union.
+
+The private native directory snapshot prototype then checks1698 entries across
+direct/indirect blocks and deleted slots against independent exact bytes over21
+RAM-backed observations. Caller-owned output commits only after full success;
+corrupt metadata/I/O/authority refusals preserve it. Native inode/bitmap,
+allocation/domain/capability and ambient descriptor witnesses remain unchanged.
+This is zero-CPL3 native provider evidence, not foreign enumeration or upstream
+application coverage. NVMe/remount and concurrent mutation semantics remain open.

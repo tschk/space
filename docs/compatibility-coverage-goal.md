@@ -53,6 +53,16 @@ native VM creation; it has zero executed entries. See the
 [mapper checkpoint](plans/2026-10-24-darwin-owned-mapper.md). Original Darwin
 applications and framework/GUI support remain required full-goal work.
 
+Windows profile12 separately adds real owned UTF16/UTF8 file paths and directory
+state:1326 CPL3 activations and63 activations across three independent NVMe boots
+pass, with19 older Windows regressions preserved. Original apps still refuse;
+directory iteration is the next missing provider contract. The new private
+native directory snapshot prototype checks1698 real entries, tombstones and
+indirect blocks across21 RAM-backed kernel observations. It has no foreign Find
+API or original-application execution claim; NVMe/remount integration remains
+open. See [Windows paths](windows-path-checks.md) and the
+[native snapshot checkpoint](plans/2026-10-24-native-directory-snapshots.md).
+
 All11 native CLI scenarios pass. Native notes persists edited bytes across three
 NVMe boots. Filesystem repairs now pass actual57391-byte multi-block, sparse,
 partial-overwrite, truncate, reclaim and remount checks, plus24-byte filename
