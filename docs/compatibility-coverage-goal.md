@@ -113,7 +113,10 @@ activations and all15 older regressions. Original Windows applications remain
 refused. Composition is now committed in `4327d14`:773 protected activations
 across PC/Q35/no-HPET and all16 older regression gates pass. Unknown original
 imports, PE directories and the32-import execution bound remain explicit
-barriers; the next Unicode/codepage slice is in progress.
+barriers. Unicode profile11 is committed in `aeeca40`, with4921 actual CPL3
+conversion executions,773 mixed-service activations and independent3410-case
+scalar models in each of three profiles. Original Windows applications remain
+unexecuted; execution-local wide paths/cwd are the next slice.
 
 Generic SCI layout metadata and page-separated mutable data are committed in
 Inauguration `0a0a5a2b` (0.9.325). Required compiler checks and the isolated
@@ -145,6 +148,18 @@ test on the minimal image; source/compiler/application integrity passes. This
 is retained as an integration failure while its fixed-TSC timing assumption is
 repaired. It does not invalidate the52-gate historical checkpoint or silently
 remove the failed assertion.
+
+The next committed552-file snapshot (`ceef6f7`) passes all83 integrated gates
+with unchanged source/compiler/application hashes at `/workspace/lab83/report.json`.
+It includes both real BusyBox blocking pipelines, Windows TLS/FLS/critical
+sections, eager Mach-O imports and protected native SCI/GUI runtime ownership.
+It excludes the later composition/heap, readable protected consumers, Unicode
+and default-launch work; their focused receipts remain separately scoped.
+
+Original Mach-O image planning is committed in `4b05534`: the original jq image
+produces an independently verified209-page plan and validates1357 chained links
+and136 imports. It still refuses its first unavailable import before mapping
+or entry. This is loader progress, with zero original application executions.
 
 ## Full completion goal
 

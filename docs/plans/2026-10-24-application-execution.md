@@ -280,3 +280,41 @@ consumers. Independent desktop launcher and damage checks on this exact archive
 pass actual PS/2 interaction/pixels and322 fps against the30 fps minimum.
 Their logs are `/workspace/desktop-{launcher,damage}83.log`. Full integrated
 success is not claimed until the final lab/integrity report exists.
+
+
+## Completed83-gate integration and subsequent checkpoints
+
+`/workspace/lab83/report.json` finishes83 passed/0 failed, integrity passed:
+source changes empty, compiler unchanged and application changes empty. The
+552-file committed `ceef6f7` archive remains at
+`/workspace/space-application-eightythree-source`, with adjacent manifest.
+It includes the committed blocking scheduler, eager imports, Windows TLS/FLS
+and critical sections, and protected native SCI/GUI core/package gates. It
+excludes later Windows composition/Darwin heap, readable protected consumers,
+Unicode and default desktop integration. The earlier69-gate failure stays
+preserved; this new complete result does not rewrite its timing-dependent
+failed assertion.
+
+Readable protected consumers are committed in `aa16a9e`, with the startup
+ownership helper in `8e5c4f6`. All final gates pass from the541-file immutable
+`/workspace/gui-protected-consumer-startup-final-source`: six output modes,
+five NVMe boots,129 sessions/258 instances, six actual peer-failure recoveries
+and140 failed input starts with exact cleanup. Receipts are under
+`/workspace/local-evidence/gui-protected-*-startup-final`. Required desktop
+launcher and damage checks also pass. Default image/command-bar integration
+is a separate active checkpoint with its own actual-image gates.
+
+Windows Unicode is committed in `aeeca40`.
+`/workspace/wunicode/umax/report.json` passes4921 actual CPL3 activations and
+3410 scalar QEMU vectors; independent source models pass3410 cases each in
+default/lean/harden. The mixed-service gate passes773 activations and all17
+older gates pass. The final run had zero natural RTC retries; the earlier
+125 outcome remains preserved with uncaptured raw CMOS cause. Original Windows
+applications remain refused; static supported-import counts are not executions.
+
+Original Mach-O planning is committed in `4b05534`.
+`/workspace/di/wired/report.json` compares all3840 plan bytes with an independent
+host parser, checks1357 genuine links/136 imports, unknown commands and malformed
+metadata, and returns unavailable-import -38 before mapping. Original jq and
+Lua are never entered. Native address-space ownership is now being implemented
+as a reusable mechanism before the larger high-VA mapper or Linux vfork.
