@@ -1,4 +1,5 @@
 package space.kernel
+import "runtime-protected-owned.in"
 
 // Supervisor-private owned activation resources; no pool index/pointer is published
 // to the supported app ABI or the SCI import registry.
@@ -91,22 +92,35 @@ fn runtime-instance-alias(state: Int, virt: Int, address-offset: Int, value-offs
 fn runtime-instance-dispose(state: Int) -> Int {
   if state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE { return -1 }
   if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
+  let kind = load64(state + 120)
+  if kind != 0 && kind != NATIVE-PROTECTED-KIND { return -1 }
+  if load64(state + 296) != 0 { return -1 }
+  let domain = load64(state)
+  if domain != 0 {
+    if domain <= 0 || domain >= domain-count { return -1 }
+    if kind == 0 && ((domain-clone-owned & (1 << domain)) == 0 || (domain-user-owned & (1 << domain)) != 0) { return -1 }
+    if kind == NATIVE-PROTECTED-KIND && ((domain-user-owned & (1 << domain)) == 0 || (domain-clone-owned & (1 << domain)) != 0) { return -1 }
+  }
+  if kind == NATIVE-PROTECTED-KIND && runtime-instance-protected-valid(state) == 0 { return -1 }
   let component = load64(state + 8)
   let cap = load64(state + 16)
   if cap >= 0 && runtime-instance-release-cap(cap,component) != 0 { return -1 }
   runtime-instance-detach-aliases(state)
-  let domain = load64(state)
-  if domain != 0 && domain-destroy-clone-owned(domain) != 0 { return -1 }
+  if domain != 0 {
+    if kind == 0 && domain-destroy-clone-owned(domain) != 0 { return -1 }
+    if kind == NATIVE-PROTECTED-KIND && domain-destroy-user(domain) != 0 { return -1 }
+  }
   let image = load64(state + 88)
   let page = 0
   while page < load64(state + 96) { frame-free(load64(image + page * 8)); page = page + 1 }
   frame-free(image)
   let allocation = 0
-  while allocation < RUNTIME-INSTANCE-ALLOCATIONS {
+  while kind == 0 && allocation < RUNTIME-INSTANCE-ALLOCATIONS {
     let payload = load64(state + 320 + allocation * 8)
     if payload != 0 { chan-heap-free(payload - 8) }
     allocation = allocation + 1
   }
+  if kind == NATIVE-PROTECTED-KIND && runtime-instance-protected-dispose(state) != 0 { return -1 }
   let pages = load64(state + 24)
   let i = 0
   while i < 512 {

@@ -24,7 +24,7 @@ for filename, names in [('runtime-retained.in', ('runtime-instance-kernel-contex
         functions.append(module[start:module.index('\n}', start)+2])
 source = 'var memory:[Int]=[' + ','.join(['0'] * 20000) + '];\n' + '''
 const COMP-PIXEL-VIRT=0x70001000;
-const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
+var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
 const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
 var domain-current:Int=0;var runtime-instance-catalog:Int=16000;var sci-sync-handle:Int=257;
 var cap-count:Int=1;var cap-table-base:Int=1904;

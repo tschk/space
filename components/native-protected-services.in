@@ -1,0 +1,80 @@
+package space.kernel
+import "native-protected-heap.in"
+import "native-protected-image.in"
+var native-protected-active: Int = 0
+
+fn native-protected-console(state: Int, pointer: Int) -> Int {
+  let length = 0
+  let done = 0
+  while length < 4096 && done == 0 {
+    let physical = native-protected-pointer(state,pointer + length,0)
+    if physical == 0 { return -14 }
+    if load8(physical) == 0 { done = 1 } else { length = length + 1 }
+  }
+  if done == 0 { return -14 }
+  let i = 0
+  while i < length { serial-put(0x3f8,load8(native-protected-pointer(state,pointer + i,0))); i = i + 1 }
+  return length
+}
+
+fn native-protected-decimal(value: Int) -> void {
+  let divisor = 1
+  if value < 0 {
+    serial-put(0x3f8,45)
+    while value / divisor <= -10 { divisor = divisor * 10 }
+    while divisor > 0 { serial-put(0x3f8,48 - ((value / divisor) % 10)); divisor = divisor / 10 }
+  } else { serial-write-dec-wide(0x3f8,value) }
+  return
+}
+
+fn native-protected-syscall(frame: Int) -> Int {
+  let state = native-protected-active
+  if state == 0 || load64(state + 120) != NATIVE-PROTECTED-KIND || load64(state + 296) != 1 || domain-current != load64(state) || current-cap != load64(state + 16) || cr3-read() != load64(domain-table) {
+    store64(frame + 112,-1); return 0
+  }
+  let component = load64(state + 8)
+  if component == 0 || load64(cap-table-base + current-cap * 16) != component { store64(frame + 112,-1); return 0 }
+  let number = load64(frame + 112)
+  let id = number - NATIVE-PROTECTED-SERVICE-BASE
+  let extra = load64(state + 112)
+  store64(extra + 824,load64(extra + 824) + 1)
+  if id < 0 || id > 12 || load64(frame + 120) != NATIVE-PROTECTED-TRAPS + id * 16 + 10 { store64(frame + 112,-38); return 1 }
+  if id == 0 { store64(frame + 112,load64(frame + 72)); return 0 }
+  if (load64(extra + 832) & (1 << id)) == 0 { store64(frame + 112,-38); return 1 }
+  let rights = native-protected-import-right(id)
+  if rights != 0 && cap-check(current-cap,rights) == 0 {
+    let denied = -1
+    if (id >= 2 && id <= 4) || id == 12 { denied = 0 }
+    store64(frame + 112,denied); return 1
+  }
+  if id == 1 { store64(extra + 816,1); store64(frame + 112,RUNTIME-ABORT-STATUS); return 0 }
+  let first = load64(frame + 72)
+  let second = load64(frame + 80)
+  let result = -38
+  if id == 2 { result = native-protected-malloc(state,first) }
+  if id == 3 { result = native-protected-calloc(state,first,second) }
+  if id == 4 { result = native-protected-realloc(state,first,second) }
+  if id == 5 { result = native-protected-free(state,first) }
+  if id >= 6 && id <= 10 {
+    result = -1
+    if first == 0x3f8 {
+      result = 0
+      if id == 6 { result = native-protected-console(state,second) }
+      if id == 7 { native-protected-decimal(second) }
+      if id == 8 { serial-write-hex(0x3f8,second) }
+      if id == 9 { serial-nl(0x3f8) }
+      if id == 10 { serial-put(0x3f8,second & 255) }
+    }
+  }
+  if id == 11 || id == 12 {
+    result = -14
+    if first == NATIVE-PROTECTED-INFO {
+      if id == 12 { result = NATIVE-PROTECTED-HEAP } else {
+        result = 0
+        if load64(extra + 976) > 0 { result = NATIVE-PROTECTED-INFO + 256 }
+      }
+    }
+  }
+  store64(frame + 112,result)
+  return 1
+}

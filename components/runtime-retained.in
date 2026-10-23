@@ -25,12 +25,15 @@ fn runtime-instance-record(handle: Int, phase: Int) -> Int {
   if load64(record + 8) != generation || load64(record + 48) != phase { return 0 }
   let state = load64(record)
   if state == 0 || load64(state + 256) != RUNTIME-INSTANCE-LIVE || load64(state + 280) != handle { return 0 }
+  if load64(state + 120) != 0 && load64(state + 120) != NATIVE-PROTECTED-KIND { return 0 }
   let component = load64(record + 24)
   let cap = load64(record + 32)
   let domain = load64(record + 40)
   if component == 0 || load64(state + 8) != component || load64(component) != load64(record + 16) || load64(component + 8) != 5 { return 0 }
   if cap < 0 || cap >= cap-count || load64(state + 16) != cap || load64(cap-table-base + cap * 16) != component { return 0 }
   if domain <= 0 || domain >= domain-count || load64(state) != domain || load64(component + 40) != domain { return 0 }
+  if load64(state + 120) == 0 && ((domain-clone-owned & (1 << domain)) == 0 || (domain-user-owned & (1 << domain)) != 0) { return 0 }
+  if load64(state + 120) == NATIVE-PROTECTED-KIND && ((domain-user-owned & (1 << domain)) == 0 || (domain-clone-owned & (1 << domain)) != 0) { return 0 }
   if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE || load64(domain-table + domain * 24 + 16) != cap { return 0 }
   return record
 }
@@ -100,6 +103,7 @@ fn runtime-instance-resume(handle: Int, entry: Int, argument: Int) -> Int {
   let record = runtime-instance-record(handle,1)
   if record == 0 || runtime-instance-active != 0 { return -1 }
   let state = load64(record)
+  if load64(state + 120) != 0 { return -1 }
   if load64(state + 296) != 0 || entry != load64(state + 288) || argument != state + 128 { return -1 }
   store64(state + 296,1)
   let caller-root = cr3-read()
