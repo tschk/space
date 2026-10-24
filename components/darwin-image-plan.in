@@ -514,7 +514,7 @@ fn darwin-image-import-preflight(plan: Int) -> Int {
 }
 
 fn darwin-image-unknown-import(plan: Int) -> Int {
-  // Call only after -38 from full import-preflight of this immutable plan.
+  // Call only after successful structural preflight of this immutable plan.
   if plan <= 0 || plan > 0x100000000 - DARWIN-IMAGE-PLAN-BYTES || load64(plan) != DARWIN-IMAGE-PLAN-MAGIC || load64(plan + 8) != 1 { return 0 }
   let image = load64(plan + 24)
   let h = image + load64(plan + 72)

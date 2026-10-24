@@ -1,0 +1,47 @@
+{
+  "scope": "Actual protected SCI calculator/editor, client-owned mature font coverage; still eight ASCII bytes, RAM boot shows no disk",
+  "source_commit": "94799a9",
+  "ppm_path": "/workspace/protected-font-final-windows/edited-save-no-disk.ppm",
+  "ppm_sha256": "626b057cf7c3d56b794970c13d348a724bd90479d2f04d69cbf388cc4dfd3016",
+  "png_file": "protected-clients-dejavu.png",
+  "png_sha256": "564170e1b47bb7b491d1ad061ccf531a0cafda7ba656f7fdcb9bfd61d0fbdfab",
+  "dimensions": [
+    1024,
+    768
+  ],
+  "capture_receipt_sha256": "5a313dfcba1db04e7a9fd444bd34d9cc4986f3305571bd978668ca2a124e7378",
+  "actual_capture": {
+    "synchronization_only": true,
+    "atomic_presentation_proof": false,
+    "capture_sequence": 3,
+    "path": "edited-save-no-disk.ppm",
+    "layout": {
+      "output_width": 1024,
+      "output_height": 768,
+      "pitch": 4096,
+      "width": 488,
+      "height": 256,
+      "scale": 2,
+      "generation": 1,
+      "left": 16,
+      "right": 520,
+      "top": 32
+    },
+    "expected_texts": [
+      [
+        "6*7",
+        "42"
+      ],
+      [
+        "notes",
+        "no disk"
+      ]
+    ],
+    "focused": 1,
+    "attempts": 1,
+    "timeout_seconds": 5,
+    "errors": [],
+    "status": "passed",
+    "elapsed_seconds": 0.06986786199558992
+  }
+}

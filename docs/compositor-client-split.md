@@ -16,7 +16,7 @@ A future Wayland adapter must translate into these native contracts rather than
 replace them with foreign kernel semantics. Neither source modularization nor a
 kernel-linked window demo establishes isolated SCI desktop services.
 
-## Private owned canvas / original viewer checkpoint (2026-10-24)
+## Protected client text ownership (2026-10-25)
 
 The [protected typography continuation](plans/2026-10-25-protected-client-typography.md)
 keeps the existing SCI/SPDP ownership boundary while moving mature DejaVu
@@ -24,6 +24,8 @@ coverage and measured label advances into each protected client's private heap.
 Window layout policy is shared independently of the legacy/protected text
 provider. No compositor text buffer, kernel font pointer or new IPC mechanism is
 introduced; this library seam is not a font-service isolation claim.
+
+## Private owned canvas / original viewer checkpoint (2026-10-24)
 
 A separately imported private native canvas library owns staging/accepted frames
 and leases existing SPDP surfaces. Checked stopped uploads from native VM objects

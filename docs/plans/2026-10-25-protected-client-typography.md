@@ -33,3 +33,18 @@ close/survivor/reopen and shell return. Protected startup/descriptor/allocator
 models and legacy window contracts pass all three compiler profiles. These are
 candidate receipts; final committed-source regressions are recorded separately.
 This does not widen the frozen161-gate run or the older bitmap captures.
+
+Final focused checks at frozen`94799a9` are recorded in
+[`2026-10-25-protected-font-evidence.json`](2026-10-25-protected-font-evidence.json).
+Protected and distributable default clients pass all six configurations,
+independent mature-font pixels, editing/caret/focus/pointer/resize/close/reopen,
+malformed peer/fault/abort/deadline recovery, both five-boot NVMe persistence
+workflows and both129-session lifetime suites. The old bitmap window suite
+also passes all six configurations. Desktop launcher/input/pointer/resize and
+133fps damage (minimum30, under concurrent QEMU verification) pass.
+
+The new standard image is2032208 bytes and its protected SCI images remain
+inside the existing reserved boot window. The image/heap bounds, capabilities,
+native surface protocol and refused-input checks were not widened. Actual
+[QEMU captures](../screenshots/2026-10-25/README.md) show the resulting clients.
+These are native applications, not original Windows/macOS GUI applications.

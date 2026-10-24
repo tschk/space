@@ -22,3 +22,14 @@ concurrent foreign terminals remain open. This does not establish Windows/macOS
 application compatibility. The [full goal](../../compatibility-coverage-goal.md)
 remains active; focused [test receipts](../../plans/2026-10-25-terminal-evidence.json)
 retain their exact source scope.
+
+## Protected native client typography
+
+![Protected calculator and editor with client-owned DejaVu text](protected-clients-dejavu.png)
+
+This is a separate actual QEMU capture at`94799a9`, with lossless pixels and
+independent label/content/caret verification. The [capture receipt](protected-font-capture.json)
+records its source and hashes. Both SCI clients own their DejaVu coverage and
+canvas. The RAM boot correctly shows`no disk`; the separate NVMe tests verify
+save/reopen. Notes still holds eight ASCII bytes. The earlier vi captures above
+retain their own source revision and do not inherit this later font change.

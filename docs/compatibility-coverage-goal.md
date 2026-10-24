@@ -6,14 +6,14 @@ personalities; keep implementing and locally testing real CLI and GUI applicatio
 until the acceptance matrix below works end to end. This is the full project
 goal. The fixture lab is an early checkpoint, not the completion target.
 
-Latest actual local results: [execution checkpoint](plans/2026-10-24-application-execution.md).
+Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
 is historical; its compiler and protected-execution blockers have since advanced.
 
 Status: **active; full goal incomplete**. Current shipped behavior and local test
 evidence are checkpoints, never a reason to close the full goal. On 2026-10-25
 Australia/Melbourne, original vi passed real PS/2 edit/save/reopen on both roots:
-two protected processes and 27 text events per root, with exact persisted file
+two protected processes and38 real keyboard events per root, with exact persisted file
 bytes. A later client-owned SCI terminal now renders live vi output: both real
 QEMU captures match294912 independently expected pixels. Resize, concurrent
 foreign terminals, ordinary desktop launch and the remaining Windows/macOS
@@ -26,15 +26,26 @@ reviewable implementation/test commits on the requested draft PR branch. This
 file does not create a scheduled or unattended background task.
 
 Continuation, 2026-10-25 Australia/Melbourne: the full goal was never completed.
-Native owned terminal queues and separate seat focus leases now pass 99 modeled
+Native owned terminal queues and separate seat focus leases now pass147 modeled
 controls and actual QEMU keyboard/lifetime/import-denial checks. Retained foreign
 activation waits, interactive original vi and a finite native SCI screen now work;
 see the [native terminal continuation](plans/2026-10-25-native-terminal-session.md).
 These focused checks do not widen the historical 152-gate receipt below.
 
-## Active local execution checkpoint — 2026-10-24
+## Complete local execution checkpoint — 2026-10-25
 
-Latest complete passing checkpoint: **152/152 passed**, zero failed or blocked,
+**161/161 passed**, zero failed or blocked, from766 committed source files at
+`3ac91e0`, with source/compiler/original-app integrity passing. Full receipt SHA256:
+`ca6e8b365eb89b9a2ec35ecd47ae5c05bc8878293416d43dc1059aa63fd9ad20`.
+The [execution record](plans/2026-10-25-application-execution.md) separates this
+complete frozen run from the later typed Darwin data and client-font changes.
+The latter have their own actual runtime/visual/lifetime/persistence checks.
+The expanded163-gate definition has not been run as one complete new matrix.
+All broader application rows below remain required.
+
+## Historical local execution checkpoint — 2026-10-24
+
+The earlier complete checkpoint: **152/152 passed**, zero failed or blocked,
 from **720 committed source files at `c408746`**. The receipt is
 `/workspace/lab152/report.json`, SHA-256
 `8c5227678bbfa5aacb99dcb1ce74f6d5f638cc797c2f91de31faaea4407c4a70`.
@@ -371,7 +382,7 @@ must be reported separately from foreign compatibility.
 | Target/profile | Initial named upstream version | Required scenario and oracle |
 |---|---|---|
 | Native Space | Repository `calc`, `notes`, `files`, terminal and their SCI artifacts, pinned to the tested Space commit | Calculate a known result, edit/save/reopen exact text, list/create/read files, launch two independent terminal sessions, switch focus, close one and keep the other responsive. Reboot and verify saved bytes. |
-| Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Current EX-command file workflow passes; interactive acceptance remains open. |
+| Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Fixed-size real keyboard/ANSI/edit/save/reopen now passes; full interactive acceptance including resize, concurrency and reboot remains open. |
 | Darwin x86_64 Mach-O TUI | Microsoft Edit source commit `cb6de0a8966aecd01d19a3541dab1829d0e679ca`; native artifact acquisition/build still required | The same focused edit/save/reopen/resize/two-client workflow through actual Darwin startup, descriptors and termios. Source review only; zero Space application entries. |
 | Windows x86_64 PE TUI | Microsoft Edit at the same pinned source commit; native artifact acquisition/build still required | The same workflow through real Win32 console records/modes/output and file handles, with focused input, independent sessions and cleanup. Source review only; zero Space application entries. |
 | Linux ELF CLI | BusyBox 1.36.1, [upstream](https://busybox.net/downloads/); Lua 5.4.7, [upstream](https://www.lua.org/ftp/); SQLite 3.46.1, [upstream](https://www.sqlite.org/2024/) | BusyBox `echo`/`cat`/`wc` and shell pipeline operate on known files with exact stdout/status; Lua computes and reads/writes a file; SQLite creates a database, commits/query rows and reopens it after restart. |
