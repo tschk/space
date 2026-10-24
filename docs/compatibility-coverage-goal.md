@@ -17,7 +17,7 @@ file does not create a scheduled or unattended background task.
 
 ## Active local execution checkpoint — 2026-10-24
 
-Latest complete checkpoint: **144/144 passed**, zero failed/blocked, from695
+Latest complete passing checkpoint: **144/144 passed**, zero failed/blocked, from695
 committed files at5b54e1e in `/workspace/lab144/report.json`. Source, compiler
 and application integrity all pass. This includes the five stored-application
 gates, named executable identity, Windows Find and the full earlier Linux,
@@ -37,9 +37,15 @@ entry in the bounded boot profile. See [vi scope](linux-vi-workload.md),
 
 Seven new gates are added to the main lab: file-control models, four vi root/
 persistence profiles, exact desktop font coverage and desktop visual behavior.
-The resulting cached-artifact151-gate matrix has not yet completed a whole-tree
-run in this follow-up. The144/144 receipt above retains its exact earlier source
-scope. No percentage of general OS compatibility is inferred from either count.
+The first717-file151-gate source (`34239e7`) finished136 passed/15 failed, with
+source/compiler/application integrity passed. The15 failures are pre-execution
+image-size/staging guards; their receipt remains `/workspace/lab151/report.json`.
+The [layout repair](plans/2026-10-24-fixture-boot-layout.md) preserves all exercised
+assertions and the unchanged heap boundary. Its additional host layout gate makes
+the next complete matrix152 gates. The measured font profile also fixes spacing,
+cell widths, baselines and UTF-8 caret/fallback geometry. A fresh frozen run is
+required; no152-gate result is claimed here. The144/144 receipt above retains its
+exact earlier scope. No percentage of general OS compatibility is inferred.
 
 
 An earlier whole-tree checkpoint passes all131 gates at
@@ -341,6 +347,9 @@ must be reported separately from foreign compatibility.
 | Target/profile | Initial named upstream version | Required scenario and oracle |
 |---|---|---|
 | Native Space | Repository `calc`, `notes`, `files`, terminal and their SCI artifacts, pinned to the tested Space commit | Calculate a known result, edit/save/reopen exact text, list/create/read files, launch two independent terminal sessions, switch focus, close one and keep the other responsive. Reboot and verify saved bytes. |
+| Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Current EX-command file workflow passes; interactive acceptance remains open. |
+| Darwin x86_64 Mach-O TUI | Microsoft Edit source commit `cb6de0a8966aecd01d19a3541dab1829d0e679ca`; native artifact acquisition/build still required | The same focused edit/save/reopen/resize/two-client workflow through actual Darwin startup, descriptors and termios. Source review only; zero Space application entries. |
+| Windows x86_64 PE TUI | Microsoft Edit at the same pinned source commit; native artifact acquisition/build still required | The same workflow through real Win32 console records/modes/output and file handles, with focused input, independent sessions and cleanup. Source review only; zero Space application entries. |
 | Linux ELF CLI | BusyBox 1.36.1, [upstream](https://busybox.net/downloads/); Lua 5.4.7, [upstream](https://www.lua.org/ftp/); SQLite 3.46.1, [upstream](https://www.sqlite.org/2024/) | BusyBox `echo`/`cat`/`wc` and shell pipeline operate on known files with exact stdout/status; Lua computes and reads/writes a file; SQLite creates a database, commits/query rows and reopens it after restart. |
 | Darwin x86_64 Mach-O CLI | Lua 5.4.7 and SQLite 3.46.1, built for the declared macOS deployment target | Execute the same Lua/file and SQLite transaction/reopen scenarios through the Darwin process/import path. Capture imports/startup requirements; a hosted Rosemary run is comparison evidence only. |
 | Windows x86_64 PE CLI | 7-Zip 24.09 standalone command-line tool, [upstream](https://www.7-zip.org/); SQLite 3.46.1 for Windows | Create/list/extract a known archive, compare extracted hashes and failure exit codes; run the database transaction/reopen scenario with real Win32 file/handle behavior. |
