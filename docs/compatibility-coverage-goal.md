@@ -41,6 +41,19 @@ with complete record oracles, revocation, fault/deadline and lifetime checks.
 Original Windows application entries remain zero. See the
 [Find boundary and evidence](plans/2026-10-24-windows-find.md).
 
+The later686-file sourcead0a0be passes all139 gates at
+`/workspace/lab139-retry/report.json`, including source/compiler/application
+integrity and both new Windows Find gates. Its interrupted first attempt at
+`/workspace/lab139` is retained separately and has no final all-pass claim.
+
+The next native file-observation slice has separate focused acceptance: original
+fbv pixels come from a native filesystem snapshot on RAM and across v1/UTC NVMe
+boots. Original fbv, BusyBox and Lua also run132 times per filesystem profile
+across two boots, with no application ELF staging on reopen, exact output and an
+unchanged read-only disk. Captured executable identity is separate from argv0.
+See [the native Storage boundary](plans/2026-10-24-native-file-observations.md).
+Its five new integration gates do not retroactively extend the139-gate source.
+
 The full goal remains active. Four unmodified upstream Linux applications now
 execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,
 BusyBox1.36.1 and SQLite3.46.1. The sanitized-entry checkpoint passes81 jq,

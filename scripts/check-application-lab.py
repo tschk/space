@@ -65,7 +65,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Arbitrary upstream Darwin/Windows applications, interactive foreign GUI/FLTK/X11 and general fbdev remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Arbitrary upstream Darwin/Windows applications, interactive foreign GUI/FLTK/X11 and general fbdev remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -275,6 +275,16 @@ def main():
               '--app', applications['fbv'], '--out', args.out / gate)
     check('linux-framebuffer', 'check-linux-framebuffer.py', '--in', args.compiler,
           '--app', applications['fbv'], '--out', args.out / 'linux-framebuffer')
+    check('stored-fbv-ram', 'check-linux-framebuffer.py', '--in', args.compiler,
+          '--app', applications['fbv'], '--file-source', '--out', args.out / 'stored-fbv-ram')
+    for schema, options in [('v1', []), ('utc', ['--utc'])]:
+        check('stored-fbv-nvme-' + schema, 'check-file-observation-persistence.py',
+              '--in', args.compiler, '--app', applications['fbv'], *options,
+              '--out', args.out / ('stored-fbv-nvme-' + schema))
+        check('stored-cli-nvme-' + schema, 'check-file-observation-apps.py',
+              '--in', args.compiler, '--fbv', applications['fbv'],
+              '--busybox', applications['busybox'], '--lua', applications['lua'],
+              *options, '--out', args.out / ('stored-cli-nvme-' + schema))
     check('native-canvas', 'check-native-canvas.py', '--in', args.compiler,
           '--out', args.out / 'native-canvas')
     check('darwin-process', 'check-darwin-protected.py', '--in', args.compiler, '--imports',

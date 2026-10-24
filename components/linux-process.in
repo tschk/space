@@ -1,4 +1,5 @@
 package space.kernel
+import "linux-process-source.in"
 import "linux-process-vm.in"
 import "linux-process-devices.in"
 import "linux-process-files.in"
@@ -289,7 +290,9 @@ fn linux-process-stack-build(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int
   linux-process-store64(stack + 208, 14); linux-process-store64(stack + 216, 0)
   linux-process-store64(stack + 224, 23); linux-process-store64(stack + 232, 0)
   linux-process-store64(stack + 240, 25); linux-process-store64(stack + 248, strings + 2048)
-  linux-process-store64(stack + 256, 31); linux-process-store64(stack + 264, strings)
+  let exec-name=strings
+  if linux-process-source-name!=0 { exec-name=strings+2304;linux-process-stack-string(exec-name,linux-process-exe) }
+  linux-process-store64(stack + 256, 31); linux-process-store64(stack + 264, exec-name)
   linux-process-store64(stack + 272, 0); linux-process-store64(stack + 280, 0)
   return stack
 }
@@ -674,6 +677,7 @@ fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, 
   store64(root-row + LPS-BUDGET,linux-process-budget-ticks)
   linux-process-authority = authority
   linux-process-exe = arg0
+  if linux-process-source-name!=0 { linux-process-exe = linux-process-source-name }
   linux-process-pages = 0
   linux-process-brk = LINUX-PROCESS-BRK-BASE
   linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE

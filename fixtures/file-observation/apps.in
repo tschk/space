@@ -1,0 +1,70 @@
+package space.kernel
+import "../../components/file-observation.in"
+import "../../components/linux-process.in"
+var fsa-calls:Int=0
+var fsa-trace:Int=0
+var fsa-handle:Int=0
+var fsa-owner:Int=0
+var fsa-scope-refusals:Int=0
+fn fsa-check(expected:Int,actual:Int)->void{
+ if expected!=actual{redir-buf=0;serial-write-cstr(com1(),"file-apps: expected ");serial-write-dec-wide(com1(),expected);serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);panic("native stored app contract");}
+}
+fn fsa-free()->Int{let p=free-list;let n=0;while p!=0 && n<131072{n+=1;p=load64(p);}return n;}
+fn fsa-dispatch(frame:Int)->Int{
+ if domain-current!=linux-process-domain || user-context-active==0 || user-budget-active!=1 || (load64(frame+128)&3)!=3 || (load64(frame+136)&0x3000)!=0{redir-buf=0;panic("stored app did not use actual protected context");}
+ let source=linux-process-source-name;fsa-check(-16,linux-process-run-named-input(0,0,0,0,0,0,0,-1,0));fsa-check(source,linux-process-source-name);fsa-check(-4,file-observation-query(fsa-handle,fsa-owner,0));fsa-scope-refusals+=1;
+ let number=load64(frame+112);let index=fsa-calls;fsa-calls+=1;let control=linux-process-dispatch(frame);if index<256{store64(fsa-trace+index*16,number);store64(fsa-trace+index*16+8,load64(frame+112));}return control;
+}
+fn file-apps-check(port:Int)->void{
+ let oracle=0x13000000;fsa-check(3,load64(oracle));fsa-check(1,nvme-ready);fsa-check(0,sf-mem-disk);fsa-check(0,volume-ready);
+ let authority=cap-mint(root-realm,cap-memory()|cap-storage()|cap-serial());let timer=-1;fsa-owner=authority;
+ if FSA-REOPEN==0{
+  fsa-check(0,sf-disk-ready);
+  if FSA-UTC!=0{timer=cap-mint(root-realm,cap-timer());fsa-check(0,fs-metadata-format-utc(16384,2048,authority,timer));}
+  else{fsa-check(0,fs-format());}
+  let i=0;while i<3{let row=oracle+4096+i*8192;let size=load64(row);if size<64 || size>FILE-OBSERVATION-MAX{panic("stored app oracle size");}fsa-check(0,fs-write-file(row+64,0x14000000+i*0x1000000,size));store8(0x14000000+i*0x1000000,0);i+=1;}
+  fsa-check(0,fs-write-file("/stored-name",0x17000000,load64(oracle+8)));store8(0x17000000,0);
+  fsa-check(0,nvme-flush());if timer>=0{cap-revoke(timer);fsa-check(0,cap-check(timer,cap-timer()));}
+ }else{fsa-check(1,sf-disk-ready);fsa-check(-1,fs-metadata-clock-authority);}
+ fsa-trace=alloc(4096);
+ let own=file-observation-open("/stored-name",authority);if own<=0{panic("named proof observation");}let proof=file-observation-borrow(own,authority);if proof<=0{panic("named proof loan");}
+ let bad=alloc(512);let b=0;while b<512{store8(bad+b,97);b+=1;}store8(bad,47);
+ let no-storage=cap-mint(root-realm,cap-memory()|cap-serial());
+ let before=heap-next;let free=fsa-free();let domains-before=domain-count;let epoch=file-observation-generation;
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),0,"relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"relative","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"/","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"/a//b","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"/a/../b","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"/a/","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),"/abcdefghijklmnopqrstuvwxy","relative","token",0,authority,-1,2));
+ fsa-check(-22,linux-process-run-named-input(proof,load64(oracle+8),bad,"relative","token",0,authority,-1,2));
+ fsa-check(-13,linux-process-run-named-input(proof,load64(oracle+8),0,0,0,0,no-storage,-1,2));
+ fsa-check(-8,linux-process-run-named-input(0,0,"/stored-name","relative","token",0,authority,-1,2));
+ fsa-check(0,linux-process-source-name);fsa-check(before,heap-next);fsa-check(free,fsa-free());fsa-check(domains-before,domain-count);fsa-check(epoch,file-observation-generation);
+ cap-revoke(no-storage);fsa-handle=own;fsa-calls=0;fsa-check(42,linux-process-run-named-input(proof,load64(oracle+8),"/stored-name","relative","token","third",authority,-1,3));if fsa-calls<2{panic("named proof had zero actual imports");}
+ fsa-check(0,linux-process-source-name);fsa-check(0,file-observation-return(own,authority));fsa-check(0,file-observation-close(own,authority));
+ serial-write-cstr(port,"file-apps: real named argc argv auxv readlink proof and ten preentry refusals PASS");serial-nl(port);
+ let output=alloc(16384);let cycles=0;let heap=0;let pool=0;let domains=0;let caps=cap-count;let caller=current-cap;let owned=domain-user-owned;let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);
+ while cycles<22{let i=0;while i<3{
+  let row=oracle+4096+i*8192;let size=load64(row);fsa-check(-8,linux-process-elf-entry(0x14000000+i*0x1000000,size));
+  let handle=file-observation-open(row+64,authority);if handle<=0{panic("stored app observation refused");}fsa-check(size,file-observation-query(handle,authority,0));
+  let image=file-observation-borrow(handle,authority);if image<=0{panic("stored app loan refused");}
+  if cycles==0{
+   serial-write-cstr(port,"file-apps: accepted ");serial-write-dec-wide(port,i);serial-put(port,32);serial-write-dec-wide(port,image);serial-put(port,32);serial-write-dec-wide(port,size);serial-nl(port);
+   let remaining=100000000;while (inb(port+5)&1)==0 && remaining>0{remaining-=1;}if remaining==0{panic("stored app capture timeout");}fsa-check(107,inb(port));
+  }
+  fsa-handle=handle;fsa-calls=0;redir-buf=output;redir-pos=0;redir-max=16384;
+  let result=linux-process-run-named-input(image,size,row+64,row+256,row+512,row+768,authority,-1,load64(row+8));let bytes=redir-pos;redir-buf=0;redir-pos=0;redir-max=0;
+  if result!=load64(row+24){let debug=0;while debug<bytes{serial-put(port,load8(output+debug));debug+=1;}let t=0;while t<fsa-calls && t<256{serial-write-dec-wide(port,load64(fsa-trace+t*16));serial-put(port,32);serial-write-dec-wide(port,load64(fsa-trace+t*16+8));serial-nl(port);t+=1;}serial-write-cstr(port,"file-apps: calls before failure ");serial-write-dec-wide(port,fsa-calls);serial-nl(port);}
+  fsa-check(load64(row+24),result);fsa-check(load64(row+16),bytes);if fsa-calls<=0{panic("stored app had zero actual calls");}
+  let j=0;while j<bytes{fsa-check(load8(row+1024+j),load8(output+j));j+=1;}
+  fsa-check(1,file-observation-query(handle,authority,2));fsa-check(0,file-observation-return(handle,authority));fsa-check(0,file-observation-close(handle,authority));fsa-check(-6,file-observation-query(handle,authority,0));
+  fsa-check(0,linux-process-source-name);fsa-check(0,linux-process-active);fsa-check(0,linux-process-pages);fsa-check(0,linux-process-cleanup-failed);fsa-check(0,domain-current);fsa-check(0,user-context-active);fsa-check(0,user-budget-active);fsa-check(0,domain-user-syscall-hook);fsa-check(owned,domain-user-owned);fsa-check(caps,cap-count);fsa-check(caller,current-cap);fsa-check(fs,rdmsr(0xC0000100));fsa-check(gs,rdmsr(0xC0000101));
+  serial-write-cstr(port,"file-apps: executed ");serial-write-dec-wide(port,cycles);serial-put(port,32);serial-write-dec-wide(port,i);serial-put(port,32);serial-write-dec-wide(port,fsa-calls);serial-nl(port);i+=1;
+ }
+ if cycles==0{heap=heap-next;pool=fsa-free();domains=domain-count;}else{fsa-check(heap,heap-next);fsa-check(pool,fsa-free());fsa-check(domains,domain-count);}cycles+=1;
+ }
+ serial-write-cstr(port,"file-apps: actual active-scope refusal pairs ");serial-write-dec-wide(port,fsa-scope-refusals);serial-nl(port);
+ cap-revoke(authority);serial-write-cstr(port,"file-apps: three original programs from native storage, exact output and21 stable cycles PASS");serial-nl(port);
+}

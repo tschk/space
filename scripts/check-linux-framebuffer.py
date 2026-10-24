@@ -15,14 +15,26 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in',dest='compiler',type=Path,required=True)
 p.add_argument('--app',type=Path,required=True)
 p.add_argument('--out',type=Path,required=True)
+p.add_argument('--utc',action='store_true',help='Explicit UTC filesystem for native file-source tests')
+p.add_argument('--nvme-disk',type=Path)
+p.add_argument('--reopen',action='store_true')
+p.add_argument('--file-source',action='store_true',help='Load the original viewer from a native immutable file observation')
 p.add_argument('--repeat',type=int,default=21)
 a=p.parse_args();out=a.out.resolve();compiler=a.compiler.resolve();app=a.app.resolve()
 assert 1<=a.repeat<=100
+assert a.file_source or (a.nvme_disk is None and not a.reopen and not a.utc)
+assert not a.reopen or a.nvme_disk is not None
+if a.nvme_disk is not None:
+ a.nvme_disk=a.nvme_disk.resolve()
+ if a.reopen:assert a.nvme_disk.is_file() and a.nvme_disk.stat().st_size==64*1024*1024
+ else:
+  with a.nvme_disk.open('xb') as disk:disk.truncate(64*1024*1024)
 assert not out.exists() or not any(out.iterdir());out.mkdir(parents=True,exist_ok=True)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 manifest=json.loads((ROOT/'fixtures/applications/fbv-1.1.json').read_text())
 assert sha(app)==manifest['apps'][0]['sha256'] and app.stat().st_size==manifest['apps'][0]['size_bytes']
 files=[x for d in ['components','kernel','protocol','services'] for x in (ROOT/d).rglob('*.in')]+[ROOT/'boot/multiboot.asm',ROOT/'fixtures/linux-framebuffer/checks.asm',Path(__file__).resolve(),ROOT/'fixtures/applications/fbv-1.1.json']
+if a.file_source:files.extend([ROOT/'fixtures/file-observation/framebuffer.in',ROOT/'fixtures/file-observation/private.in',ROOT/'scripts/check-file-observation-persistence.py'])
 contents={str(p.relative_to(ROOT)):p.read_bytes() for p in files}
 assert all(p.read_bytes()==contents[str(p.relative_to(ROOT))] for p in files)
 snapshot=out/'source'
@@ -39,6 +51,10 @@ assert compiled.replace(b'linux-process-device-entry=fbc-native-entry;',old)==ca
 provider.write_bytes(compiled)
 report=dict(status='running',goal_status='OPEN',classification='Original upstream BMP viewer, one explicit native canvas and one mapping; no interactive TTY/X11/general fbdev',application_sha256=sha(app),compiler_sha256=sha(compiler),source_sha256=inventory,root='standard',measured_cycles=a.repeat)
 report['test_only_override']={'path':'components/linux-framebuffer.in','canonical_sha256':hashlib.sha256(canonical).hexdigest(),'compiled_sha256':sha(provider),'replacement':'one trusted native entry assignment through real-entry quarantine interposer'}
+if a.file_source:
+ observation=snapshot/'components/file-observation.in';observation_canonical=observation.read_bytes();observation_old=b'status=fs-directory-read(block,buffer,load64(row+8));';assert observation_canonical.count(observation_old)==1
+ observation_compiled=observation_canonical.replace(observation_old,b'status=fbc-file-read(block,buffer,load64(row+8));');observation.write_bytes(observation_compiled);assert observation_compiled.replace(b'status=fbc-file-read(block,buffer,load64(row+8));',observation_old)==observation_canonical
+ report['file_read_override']={'canonical_sha256':hashlib.sha256(observation_canonical).hexdigest(),'compiled_sha256':sha(observation),'replacement':'one native read call; always real original read before grant/metadata/mount mutation'}
 process=None;serial=None;monitor=None;received=bytearray()
 def connect(path):
  deadline=time.monotonic()+10
@@ -50,7 +66,15 @@ def connect(path):
 def wait(marker):
  deadline=time.monotonic()+120
  while marker not in received:
-  assert b'PANIC' not in received,received[-3000:]
+  if b'PANIC' in received:
+   tail=time.monotonic()+.5
+   while time.monotonic()<tail:
+    try:
+     block=serial.recv(65536)
+     if not block:break
+     received.extend(block)
+    except socket.timeout:pass
+   raise AssertionError(received[-3000:])
   assert process.poll() is None and time.monotonic()<deadline,received[-3000:]
   try:
    block=serial.recv(65536);assert block;received.extend(block)
@@ -141,16 +165,45 @@ fn framebuffer-check(port:Int)->void{
  serial-write-cstr(port,"framebuffer: original fbv exited zero and owned presentation PASS");serial-nl(port);
 }
 '''.replace('APP_SIZE',str(app.stat().st_size)).replace('CONTROL_SIZE',str((out/'checks.elf').stat().st_size)).replace('CYCLES',str(a.repeat+1))
+ if a.file_source:
+  private=out/'private.sci'
+  with (out/'private.log').open('w') as log:subprocess.run([str(compiler),'compile','--path',str(snapshot/'fixtures/file-observation/private.in'),'--entry','private-entry','--emit','sci','--base','0x7a000000','--target','native','--target-triple','x86_64-unknown-none','--out',str(private)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
+  report['private_sci_sha256']=sha(private)
+  source='const FBC-FILE-UTC = '+str(int(a.utc))+'\nconst FBC-FILE-PRIVATE-SIZE = '+str(private.stat().st_size)+'\nconst FBC-FILE-REOPEN = '+str(int(a.reopen))+'\nconst FBC-FILE-NVME = '+str(int(a.nvme_disk is not None))+'\n'+'import '+json.dumps(str(snapshot/'fixtures/file-observation/framebuffer.in'))+'\n'+source
+  source=source.replace(' let bitmap=alloc(102);',' fbc-file-filesystem();\n let bitmap=alloc(102);',1)
+  source=source.replace(' let wrong=cap-mint(root-realm,cap-memory());',' fbc-file-prepare(auth,'+str(app.stat().st_size)+');\n let wrong=cap-mint(root-realm,cap-memory());')
+  if a.reopen:source=source.replace(' if fs-write-file("/fbv-test.bmp",bitmap,102)!=0{panic("framebuffer bitmap seed");}',' if sf-disk-ready!=1 || sf-mem-disk!=0 || nvme-ready!=1{panic("file observation persisted native backing");}')
+  source=source.replace('linux-framebuffer-run(0x14000000,','linux-framebuffer-run(fbc-file-image,')
+  source=source.replace(' let canvas=native-canvas-new(owner,256,128,64,64);',' fbc-file-cycle('+str(app.stat().st_size)+');\n let canvas=native-canvas-new(owner,256,128,64,64);',1)
+  source=source.replace(' serial-write-cstr(port,"framebuffer: original fbv exited zero',' fbc-file-finish();\n serial-write-cstr(port,"framebuffer: original fbv exited zero')
  (out/'kernel.in').write_text(source)
+ report['generated_kernel_source_sha256']=sha(out/'kernel.in')
+ compiled_inventory={name:sha(snapshot/name) for name in contents};report['compiled_source_sha256']=compiled_inventory
  with (out/'compile.log').open('w') as log:
   subprocess.run(['nasm','-f','bin',str(snapshot/'boot/multiboot.asm'),'-o',str(out/'trampoline.bin')],check=True,stdout=log,stderr=subprocess.STDOUT,timeout=30)
   subprocess.run([str(compiler),'compile','--path',str(out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(out/'kernel.bin')],check=True,stdout=log,stderr=subprocess.STDOUT,timeout=180)
  metadata=json.loads((out/'kernel.component-metadata.json').read_text());assert metadata['boot_layout']['load_end']<0x14000000
  command=['qemu-system-x86_64','-kernel',str(out/'kernel.bin'),'-m','512M','-cpu','max','-vga','std','-display','none','-no-reboot','-serial',f'unix:{out}/serial.sock,server=on,wait=on','-monitor',f'unix:{out}/monitor.sock,server=on,wait=off','-device',f'loader,file={app},addr=0x14000000,force-raw=on','-device',f'loader,file={out}/checks.elf,addr=0x15000000,force-raw=on']
+ if a.file_source:
+  assert json.loads((out/'kernel.component-metadata.json').read_text())['boot_layout']['load_end']<=0x2f0000
+  command.extend(['-device',f'loader,file={out}/private.sci,addr=0x2f0000,force-raw=on'])
+ if a.utc:command.extend(['-rtc','base=2026-10-'+('25' if a.reopen else '24')+'T00:00:00,clock=vm'])
+ if a.nvme_disk is not None:
+  command.extend(['-drive',f'file={a.nvme_disk},format=raw,if=none,id=owned,cache=writethrough','-device','nvme,drive=owned,serial=space-file-observation'])
+  report['disk_before_sha256']=sha(a.nvme_disk)
+ if a.reopen:
+  staged=f'loader,file={app},addr=0x14000000,force-raw=on';position=command.index(staged);assert command[position-1]=='-device';del command[position-1:position+1]
  report.update(qemu_command=command,kernel_sha256=sha(out/'kernel.bin'),bitmap_sha256=sha(out/'image.bmp'))
  with (out/'qemu.log').open('w') as log:
   process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT);serial=connect(out/'serial.sock');monitor=connect(out/'monitor.sock')
   wait(b'framebuffer: original fbv pixels ready\n')
+  if a.file_source:
+   match=re.search(rb'file-observation: accepted ([0-9]+) ([0-9]+)',received);assert match
+   pointer,size=map(int,match.groups());assert size==app.stat().st_size
+   captured=out/'accepted-original.elf';monitor.sendall(f'pmemsave {pointer:#x} {size:#x} {json.dumps(str(captured))}\n'.encode());deadline=time.monotonic()+10
+   while (not captured.exists() or captured.stat().st_size!=size) and time.monotonic()<deadline:time.sleep(.02)
+   assert sha(captured)==sha(app),'accepted native source differs from original application'
+   report.update(application_source='native immutable file observation, after deletion/reuse of backing and invalidation of QEMU staging ELF',accepted_source_sha256=sha(captured))
   frame=out/'pixels.ppm';monitor.sendall(f'screendump {frame}\n'.encode());deadline=time.monotonic()+5
   while (not frame.exists() or frame.stat().st_size<1024*768*3+16) and time.monotonic()<deadline:time.sleep(.02)
   header=frame.read_bytes().split(b'\n',3);assert header[:3]==[b'P6',b'1024 768',b'255']
@@ -166,7 +219,14 @@ fn framebuffer-check(port:Int)->void{
    first=next((i for i,(got,want) in enumerate(zip(header[3],expected)) if got!=want),-1);raise AssertionError(('pixels',first,first//3%1024,first//3//1024,len(header[3])))
   serial.sendall(b'q');wait(b'framebuffer: original fbv exited zero and owned presentation PASS\n');wait(b'space> ')
  assert all((ROOT/name).read_bytes()==data for name,data in contents.items()),'source changed'
+ assert all(sha(snapshot/name)==value for name,value in compiled_inventory.items()),'compiled source changed'
  assert sha(compiler)==report['compiler_sha256'] and sha(app)==report['application_sha256']
+ if a.utc and a.reopen:assert b'file-observation: UTC executable observation before TimeSource binding PASS' in received
+ if a.nvme_disk is not None:report['disk_after_sha256']=sha(a.nvme_disk)
+ if a.file_source:
+  assert b'DENIED unresolved import file-observation-open' in received
+  if not a.reopen:assert b'file-observation: six after-read grant/metadata/mount controls PASS' in received
+ if a.file_source:assert b'file-observation: native stored original bytes, retained loans and stable reuse PASS' in received
  assert received.count(b'framebuffer: lifecycle ')==a.repeat+1
  assert received.count(b'framebuffer: retained VM lease recovery PASS\n')==a.repeat+1
  assert received.count(b'framebuffer: deadline armed\n')==a.repeat+1

@@ -132,3 +132,11 @@ Windows console/CRT/NT imports and general original Windows applications remain
 open. The32-import admission bound is unchanged. Native PE VM migration, GUI
 window/message/input adapters and unchanged Windows GUI applications remain
 required by the full compatibility goal; this slice closes none of those rows.
+
+
+The later full139-gate integration from686 committed files atad0a0be passes all
+139 at `/workspace/lab139-retry/report.json`, including source/compiler/application
+integrity. It includes both Find gates. The first attempt stopped during UTC
+persistence without a final report; its completed gates and interruption receipt
+remain under `/workspace/lab139` and `/workspace/lab139-interruption.json`. No
+passing final status is assigned to that interrupted attempt.

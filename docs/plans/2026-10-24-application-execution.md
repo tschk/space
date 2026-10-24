@@ -7,6 +7,14 @@ This checkpoint does not close that goal or narrow its required outcomes.
 
 ## Latest integrated checkpoint
 
+The next686-file commitad0a0be passes all139 gates at
+`/workspace/lab139-retry/report.json`, including source/compiler/application
+integrity and actual Windows Find RAM/NVMe checks. The initial interrupted139
+attempt is retained separately and does not receive a final passing status.
+New native file observations and distinct source/argv identity have later focused
+real-app receipts; see [their scope](2026-10-24-native-file-observations.md).
+The next integration adds five stored-application gates from a new committed tree.
+
 All137 gates pass at `/workspace/lab137/report.json`, from679 committed files at
 1ffaa65. Source/compiler/application integrity passes. It includes the earlier
 original Linux CLI/fbv pixels, native owned VM/canvas, protected GUI/input and

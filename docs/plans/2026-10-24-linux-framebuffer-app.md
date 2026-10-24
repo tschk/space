@@ -159,3 +159,13 @@ partial-copy grant revocation, mode changes and retained close. The later native
 canvas regression also passes at `/workspace/native-canvas-framebuffer-regression`.
 The application lab now adds two mandatory gates (native canvas and original
 framebuffer viewer) for135 total; a fresh committed integration run is required.
+
+
+The later optional native-file-source profile executes the identical original
+viewer from an owned immutable filesystem observation, after backing deletion
+and invalidation of the QEMU ELF staging copy. RAM passes22 original launches
+plus88 controls. Each v1/UTC NVMe profile passes44 launches plus176 controls over
+two boots; reopen has no application ELF loader. Accepted bytes match the original
+hash and whole-frame pixels match the independent oracle. This still adds no
+interactive viewer input or ordinary desktop launch. See the
+[native file observation boundary](2026-10-24-native-file-observations.md).
