@@ -73,7 +73,7 @@ def main():
     spec = importlib.util.spec_from_file_location('window_evidence', root / 'scripts/gui-window-evidence.py')
     window_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(window_module)
-    window_oracle = window_module.WindowEvidence(root)
+    window_oracle = window_module.WindowEvidence(root,protected=window_module.image_has_protected_canvas(image))
     readable = window_module.image_has_canvas(image)
     report['gui_profile'] = 'protected' if args.default_gui else ('window' if readable else 'legacy')
     if args.observe:

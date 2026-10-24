@@ -27,7 +27,7 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('window_evidence', root / 'scripts/gui-window-evidence.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-oracle = module.WindowEvidence(root)
+oracle = module.WindowEvidence(root,protected=True)
 
 
 def sha(path):

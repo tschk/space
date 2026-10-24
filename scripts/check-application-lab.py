@@ -207,8 +207,8 @@ def main():
         print('FAIL: ' + str(error), file=sys.stderr)
         return finish()
 
-    def check(name, script, *arguments, **options):
-        return run(name, [sys.executable, ROOT / 'scripts' / script, *arguments], **options)
+    def check(name, script, *arguments, interpreter=None, **options):
+        return run(name, [interpreter or sys.executable, ROOT / 'scripts' / script, *arguments], **options)
 
     check('fixture-boot-layout','check-boot-fixture-layout.py','--out',args.out / 'fixture-boot-layout')
     check('terminal-session-model','check-terminal-session-model.py','--in',args.compiler,
@@ -431,7 +431,8 @@ def main():
                          ('gui-protected-persistence', 'check-gui-protected-persistence.py'),
                          ('gui-protected-lifetime', 'check-gui-protected-lifetime.py'),
                          ('gui-protected-faults', 'check-gui-protected-faults.py')]:
-        check(name, script, '--in', args.compiler, '--out', args.out / name, timeout=1200)
+        check(name, script, '--in', args.compiler, '--out', args.out / name, timeout=1200,
+              interpreter=args.terminal_oracle_python)
     check('desktop-launcher', 'check-desktop-launcher.py', '--in', args.compiler,
           '--build-dir', args.out / 'desktop-launcher', timeout=900)
     check('desktop-font-coverage','check-desktop-fonts.py','--in',args.compiler,
@@ -442,13 +443,13 @@ def main():
                            'KERNEL_BIN=' + str(args.out / 'images/kernel-standard.bin'),
                            'bash', ROOT / 'scripts/check-desktop-damage.sh'], dependency=built)
     check('gui-default', 'check-gui-default.py', '--in', args.compiler,
-          '--out', args.out / 'gui-default', timeout=1200)
+          '--out', args.out / 'gui-default', timeout=1200,interpreter=args.terminal_oracle_python)
     check('gui-default-faults', 'check-gui-default-faults.py', '--in', args.compiler,
-          '--out', args.out / 'gui-default-faults', timeout=1200)
+          '--out', args.out / 'gui-default-faults', timeout=1200,interpreter=args.terminal_oracle_python)
     check('gui-default-persistence', 'check-gui-persistence.py', '--in', args.compiler,
-          '--default-gui', '--out', args.out / 'gui-default-persistence', timeout=1200)
+          '--default-gui', '--out', args.out / 'gui-default-persistence', timeout=1200,interpreter=args.terminal_oracle_python)
     check('gui-default-lifecycle', 'check-gui-lifecycle.py', '--in', args.compiler,
-          '--default-gui', '--observe', '--out', args.out / 'gui-default-lifecycle', timeout=1200)
+          '--default-gui', '--observe', '--out', args.out / 'gui-default-lifecycle', timeout=1200,interpreter=args.terminal_oracle_python)
     check('standard-gui', 'check-standard-gui.py', '--in', args.compiler, '--build-dir', args.out / 'standard-gui')
     check('native-gui-apps', 'check-gui-apps.py', '--in', args.compiler, '--build-dir', args.out / 'gui-apps')
     check('gui-persistence', 'check-gui-persistence.py', '--in', args.compiler, '--out', args.out / 'gui-persistence')

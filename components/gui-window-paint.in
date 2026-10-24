@@ -1,6 +1,7 @@
 package space.app.gui
 import "gui-window-state.in"
 import "font.in"
+import "gui-window-draw.in"
 
 // Existing bounded bitmap raster path, now targeting the granted canvas stride.
 // Font assets and advances come from font.in; this adds no font parser/engine.
@@ -46,46 +47,4 @@ fn window-text(face: Int, x: Int, y: Int, text: Int, maximum: Int, color: Int) -
   }
 }
 
-fn window-draw-at(kind: Int, memory: Int) -> Int {
-  let s = window-scale
-  window-fill(0, 0, window-width, window-height, 0xFF1C2430)
-  window-fill(0, 0, window-width, 16 * s, 0xFF263246)
-  let border = 0xFF4D5666
-  if window-focused == 1 { border = 0xFF88B5FF }
-  window-fill(0, 0, window-width, s, border)
-  window-fill(0, window-height - s, window-width, s, border)
-  window-fill(0, 0, s, window-height, border)
-  window-fill(window-width - s, 0, s, window-height, border)
-  if kind == 0 {
-    window-text(FONT-FACE-SANS, 8 * s, 4 * s, "Calculator", 16, 0xFFF3F5F8)
-    window-text(FONT-FACE-SANS, 8 * s, 24 * s, "Expression", 16, 0xFFB5C2D6)
-  } else {
-    window-text(FONT-FACE-SANS, 8 * s, 4 * s, "Notes", 16, 0xFFF3F5F8)
-    window-text(FONT-FACE-SANS, 8 * s, 24 * s, "Text (8 chars)", 16, 0xFFB5C2D6)
-  }
-  window-fill(6 * s, 34 * s, window-width - 12 * s, 14 * s, 0xFF111721)
-  window-text(FONT-FACE-MONO, 8 * s, 37 * s, memory, 8, 0xFFF3F5F8)
-  let cursor = load64(memory + 128)
-  if kind == 1 { cursor = load64(memory + 136) }
-  if window-focused == 1 && cursor >= 0 && cursor <= 8 { window-fill((8 + cursor * 8) * s, 37 * s, s, 8 * s, 0xFF88B5FF) }
-  if kind == 0 {
-    window-text(FONT-FACE-SANS, 8 * s, 58 * s, "Result", 8, 0xFFB5C2D6)
-    window-text(FONT-FACE-MONO, 8 * s, 74 * s, (memory + 16), 8, 0xFFF3F5F8)
-    window-text(FONT-FACE-SANS, 8 * s, 94 * s, "Enter to calculate", 24, 0xFFB5C2D6)
-  } else {
-    window-text(FONT-FACE-SANS, 8 * s, 58 * s, "File /gui-note.txt", 24, 0xFFB5C2D6)
-    window-text(FONT-FACE-MONO, 8 * s, 74 * s, (memory + 16), 8, 0xFF8AD6AE)
-    window-text(FONT-FACE-SANS, 8 * s, 94 * s, "Ctrl+S save", 16, 0xFFB5C2D6)
-  }
-  window-text(FONT-FACE-SANS, 8 * s, 106 * s, "Tab focus | Esc close", 24, 0xFFB5C2D6)
-  window-text(FONT-FACE-SANS, 8 * s, 118 * s, "Ctrl+G size | Ctrl+O mode", 32, 0xFFB5C2D6)
-  let geometry = (window-width << 16) | window-height
-  if window-ack == 1 {
-    if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-CONFIGURE-ACK-V1, window-generation, gui-window-config-word(window-width, window-height, window-scale)) != 1 { return 1 }
-    window-ack = 0
-  }
-  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 1 }
-  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, geometry) != 1 { return 1 }
-  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 1 }
-  return 42
-}
+fn window-text-cell()->Int{return 8 * window-scale;}

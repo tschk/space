@@ -76,7 +76,7 @@ spec = importlib.util.spec_from_file_location('native_disk_oracle', ROOT/'script
 oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
 spec = importlib.util.spec_from_file_location('window_evidence', ROOT/'scripts/gui-window-evidence.py')
 window_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(window_module)
-window_oracle = window_module.WindowEvidence(ROOT)
+window_oracle = window_module.WindowEvidence(ROOT,protected=True)
 readable = True
 report['gui_profile'] = 'protected-window-cpl3'
 glyphs = {}

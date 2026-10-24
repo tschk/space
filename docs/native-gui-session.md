@@ -1,5 +1,13 @@
 # Native GUI application session
 
+The protected default now selects client-owned DejaVu mono/sans coverage at
+14/21px for the existing2/3 text configurations. Labels use measured advances;
+field/caret cells stay10/15px wide. Each SCI client decodes its own bounded
+atlas and paints its granted canvas. Legacy bitmap clients retain their old
+provider. This remains an ASCII profile and the editor still holds eight bytes.
+See the [typography continuation](plans/2026-10-25-protected-client-typography.md)
+for ownership and exact visual verification.
+
 The standard boot image includes readable calculator and notes windows, each
 executing as its own retained SCI component. Type `gui apps` in the serial shell;
 the session runs until both applications close. Full-image `help` lists the

@@ -46,7 +46,7 @@ spec = importlib.util.spec_from_file_location('native_disk_oracle', ROOT/'script
 oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
 spec = importlib.util.spec_from_file_location('window_evidence', ROOT/'scripts/gui-window-evidence.py')
 window_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(window_module)
-window_oracle = window_module.WindowEvidence(ROOT)
+window_oracle = window_module.WindowEvidence(ROOT,protected=window_module.image_has_protected_canvas(image))
 readable = window_module.image_has_canvas(image)
 report['gui_profile'] = 'window' if readable else 'legacy'
 glyphs = {}

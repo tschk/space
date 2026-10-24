@@ -1,5 +1,6 @@
 """Shared read-only framebuffer oracle for actual readable native GUI tests."""
 from pathlib import Path
+import hashlib
 import re
 import json
 import struct
@@ -16,7 +17,7 @@ ACTIVE = bytes((136, 181, 255))
 INACTIVE = bytes((77, 86, 102))
 
 
-def image_has_canvas(path):
+def image_canvas_kind(path):
     blob = Path(path).read_bytes()
     table = struct.unpack_from('<Q', blob, 0xf00)[0] - 0x100000
     magic, count = struct.unpack_from('<QQ', blob, table)
@@ -28,12 +29,31 @@ def image_has_canvas(path):
             trailer = 64
             if kind == 23: trailer = 128
             offset = physical - 0x100000 + size - trailer
-            return size >= trailer + 64 and struct.unpack_from('<Q', blob, offset)[0] == 0x5350414345434e56
-    return False
+            return kind if size >= trailer + 64 and struct.unpack_from('<Q', blob, offset)[0] == 0x5350414345434e56 else 0
+    return 0
+
+
+def image_has_canvas(path):
+    return image_canvas_kind(path)!=0
+
+
+def image_has_protected_canvas(path):
+    return image_canvas_kind(path)==23
 
 
 class WindowEvidence:
-    def __init__(self, root):
+    def __init__(self, root, protected=False):
+        self.protected=protected
+        self.mature={}
+        if protected:
+            from PIL import ImageFont
+            self.fonts={}
+            pins={'DejaVuSansMono.ttf':'54bf827eb99404e8f430c330ad30f063334f637eba0109b6a18d4f566a8e9dd8',
+                  'DejaVuSans.ttf':'57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e'}
+            for face,name in enumerate(pins):
+                path=Path(root)/'assets/fonts/desktop'/name
+                assert hashlib.sha256(path.read_bytes()).hexdigest()==pins[name]
+                for scale in (2,3):self.fonts[scale,face]=ImageFont.truetype(str(path),14 if scale==2 else 21)
         source = (Path(root) / 'components/font.in').read_text()
         self.faces = [{}, {}]
         self.advance = {}
@@ -48,6 +68,23 @@ class WindowEvidence:
                 if face:
                     self.advance[values[0]] = values[1]
         assert self.faces[0] and self.faces[1]
+
+    def mature_glyph(self,face,scale,code):
+        """Independent mature raster/advance oracle, never native atlas input."""
+        key=(face,scale,code)
+        if key not in self.mature:
+            from PIL import Image,ImageDraw
+            extent=8*scale;baseline=13*scale//2;limit=extent
+            font=self.fonts[scale,face];tile=Image.new('L',(extent,extent))
+            ImageDraw.Draw(tile).text((0,baseline),chr(code),font=font,fill=255,anchor='ls')
+            advance=5*scale if face==0 else max(1,int(font.getlength(chr(code))+.5))
+            if face==1:limit=advance
+            box=tile.getbbox()
+            if box and box[2]>limit:
+                ink=tile.crop((0,0,box[2],extent)).resize((limit,extent),Image.Resampling.LANCZOS)
+                tile=Image.new('L',(extent,extent));tile.paste(ink,(0,0))
+            self.mature[key]=(tile.tobytes(),advance)
+        return self.mature[key]
 
     def layout(self, serial):
         matches = re.findall(rb'gui-window: mode (\d+)x(\d+) pitch (\d+) extent (\d+)x(\d+) scale (\d+) generation (\d+) slots (\d+) (\d+) (\d+)\r?\n', bytes(serial))
@@ -146,6 +183,17 @@ class WindowEvidence:
             value = value.ljust(cells) if cells is not None else value
             for index, ch in enumerate(value):
                 code = ord(ch)
+                if self.protected:
+                    coverage,advance=self.mature_glyph(face,s,code)
+                    extent=8*s;columns=advance if index<len(value)-1 else extent
+                    for row in range(extent):
+                        for column in range(columns):
+                            alpha=coverage[row*extent+column] if column<extent else 0
+                            expected=bytes((f*alpha+b*(255-alpha))//255 for f,b in zip(foreground,background))
+                            if caret is not None and caret<=cursor+column<caret+s:expected=ACTIVE
+                            pixel(cursor+column,y+row,expected,('mature glyph',face,value,index))
+                    cursor+=advance
+                    continue
                 bits = self.faces[face].get(code, [0] * 8)
                 advance = 8 if face == 0 else self.advance[code]
                 # A proportional glyph's painted box can overlap its next cell;
@@ -179,7 +227,8 @@ class WindowEvidence:
             text(1, left + 8 * s, top + 24 * s, 'Expression' if slot == 0 else 'Text (8 chars)', LABEL, WINDOW)
             cursor = content[2] if len(content) == 3 else len(content[0])
             assert 0 <= cursor <= len(content[0])
-            caret = left + (8 + cursor * 8) * s if focused == slot else None
+            cell=5 if self.protected else 8
+            caret = left + (8 + cursor * cell) * s if focused == slot else None
             text(0, left + 8 * s, top + 37 * s, content[0], WHITE, FIELD, cells=9, caret=caret)
             text(1, left + 8 * s, top + 58 * s, 'Result' if slot == 0 else 'File /gui-note.txt', LABEL, WINDOW)
             text(0, left + 8 * s, top + 74 * s, content[1], WHITE if slot == 0 else GREEN, WINDOW, cells=8)

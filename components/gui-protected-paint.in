@@ -1,0 +1,68 @@
+package space.app.gui
+import "gui-window-state.in"
+import "gui-window-draw.in"
+import "font-desktop-atlas.in"
+
+// Pure client-local provider. No kernel framebuffer, font pointer or font
+// service imports. Existing SCI memory/display grants and canvas remain exact.
+const FONT-FACE-MONO=0
+const FONT-FACE-SANS=1
+var protected-font-mono16:Int=0
+var protected-font-sans16:Int=0
+
+fn protected-font-init()->Int{
+  if protected-font-mono16!=0{return 0;}
+  let mono=alloc(32768);let sans=alloc(32768)
+  if mono==0 || sans==0{return 0;}
+  protected-font-mono16=mono;protected-font-sans16=sans
+  desktop-fonts-apply(mono,sans)
+  if desktop-font-mono24==0 || desktop-font-sans24==0{return 0;}
+  return 1
+}
+fn window-text-cell()->Int{return 5 * window-scale;}
+fn window-fill(x:Int,y:Int,width:Int,height:Int,color:Int)->void{
+  if x<0 || y<0 || width<0 || height<0 || x>window-width || y>window-height{return;}
+  if width>window-width - x || height>window-height - y{return;}
+  let row=0;while row<height{
+    let column=0;while column<width{
+      store32(0x70001000+(y+row)*SCI-CANVAS-STRIDE+(x+column)*4,color);column+=1;
+    }row+=1;
+  }
+}
+fn protected-font-over(fg:Int,bg:Int,coverage:Int)->Int{
+  let inverse=255 - coverage
+  let r=(((fg>>16)&255)*coverage+((bg>>16)&255)*inverse)/255
+  let g=(((fg>>8)&255)*coverage+((bg>>8)&255)*inverse)/255
+  let b=((fg&255)*coverage+(bg&255)*inverse)/255
+  return 0xff000000|(r<<16)|(g<<8)|b
+}
+fn window-text(face:Int,x:Int,y:Int,text:Int,maximum:Int,color:Int)->void{
+  let extent=16;let table=protected-font-mono16
+  if face==FONT-FACE-SANS{table=protected-font-sans16;}
+  if window-scale==3{
+    extent=24;table=desktop-font-mono24
+    if face==FONT-FACE-SANS{table=desktop-font-sans24;}
+  }
+  if table==0 || x<0 || y<0 || y>window-height || extent>window-height - y{return;}
+  let index=0;let cursor=x
+  while index<maximum && index<64{
+    let code=load8(text+index);if code==0{return;}
+    if code<32 || code>126{code=63;}
+    let advance=window-text-cell()
+    if face==FONT-FACE-SANS{
+      if extent==16{advance=desktop-font-sans16-advances[code];}
+      else{advance=desktop-font-sans24-advances[code];}
+    }
+    if cursor>window-width || extent>window-width - cursor{return;}
+    let row=0;while row<extent{
+      let column=0;while column<extent{
+        let coverage=load8(table+code*extent*extent+row*extent+column)
+        if coverage!=0{
+          let pixel=0x70001000+(y+row)*SCI-CANVAS-STRIDE+(cursor+column)*4
+          store32(pixel,protected-font-over(color,load32(pixel),coverage))
+        }column+=1;
+      }row+=1;
+    }
+    cursor+=advance;index+=1;
+  }
+}

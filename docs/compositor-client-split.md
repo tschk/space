@@ -18,6 +18,13 @@ kernel-linked window demo establishes isolated SCI desktop services.
 
 ## Private owned canvas / original viewer checkpoint (2026-10-24)
 
+The [protected typography continuation](plans/2026-10-25-protected-client-typography.md)
+keeps the existing SCI/SPDP ownership boundary while moving mature DejaVu
+coverage and measured label advances into each protected client's private heap.
+Window layout policy is shared independently of the legacy/protected text
+provider. No compositor text buffer, kernel font pointer or new IPC mechanism is
+introduced; this library seam is not a font-service isolation claim.
+
 A separately imported private native canvas library owns staging/accepted frames
 and leases existing SPDP surfaces. Checked stopped uploads from native VM objects
 publish only after full copy and validation; uncertain close retains ownership.

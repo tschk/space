@@ -49,7 +49,7 @@ fn store8(address:Int,value:Int)->void{
  if address<NATIVE-PROTECTED-HEAP || address>=NATIVE-PROTECTED-HEAP+256 || value!=0{escaped=1;}
  writes+=1;
 }
-fn fb-font-init()->void{font-count+=1;font-address=alloc(32);}
+fn protected-font-init()->Int{font-count+=1;font-address=alloc(32);return 1;}
 fn chan-page-send-frame(page:Int,object:Int,opcode:Int,arg0:Int,arg1:Int)->Int{
  if page!=0x70000000 || object!=SPDP-OBJ-COMPOSITOR || opcode!=SPDP-COMPOSITOR-CREATE-SURFACE || arg0!=0 || arg1!=0{escaped=1;return 0;}
  sent+=1;return 1;

@@ -1,7 +1,7 @@
 package space.app.gui
 import "../protocol/display.in"
 import "../protocol/native-protected.in"
-import "gui-window-paint.in"
+import "gui-protected-paint.in"
 
 // Isolated preparation: imports become bounded native services only after
 // profile-3 admission. No supervisor helper or pointer is an app interface.
@@ -43,7 +43,7 @@ fn protected-window-start(info: Int) -> Int {
   if window-configure(load64(config + 8), load64(config + 16), load64(config + 24), load64(config + 32)) != 1 { return 0 }
   window-focused = focused
   protected-widget-next = NATIVE-PROTECTED-HEAP + 4096
-  fb-font-init()
+  if protected-font-init()!=1{return 0;}
   let i = 0
   while i < 256 { store8(NATIVE-PROTECTED-HEAP + i, 0); i += 1 }
   return chan-page-send-frame(0x70000000, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0)
