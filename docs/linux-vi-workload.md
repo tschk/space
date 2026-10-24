@@ -82,16 +82,40 @@ in the SCI export registry. They do not establish an isolated Storage or
 TerminalSession SCI service. No foreign backing-block ledger, raw guest pointer
 into VFS, alternate IPC fabric or terminal policy in the nanokernel was added.
 
-## Interactive terminal remains open
+## Real keyboard continuation, 2026-10-25 Australia/Melbourne
 
-An original vi startup with no terminal input correctly opens the file and emits
+The original pinned vi now runs through the optional native terminal backend on
+both standard and minimal roots. Two successive protected processes receive 27
+actual PS/2 text events, save `native42original\n`, then reopen and save
+`again42native42original\n`. The test verifies exact 17- and 24-byte files,
+the unchanged upstream ELF, restored supervisor state and stable resources
+after warmup. `scripts/check-linux-terminal-vi.py` preserves the original ANSI
+output separately; this is keyboard/file evidence, not a desktop screenshot.
+
+The native backend retains CPU/VM state while input or output would block.
+Its bounded raw termios, single-descriptor poll, descriptor flags and native
+geometry support this application without changing regular-file readiness.
+Finite poll uses the authorized hardware counter. An executable negative
+control caught an expired poll deadline leaking into a subsequent blocking
+read; the corrected backend retires that deadline on poll completion.
+Canonical disciplines, signals, multiple-descriptor terminal poll and concurrent
+foreign terminal processes remain unsupported in this optional profile.
+
+The PS/2 controller and keyboard decoder were extracted unchanged from the
+mouse module so minimal-root keyboard testing needs no framebuffer/mouse
+geometry. These are native libraries, not new SCI isolation boundaries.
+
+## Historical startup limitations and remaining display work
+
+Before the native terminal continuation, an original vi startup with no terminal input correctly opened the file and emitted
 its ANSI screen, then fails reading input. Feeding key bytes from a regular file
 also remains a failed scenario: vi's Escape decoder needs actual timed input
 availability, while Linux correctly reports a regular file readable at EOF.
 Changing that readiness to make the application pass would be incorrect.
 
-The EX scenario proves original application editing/file behavior. It does not
-prove focused keyboard input, a real PTY, ANSI output rendered by Space, resize
-events, two interactive terminal clients or general TUI support. Those stay in
+The EX scenario proves original application editing/file behavior. The newer
+keyboard scenario additionally proves real input and retained waits. ANSI output
+rendered by Space, resize events, two concurrent terminal clients and general
+TUI support remain open. Those stay in
 the [full goal](compatibility-coverage-goal.md), with the next native session
 boundary explained in the [console/GUI reference review](terminal-gui-reference.md).

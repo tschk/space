@@ -24,7 +24,7 @@ fn terminal-retained-exact(session: Int, owner: Int, text: Int, bytes: Int) -> v
 }
 
 fn terminal-retained-fixture(port: Int) -> void {
-  let authority = cap-mint(obj-alloc(273),cap-memory() | cap-serial() | cap-storage())
+  let authority = cap-mint(obj-alloc(273),cap-memory() | cap-serial() | cap-storage() | cap-timer())
   let owner = cap-mint(obj-alloc(271),cap-memory())
   let seat = cap-mint(obj-alloc(272),cap-input())
   if authority < 0 || owner < 0 || seat < 0 { panic("terminal retained caps") }
@@ -105,6 +105,29 @@ fn terminal-retained-fixture(port: Int) -> void {
   }
   if total != 1024 || linux-process-terminal-query(token,authority,0) != 2 || linux-process-terminal-query(token,authority,1) != 42 { panic("terminal writer exact completion") }
   if linux-process-terminal-close(token,authority) != 0 { panic("terminal writer close") }
+  if terminal-session-input(session,owner,seat,98) != 0 { panic("terminal flush input seed") }
+  token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","timed","",authority,session,owner)
+  if token <= 0 || linux-process-terminal-query(token,authority,0) != 1 || linux-process-terminal-query(token,authority,4) != 0 || terminal-session-query(session,owner,2) != 1 { panic("terminal drain wait") }
+  terminal-retained-exact(session,owner,"control\n",8)
+  if linux-process-terminal-resume(token,authority) != LINUX-PROCESS-TERMINAL-WAIT || terminal-session-query(session,owner,2) != 0 { panic("terminal raw controls or input flush") }
+  let deadline = linux-process-terminal-query(token,authority,4)
+  let budget = linux-process-terminal-query(token,authority,2)
+  if deadline <= 0 { panic("terminal actual timed poll deadline") }
+  let now = counter-read-authorized(authority)
+  let attempts = 0
+  while now >= 0 && now < deadline && attempts < 10000000 { now = counter-read-authorized(authority);attempts += 1 }
+  if now < deadline || linux-process-terminal-query(token,authority,2) != budget { panic("terminal host wait charged guest budget") }
+  let expired = linux-process-terminal-resume(token,authority)
+  let retired = linux-process-terminal-query(token,authority,4)
+  if expired != LINUX-PROCESS-TERMINAL-WAIT || retired != 0 {
+    serial-write-cstr(port,"terminal: completed poll result ");serial-write-dec-wide(port,expired)
+    serial-write-cstr(port," deadline ");serial-write-dec-wide(port,retired);serial-nl(port)
+    panic("terminal finite poll did not retire before a new input wait")
+  }
+  if terminal-session-input(session,owner,seat,97) != 0 || linux-process-terminal-resume(token,authority) != LINUX-PROCESS-TERMINAL-WAIT || linux-process-terminal-query(token,authority,4) != 0 { panic("terminal infinite poll transition") }
+  if terminal-session-input(session,owner,seat,98) != 0 || linux-process-terminal-resume(token,authority) != 42 { panic("terminal timed controls completion") }
+  if linux-process-terminal-close(token,authority) != 0 { panic("terminal controls retirement") }
+  serial-write-cstr(port,"terminal: actual termios roundtrip/drain/flush geometry nonblock and timed poll PASS");serial-nl(port)
   // Bad guest destinations refuse before consuming an already queued input byte.
   if terminal-session-input(session,owner,seat,97) != 0 { panic("terminal fault seed") }
   token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","fault","",authority,session,owner)

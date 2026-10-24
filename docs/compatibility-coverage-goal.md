@@ -11,6 +11,14 @@ The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
 is historical; its compiler and protected-execution blockers have since advanced.
 
 Status: **active; full goal incomplete**. Current shipped behavior and local test
+evidence are checkpoints, never a reason to close the full goal. On 2026-10-25
+Australia/Melbourne, original vi passed real PS/2 edit/save/reopen on both roots:
+two protected processes and 27 text events per root, with exact persisted file
+bytes. Desktop ANSI rendering, resize, concurrent foreign terminals and the
+remaining Windows/macOS application rows are still required. The next active
+implementation is the [client-owned terminal screen](plans/2026-10-25-native-terminal-screen.md).
+
+Current shipped behavior and local test
 results must be recorded separately from this destination. Work proceeds through
 reviewable implementation/test commits on the requested draft PR branch. This
 file does not create a scheduled or unattended background task.

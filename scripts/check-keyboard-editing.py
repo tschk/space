@@ -21,7 +21,7 @@ assert not out.exists() or not any(out.iterdir()), '--out must be new or empty'
 out.mkdir(parents=True, exist_ok=True)
 compiler = a.compiler.resolve()
 paths = [ROOT / x for x in ('protocol/keyboard.in', 'components/input.in',
-                            'components/mouse.in', 'components/gui-editor-model.in')]
+                            'components/ps2-keyboard.in', 'components/gui-editor-model.in')]
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 snapshot = {str(x.relative_to(ROOT)): sha(x) for x in paths}
 def function(source, name):
@@ -49,7 +49,7 @@ fn ps2-kbd-has-data()->Int{return 1;}
 fn inb(port:Int)->Int{return code;}
 '''
 sources = {}
-for name in ('input', 'mouse'):
+for name in ('input', 'ps2-keyboard'):
     original = (ROOT / f'components/{name}.in').read_text()
     source = keyboard + common + function(original, 'ps2-scancode-ascii') + function(original, 'ps2-kbd-getchar')
     source += 'fn main()->Int{\n'

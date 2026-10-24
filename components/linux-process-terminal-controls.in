@@ -1,0 +1,162 @@
+package space.kernel
+import "counter.in"
+
+// Linux x86-64 kernel termios encoding belongs here, never in the native queue.
+// This first profile implements raw bytes, VMIN1/VTIME0, exact mode roundtrip,
+// native geometry and real counter-backed poll deadlines. Other disciplines
+// refuse rather than accepting unimplemented canonical/echo/signal behavior.
+var linux-process-terminal-settings: Int = 0
+var linux-process-terminal-stdin-open: Int = 0
+var linux-process-terminal-nonblock: Int = 0
+var linux-process-terminal-deadline: Int = 0
+var linux-process-terminal-frequency: Int = 0
+
+fn linux-process-terminal-controls-init() -> Int {
+  if linux-process-terminal-settings == 0 {
+    if heap-next > heap-end || heap-end - heap-next < 64 { return -12 }
+    linux-process-terminal-settings = alloc(64)
+  }
+  cpu-mem-fill64(linux-process-terminal-settings,0,8)
+  store32(linux-process-terminal-settings + 8,0xb0)
+  store8(linux-process-terminal-settings + 23,1)
+  linux-process-terminal-stdin-open = 1
+  linux-process-terminal-nonblock = 0
+  linux-process-terminal-deadline = 0
+  linux-process-terminal-frequency = 0
+  return 0
+}
+
+fn linux-process-terminal-fd(fd: Int) -> Int {
+  if linux-process-terminal-token == 0 || fd < 0 || fd > 2 { return 0 }
+  if linux-process-pipe-is(fd) != 0 || linux-process-file-host(fd) >= 3 { return 0 }
+  if fd == 0 { return linux-process-terminal-stdin-open }
+  if fd == 1 { return linux-process-stdout-open }
+  return linux-process-stderr-open
+}
+
+fn linux-process-terminal-control-owned(number: Int, fd: Int, command: Int, argument: Int) -> Int {
+  if linux-process-terminal-fd(fd) == 0 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  let session = linux-process-terminal-session
+  let owner = linux-process-terminal-owner
+  if terminal-session-query(session,owner,0) < 0 { return -13 }
+  if number == 3 {
+    if fd == 0 { linux-process-terminal-stdin-open = 0 }
+    if fd == 1 { linux-process-stdout-open = 0 }
+    if fd == 2 { linux-process-stderr-open = 0 }
+    return 0
+  }
+  if number == 72 {
+    command = linux-process-int32(command)
+    if command == 1 { return load64(linux-process-file-fdflags + fd * 8) }
+    if command == 2 { store64(linux-process-file-fdflags + fd * 8,argument & 1);return 0 }
+    if command == 3 {
+      let mode = 1
+      if fd == 0 { mode = 0 }
+      if (linux-process-terminal-nonblock & (1 << fd)) != 0 { mode = mode | 0x800 }
+      return mode
+    }
+    if command == 4 {
+      let flags = linux-process-int32(argument)
+      if flags < 0 || (flags & -2052) != 0 { return -95 }
+      linux-process-terminal-nonblock = linux-process-terminal-nonblock & (-1 ^ (1 << fd))
+      if (flags & 0x800) != 0 { linux-process-terminal-nonblock = linux-process-terminal-nonblock | (1 << fd) }
+      return 0
+    }
+    return -95
+  }
+  if number == 5 {
+    // Ephemeral native terminal identity, not a filesystem inode or UTC lease.
+    if linux-process-range(command,144,1) == 0 { return -14 }
+    cpu-mem-fill64(linux-process-file-buffer,0,18)
+    store64(linux-process-file-buffer + 8,session)
+    store64(linux-process-file-buffer + 16,1)
+    store32(linux-process-file-buffer + 24,0x2180)
+    store64(linux-process-file-buffer + 40,0x8800 | ((session & 255) - 1))
+    store64(linux-process-file-buffer + 56,4096)
+    if linux-process-copy-out(command,linux-process-file-buffer,144) != 0 { return -14 }
+    return 0
+  }
+  if number != 16 { return -38 }
+  if command == 0x5413 {
+    if linux-process-range(argument,8,1) == 0 { return -14 }
+    let columns = terminal-session-query(session,owner,0)
+    let rows = terminal-session-query(session,owner,1)
+    if columns < 0 || rows < 0 { return -13 }
+    store64(linux-process-file-buffer,(columns << 16) | rows)
+    if linux-process-copy-out(argument,linux-process-file-buffer,8) != 0 { return -14 }
+    return 0
+  }
+  if command == 0x5401 {
+    if linux-process-range(argument,36,1) == 0 { return -14 }
+    if linux-process-copy-out(argument,linux-process-terminal-settings,36) != 0 { return -14 }
+    return 0
+  }
+  if command != 0x5402 && command != 0x5403 && command != 0x5404 { return -95 }
+  if linux-process-range(argument,36,0) == 0 { return -14 }
+  if linux-process-copy-in(argument,linux-process-file-buffer,36) != 0 { return -14 }
+  let buffer = linux-process-file-buffer
+  if load32(buffer) != 0 || load32(buffer + 4) != 0 || load32(buffer + 8) != 0xb0 || load32(buffer + 12) != 0 || load8(buffer + 16) != 0 || load8(buffer + 22) != 0 || load8(buffer + 23) != 1 { return -95 }
+  if command != 0x5402 && terminal-session-query(session,owner,3) > 0 {
+    linux-process-block-io(12,number,fd,command,argument)
+    return 0
+  }
+  if command == 0x5404 {
+    let remaining = terminal-session-query(session,owner,2)
+    if remaining < 0 { return -13 }
+    while remaining > 0 {
+      if terminal-session-read(session,owner) < 0 { return -5 }
+      remaining -= 1
+    }
+  }
+  let i = 0
+  while i < 36 { store8(linux-process-terminal-settings + i,load8(buffer + i));i += 1 }
+  return 0
+}
+
+fn linux-process-terminal-poll-owned(address: Int, count: Int, timeout: Int) -> Int {
+  if count < 0 || count > 1 { return -95 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if count != 0 && (linux-process-range(address,8,0) == 0 || linux-process-range(address,8,1) == 0) { return -14 }
+  let result = 0
+  if count != 0 {
+    let fd = linux-process-int32(linux-process-read32(address))
+    let events = linux-process-read8(address + 4) | (linux-process-read8(address + 5) << 8)
+    if fd >= 0 {
+      if linux-process-terminal-fd(fd) == 0 {
+        if fd >= 3 && fd < VFS-MAX-FDS && (linux-process-pipe-is(fd) != 0 || linux-process-file-host(fd) >= 3) { return -95 }
+        result = 32
+      } else {
+        let queue = 3
+        if fd == 0 { queue = 2 }
+        let available = terminal-session-query(linux-process-terminal-session,linux-process-terminal-owner,queue)
+        if available < 0 { return -13 }
+        if fd == 0 && available > 0 { result = events & 65 }
+        if fd != 0 && available < 507 { result = events & 260 }
+      }
+    }
+  }
+  if result != 0 || timeout == 0 {
+    if count != 0 { linux-process-store8(address + 6,result & 255);linux-process-store8(address + 7,result >> 8) }
+    if result != 0 { return 1 }
+    return 0
+  }
+  if timeout > 0 {
+    if timeout > 60000 { return -95 }
+    let frequency = counter-frequency-authorized(linux-process-authority)
+    let now = counter-read-authorized(linux-process-authority)
+    if frequency < 1 || frequency > 1000000000 || now < 0 { return -13 }
+    if linux-process-terminal-deadline == 0 {
+      let duration = (frequency / 1000) * timeout + ((frequency % 1000) * timeout + 999) / 1000
+      if duration <= 0 || now > 0x7FFFFFFFFFFFFFFF - duration { return -75 }
+      linux-process-terminal-deadline = now + duration
+      linux-process-terminal-frequency = frequency
+    } else if frequency != linux-process-terminal-frequency { return -5 }
+    if now >= linux-process-terminal-deadline {
+      if count != 0 { linux-process-store8(address + 6,0);linux-process-store8(address + 7,0) }
+      return 0
+    }
+  }
+  linux-process-block-io(11,address,count,timeout,0)
+  return 0
+}

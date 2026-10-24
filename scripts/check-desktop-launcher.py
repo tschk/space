@@ -48,7 +48,7 @@ fn main()->Int{{heap[8+24]=9;heap[8+64+24]=42;heap[8+128+24]=7;comp-win-close({c
         (out/f'close-{focus}-{closed}-{profile}.json').write_text(run.stdout)
         assert report.get('success') and report.get('eval_result') == {'Int':42}, report
 # Exercise both actual PS/2 decoders: Ctrl make/break, letters, and nonletters.
-for decoder in ('mouse', 'input'):
+for decoder in ('ps2-keyboard', 'input'):
     decoder_text = (root/f'components/{decoder}.in').read_text()
     functions = [(root/'protocol/keyboard.in').read_text()]
     for name in ('ps2-scancode-ascii', 'ps2-kbd-getchar'):

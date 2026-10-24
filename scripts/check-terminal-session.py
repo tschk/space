@@ -42,7 +42,15 @@ def connect(path):
 def wait(marker):
     deadline = time.monotonic() + 120
     while marker not in received:
-        assert b'PANIC' not in received and b'CPU EXCEPTION' not in received, received[-3000:]
+        if b'PANIC' in received or b'CPU EXCEPTION' in received:
+            drain = time.monotonic() + .3
+            while time.monotonic() < drain:
+                try:
+                    block = serial.recv(65536)
+                    if not block: break
+                    received.extend(block)
+                except socket.timeout: pass
+            raise AssertionError(received[-4000:])
         assert process.poll() is None, 'QEMU exited'
         assert time.monotonic() < deadline, (marker, received[-3000:])
         try:
@@ -118,7 +126,8 @@ store64(0x40d0,prior-boot);
     assert b'terminal: two SCI imports refused before entry PASS\n' in received
     if a.retained:
         assert b'terminal: 22 actual CPL3 echo waits, 440 idle probes and restored TLS PASS\n' in received
-        report.update(own_cpl3_activations=26,retained_echo_cycles=22,idle_wait_probes=440,
+        assert b'terminal: actual termios roundtrip/drain/flush geometry nonblock and timed poll PASS\n' in received
+        report.update(own_cpl3_activations=27,retained_echo_cycles=22,idle_wait_probes=440,
                       writer_output_bytes_checked=1024,echo_output_bytes_checked=264,
                       retained_activation_profile=True)
     else:
@@ -129,7 +138,7 @@ store64(0x40d0,prior-boot);
     report.update(status='passed',actual_keyboard_events=2,private_sci_preentry_refusals=2,
         lifetime_cycles=22,foreign_application_entries=0)
     if a.retained:
-        print('PASS retained terminal: 26 own CPL3 activations, 440 idle probes, actual PS2 resume, exact output, cancellation and TLS restore')
+        print('PASS retained terminal: 27 own CPL3 activations, 440 idle probes, actual PS2 resume, termios/timed poll, exact output, cancellation and TLS restore')
     else:
         print('PASS native terminal: 22 lifecycle cycles, exact rings, two actual PS2 focus deliveries, two SCI pre-entry refusals')
 except Exception as error:

@@ -215,6 +215,10 @@ def main():
           '--out',args.out / 'terminal-session-native')
     check('linux-terminal-retained','check-terminal-session.py','--in',args.compiler,'--retained',
           '--out',args.out / 'linux-terminal-retained')
+    for variant in ['standard', 'minimal']:
+        check('linux-terminal-vi-keyboard-' + variant, 'check-linux-terminal-vi.py',
+              '--in', args.compiler, '--app', applications['busybox-vi'],
+              '--root', variant, '--out', args.out / ('linux-terminal-vi-keyboard-' + variant))
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),
