@@ -1052,7 +1052,7 @@ fn fb-draw-char-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
     return
   }
   let face = text-role-face(TEXT-ROLE-UI-BODY)
-  if comp-stress != 0 {
+  if comp-stress != 0 && desktop-fonts-active == 0 {
     text-draw-char-face(face, x, y, ch, color)
     return
   }
@@ -1079,7 +1079,7 @@ fn fb-draw-char-mono-aa(x: Int, y: Int, ch: Int, color: Int) -> void {
   if fb-ready == 0 {
     return
   }
-  if comp-stress != 0 {
+  if comp-stress != 0 && desktop-fonts-active == 0 {
     text-draw-char-face(FONT-FACE-MONO, x, y, ch, color)
     return
   }
@@ -1118,7 +1118,7 @@ fn comp-draw-label-aa(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
     if b0 < 0x80 {
       let adv = text-glyph-advance-raw(face, b0, fb-font-scale)
       if comp-clip-valid == 0 || cx + adv + comp-render-dx > comp-clip-x0 {
-        if comp-stress == 0 {
+        if comp-stress == 0 || desktop-fonts-active != 0 {
           fb-fill-rect(cx, y, adv, gh, bg)
           fb-draw-char-aa(cx, y, b0, fg)
         } else {
@@ -1131,7 +1131,7 @@ fn comp-draw-label-aa(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
       let cp = text-utf8-decode(str, i)
       let adv = text-glyph-advance(face, cp, fb-font-scale)
       if comp-clip-valid == 0 || cx + adv + comp-render-dx > comp-clip-x0 {
-        if comp-stress == 0 {
+        if comp-stress == 0 || desktop-fonts-active != 0 {
           fb-fill-rect(cx, y, adv, gh, bg)
           fb-draw-char-aa(cx, y, cp, fg)
         } else {
@@ -1209,7 +1209,7 @@ fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
     }
     if b0 < 0x80 {
       if comp-clip-valid == 0 || cx + cw + comp-render-dx > comp-clip-x0 {
-        if comp-stress == 0 {
+        if comp-stress == 0 || desktop-fonts-active != 0 {
           fb-fill-rect(cx, y, cw, gh, bg)
           if fb-font-scale == 2 || fb-font-scale == 3 {
             fb-draw-char-mono-aa(cx + 1, y, b0, fg)
@@ -1227,10 +1227,10 @@ fn comp-draw-label(x: Int, y: Int, str: Int, fg: Int, bg: Int) -> void {
     } else {
       let cp = text-utf8-decode(str, i)
       if comp-clip-valid == 0 || cx + cw + comp-render-dx > comp-clip-x0 {
-        if comp-stress == 0 {
+        if comp-stress == 0 || desktop-fonts-active != 0 {
           fb-fill-rect(cx, y, cw, gh, bg)
           if fb-font-scale == 2 || fb-font-scale == 3 {
-            fb-draw-char-mono-aa(cx + 1, y, cp, fg)
+            fb-draw-char-mono-aa(cx, y, cp, fg)
           } else {
             text-draw-char-face(FONT-FACE-MONO, cx, y, cp, fg)
           }

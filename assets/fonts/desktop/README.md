@@ -19,9 +19,9 @@ python3 scripts/build-desktop-fonts.py --check
 
 Masks are packed count/coverage pairs in native arrays and decoded into the
 existing 16-pixel tables plus two bounded 24-pixel tables. The encoded payload
-is 52,784 bytes. No boot/heap limit was increased. Some UI glyphs are fitted
-inside the existing proportional advance; terminal cells retain their existing
-width. These are rasterized assets, not a new typeface design or Unicode shaper.
+is 53,104 bytes. No boot/heap limit was increased. UI glyphs are fitted inside their rounded FreeType advances. The desktop
+profile uses10/15-pixel terminal cells and13/19-pixel baselines at2x/3x. The
+legacy bitmap profile and protected clients retain their existing metrics. These are rasterized assets, not a new typeface design or Unicode shaper.
 The legacy bitmap faces remain available for existing protected SCI clients,
 fallback and the established stress profile. Desktop text roles select the new
 rasters at the supported 2×/3× sizes. Larger typography/layout changes remain

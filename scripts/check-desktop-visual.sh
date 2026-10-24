@@ -79,7 +79,6 @@ echo "[4/4] Checking pixels..."
 python3 - "$PPM" "$SPACE_DIR" <<'PY'
 from collections import Counter
 from pathlib import Path
-import re
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
@@ -155,17 +154,16 @@ if blend_px < 500:
 # Compare the complete title against a real font/layout oracle. The old
 # arbitrary gray-pixel threshold described a different synthetic bitmap face.
 root = Path(sys.argv[2])
-advances = {int(cp): int(adv) for cp, adv in re.findall(
-    r'fb-font-sans-set\((\d+), (\d+),', (root/'components/font.in').read_text())}
 title = 'TERMINAL 1'
 font = ImageFont.truetype(str(root/'assets/fonts/desktop/DejaVuSans.ttf'), 14)
+advances = {ord(ch):max(1,int(font.getlength(ch)+.5)) for ch in title}
 bg = (48, 48, 58)
-reference = Image.new('RGB', (sum(advances[ord(c)]*2 for c in title), 16), bg)
+reference = Image.new('RGB', (sum(advances[ord(c)] for c in title), 16), bg)
 cursor = 0
 for ch in title:
     mask = Image.new('L', (16, 16))
     ImageDraw.Draw(mask).text((0, 13), ch, font=font, fill=255, anchor='ls')
-    advance = advances[ord(ch)]*2
+    advance = advances[ord(ch)]
     box = mask.getbbox()
     if box and box[2] > advance:
         ink = mask.crop((0, 0, box[2], 16)).resize((advance, 16), Image.Resampling.LANCZOS)
@@ -182,7 +180,7 @@ if actual_title != reference.tobytes():
 mono = ImageFont.truetype(str(root/'assets/fonts/desktop/DejaVuSansMono.ttf'), 14)
 def check_terminal(text, x0, y0, foreground):
     background = (21, 21, 25)
-    expected = Image.new('RGB', (len(text)*18, 16), background)
+    expected = Image.new('RGB', (len(text)*10, 16), background)
     for index, ch in enumerate(text):
         mask = Image.new('L', (16, 16))
         ImageDraw.Draw(mask).text((0, 13), ch, font=mono, fill=255, anchor='ls')
@@ -192,13 +190,13 @@ def check_terminal(text, x0, y0, foreground):
                 if cov:
                     color = foreground if cov == 255 else tuple(
                         (src*cov+dst*(255-cov)+255)>>8 for src,dst in zip(foreground,background))
-                    expected.putpixel((index*18+1+x, y), color)
+                    expected.putpixel((index*10+1+x, y), color)
     actual = b''.join(pixels[((y0+y)*width+x0)*3:((y0+y)*width+x0+expected.width)*3] for y in range(16))
     if actual != expected.tobytes():
         raise SystemExit('native terminal glyph/content oracle differs: '+text)
 check_terminal('fetch', 48, 116, term_rgb)
 check_terminal('SPACEOS', 48, 145, (0,255,255))
-check_terminal('0.2.0', 210, 145, term_rgb)
+check_terminal('0.2.0', 138, 145, term_rgb)
 print(f"PASS: desktop visual pixels present (text_px={text_px}, blend_px={blend_px}, exact_title_pixels={reference.width*16})")
 PY
 

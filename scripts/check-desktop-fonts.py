@@ -27,8 +27,6 @@ report = dict(status='failed', compiler_sha256=sha(a.compiler), source_sha256=in
 try:
     subprocess.run(['python3', str(ROOT/'scripts/build-desktop-fonts.py'), '--font-dir',
                     str(ROOT/'assets/fonts/desktop'), '--check'], check=True)
-    advances = {int(cp):int(adv) for cp,adv in re.findall(
-        r'fb-font-sans-set\((\d+), (\d+),', (ROOT/'components/font.in').read_text())}
     expected = Image.new('RGB', (1920, 1080), (16,32,48))
     calls = []; fg=(233,219,173)
 
@@ -36,7 +34,7 @@ try:
         font=ImageFont.truetype(str(ROOT/'assets/fonts/desktop'/face),14*extent//16)
         mask=Image.new('L',(extent,extent))
         ImageDraw.Draw(mask).text((0,13*extent//16),chr(cp),font=font,fill=255,anchor='ls')
-        limit=advances[cp]*extent//8 if face=='DejaVuSans.ttf' else extent
+        limit=max(1,int(font.getlength(chr(cp))+.5)) if face=='DejaVuSans.ttf' else extent
         box=mask.getbbox()
         if box and box[2]>limit:
             ink=mask.crop((0,0,box[2],extent)).resize((limit,extent),Image.Resampling.LANCZOS)
@@ -55,6 +53,10 @@ try:
         (16,'DejaVuSansMono.ttf','fb-font-aa16'),(16,'DejaVuSans.ttf','fb-font-sans-aa16'),
         (24,'DejaVuSansMono.ttf','desktop-font-mono24'),(24,'DejaVuSans.ttf','desktop-font-sans24')]):
         for cp in range(32,127):
+            font=ImageFont.truetype(str(ROOT/'assets/fonts/desktop'/face),14*extent//16)
+            advance=max(1,int(font.getlength(chr(cp))+.5)) if face=='DejaVuSans.ttf' else 5*extent//8
+            face_id=1 if face=='DejaVuSans.ttf' else 0
+            calls.append(f'if text-glyph-advance-raw({face_id},{cp},{extent//8})!={advance} || text-glyph-advance({face_id},{cp},{extent//8})!={advance}{{panic("desktop measured advance");}}')
             x=10+(cp-32)%32*(extent+4);y=10+group*120+(cp-32)//32*(extent+4)
             function='fb-draw-char-table-aa16' if extent==16 else 'desktop-font-draw24'
             calls.append(f'{function}({table},{x},{y},{cp},0xE9DBAD);')
@@ -68,6 +70,24 @@ try:
               'desktop-font-draw24(desktop-font-sans24,10,600,128,0xE9DBAD);']
     glyph('DejaVuSans.ttf',24,65,-5,498,(2,500,19,520))
     glyph('DejaVuSansMono.ttf',16,87,1912,1070)
+    calls += ['if text-set-scale(3)!=1 || text-term-cell-w()!=15 || text-term-baseline()!=19 || text-face-baseline(FONT-FACE-SANS,3)!=19{panic("desktop large terminal metrics");}',
+        'if text-set-scale(2)!=1 || text-term-cell-w()!=10 || text-term-baseline()!=13 || text-face-baseline(FONT-FACE-SANS,2)!=13{panic("desktop terminal metrics");}',
+        'let utf8=alloc(8);store8(utf8,65);store8(utf8+1,195);store8(utf8+2,169);store8(utf8+3,226);store8(utf8+4,130);store8(utf8+5,172);store8(utf8+6,90);store8(utf8+7,0);',
+        'if text-measure-run(TEXT-ROLE-TERM-MONO,utf8,7)!=40 || text-caret-x(TEXT-ROLE-TERM-MONO,utf8,3)!=20 || text-caret-x(TEXT-ROLE-TERM-MONO,utf8,6)!=30 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,12)!=1 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,22)!=3 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,32)!=6{panic("desktop UTF8 metrics");}',
+        'comp-draw-label(10,650,utf8,0xE9DBAD,0x102030);']
+    glyph('DejaVuSansMono.ttf',16,65,11,650)
+    glyph('DejaVuSansMono.ttf',16,90,41,650)
+    draw=ImageDraw.Draw(expected)
+    for x in (20,30):
+        for box in [(x,650,x+9,651),(x,662,x+9,663),(x,650,x+1,663),(x+8,650,x+9,663),(x+4,656,x+7,657)]:
+            draw.rectangle(box,fill=fg)
+    calls += ['if text-set-scale(3)!=1 || text-measure-run(TEXT-ROLE-TERM-MONO,utf8,7)!=60 || text-caret-x(TEXT-ROLE-TERM-MONO,utf8,3)!=30 || text-caret-x(TEXT-ROLE-TERM-MONO,utf8,6)!=45 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,17)!=1 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,32)!=3 || text-hit-test-byte(TEXT-ROLE-TERM-MONO,utf8,47)!=6{panic("desktop large UTF8 metrics");}',
+              'comp-draw-label(10,720,utf8,0xE9DBAD,0x102030);']
+    glyph('DejaVuSansMono.ttf',24,65,11,720)
+    glyph('DejaVuSansMono.ttf',24,90,56,720)
+    for x in (25,40):
+        for box in [(x,720,x+14,722),(x,738,x+14,740),(x,720,x+2,740),(x+12,720,x+14,740),(x+6,729,x+11,731)]:
+            draw.rectangle(box,fill=fg)
     # Use the real root initialization path for allocator/device setup.
     source=(ROOT/'kernel/kernel-root.in').read_text()
     source=re.sub(r'import "\.\./([^"]+)"',lambda m:'import '+json.dumps(str(ROOT/m[1])),source)
@@ -109,6 +129,7 @@ try:
     assert sha(a.compiler)==report['compiler_sha256']
     assert all(sha(ROOT/name)==digest for name,digest in inventory.items()), 'source changed'
     report.update(status='passed', glyphs=380, exact_framebuffer_pixels=2073600,
+        measured_advance_checks=380, native_utf8_caret_hit_testing='passed',
         clip_offset_and_edge_checks='passed', kernel_sha256=sha(kernel),
         qemu_command=command, source_integrity='passed')
 except Exception as error:

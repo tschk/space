@@ -47,3 +47,23 @@ Local verification with frozen Inauguration 0.9.325:
 
 These are scoped focused results. They do not extend the historical 144-gate
 integration receipt or complete the [full goal](../compatibility-coverage-goal.md).
+
+## Measured desktop metrics
+
+The later measured profile removes the old bitmap grid's excessive tracking.
+UI advances come from the same pinned FreeType font used for coverage; terminal
+cells are10 pixels at2x and15 pixels at3x, with13/19-pixel baselines. Caret
+measurement, hit testing and drawing use the same profile. Missing-glyph boxes
+fit inside a terminal cell, including UTF-8 fallback at both scales. The terminal
+caret is narrower. The profile is enabled during framebuffer initialization
+before text-cache invalidation; there is no public live font-provider switch.
+The controlled legacy bitmap model and protected clients keep their old metrics.
+
+`/workspace/desktop-metrics-pixels3/report.json` checks380 glyph/scale/face advance
+cases through both raw and cached lookup, full-frame pixels, native baseline and
+UTF-8 caret/hit/fallback behavior at both scales. The ordinary launcher, output
+mode/scale, exact title/fetch pixel and protected default GUI checks also pass.
+`/workspace/desktop-metrics-damage1` passes250 fps against the same30-fps bound;
+this profile now renders the mature glyphs during stress rather than selecting
+the legacy bitmap shortcut. Sources and receipts remain separate from the first
+font checkpoint and the earlier151-gate source.
