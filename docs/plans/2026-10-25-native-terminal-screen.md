@@ -94,6 +94,18 @@ the existing reserved boot window, verifies each manifest before invoking the
 loader and requires the exact unresolved-import diagnostic for every symbol.
 No allocator/boot reservation, authority or refusal assertion was widened.
 
+Final focused receipts and exact source revisions are recorded in
+[`2026-10-25-terminal-evidence.json`](2026-10-25-terminal-evidence.json).
+The corrected frozen`35b2bb2` native and retained gates both pass all5 exact
+unresolved-import checks before entry/resources change. Frozen`32484b0` passes
+147 native models, both38-event vi navigation roots, both294912-pixel visible
+oracles, full desktop launcher/input/pointer/resize, both image builds and204fps
+damage (minimum30). Frozen`adba514` separately passes all23 affected protected
+Linux application/process regressions and the6-output-size protected native
+window test. Actual [QEMU captures](../screenshots/2026-10-25/README.md) show the
+finite working vi profile. These focused checks do not replace the historical
+152-gate complete run or claim a complete new161-gate run.
+
 Use the MIT-licensed VTE 0.13.1 transition rules as reproducible native data,
 checked against all 4,096 bytes evaluated by the original upstream Rust macro.
 Keep parser state separate from screen policy and rendering. Bound parameters,

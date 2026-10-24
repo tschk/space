@@ -1,0 +1,98 @@
+{
+  "scope": "Original pinned vi, actual PS2 editing and protected native SCI terminal pixels; finite ASCII80x24, no resize or concurrent foreign process claim",
+  "space_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+  "receipt": "/workspace/terminal-navigation-final-view/report.json",
+  "receipt_sha256": "744cee224f7c1c91197ffabf04a55bd388ce7d9b0c857c2a3cefb19d6c14ea93",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "application_sha256": "22e06756b81d069041080e5582854a7cd0bbf63e50f3002703d2b9a1035d8c5e",
+  "derived_fixture_sha256": "0e5d3abb25c7675abd6796f14f1a49499b03701c77eaf8fb7b9e0cca673832f2",
+  "real_ps2_events": 38,
+  "captures": [
+    {
+      "file": "original-vi-edit.png",
+      "sha256": "3e9a6dce010eee31f4f4db3ab756fdd51955cb8c2243e71b5de93628553d6f58",
+      "qemu_ppm_sha256": "c1ba35c5241a5e25709206ccfb880f56fcfbc0f9e628c1cf3e65bd7120091a31",
+      "pixel_oracle": {
+        "status": "passed",
+        "scope": "Actual QEMU pixels; default-color ASCII vi, fixed80x24 only",
+        "pixels_compared": 294912,
+        "stream_sha256": "ab5ebc95251ec2a4e3891ccab1016f333439aab53daac6d24cd7b785ef6c78f2",
+        "capture_sha256": "c1ba35c5241a5e25709206ccfb880f56fcfbc0f9e628c1cf3e65bd7120091a31",
+        "content_sha256": "69ca6e2ab3c4358da102a1298a220a0ffc831cdc978fd43312beb17788e41689",
+        "cursor": [
+          16,
+          0
+        ],
+        "rows": [
+          "native42original                                                                ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "I /tui.txt [Modified] 1/1 100%                                                  "
+        ]
+      }
+    },
+    {
+      "file": "original-vi-reopened.png",
+      "sha256": "c7348cc510e3918c3193d8d785a93a9fb788178e2bcfdbab61a34b76bf56b1d6",
+      "qemu_ppm_sha256": "a881aaaf4cbd50b24eff68fd6ac2d505a0cc11812e73ba012d9584db82e78831",
+      "pixel_oracle": {
+        "status": "passed",
+        "scope": "Actual QEMU pixels; default-color ASCII vi, fixed80x24 only",
+        "pixels_compared": 294912,
+        "stream_sha256": "13ced9f0336af73e0e2130cc7e9acbb029166078b38fd641a27f20c91a5d486c",
+        "capture_sha256": "a881aaaf4cbd50b24eff68fd6ac2d505a0cc11812e73ba012d9584db82e78831",
+        "content_sha256": "013ff1537962648077e1c2367995c52c8ceddb0cce7ac5548f70c8d1803dbecd",
+        "cursor": [
+          23,
+          0
+        ],
+        "rows": [
+          "again42native42original                                                         ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "~                                                                               ",
+          "I /tui.txt [Modified] 1/1 100%                                                  "
+        ]
+      }
+    }
+  ]
+}
