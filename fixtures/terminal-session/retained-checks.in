@@ -1,0 +1,122 @@
+package space.kernel
+import "checks.in"
+import "../../components/linux-process-terminal.in"
+
+fn terminal-retained-free() -> Int {
+  let page = free-list
+  let count = 0
+  while page != 0 && count < 131072 { count += 1;page = load64(page) }
+  if page != 0 { panic("terminal free page cycle") }
+  return count
+}
+
+fn terminal-retained-check-tls(fs: Int, gs: Int) -> void {
+  if rdmsr(0xC0000100) != fs || rdmsr(0xC0000101) != gs || domain-current != 0 || user-context-active != 0 || user-budget-active != 0 || domain-user-syscall-hook != 0 { panic("terminal supervisor restoration") }
+}
+
+fn terminal-retained-exact(session: Int, owner: Int, text: Int, bytes: Int) -> void {
+  let i = 0
+  while i < bytes {
+    if terminal-session-output(session,owner) != load8(text + i) { panic("terminal actual output") }
+    i += 1
+  }
+  if terminal-session-output(session,owner) != -7 { panic("terminal unexpected output") }
+}
+
+fn terminal-retained-fixture(port: Int) -> void {
+  let authority = cap-mint(obj-alloc(273),cap-memory() | cap-serial() | cap-storage())
+  let owner = cap-mint(obj-alloc(271),cap-memory())
+  let seat = cap-mint(obj-alloc(272),cap-input())
+  if authority < 0 || owner < 0 || seat < 0 { panic("terminal retained caps") }
+  let fs = rdmsr(0xC0000100)
+  let gs = rdmsr(0xC0000101)
+  let heap = 0
+  let free = 0
+  let domains = domain-count
+  let caps = cap-count
+  let old = 0
+  let cycle = 0
+  while cycle < 22 {
+    let session = terminal-session-open(owner,seat,80,24)
+    if session <= 0 || terminal-seat-focus(session,owner,seat) != 0 { panic("terminal retained session") }
+    let token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","echo","",authority,session,owner)
+    terminal-retained-check-tls(fs,gs)
+    if token <= 0 || token == old || linux-process-terminal-query(token,authority,0) != 1 || linux-process-terminal-query(token,authority,1) != LINUX-PROCESS-TERMINAL-WAIT { panic("terminal initial actual wait") }
+    if linux-process-terminal-query(token,authority,3) != 2 { panic("terminal initial actual syscalls") }
+    if linux-process-terminal-query(old,authority,0) != -9 { panic("terminal stale activation") }
+    terminal-retained-exact(session,owner,"ready\n",6)
+    let budget = linux-process-terminal-query(token,authority,2)
+    if budget < 1 || budget > linux-process-budget-ticks { panic("terminal initial budget") }
+    let idle = 0
+    while idle < 20 {
+      if linux-process-terminal-resume(token,authority) != LINUX-PROCESS-TERMINAL-WAIT || linux-process-terminal-query(token,authority,2) != budget || linux-process-terminal-query(token,authority,3) != 2 { panic("terminal idle CPU resumed or budget consumed") }
+      terminal-retained-check-tls(fs,gs)
+      idle += 1
+    }
+    if cycle == 0 {
+      ps2-kbd-init()
+      serial-write-cstr(port,"terminal: keyboard A ready");serial-nl(port)
+      let key = terminal-fixture-key()
+      if key != 97 || terminal-seat-deliver(seat,key) != 0 { panic("terminal retained PS2 A") }
+    } else { if terminal-seat-deliver(seat,97) != 0 { panic("terminal retained input A") } }
+    if linux-process-terminal-resume(token,authority) != LINUX-PROCESS-TERMINAL-WAIT { panic("terminal second read did not wait") }
+    terminal-retained-check-tls(fs,gs)
+    terminal-retained-exact(session,owner,"got:a\n",6)
+    if linux-process-terminal-query(token,authority,3) != 4 { panic("terminal continued actual syscalls") }
+    if cycle == 0 {
+      serial-write-cstr(port,"terminal: keyboard B ready");serial-nl(port)
+      let key = terminal-fixture-key()
+      if key != 98 || terminal-seat-deliver(seat,key) != 0 { panic("terminal retained PS2 B") }
+    } else { if terminal-seat-deliver(seat,98) != 0 { panic("terminal retained input B") } }
+    if linux-process-terminal-resume(token,authority) != 42 || linux-process-terminal-query(token,authority,0) != 2 || linux-process-terminal-query(token,authority,3) != 5 { panic("terminal actual guest exit") }
+    terminal-retained-check-tls(fs,gs)
+    if linux-process-terminal-close(token,authority) != 0 || terminal-session-close(session,owner) != 0 || terminal-seat-clear(seat) != 0 { panic("terminal retained retirement") }
+    if linux-process-terminal-query(token,authority,0) != -9 { panic("terminal retired activation") }
+    if cycle == 0 { heap = heap-next;free = terminal-retained-free();domains = domain-count }
+    if heap-next != heap || terminal-retained-free() != free || domain-count != domains || cap-count != caps {
+      serial-write-cstr(port,"terminal: resource cycle ");serial-write-dec-wide(port,cycle)
+      serial-write-cstr(port," heap ");serial-write-dec-wide(port,heap-next - heap)
+      serial-write-cstr(port," free ");serial-write-dec-wide(port,terminal-retained-free() - free)
+      serial-write-cstr(port," domains ");serial-write-dec-wide(port,domain-count - domains)
+      serial-write-cstr(port," caps ");serial-write-dec-wide(port,cap-count - caps);serial-nl(port)
+      panic("terminal retained resources")
+    }
+    old = token
+    cycle += 1
+  }
+  serial-write-cstr(port,"terminal: 22 actual CPL3 echo waits, 440 idle probes and restored TLS PASS");serial-nl(port)
+  let session = terminal-session-open(owner,seat,80,24)
+  let token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","writer","",authority,session,owner)
+  if token <= 0 || linux-process-terminal-query(token,authority,0) != 1 || terminal-session-query(session,owner,3) != 507 { panic("terminal actual write backpressure") }
+  let total = 0
+  let rounds = 0
+  while linux-process-terminal-query(token,authority,0) == 1 && rounds < 8 {
+    while terminal-session-query(session,owner,3) > 0 {
+      if terminal-session-output(session,owner) != (total & 255) { panic("terminal writer prefix") }
+      total += 1
+    }
+    linux-process-terminal-resume(token,authority)
+    terminal-retained-check-tls(fs,gs)
+    rounds += 1
+  }
+  while terminal-session-query(session,owner,3) > 0 {
+    if terminal-session-output(session,owner) != (total & 255) { panic("terminal writer tail") }
+    total += 1
+  }
+  if total != 1024 || linux-process-terminal-query(token,authority,0) != 2 || linux-process-terminal-query(token,authority,1) != 42 { panic("terminal writer exact completion") }
+  if linux-process-terminal-close(token,authority) != 0 { panic("terminal writer close") }
+  // Bad guest destinations refuse before consuming an already queued input byte.
+  if terminal-session-input(session,owner,seat,97) != 0 { panic("terminal fault seed") }
+  token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","fault","",authority,session,owner)
+  if token <= 0 || linux-process-terminal-query(token,authority,0) != 2 || linux-process-terminal-query(token,authority,1) != 42 || terminal-session-read(session,owner) != 97 { panic("terminal bad pointer consumed input") }
+  if linux-process-terminal-close(token,authority) != 0 { panic("terminal bad pointer close") }
+  token = linux-process-terminal-start(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","quiet","",authority,session,owner)
+  if token <= 0 || linux-process-terminal-query(token,authority,0) != 1 { panic("terminal cancel requires real wait") }
+  if linux-process-terminal-close(token,authority) != 0 || terminal-session-query(session,owner,0) != 80 { panic("terminal cancellation ownership") }
+  if terminal-session-close(session,owner) != 0 { panic("terminal queue close") }
+  // The ordinary unbound execution path remains usable after cancellation.
+  if linux-process-run(0x12000000,TERMINAL-FIXTURE-ELF-SIZE,"/terminal","x","",authority) != 42 { panic("terminal later ordinary activation") }
+  if linux-process-terminal-token != 0 || linux-process-active != 0 || linux-process-cleanup-failed != 0 || domain-count != domains || cap-count != caps || heap-next != heap || terminal-retained-free() != free { panic("terminal final owned state") }
+  terminal-retained-check-tls(fs,gs)
+  serial-write-cstr(port,"terminal: actual partial output, pointer refusal, wait cancellation and later ordinary execution PASS");serial-nl(port)
+}

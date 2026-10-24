@@ -13,12 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in', dest='compiler', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
+p.add_argument('--retained', action='store_true', help='Also execute the own protected ELF through retained terminal waits')
 a = p.parse_args(); out = a.out.resolve(); compiler = a.compiler.resolve()
 assert not out.exists() or not any(out.iterdir()), 'preserve prior evidence'
 out.mkdir(parents=True, exist_ok=True)
 paths = [x for d in ['components', 'kernel', 'protocol', 'services', 'fixtures/terminal-session']
          for x in (ROOT / d).rglob('*.in')]
 paths += [ROOT / 'boot/multiboot.asm', Path(__file__).resolve()]
+if a.retained:
+    paths += [ROOT / 'fixtures/terminal-session/echo.asm']
 contents = {str(x.relative_to(ROOT)): x.read_bytes() for x in paths}
 snapshot = out / 'source'
 for name, data in contents.items():
@@ -46,6 +49,11 @@ def wait(marker):
             block = serial.recv(65536); assert block; received.extend(block)
         except socket.timeout: pass
 try:
+    elf = out / 'echo.elf'
+    if a.retained:
+        subprocess.run(['nasm','-f','elf64',str(snapshot / 'fixtures/terminal-session/echo.asm'),'-o',str(out / 'echo.o')],check=True)
+        subprocess.run(['ld','-static','-z','noexecstack','-o',str(elf),str(out / 'echo.o')],check=True)
+        report['own_elf_sha256'] = sha(elf)
     private = []
     for index, (name, declaration, call) in enumerate([
         ('terminal-session-open', 'owner:Int,seat:Int,columns:Int,rows:Int', 'info,info,80,24'),
@@ -76,9 +84,13 @@ store64(0x40d0,prior-boot);
     checks += 'serial-write-cstr(port,"terminal: two SCI imports refused before entry PASS");serial-nl(port);'
     source = (snapshot / 'kernel/kernel-root.in').read_text()
     source = re.sub(r'import "\.\./([^"]+)"', lambda m: 'import ' + json.dumps(str(snapshot / m[1])), source)
-    source = 'import ' + json.dumps(str(snapshot / 'fixtures/terminal-session/checks.in')) + '\n' + source
+    fixture = 'retained-checks.in' if a.retained else 'checks.in'
+    source = 'import ' + json.dumps(str(snapshot / 'fixtures/terminal-session' / fixture)) + '\n' + source
+    if a.retained:
+        source = 'const TERMINAL-FIXTURE-ELF-SIZE = ' + str(elf.stat().st_size) + '\n' + source
     assert source.count('  shell(port)') == 1
-    source = source.replace('  shell(port)', checks + '\n  terminal-fixture-check(port)\n  shell(port)')
+    entry = 'terminal-retained-fixture' if a.retained else 'terminal-fixture-check'
+    source = source.replace('  shell(port)', checks + '\n  ' + entry + '(port)\n  shell(port)')
     kernel_source = out / 'kernel.in'; kernel_source.write_text(source)
     with (out / 'compile.log').open('w') as log:
         subprocess.run(['nasm','-f','bin',str(snapshot / 'boot/multiboot.asm'),'-o',str(out / 'trampoline.bin')],check=True,stdout=log,stderr=subprocess.STDOUT)
@@ -91,22 +103,35 @@ store64(0x40d0,prior-boot);
         '-monitor',f'unix:{out}/monitor.sock,server=on,wait=off']
     for index, item in enumerate(private):
         command += ['-device', f'loader,file={item["path"]},addr={0x2e0000 + index * 0x10000:#x},force-raw=on']
+    if a.retained:
+        command += ['-device', f'loader,file={elf},addr=0x12000000,force-raw=on']
     report.update(qemu_command=command,kernel_sha256=sha(out / 'kernel.bin'),private_sci=private)
     with (out / 'qemu.log').open('w') as log:
         process = subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
         serial = connect(out / 'serial.sock'); monitor = connect(out / 'monitor.sock')
         wait(b'terminal: keyboard A ready\n'); monitor.sendall(b'sendkey a 50\n')
         wait(b'terminal: keyboard B ready\n'); monitor.sendall(b'sendkey b 50\n')
-        wait(b'terminal: revoked owners retired with stable resources PASS\n')
+        final = (b'terminal: actual partial output, pointer refusal, wait cancellation and later ordinary execution PASS\n'
+                 if a.retained else b'terminal: revoked owners retired with stable resources PASS\n')
+        wait(final)
         wait(b'space> ')
     assert b'terminal: two SCI imports refused before entry PASS\n' in received
-    assert b'terminal: 22 exact queue/focus/lifetime cycles PASS\n' in received
-    assert b'terminal: actual PS2 focus isolation PASS\n' in received
+    if a.retained:
+        assert b'terminal: 22 actual CPL3 echo waits, 440 idle probes and restored TLS PASS\n' in received
+        report.update(own_cpl3_activations=26,retained_echo_cycles=22,idle_wait_probes=440,
+                      writer_output_bytes_checked=1024,echo_output_bytes_checked=264,
+                      retained_activation_profile=True)
+    else:
+        assert b'terminal: 22 exact queue/focus/lifetime cycles PASS\n' in received
+        assert b'terminal: actual PS2 focus isolation PASS\n' in received
     assert all((ROOT / name).read_bytes() == data for name, data in contents.items()), 'source changed during run'
     assert sha(compiler) == report['compiler_sha256']
     report.update(status='passed',actual_keyboard_events=2,private_sci_preentry_refusals=2,
         lifetime_cycles=22,foreign_application_entries=0)
-    print('PASS native terminal: 22 lifecycle cycles, exact rings, two actual PS2 focus deliveries, two SCI pre-entry refusals')
+    if a.retained:
+        print('PASS retained terminal: 26 own CPL3 activations, 440 idle probes, actual PS2 resume, exact output, cancellation and TLS restore')
+    else:
+        print('PASS native terminal: 22 lifecycle cycles, exact rings, two actual PS2 focus deliveries, two SCI pre-entry refusals')
 except Exception as error:
     report.update(status='failed',error=str(error)); raise
 finally:

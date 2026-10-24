@@ -213,6 +213,8 @@ def main():
           '--out',args.out / 'terminal-session-model')
     check('terminal-session-native','check-terminal-session.py','--in',args.compiler,
           '--out',args.out / 'terminal-session-native')
+    check('linux-terminal-retained','check-terminal-session.py','--in',args.compiler,'--retained',
+          '--out',args.out / 'linux-terminal-retained')
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),

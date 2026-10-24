@@ -12,6 +12,7 @@ import "linux-process-blocking.in"
 import "linux-process-schedule.in"
 import "linux-process-poll.in"
 import "linux-process-truncate.in"
+import "linux-process-terminal-dispatch.in"
 
 // Bounded static ELF process family with cooperative, single-CPU execution.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
@@ -421,6 +422,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   if linux-process-trace != 0 {
     serial-write-cstr(com1(), "linux-process: syscall "); serial-write-dec-wide(com1(), number); serial-nl(com1())
   }
+  if user-context-active != 0 && linux-process-terminal-pending(frame,number) != 0 { return 2 }
   if number == 60 || number == 231 { result = first & 255; resume = 0 }
   else if number == 0 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-blocking-read(first,second,third) }
@@ -723,6 +725,17 @@ fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, 
   }
   wrmsr64(0xC0000100, fs)
   wrmsr64(0xC0000101, gs)
+  if linux-process-terminal-token != 0 {
+    linux-process-terminal-result = status
+    linux-process-terminal-phase = 2
+    if status == LINUX-PROCESS-TERMINAL-WAIT { linux-process-terminal-phase = 1 }
+    return status
+  }
+  if linux-process-finish() != 0 { return -5 }
+  return status
+}
+
+fn linux-process-finish() -> Int {
   if linux-process-clear-tid != 0 && linux-process-range(linux-process-clear-tid, 4, 1) != 0 {
     let i = 0
     while i < 4 { linux-process-store8(linux-process-clear-tid + i, 0); i = i + 1 }
@@ -732,7 +745,7 @@ fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, 
   linux-process-current-pid = 0
   linux-process-signal-mask = 0
   linux-process-signal-pending = 0
-  return status
+  return 0
 }
 
 fn linux-process-initial-arguments(row: Int, arg0: Int, arg1: Int, arg2: Int, count: Int) -> void {

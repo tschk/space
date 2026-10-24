@@ -55,3 +55,36 @@ Next connect actual original vi input/output and terminal modes/geometry, then a
 screen model/parser and client-owned surface. Acceptance remains keyboard editing,
 exact save/reopen, two sessions, focus, resize, close/crash cleanup and post-close
 refusal. These provider tests do not complete that acceptance.
+
+## Retained protected activation mechanics
+
+The explicitly imported `linux-process-terminal.in` now retains one protected
+Linux family across native queue waits. A generation-bearing activation token
+owns its stopped CPU context, native VM references and descriptor lifetime until
+explicit close. The caller retains its source ELF/argument and native terminal
+lifetimes until that close. A wait restores supervisor FS/GS, hook, CR3 and IF;
+resumption uses the saved remaining guest IRQ budget. Native would-block never
+becomes EOF, and the closed pipe-only graph keeps its prior deadlock behavior.
+
+Ordinary protected CLI roots import only the small private
+`linux-process-terminal-dispatch.in` request adapter. The terminal profile and
+native queue provider are selected explicitly, like the existing framebuffer
+profile. One validated 64-byte request and nonthrowing Int-to-Int native entry
+provide synchronous private dispatch; this is neither a public raw callback nor
+a second IPC fabric. Existing SCI denial of the Linux prefix covers the adapter.
+The profile is currently one retained family, not two simultaneous foreign apps.
+
+`/workspace/terminal-retained-qemu4/report.json` passes 26 actual own CPL3
+activations: 22 echo cycles, 440 idle retry probes preserving the actual remaining
+guest IRQ budget and syscall count, two real PS/2 deliveries resuming guest reads,
+1,024 exact writer bytes across output backpressure, bad-pointer refusal before
+input consumption, cancellation of a genuine wait and later ordinary execution.
+All 264 echo bytes are checked independently. Heap/free-page/domain/cap witnesses
+stabilize after warm-up; supervisor TLS and hook/context restoration are checked
+throughout. The earlier failed cold-resource witness and incorrect fixture mode
+selector remain preserved. Earlier passing direct-call mechanics and the later
+optional adapter have separate receipts.
+
+Actual original vi, terminal controls, timed readiness, screen/parser integration
+and two concurrent foreign applications remain active continuation work. None
+of the 26 own fixture entries is an upstream application entry.

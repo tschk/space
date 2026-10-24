@@ -38,6 +38,7 @@ jobs:
         python3 scripts/check-linux-poll-model.py --in "$IN_BIN" --out /tmp/space-file-control-ci
         python3 scripts/check-terminal-session-model.py --in "$IN_BIN" --out /tmp/space-terminal-model-ci
         python3 scripts/check-terminal-session.py --in "$IN_BIN" --out /tmp/space-terminal-native-ci
+        python3 scripts/check-terminal-session.py --in "$IN_BIN" --retained --out /tmp/space-terminal-retained-ci
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
         python3 scripts/check-local-stream.py --in "$IN_BIN" --build-dir /tmp/space-local-stream-ci
