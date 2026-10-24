@@ -1,0 +1,82 @@
+package space.kernel
+import "../../components/terminal-seat.in"
+
+fn terminal-fixture-key() -> Int {
+  let key = -1
+  let attempts = 0
+  while key < 0 && attempts < 100000000 {
+    key = ps2-kbd-getchar()
+    attempts += 1
+  }
+  if key < 0 { panic("terminal keyboard timeout") }
+  return key
+}
+
+fn terminal-fixture-check(port: Int) -> void {
+  let owner = cap-mint(obj-alloc(271),cap-memory())
+  let peer = cap-mint(obj-alloc(271),cap-memory())
+  let seat = cap-mint(obj-alloc(272),cap-input())
+  if owner < 0 || peer < 0 || seat < 0 { panic("terminal fixture caps") }
+  let heap = 0
+  let caps = cap-count
+  let domains = domain-count
+  let free = free-list
+  let previous = 0
+  let cycle = 0
+  while cycle < 22 {
+    let a = terminal-session-open(owner,seat,80,24)
+    let b = terminal-session-open(peer,seat,100,30)
+    if a <= 0 || b <= 0 || a == previous || terminal-session-read(previous,owner) != -6 { panic("terminal generation") }
+    if terminal-session-open(owner,seat,80,24) != -3 { panic("terminal capacity") }
+    if terminal-session-query(a,owner,0) != 80 || terminal-session-query(b,peer,1) != 30 { panic("terminal geometry") }
+    if terminal-session-read(a,owner) != -7 || terminal-session-output(b,peer) != -7 { panic("terminal empty") }
+    let i = 0
+    while i < 507 {
+      if terminal-session-input(a,owner,seat,i & 255) != 0 || terminal-session-write(b,peer,(i + 17) & 255) != 0 { panic("terminal fill") }
+      i += 1
+    }
+    if terminal-session-query(a,owner,2) != 507 || terminal-session-query(b,peer,3) != 507 { panic("terminal queue counts") }
+    let epoch = terminal-session-query(a,owner,4)
+    if terminal-session-input(a,owner,seat,0) != -7 || terminal-session-write(b,peer,0) != -7 || terminal-session-query(a,owner,4) != epoch { panic("terminal backpressure") }
+    i = 0
+    while i < 507 {
+      if terminal-session-read(a,owner) != (i & 255) || terminal-session-output(b,peer) != ((i + 17) & 255) { panic("terminal exact bytes") }
+      i += 1
+    }
+    // Cross wrap: the next sequence begins near the end of each native page.
+    i = 0
+    while i < 507 {
+      if terminal-session-input(a,owner,seat,(i + 23) & 255) != 0 || terminal-session-read(a,owner) != ((i + 23) & 255) { panic("terminal wrap") }
+      i += 1
+    }
+    if terminal-session-read(a,peer) != -2 || terminal-session-close(a,peer) != -2 { panic("terminal wrong owner") }
+    if terminal-seat-focus(a,owner,seat) != 0 || terminal-seat-deliver(seat,65) != 0 || terminal-seat-focus(b,peer,seat) != 0 || terminal-seat-deliver(seat,66) != 0 { panic("terminal focus") }
+    if terminal-session-read(a,owner) != 65 || terminal-session-read(b,peer) != 66 || terminal-session-read(a,owner) != -7 { panic("terminal focus isolation") }
+    if terminal-session-resize(a,owner,120,40) != 0 || terminal-session-query(a,owner,0) != 120 || terminal-session-query(b,peer,0) != 100 { panic("terminal resize") }
+    if terminal-session-close(a,owner) != 0 || terminal-session-close(b,peer) != 0 || terminal-seat-deliver(seat,67) != -6 { panic("terminal close") }
+    if terminal-seat-clear(seat) != 0 { panic("terminal focus retirement") }
+    if cycle == 0 { heap = heap-next }
+    if heap-next != heap || cap-count != caps || domain-count != domains || free-list != free { panic("terminal resource drift") }
+    previous = a
+    cycle += 1
+  }
+  serial-write-cstr(port,"terminal: 22 exact queue/focus/lifetime cycles PASS"); serial-nl(port)
+  let a = terminal-session-open(owner,seat,80,24)
+  let b = terminal-session-open(peer,seat,100,30)
+  ps2-kbd-init()
+  if terminal-seat-focus(a,owner,seat) != 0 { panic("terminal keyboard focus A") }
+  serial-write-cstr(port,"terminal: keyboard A ready"); serial-nl(port)
+  let key = terminal-fixture-key()
+  if key != 97 || terminal-seat-deliver(seat,key) != 0 || terminal-session-read(a,owner) != 97 || terminal-session-read(b,peer) != -7 { panic("terminal keyboard A isolation") }
+  if terminal-seat-focus(b,peer,seat) != 0 { panic("terminal keyboard focus B") }
+  serial-write-cstr(port,"terminal: keyboard B ready"); serial-nl(port)
+  key = terminal-fixture-key()
+  if key != 98 || terminal-seat-deliver(seat,key) != 0 || terminal-session-read(b,peer) != 98 || terminal-session-read(a,owner) != -7 { panic("terminal keyboard B isolation") }
+  serial-write-cstr(port,"terminal: actual PS2 focus isolation PASS"); serial-nl(port)
+  cap-revoke(owner)
+  if terminal-session-read(a,owner) != -2 || terminal-session-close(a,owner) != 0 || terminal-session-query(b,peer,0) != 100 { panic("terminal revoked owner cleanup") }
+  cap-revoke(seat)
+  if terminal-seat-deliver(seat,65) != -2 || terminal-session-close(b,peer) != 0 || terminal-seat-clear(seat) != 0 { panic("terminal revoked seat cleanup") }
+  if heap-next != heap || cap-count != caps || domain-count != domains || free-list != free { panic("terminal final resource drift") }
+  serial-write-cstr(port,"terminal: revoked owners retired with stable resources PASS"); serial-nl(port)
+}

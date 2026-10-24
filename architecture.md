@@ -46,6 +46,10 @@ readiness and bounded inline-file resizing, translated by the Linux edge. These
 are explicitly denied raw SCI exports, not newly isolated Storage/TerminalSession
 services. The [next terminal/GUI boundary](docs/terminal-gui-reference.md) preserves
 component, capability, object and execution-graph ownership above the nanokernel.
+The [native terminal continuation](docs/plans/2026-10-25-native-terminal-session.md)
+now has separately owned raw queues and focused seat leases with actual keyboard
+and lifetime checks. It is still private and kernel-linked; retained foreign
+activation waits and interactive TUI/screen integration are active next work.
 
 The end-to-end contract is `.in` declarations and code → generic Inauguration
 Core IR/MIR/native emission → SCI plus available metadata → Space packaging and

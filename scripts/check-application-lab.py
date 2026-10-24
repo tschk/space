@@ -209,6 +209,10 @@ def main():
         return run(name, [sys.executable, ROOT / 'scripts' / script, *arguments], **options)
 
     check('fixture-boot-layout','check-boot-fixture-layout.py','--out',args.out / 'fixture-boot-layout')
+    check('terminal-session-model','check-terminal-session-model.py','--in',args.compiler,
+          '--out',args.out / 'terminal-session-model')
+    check('terminal-session-native','check-terminal-session.py','--in',args.compiler,
+          '--out',args.out / 'terminal-session-native')
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),

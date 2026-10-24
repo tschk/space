@@ -1,0 +1,34 @@
+package space.kernel
+import "terminal-session.in"
+
+// Private native seat routing, separate from terminal bytes and screen state.
+// A focus lease names an exact session generation, owner and bound input cap.
+// Device decoding and foreign key encodings remain at their respective edges.
+var terminal-seat-session: Int = 0
+var terminal-seat-owner: Int = -1
+var terminal-seat-input: Int = -1
+
+fn terminal-seat-focus(handle: Int, owner: Int, seat: Int) -> Int {
+  let result = terminal-session-seat-valid(handle,owner,seat)
+  if result != 0 { return result }
+  terminal-seat-session = handle
+  terminal-seat-owner = owner
+  terminal-seat-input = seat
+  return 0
+}
+
+fn terminal-seat-deliver(seat: Int, byte: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if terminal-seat-session == 0 { return -6 }
+  if seat != terminal-seat-input { return -2 }
+  return terminal-session-input(terminal-seat-session,terminal-seat-owner,seat,byte)
+}
+
+fn terminal-seat-clear(seat: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if seat != terminal-seat-input { return -2 }
+  terminal-seat-session = 0
+  terminal-seat-owner = -1
+  terminal-seat-input = -1
+  return 0
+}

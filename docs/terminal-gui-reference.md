@@ -23,6 +23,10 @@ or permission to paste implementations into Space's MPL2 tree.
 
 ## Next executable native boundary
 
+The [native queue/seat implementation](plans/2026-10-25-native-terminal-session.md)
+now passes focused provider and actual keyboard/lifetime checks. The suspended
+activation/wakeup and original interactive application steps below remain active.
+
 Implement an owned native terminal session above the nanokernel: bounded input
 and output queues, stable instance/generation ownership, geometry, mode state,
 focused seat delivery and close/revocation. Blocking reads/readiness must suspend

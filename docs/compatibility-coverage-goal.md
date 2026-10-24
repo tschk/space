@@ -15,6 +15,13 @@ results must be recorded separately from this destination. Work proceeds through
 reviewable implementation/test commits on the requested draft PR branch. This
 file does not create a scheduled or unattended background task.
 
+Continuation, 2026-10-25 Australia/Melbourne: the full goal was never completed.
+Native owned terminal queues and separate seat focus leases now pass 99 modeled
+controls and actual QEMU keyboard/lifetime/import-denial checks. Retained foreign
+activation waits and interactive original vi are the active implementation work;
+see the [native terminal continuation](plans/2026-10-25-native-terminal-session.md).
+These focused checks do not widen the historical 152-gate receipt below.
+
 ## Active local execution checkpoint — 2026-10-24
 
 Latest complete passing checkpoint: **152/152 passed**, zero failed or blocked,
