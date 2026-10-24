@@ -53,3 +53,14 @@ data symbols use the already bounded256-byte image-string helper. The older
 profile matcher is unchanged. Original jq's next unavailable high-address
 profile import is`____chkstk_darwin`; it still has zero application entries.
 The lower image/heap profile intentionally retains its old symbol policy.
+
+Final frozen evidence is recorded in
+[`2026-10-25-darwin-data-evidence.json`](2026-10-25-darwin-data-evidence.json).
+Both`d75525d` roots pass184 own CPL3 entries and69 forced setup failures each,
+including failures before/after actual rune-object population and before native
+context attachment. Production source is unchanged by these snapshot-only
+injections. Both`072169e` original mapper suites also pass318 own entries and147
+setup refusals each; original jq's supported data import and next unavailable
+name are checked by the actual native matcher. These are not original macOS
+application entries. The desktop launcher/input/pointer/resize regression and
+243fps damage test pass at`d75525d`. No new complete163-gate run is claimed.
