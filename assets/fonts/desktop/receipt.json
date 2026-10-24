@@ -1,0 +1,27 @@
+{
+  "pillow": "12.3.0",
+  "coverage": "ASCII 32..126",
+  "encoding": "packed count/coverage byte pairs in native constant-initialized arrays",
+  "faces": {
+    "DejaVuSansMono.ttf/16": {
+      "source_sha256": "54bf827eb99404e8f430c330ad30f063334f637eba0109b6a18d4f566a8e9dd8",
+      "coverage_sha256": "703cf8760a25420d03470cf31fdc988690f569a55a335fcc50c03c730a98e1ed",
+      "encoded_bytes": 9304
+    },
+    "DejaVuSans.ttf/16": {
+      "source_sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e",
+      "coverage_sha256": "0a98d3fd23257b7adbde072dac89069dc1037a22dfe513a1d71709cbb4518252",
+      "encoded_bytes": 9864
+    },
+    "DejaVuSansMono.ttf/24": {
+      "source_sha256": "54bf827eb99404e8f430c330ad30f063334f637eba0109b6a18d4f566a8e9dd8",
+      "coverage_sha256": "eccdc2804896d2015fe24ebd10728e8267c14987397ed6dfab3047f87f734200",
+      "encoded_bytes": 16240
+    },
+    "DejaVuSans.ttf/24": {
+      "source_sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e",
+      "coverage_sha256": "5ee9b942618e91e797aad58f84749e42b6022241ce38a81e5ff93f8137128f5a",
+      "encoded_bytes": 17376
+    }
+  }
+}

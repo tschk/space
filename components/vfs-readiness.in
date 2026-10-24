@@ -1,0 +1,18 @@
+package space.kernel
+
+// Trusted synchronous provider query, not an SCI or guest-pointer interface.
+// A regular-file read (including EOF) or write can complete without waiting for
+// another producer. Streams/devices need their own owner and wakeup contract.
+const VFS-READY-READ = 1
+const VFS-READY-WRITE = 2
+
+fn vfs-regular-readiness(fd: Int, inode: Int, mount: Int, scratch: Int) -> Int {
+  if fd < 3 || vfs-fd-valid(fd) == 0 { return -9 }
+  if inode <= 0 || mount <= 0 || scratch == 0 { return -5 }
+  if vfs-stream-valid(fd) != 0 || vfs-discard-tagged(fd) != 0 { return -38 }
+  let path = load64(vfs-fd-table + fd * 32)
+  if fs-stat(path, scratch) < 0 { return -5 }
+  if load64(scratch + SF-ST-INODE) != inode || load64(scratch + SF-ST-MOUNT) != mount { return -5 }
+  if load32(scratch + SF-ST-TYPE) != SF-TYPE-FILE { return -38 }
+  return VFS-READY-READ | VFS-READY-WRITE
+}

@@ -1,0 +1,45 @@
+# Terminal and GUI reference follow-up
+
+Source review, 2026-10-24. No implementation or test body was copied from these
+projects into Space. The acquisition receipt in
+[`fixtures/references/terminal-gui.json`](../fixtures/references/terminal-gui.json)
+pins source URLs and measured hashes. Source inspection and host references are
+not Space execution credit.
+
+| Reference | Inspected contract | Implication for Space |
+|---|---|---|
+| Wine [`840a939`](https://github.com/wine-mirror/wine/tree/840a939ee526137639665ff5f587224d6a36403f), `dlls/kernelbase/console.c` and `dlls/kernel32/tests/console.c` | Console modes, typed INPUT_RECORD queues, A/W conversion, byte/character counts and console screen operations | Preserve Win32 console input records and error/output rules at the Windows edge. An ANSI screen renderer alone does not implement ReadConsoleInput or the Win32 console API. |
+| ReactOS [`e812443`](https://github.com/reactos/reactos/tree/e81244349554c4f98a97fdd7fb67d7a1b450eec5), `win32ss/user/winsrv/consrv/coninput.c` and `win32ss/user/ntuser/msgqueue.c` | Input buffer ownership, queued key events, processed/line input, wait queues and window messages | Input ownership, blocking reads, wakeups and focus need real native mechanisms. Console waits and GUI message queues are different contracts. |
+| Rosemary [`f845f218`](https://github.com/microlift/rosemary/tree/f845f21842c85f6863cfa8a7a749cb945b88994a), `crates/darwin/src/termios.rs` | Darwin termios layout/flag translation, openpty and window size | ABI structures cannot be copied from Linux. Its libc-backed PTY is a hosted backend; Space needs owned native terminal state and separate Darwin translation. |
+| Same Rosemary revision, `crates/appkit/src/backing.rs` and `event.rs` | Software backing pixels, preservation on resize and SDL event delivery to the responder chain | Reuse the ownership/lifecycle seam as a reference, then supply native surfaces and focused seat events. SDL calls and hosted Vec allocation are not a working Space AppKit backend. |
+| Alacritty [`vte` `abeae765`](https://github.com/alacritty/vte/tree/abeae765dd546dfff60b278f0757dcc71beb8ab1) | Parser/Perform split; Cargo supports no_std-oriented dependencies with std enabled by default | Evaluate a mature bounded parser rather than equating escape parsing with a terminal. Screen state, modes, input, geometry and lifecycle still require an owner. No parser dependency was selected or ported here. |
+| Microsoft [`Edit` `cb6de0a8`](https://github.com/microsoft/edit/tree/cb6de0a8966aecd01d19a3541dab1829d0e679ca) | A real cross-platform terminal editor, Windows/Linux/macOS installation and Rust/ICU build requirements | A useful larger TUI candidate after native sessions and the foreign runtime work. It has not been built or executed on Space; its README is not compatibility evidence. |
+
+Wine files carry LGPL2.1-or-later headers. The reviewed ReactOS files refer to
+their repository COPYING; inspect that and actual dependencies before reuse.
+Rosemary declares GPL3-only. vte declares Apache2.0-or-MIT; Edit declares MIT.
+This review selects contracts and candidate workloads, not a license exemption
+or permission to paste implementations into Space's MPL2 tree.
+
+## Next executable native boundary
+
+Implement an owned native terminal session above the nanokernel: bounded input
+and output queues, stable instance/generation ownership, geometry, mode state,
+focused seat delivery and close/revocation. Blocking reads/readiness must suspend
+the real CPU context and resume through the existing scheduler with its remaining
+IRQ budget. No invented readiness or spinning inside an interrupts-masked guest
+service. The native object owns bytes and lifetime; Linux termios/ioctl, Darwin
+termios and Win32 Console records translate at their respective edges.
+
+Then connect a screen model and a mature escape parser/backend decision to a
+client-owned native surface. Prove actual keyboard editing in original BusyBox
+vi, exact file save/reopen, resize, two independent clients, focus, crash cleanup
+and post-close refusal. Keep the existing shell and desktop input routing green.
+The [current EX-only vi checkpoint](linux-vi-workload.md) is useful file behavior
+and explicitly falls short of that terminal acceptance.
+
+Foreign software GUI work remains separate: preserve original Linux FLTK/X11
+as a real dependency/loader target, and implement typed Windows messages/drawing
+and Darwin imports/framework objects over native surface and seat contracts.
+Native calculator/editor pixels, original fbv BMP output and hosted Rosemary or
+Wine execution do not complete the cross-OS FLTK acceptance rows.

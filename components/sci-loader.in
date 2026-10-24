@@ -533,6 +533,8 @@ fn dyn-kernel-exportable(name: Int) -> Int {
   if dyn-name-prefix(name,"file-observation-") != 0 { return 0 }
   if dyn-name-prefix(name,"windows-find-") != 0 { return 0 }
   if dyn-name-prefix(name,"fs-directory-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-resize-") != 0 || dyn-name-prefix(name,"vfs-regular-") != 0 { return 0 }
+  if dyn-name-prefix(name,"desktop-font") != 0 { return 0 }
   if dyn-name-prefix(name,"linux-framebuffer-") != 0 { return 0 }
   if dyn-name-prefix(name,"native-canvas-") != 0 { return 0 }
   if dyn-name-prefix(name,"counter-") != 0 && dyn-str-eq(name,"counter-service-read") == 0 && dyn-str-eq(name,"counter-service-frequency") == 0 { return 0 }

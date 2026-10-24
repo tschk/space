@@ -6,6 +6,13 @@ The active [full goal](../../docs/compatibility-coverage-goal.md) requires actua
 protected execution and workflows inside Space before application coverage is
 counted. A fixture, a host reference run and a loader refusal have separate status.
 
+The separate `busybox-vi-1.36.1.json` pins the upstream static vi build, without
+replacing the existing CLI/xargs artifacts. [Its current workload](../../docs/linux-vi-workload.md)
+passes EX edit/save and separate-process reopen on Space; interactive terminal
+input remains open. Build using `scripts/build-busybox-corpus.py --manifest
+fixtures/applications/busybox-vi-1.36.1.json --out <new-directory>`. The main lab
+accepts `--busybox-vi <pinned-binary>` or the distinct `busybox-vi` cache entry.
+
 ## jq 1.8.1: original release binaries
 
 `jq-1.8.1.json` pins the upstream x86_64 Linux ELF, macOS Mach-O and Windows PE

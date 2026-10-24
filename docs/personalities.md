@@ -1,5 +1,11 @@
 # Compatibility personalities
 
+The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
+Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
+edit/save/reopen profile executes original vi; focused interactive TUI support
+remains open. Native providers own readiness, bytes and identity, with Linux
+structures/errors at the edge. They remain private kernel-linked prototypes.
+
 Space provides bounded foreign ABI fixtures and translator microservices.
 The compatibility surface maps onto Space VFS, process, and serial primitives;
 it does not provide a general Linux, macOS, or Windows process environment.

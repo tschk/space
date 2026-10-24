@@ -1,5 +1,9 @@
 # Space display and text platform
 
+The later [font/palette checkpoint](2026-10-24-desktop-fonts.md) adds pinned,
+offline raster assets and actual pixel/interaction evidence. The observed
+baseline and earlier staged decisions below remain historical context.
+
 ## Purpose and priority
 
 User direction, 2026-10-19: think beyond a framebuffer demo. Resolution,

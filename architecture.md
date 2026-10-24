@@ -39,6 +39,14 @@ networking, compatibility personalities and desktop are separable service policy
 The current full boot root still links many of them together. Its subsystem list
 below records the present image, not the intended trusted-core boundary.
 
+The [desktop font checkpoint](docs/plans/2026-10-24-desktop-fonts.md) keeps raster
+assets/rendering in that existing trusted display library. The
+[vi checkpoint](docs/linux-vi-workload.md) adds private synchronous native VFS
+readiness and bounded inline-file resizing, translated by the Linux edge. These
+are explicitly denied raw SCI exports, not newly isolated Storage/TerminalSession
+services. The [next terminal/GUI boundary](docs/terminal-gui-reference.md) preserves
+component, capability, object and execution-graph ownership above the nanokernel.
+
 The end-to-end contract is `.in` declarations and code → generic Inauguration
 Core IR/MIR/native emission → SCI plus available metadata → Space packaging and
 loader validation → granted runtime objects/interfaces. The compiler describes

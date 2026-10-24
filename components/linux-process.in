@@ -10,6 +10,8 @@ import "linux-process-children.in"
 import "linux-process-descriptors.in"
 import "linux-process-blocking.in"
 import "linux-process-schedule.in"
+import "linux-process-poll.in"
+import "linux-process-truncate.in"
 
 // Bounded static ELF process family with cooperative, single-CPU execution.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
@@ -424,6 +426,8 @@ fn linux-process-dispatch(frame: Int) -> Int {
     if linux-process-pipe-is(first) != 0 { result = linux-process-blocking-read(first,second,third) }
     else { result = linux-process-file-read(first,second,third) }
   }
+  else if number == 7 { result = linux-process-poll(first,second,linux-process-int32(third)) }
+  else if number == 77 { result = linux-process-file-truncate(linux-process-int32(first),second) }
   else if number == 8 {
     if linux-process-pipe-is(first) != 0 { result = -29 }
     else { result = linux-process-file-seek(first,second,third) }

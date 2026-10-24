@@ -44,6 +44,7 @@ def main():
         parser.add_argument('--' + name, type=Path,
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
     parser.add_argument('--busybox-vfork', type=Path, help='Separate pinned upstream xargs ELF; otherwise cache busybox-vfork or --download builds it')
+    parser.add_argument('--busybox-vi', type=Path, help='Separate pinned upstream vi ELF; otherwise cache busybox-vi or --download builds it')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
                         help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
@@ -65,7 +66,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Arbitrary upstream Darwin/Windows applications, interactive foreign GUI/FLTK/X11 and general fbdev remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Arbitrary upstream Darwin/Windows applications, interactive foreign TUI/GUI/FLTK/X11 and general fbdev remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -189,6 +190,15 @@ def main():
             path = args.out / 'busybox-vfork-build/busybox'
         app = json.loads(manifest.read_text())['apps'][0]
         applications['busybox-vfork'] = require_artifact(app, path)
+        manifest = ROOT / 'fixtures/applications/busybox-vi-1.36.1.json'
+        explicit = args.busybox_vi
+        path = explicit.resolve() if explicit else args.apps_dir / 'busybox-vi'
+        if not path.exists() and args.download and not explicit:
+            if not run('busybox-vi-source-build', [sys.executable, ROOT / 'scripts/build-busybox-corpus.py',
+                       '--manifest', manifest, '--out', args.out / 'busybox-vi-build']):
+                raise RuntimeError('BusyBox vi profile source build failed; evidence retained')
+            path = args.out / 'busybox-vi-build/busybox'
+        applications['busybox-vi'] = require_artifact(json.loads(manifest.read_text())['apps'][0],path)
     except (OSError, RuntimeError, ValueError) as error:
         report.setdefault('artifact_failure', {'reason': str(error)})
         save()
@@ -202,6 +212,16 @@ def main():
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),
               '--out', args.out / ('native-' + variant), dependency=built)
+    check('linux-file-control-model', 'check-linux-poll-model.py', '--in', args.compiler,
+          '--out', args.out / 'linux-file-control-model')
+    for variant in ['standard', 'minimal']:
+        gate='linux-vi-batch-'+variant
+        check(gate,'check-linux-tui.py','--in',args.compiler,'--app',applications['busybox-vi'],
+              '--batch-ex','--root',variant,'--out',args.out / gate)
+    for schema, options in [('v1',[]),('utc',['--utc'])]:
+        gate='linux-vi-batch-nvme-'+schema
+        check(gate,'check-linux-tui.py','--in',args.compiler,'--app',applications['busybox-vi'],
+              '--batch-ex','--nvme',*options,'--out',args.out / gate)
     check('native-persistence', 'check-native-persistence.py', '--in', args.compiler,
           '--image', args.out / 'images/standard.bin', '--out', args.out / 'native-persistence', dependency=built)
     for name, script in [('linux-jq', 'check-linux-real-app.py'), ('linux-lua', 'check-linux-corpus.py'),
@@ -388,6 +408,10 @@ def main():
         check(name, script, '--in', args.compiler, '--out', args.out / name, timeout=1200)
     check('desktop-launcher', 'check-desktop-launcher.py', '--in', args.compiler,
           '--build-dir', args.out / 'desktop-launcher', timeout=900)
+    check('desktop-font-coverage','check-desktop-fonts.py','--in',args.compiler,
+          '--out',args.out / 'desktop-font-coverage')
+    run('desktop-visual',['env','BUILD_DIR='+str(args.out / 'desktop-visual'),
+                         'bash',ROOT / 'scripts/check-desktop-visual.sh'])
     run('desktop-damage', ['env', 'BUILD_DIR=' + str(args.out / 'desktop-damage'),
                            'KERNEL_BIN=' + str(args.out / 'images/kernel-standard.bin'),
                            'bash', ROOT / 'scripts/check-desktop-damage.sh'], dependency=built)

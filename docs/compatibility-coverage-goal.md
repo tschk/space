@@ -24,8 +24,25 @@ gates, named executable identity, Windows Find and the full earlier Linux,
 Darwin/Windows fixture, native isolation and GUI/desktop matrix. It does not
 complete the full project goal or demonstrate original macOS/Windows apps.
 
+New focused work after that frozen checkpoint improves the desktop's actual
+typography and dark palette and executes original BusyBox vi EX edit/save plus
+separate-process reopen/edit/save. Both native roots pass44 original vi
+activations; each two-boot NVMe schema profile passes88, with exact persisted
+bytes and stable lifetime checks. Native regular-file readiness and inline
+resize are bounded prerequisites; focused keyboard/PTY/ANSI desktop integration
+remains OPEN. The three new private provider/font SCI imports are denied before
+entry in the bounded boot profile. See [vi scope](linux-vi-workload.md),
+[desktop evidence](plans/2026-10-24-desktop-fonts.md) and the
+[Wine/ReactOS/Rosemary/terminal review](terminal-gui-reference.md).
 
-The latest completed whole-tree checkpoint passes all131 gates at
+Seven new gates are added to the main lab: file-control models, four vi root/
+persistence profiles, exact desktop font coverage and desktop visual behavior.
+The resulting cached-artifact151-gate matrix has not yet completed a whole-tree
+run in this follow-up. The144/144 receipt above retains its exact earlier source
+scope. No percentage of general OS compatibility is inferred from either count.
+
+
+An earlier whole-tree checkpoint passes all131 gates at
 `/workspace/lab131/report.json`, from657 committed files at f54a293, with source,
 compiler and application integrity passed. It includes shared vfork/xargs,
 keyboard/cursor editing and the repaired compiler/Windows test harnesses. The

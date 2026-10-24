@@ -1,6 +1,7 @@
 package space.kernel
 
 import "file-range-leases.in"
+import "filesystem-inline-resize.in"
 
 // SparkFS public compatibility API.
 
