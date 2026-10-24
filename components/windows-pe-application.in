@@ -158,6 +158,7 @@ fn windows-application-entry-mode(image: Int, size: Int, startup: Int) -> Int {
       if startup == 9 { id = windows-parameters-composed-import(image, size, name) }
       if startup == 10 { id = windows-parameters-unicode-import(image, size, name) }
       if startup == 11 { id = windows-parameters-path-import(image,size,name) }
+      if startup == 12 { id = windows-find-import(image,size,name) }
       if i == 32 || id < 0 { return -8 }
       i = i + 1
     }

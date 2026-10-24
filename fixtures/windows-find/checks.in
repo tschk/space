@@ -1,0 +1,95 @@
+package space.kernel
+fn wft-equal(expected:Int,actual:Int)->void{if expected!=actual{serial-write-dec-wide(0x3f8,expected);serial-put(0x3f8,32);serial-write-dec-wide(0x3f8,actual);panic("Windows Find mismatch");}}
+fn wft-free()->Int{let n=0;let p=free-list;while p!=0 && n<4096{n+=1;p=load64(p);}return n;}
+fn wft-config-text(config:Int,line:Int,env:Int)->void{store64(config+48,line);store64(config+64,env);}
+var wft-mode:Int=0
+var wft-native-revoke:Int=0
+var wft-observed:Int=0
+var wft-last-handle:Int=0
+var wft-saw-live:Int=0
+var wft-clock-refusals:Int=0
+fn wft-dispatch(frame:Int)->Int{
+ wft-observed+=1;
+ if windows-find-table!=0{let handle=load64(windows-find-table);if handle>0{wft-last-handle=handle;wft-saw-live=1;}}
+ if load64(frame+112)==0x100100{
+  let authority=windows-protected-storage;if wft-mode==10 || wft-mode==12{authority=windows-parameters-heap-authority;}
+  if wft-mode==9 || wft-mode==10{wft-equal(0,cap-revoke(authority));}
+  else{store64(cap-table-base+authority*16,root-realm+1);}
+  store64(frame+112,0);return 1;
+ }
+ return windows-protected-dispatch(frame);
+}
+fn wft-details(path:Int,authority:Int,output:Int,capacity:Int,scratch:Int,scratchbytes:Int)->Int{
+ let result=fs-directory-details-into(path,authority,output,capacity,scratch,scratchbytes);
+ if result>=0 && wft-native-revoke!=0{
+  let grant=windows-parameters-heap-authority;if wft-native-revoke==17 || wft-native-revoke==19{grant=windows-protected-storage;}
+  if wft-native-revoke<18{wft-equal(0,cap-revoke(grant));}else{store64(cap-table-base+grant*16,root-realm+1);}
+  wft-native-revoke=0;
+ }
+ return result;
+}
+fn wft-admission(image:Int,config:Int)->void{
+ let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;let epoch=windows-find-epoch;let memory=load64(config+32);let storage=load64(config+24);let timer=load64(config+40);
+ wft-observed=0;store64(config+32,timer);wft-equal(-13,windows-find-run(image,11776,config));store64(config+32,memory);
+ store64(config+24,timer);wft-equal(-13,windows-find-run(image,11776,config));store64(config+24,storage);
+ store64(config+40,memory);wft-equal(-13,windows-find-run(image,11776,config));store64(config+40,timer);
+ let end=heap-end;heap-end=heap-next+16;let result=-11;let tries=0;while result==-11 && tries<32{result=windows-find-run(image,11776,config);tries+=1;if result==-11{let tick=ticks;while ticks==tick{hlt();}}}heap-end=end;wft-equal(-12,result);
+ wft-equal(0,wft-observed);wft-equal(heap,heap-next);wft-equal(free,free-list);wft-equal(domains,domain-count);wft-equal(caps,cap-count);wft-equal(epoch,windows-find-epoch);
+ serial-write-cstr(com1(),"windows-find: four cold admission refusals before entry PASS");serial-nl(com1());
+}
+fn wft-run(image:Int,row:Int,config:Int)->void{
+ let i=0;while i<4096{store8(image+7680+i,load8(row+i));i+=1;}
+ store64(image+7680+64,wft-last-handle);
+ let mode=load64(row);wft-mode=mode;wft-native-revoke=0;if mode==7{wft-native-revoke=load64(row+32);}windows-protected-budget=100;if mode==5{windows-protected-budget=5;}
+ let expected=42;if mode==4{expected=142;}if mode==5{expected=124;}if mode==8{expected=126;}
+ let attempts=0;let result=-11;while result==-11 && attempts<32{
+  let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;let epoch=windows-find-epoch;wft-observed=0;wft-saw-live=0;
+  result=windows-find-run(image,11776,config);attempts+=1;
+  if result==-11{wft-equal(0,wft-observed);wft-equal(heap,heap-next);wft-equal(free,free-list);wft-equal(domains,domain-count);wft-equal(caps,cap-count);wft-equal(epoch,windows-find-epoch);wft-clock-refusals+=1;let tick=ticks;while ticks==tick{hlt();}}
+ }
+ if mode==4 || mode==5{wft-equal(1,wft-saw-live);}
+ wft-equal(expected,result);if wft-observed==0{panic("Find fixture never entered");}
+ if windows-find-active!=0 || windows-find-domain!=0 || windows-find-pending!=0 || windows-protected-busy!=0 || windows-protected-count!=0 || windows-parameters-local-data!=0 || windows-parameters-path-data!=0 || domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0{panic("Find ownership leaked");}
+ i=0;while i<2{wft-equal(0,load64(windows-find-table+i*96));i+=1;}
+}
+fn windows-find-check(port:Int)->void{
+ let image=0x10000000;let oracle=0x12000000;if heap-next>=image{panic("Find source collision");}heap-end=image;
+ wft-equal(-1,dyn-resolve-idx("windows-find-run"));
+ let table=alloc(48);store64(table,BOOT-IMAGE-TABLE-MAGIC);store64(table+8,1);store64(table+16,254);store64(table+24,0x2f0000);store64(table+32,WFT-PRIVATE-SIZE);store64(table+40,0);
+ let boot=load64(0x40d0);store64(0x40d0,table);let beforeheap=heap-next;let beforecaps=cap-count;let beforedomains=domain-count;let live=runtime-instance-live;
+ wft-equal(-1,sci-load-runtime-component(port,0x2f0000,"private-windows-find",1,1,0));wft-equal(beforeheap,heap-next);wft-equal(beforecaps,cap-count);wft-equal(beforedomains,domain-count);wft-equal(live,runtime-instance-live);store64(0x40d0,boot);
+ let serial=cap-mint(root-realm,cap-serial());let storage=cap-mint(root-realm,cap-storage());let memory=cap-mint(root-realm,cap-memory());let timer=cap-mint(root-realm,cap-timer());
+ if WFT-REOPEN==0{
+ let blocks=256;let inodes=256;if WFT-NVME!=0{blocks=16384;inodes=2048;}
+ wft-equal(0,fs-metadata-format-utc(blocks,inodes,storage,timer));
+ wft-equal(0,fs-write-file("/alpha.txt","abc",3));if fs-mkdir("/é😀")<0{panic("Find mkdir failed");}
+ let start=ticks;while ticks<start+120{hlt();}wft-equal(0,fs-write-file("/alpha.txt","abc",3));
+ start=ticks;while ticks<start+120{hlt();}let readback=alloc(16);wft-equal(3,fs-read-file("/alpha.txt",readback,16));
+ if WFT-NVME!=0{wft-equal(1,nvme-ready);wft-equal(0,sf-mem-disk);wft-equal(0,nvme-flush());}
+ }else{wft-equal(1,nvme-ready);wft-equal(0,sf-mem-disk);wft-equal(1,sf-disk-ready);wft-equal(2,load32(sf-super+SF-SB-VERSION));wft-equal(-1,fs-metadata-clock-authority);}
+ let file=sf-lookup-path("/alpha.txt");let dir=sf-lookup-path("/é😀");
+ let records=alloc(128);let i=0;while i<2{let inode=file;if i==1{inode=dir;}let addr=sf-inode-addr(inode);let j=0;while j<3{store64(records+i*32+j*8,load64(addr+SF-IN-CTIME+j*8));j+=1;}i+=1;}
+ // Export actual persisted UTC seconds. Host constructs Windows layout without
+ // reusing adapter conversion or reading the adapter's marshaling buffer.
+ serial-write-cstr(port,"windows-find-times:");i=0;while i<6{serial-put(port,32);serial-write-dec-wide(port,load64(records+(i/3)*32+(i%3)*8));i+=1;}serial-nl(port);
+ // Host sends the independent record oracle only after observing native times.
+ serial-write-cstr(port,"windows-find-ready");serial-nl(port);
+ let b=0;while b<16{store8(oracle+b,serial-read(port));b+=1;if b%8==0{serial-put(port,46);}}
+ let count=load64(oracle);let regular=load64(oracle+8);if count<6 || count>64 || regular!=count - 8{panic("Find oracle bounds");}
+ b=0;while b<count*4096{store8(oracle+16+b,serial-read(port));b+=1;if b%8==0{serial-put(port,46);}}
+ let line="find.exe";let env=alloc(16);cpu-mem-fill64(env,0,2);let config=alloc(96);store64(config,1);store64(config+8,96);store64(config+16,serial);store64(config+24,storage);store64(config+32,memory);store64(config+40,timer);wft-config-text(config,line,env);store64(config+56,9);store64(config+72,2);store64(config+80,1);store64(config+88,0);
+ wft-admission(image,config);
+ let cycle=0;let heap=0;let pool=0;let domains=0;let caps=cap-count;let caller=current-cap;
+ while cycle<22{let n=0;while n<regular{
+  serial-write-cstr(port,"find-case ");serial-write-dec-wide(port,cycle);serial-put(port,32);serial-write-dec-wide(port,n);serial-nl(port);
+  wft-run(image,oracle+16+n*4096,config);wft-equal(caps,cap-count);wft-equal(caller,current-cap);n+=1;
+ }
+ if cycle==0{heap=heap-next;pool=wft-free();domains=domain-count;}else{wft-equal(heap,heap-next);wft-equal(pool,wft-free());wft-equal(domains,domain-count);}cycle+=1;}
+ let n=regular;while n<count{
+  let fresh=cap-mint(root-realm,cap-storage());let mem=cap-mint(root-realm,cap-memory());store64(config+24,fresh);store64(config+32,mem);
+  wft-run(image,oracle+16+n*4096,config);cap-revoke(fresh);cap-revoke(mem);wft-equal(heap,heap-next);wft-equal(pool,wft-free());wft-equal(domains,domain-count);n+=1;
+ }
+ windows-protected-budget=100;cap-revoke(serial);cap-revoke(storage);cap-revoke(memory);cap-revoke(timer);
+ serial-write-cstr(port,"windows-find-clock-refusals: ");serial-write-dec-wide(port,wft-clock-refusals);serial-nl(port);
+ serial-write-cstr(port,"windows-find: actual A W Ex records EOF stale fault deadline21 cycles PASS");serial-nl(port);
+}

@@ -1,0 +1,157 @@
+package space.kernel
+import "fs-directory-snapshot.in"
+
+// Profile13: finite root-directory adapter. Native observations own filesystem
+// bytes; this foreign catalog owns opaque cursors, encodings and FILETIME policy.
+const WINDOWS-FIND-ROW=96
+const WINDOWS-FIND-SNAPSHOT=393248
+const WINDOWS-FIND-SCRATCH=397344
+var windows-find-table:Int=0
+var windows-find-marshal:Int=0
+var windows-find-generation:Int=0
+var windows-find-epoch:Int=0
+var windows-find-domain:Int=0
+var windows-find-active:Int=0
+var windows-find-pending:Int=0
+var windows-find-quota:Int=0
+var windows-find-memory-target:Int=0
+var windows-find-storage-target:Int=0
+fn windows-find-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-path-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"FindFirstFileW")!=0{return 53;}
+ if windows-protected-name(image,size,name+2,"FindNextFileW")!=0{return 54;}
+ if windows-protected-name(image,size,name+2,"FindClose")!=0{return 55;}
+ if windows-protected-name(image,size,name+2,"FindFirstFileA")!=0{return 56;}
+ if windows-protected-name(image,size,name+2,"FindNextFileA")!=0{return 57;}
+ if windows-protected-name(image,size,name+2,"FindFirstFileExW")!=0{return 58;}
+ if windows-protected-name(image,size,name+2,"FindFirstFileExA")!=0{return 59;}
+ return -1;
+}
+fn windows-find-needed()->Int{if windows-find-table!=0{return 0;}return WINDOWS-FIND-ROW*2+1024+2*(WINDOWS-FIND-SNAPSHOT+WINDOWS-FIND-SCRATCH);}
+fn windows-find-admissible()->Int{
+ if windows-find-active!=0 || windows-find-epoch==0x7FFFFFFFFFFFFFFF{return 0;}
+ let i=0;while i<2 && windows-find-table!=0{if load64(windows-find-table+i*WINDOWS-FIND-ROW)!=0{return 0;}i+=1;}return 1;
+}
+fn windows-find-prepare()->Int{
+ if windows-find-admissible()==0{return -5;}
+ let needed=windows-find-needed();if heap-next>heap-end || needed>heap-end - heap-next{return -12;}
+ if windows-find-table==0{
+  windows-find-table=alloc(2*WINDOWS-FIND-ROW);cpu-mem-fill64(windows-find-table,0,2*WINDOWS-FIND-ROW/8);windows-find-marshal=alloc(1024);
+  let i=0;while i<2{let row=windows-find-table+i*WINDOWS-FIND-ROW;store64(row+64,alloc(WINDOWS-FIND-SNAPSHOT));store64(row+72,alloc(WINDOWS-FIND-SCRATCH));i+=1;}
+ }
+ windows-find-epoch+=1;windows-find-domain=windows-protected-domain;windows-find-active=1;windows-find-pending=0;windows-find-quota=128;
+ windows-find-memory-target=load64(cap-table-base+windows-parameters-heap-authority*16);windows-find-storage-target=load64(cap-table-base+windows-protected-storage*16);return 0;
+}
+fn windows-find-release()->void{
+ let i=0;while i<2 && windows-find-table!=0{let row=windows-find-table+i*WINDOWS-FIND-ROW;let data=load64(row+64);let scratch=load64(row+72);cpu-mem-fill64(row,0,WINDOWS-FIND-ROW/8);store64(row+64,data);store64(row+72,scratch);i+=1;}
+ windows-find-active=0;windows-find-domain=0;windows-find-pending=0;windows-find-quota=0;windows-find-memory-target=0;windows-find-storage-target=0;
+}
+fn windows-find-authorized()->Int{
+ if cap-check(windows-parameters-heap-authority,cap-memory())==0 || cap-check(windows-protected-storage,cap-storage())==0{return 0;}
+ if load64(cap-table-base+windows-parameters-heap-authority*16)!=windows-find-memory-target || load64(cap-table-base+windows-protected-storage*16)!=windows-find-storage-target{return 0;}return 1;
+}
+fn windows-find-fail(error:Int,value:Int)->Int{windows-protected-error=error;return value;}
+fn windows-find-row(handle:Int)->Int{
+ if handle<=0 || windows-find-table==0{return 0;}let slot=(handle&255) - 128;if slot<0 || slot>=2{return 0;}
+ let row=windows-find-table+slot*WINDOWS-FIND-ROW;
+ if load64(row)!=handle || load64(row+8)!=windows-find-epoch || load64(row+16)!=windows-find-domain || load64(row+24)!=1{return 0;}return row;
+}
+fn windows-find-units(text:Int,bytes:Int)->Int{
+ let i=0;let units=0;while i<bytes{let step=windows-parameters-path-native-step(text,i,bytes);if step<0{return -1;}units+=1;if (step&0xFFFFFFFF)>65535{units+=1;}i+=step>>32;}return units;
+}
+// Exact Unicode and ASCII ordinal folding are established. Equal-length unknown
+// folding returns-1, so unsupported case semantics never become false ENOENT.
+fn windows-find-match(a:Int,an:Int,b:Int,bn:Int,sensitive:Int)->Int{
+ let i=0;let exact=0;if an==bn{exact=1;while i<an{if load8(a+i)!=load8(b+i){exact=0;}i+=1;}}
+ if exact!=0{return 1;}if sensitive!=0{return 0;}
+ let au=windows-find-units(a,an);let bu=windows-find-units(b,bn);if au<0 || bu<0{return -2;}if au!=bu{return 0;}
+ let ascii=1;i=0;while i<an{if load8(a+i)>127{ascii=0;}i+=1;}i=0;while i<bn{if load8(b+i)>127{ascii=0;}i+=1;}
+ if ascii==0{return -1;}if an!=bn{return 0;}i=0;while i<an{if windows-parameters-path-fold(load8(a+i))!=windows-parameters-path-fold(load8(b+i)){return 0;}i+=1;}return 1;
+}
+fn windows-find-put16(at:Int,value:Int)->void{store8(at,value);store8(at+1,value>>8);}
+fn windows-find-copy(record:Int,output:Int,wide:Int)->Int{
+ let bytes=320;if wide!=0{bytes=592;}
+ if output==0 || windows-protected-span(output,bytes,1)==0{return windows-find-fail(998,0);}
+ let namebytes=load64(record+24);if namebytes<1 || namebytes>24 || windows-find-units(record+32,namebytes)<0{return windows-find-fail(1113,0);}
+ let kind=load64(record);if kind!=1 && kind!=2{return windows-find-fail(13,0);}
+ let size=load64(record+16);if size<0{return windows-find-fail(13,0);}
+ cpu-mem-fill64(windows-find-marshal,0,128);
+ let attributes=128;if kind==2{attributes=16;}if (load64(record+88)&128)==0{attributes=attributes&(-1 ^ 128);attributes=attributes|1;}
+ store32(windows-find-marshal,attributes);let i=0;while i<3{let seconds=load64(record+64+i*8);if seconds<0 || seconds>253402300799{return windows-find-fail(13,0);}let stamp=(seconds+11644473600)*10000000;store32(windows-find-marshal+4+i*8,stamp);store32(windows-find-marshal+8+i*8,stamp>>32);i+=1;}
+ store32(windows-find-marshal+28,size>>32);store32(windows-find-marshal+32,size);
+ if wide==0{i=0;while i<namebytes{store8(windows-find-marshal+44+i,load8(record+32+i));i+=1;}}
+ else{
+  i=0;let units=0;while i<namebytes{let step=windows-parameters-path-native-step(record+32,i,namebytes);let scalar=step&0xFFFFFFFF;
+   if scalar>65535{scalar-=65536;windows-find-put16(windows-find-marshal+44+units*2,0xD800|(scalar>>10));units+=1;windows-find-put16(windows-find-marshal+44+units*2,0xDC00|(scalar&1023));units+=1;}
+   else{windows-find-put16(windows-find-marshal+44+units*2,scalar);units+=1;}i+=step>>32;
+  }
+ }
+ if windows-find-authorized()==0{return windows-find-fail(5,0);}
+ i=0;while i<bytes{store8(windows-protected-physical(output+i),load8(windows-find-marshal+i));i+=1;}return 1;
+}
+fn windows-find-first(context:Int,wide:Int,extended:Int)->Int{
+ if windows-find-authorized()==0{return windows-find-fail(5,-1);}
+ let guest=load64(context+96);let output=load64(context+88);let sensitive=0;
+ if extended!=0{
+  let level=load64(context+88)&0xFFFFFFFF;output=load64(context+56);let search=load64(context+48)&0xFFFFFFFF;let stack=load64(context+144);
+  if windows-protected-span(stack+40,16,0)==0{return windows-find-fail(998,-1);}
+  let flags=windows-protected-load64(stack+48)&0xFFFFFFFF;
+  if level>1 || search!=0 || windows-protected-load64(stack+40)!=0 || (flags&-4)!=0{return windows-find-fail(87,-1);}sensitive=flags&1;
+ }
+ let outputbytes=320;if wide!=0{outputbytes=592;}
+ if output==0 || windows-protected-span(output,outputbytes,1)==0{return windows-find-fail(998,-1);}
+ let decoded=windows-parameters-path-decode(guest,wide);if decoded==0{return -1;}
+ let input=windows-parameters-path-data+2048;let bytes=decoded - 1;if bytes==0{return windows-find-fail(3,-1);}
+ let wildcard=0;let start=0;let i=0;while i<bytes{let c=load8(input+i);if c==47 || c==92 || c==58{start=i+1;}if c==42 || c==63{wildcard=1;}i+=1;}
+ let trailing=load8(input+bytes - 1);let all=0;
+ if wildcard!=0{
+  let n=bytes - start;
+  if (n==1 && load8(input+start)==42) || (n==3 && load8(input+start)==42 && load8(input+start+1)==46 && load8(input+start+2)==42){all=1;store8(input+start,46);store8(input+start+1,0);decoded=start+2;}
+  else{return windows-find-fail(50,-1);}
+ }
+ let path=windows-parameters-path-resolve-native(decoded,3);if path==0{return -1;}
+ let length=strlen(path);let leaf=path+1;let leafbytes=length - 1;
+ if all!=0{if length!=1{return windows-find-fail(50,-1);}}
+ else{
+  if length==1 || trailing==47 || trailing==92{return windows-find-fail(2,-1);}i=1;while i<length{if load8(path+i)==47{return windows-find-fail(50,-1);}i+=1;}
+ }
+ let slot=0;while slot<2 && load64(windows-find-table+slot*WINDOWS-FIND-ROW)!=0{slot+=1;}if slot==2{return windows-find-fail(4,-1);}
+ if windows-find-generation>=0x7FFFFFFFFFFFFF{return windows-find-fail(8,-1);}
+ let row=windows-find-table+slot*WINDOWS-FIND-ROW;let data=load64(row+64);let scratch=load64(row+72);
+ let got=fs-directory-details-into("/",windows-protected-storage,data,WINDOWS-FIND-SNAPSHOT,scratch,WINDOWS-FIND-SCRATCH);
+ if got<0{let error=1117;if got==-2{error=5;}if got==-3 || got==-8{error=50;}if got==-6{error=8;}return windows-find-fail(error,-1);}
+ if windows-find-authorized()==0{return windows-find-fail(5,-1);}
+ let count=load64(data+16);if load64(data)!=0x5346444952530002 || load64(data+24)!=96 || count<0 || count>4096 || got!=32+count*96 || load64(data+8)!=sf-mount-id{return windows-find-fail(13,-1);}
+ if count==0{return windows-find-fail(2,-1);}
+ let selected=0;
+ if all==0{
+  let matches=0;let unknown=0;i=0;while i<count{let record=data+32+i*96;let nb=load64(record+24);if nb<1 || nb>24{return windows-find-fail(13,-1);}let result=windows-find-match(leaf,leafbytes,record+32,nb,sensitive);if result==-2{return windows-find-fail(1113,-1);}if result<0{unknown=1;}if result==1{selected=i;matches+=1;}i+=1;}
+  if unknown!=0{return windows-find-fail(50,-1);}if matches==0{return windows-find-fail(2,-1);}if matches>1{return windows-find-fail(52,-1);}
+ }
+ if windows-find-copy(data+32+selected*96,output,wide)==0{return -1;}
+ windows-find-generation+=1;let handle=(windows-find-generation<<8)|(slot+128);
+ store64(row,handle);store64(row+8,windows-find-epoch);store64(row+16,windows-find-domain);store64(row+24,1);store64(row+32,count);store64(row+40,selected+1);store64(row+48,1 - all);store64(row+56,selected);store64(row+80,load64(data+8));return handle;
+}
+fn windows-find-next(context:Int,wide:Int)->Int{
+ let row=windows-find-row(load64(context+96));if row==0{return windows-find-fail(6,0);}if windows-find-authorized()==0{return windows-find-fail(5,0);}
+ if sf-disk-ready==0 || volume-ready!=0 || sf-mount-id!=load64(row+80){return windows-find-fail(50,0);}
+ let next=load64(row+40);if load64(row+48)!=0 || next>=load64(row+32){return windows-find-fail(18,0);}
+ if windows-find-copy(load64(row+64)+32+next*96,load64(context+88),wide)==0{return 0;}store64(row+40,next+1);return 1;
+}
+fn windows-find-close(context:Int)->Int{
+ let row=windows-find-row(load64(context+96));if row==0{return windows-find-fail(6,0);}store64(row,0);store64(row+24,0);return 1;
+}
+fn windows-find-service-work(context:Int)->Int{
+ if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || cr3-read()!=load64(domain-table) || windows-find-active!=1 || windows-protected-profile!=13 || windows-protected-busy!=1 || windows-find-domain!=windows-protected-domain{return 127;}
+ if user-context-valid(context)==0 || load64(context+688)!=USER-CONTEXT-SUSPEND || load64(context+712)!=windows-find-domain{return 127;}
+ if windows-parameters-local-budget<=0{return 124;}if windows-find-quota<=0{return 126;}windows-find-quota-=1;
+ let num=windows-find-pending;windows-find-pending=0;if num<0x100035 || num>0x10003B || load64(context+112)!=num{return 127;}
+ let result=0;
+ if num==0x100035{result=windows-find-first(context,1,0);}else if num==0x100036{result=windows-find-next(context,1);}else if num==0x100037{result=windows-find-close(context);}else if num==0x100038{result=windows-find-first(context,0,0);}else if num==0x100039{result=windows-find-next(context,0);}else if num==0x10003A{result=windows-find-first(context,1,1);}else{result=windows-find-first(context,0,1);}
+ store64(context+112,result);windows-protected-store32(WINDOWS-STARTUP-TEB+104,windows-protected-error);return 0;
+}
+fn windows-find-service(context:Int)->Int{
+ let flags=invoke1(load64(0x4198),0)&512;cli();let result=windows-find-service-work(context);if flags!=0{sti();}return result;
+}
+fn windows-find-run(image:Int,size:Int,config:Int)->Int{return windows-command-composed-run-profile(image,size,config,13);}

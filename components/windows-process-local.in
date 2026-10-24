@@ -98,7 +98,7 @@ fn windows-parameters-local-run(entry:Int,domain:Int,stack:Int)->Int{
   if pending==1{
    let row=windows-parameters-local-row(windows-parameters-local-index);let status=windows-parameters-local-call(context,row,domain);if status!=0{return status;}
    store64(row,0);store64(row+8,0);store64(row+16,0);
-  }else if pending==2{exit=windows-parameters-local-exit;break;}else{return 127;}
+  }else if pending==3{let status=windows-find-service(context);if status!=0{return status;}}else if pending==2{exit=windows-parameters-local-exit;break;}else{return 127;}
  }
  if exit<0{return 124;}
  // Clear each value after its callback. New registrations are bounded by

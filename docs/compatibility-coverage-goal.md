@@ -1,6 +1,6 @@
 # Compatibility coverage and GUI application goal
 
-User direction, expanded 2026-10-24 (Australia/Melbourne): build a usable native
+User direction, expanded 2026-10-24 (UTC): build a usable native
 Space desktop and protected Linux, Darwin/macOS and Windows application
 personalities; keep implementing and locally testing real CLI and GUI applications
 until the acceptance matrix below works end to end. This is the full project
@@ -30,6 +30,16 @@ The next committed checkpoint passes all135 gates from672 files at9a014c2,
 passed. It includes the native owned canvas and actual original fbv BMP pixels,
 plus the previous CLI/process, Windows/Darwin and desktop regressions. Later
 UTC metadata work is a separate in-progress source; it does not extend135.
+
+The independent679-file UTC/Volume source1ffaa65 passes all137 gates at
+`/workspace/lab137/report.json`, including source/compiler/application integrity.
+It adds schema2 UTC metadata, actual NVMe persistence and malformed backing
+refusal while preserving original Linux workloads and desktop behavior.
+Windows Find work proceeds separately: a finite root adapter now passes624
+actual CPL3 fixture activations on RAM and1248 across two actual NVMe boots,
+with complete record oracles, revocation, fault/deadline and lifetime checks.
+Original Windows application entries remain zero. See the
+[Find boundary and evidence](plans/2026-10-24-windows-find.md).
 
 The full goal remains active. Four unmodified upstream Linux applications now
 execute through private CPL3 mappings: original jq1.8.1, source-built Lua5.4.7,

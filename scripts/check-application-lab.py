@@ -65,7 +65,7 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Arbitrary upstream Darwin/Windows applications, interactive foreign GUI/FLTK/X11 and general fbdev remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Arbitrary upstream Darwin/Windows applications, interactive foreign GUI/FLTK/X11 and general fbdev remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -328,6 +328,10 @@ def main():
           '--out', args.out / 'windows-paths')
     check('windows-paths-nvme', 'check-windows-path-persistence.py', '--in', args.compiler,
           '--out', args.out / 'windows-paths-nvme')
+    check('windows-find', 'check-windows-find.py', '--in', args.compiler,
+          '--out', args.out / 'windows-find')
+    check('windows-find-nvme', 'check-windows-find-persistence.py', '--in', args.compiler,
+          '--out', args.out / 'windows-find-nvme')
     check('native-utc-metadata', 'check-native-utc-metadata.py', '--in', args.compiler,
           '--out', args.out / 'native-utc-metadata')
     check('native-utc-persistence', 'check-native-utc-persistence.py', '--in', args.compiler,

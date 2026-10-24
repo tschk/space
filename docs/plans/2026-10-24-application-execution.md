@@ -5,6 +5,21 @@ testing until the full goal works. The authoritative destination and completion
 matrix are [compatibility-coverage-goal.md](../compatibility-coverage-goal.md).
 This checkpoint does not close that goal or narrow its required outcomes.
 
+## Latest integrated checkpoint
+
+All137 gates pass at `/workspace/lab137/report.json`, from679 committed files at
+1ffaa65. Source/compiler/application integrity passes. It includes the earlier
+original Linux CLI/fbv pixels, native owned VM/canvas, protected GUI/input and
+Windows/Darwin gates, plus explicit UTC file metadata and real NVMe persistence.
+The full project goal remains OPEN; original macOS/Windows applications and
+interactive foreign GUI applications remain unfulfilled.
+
+The later finite Windows root Find adapter has separate focused evidence:
+624 actual CPL3 fixture activations on RAM and1248 across two NVMe boots, exact
+records/timestamps, live grant refusal, faults/deadlines and21 stable cycles.
+See [the boundary and evidence](2026-10-24-windows-find.md). The next integration
+adds two Find gates; these focused receipts do not extend the137-gate source.
+
 ## Current work and evidence scope
 
 The latest committed Linux migration (`d9d1db9`) passes28 final gates using the

@@ -146,3 +146,10 @@ SparkFS name limits/deep paths pass three NVMe boots. Earlier directory, large-
 file and file-service receipts have their own older source scopes; they are
 retained separately rather than retroactively attributed to4394bf4. No complete
 137-gate integration pass is claimed by these focused results.
+
+
+The later independent whole-tree run at `/workspace/lab137/report.json` passes
+all137 gates from679 committed files at1ffaa65, including the native UTC RAM and
+NVMe gates, original Linux apps, Windows/Darwin fixtures and desktop regressions.
+Source/compiler/application integrity passes with no changed inputs. That
+integration result has its own source scope and leaves the full goal OPEN.

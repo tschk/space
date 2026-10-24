@@ -57,7 +57,12 @@ fn windows-parameters-path-decode(guest:Int,wide:Int)->Int{
  return bytes+1;
 }
 fn windows-parameters-path-resolve(guest:Int,wide:Int,empty-error:Int)->Int{
- let decoded=windows-parameters-path-decode(guest,wide);if decoded==0{return 0;}let bytes=decoded - 1;if bytes==0{return windows-parameters-path-fail(empty-error);}
+ let decoded=windows-parameters-path-decode(guest,wide);if decoded==0{return 0;}return windows-parameters-path-resolve-native(decoded,empty-error);
+}
+// The decoder owns path-data+2048; stopped adapters may normalize that same
+// bounded private UTF8 copy without treating a kernel pointer as a guest pointer.
+fn windows-parameters-path-resolve-native(decoded:Int,empty-error:Int)->Int{
+ let bytes=decoded - 1;if bytes==0{return windows-parameters-path-fail(empty-error);}
  let path=windows-parameters-path-data+2048;let i=0;while i<bytes{if load8(path+i)==92{store8(path+i,47);}i=i+1;}
  if bytes>=2 && load8(path)==47 && load8(path+1)==47{return windows-parameters-path-fail(50);}
  if bytes>=2 && load8(path+1)==58{
