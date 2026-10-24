@@ -262,4 +262,3 @@ struct xlocale_ctype _DefaultRuneXLocale __attribute__((section("__DATA,__constr
 };
 
 _RuneLocale *_CurrentRuneLocale = &_DefaultRuneLocale;
-

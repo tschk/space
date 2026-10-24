@@ -80,6 +80,17 @@ fn store64(p:Int,v:Int)->void{let i=0;while i<8{store8(p+i,(v>>(i*8))&255);i+=1;
         actual=json.loads(result.stdout);assert result.returncode==0 and actual.get('eval_result')=={'Int':42},actual
     report.update(native_model_profiles=3,oracle_bytes=4096,oracle_sha256=sha(out/'oracle.bin'))
     if not a.model_only:
+        provider=snapshot/'components/darwin-mapped-process.in';instrumented=provider.read_text()
+        before='    status = darwin-rune-populate(bounce,4096,DARWIN-MAPPED-RUNE)'
+        after='    if status == 0 { status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RUNE,bounce,4096) }'
+        assert instrumented.count(before)==1 and instrumented.count(after)==1
+        instrumented=instrumented.replace(before,'    if rune-test-stage==1{return -12;}\n'+before)
+        instrumented=instrumented.replace(after,after+'\n    if rune-test-stage==2{return -12;}')
+        attach='let binding = user-space-attach(vm,memory,state + 4096)'
+        assert instrumented.count(attach)==1
+        instrumented=instrumented.replace(attach,'let binding = rune-test-attach(vm,memory,state + 4096)')
+        provider.write_text(instrumented)
+        report.update(derived_mapper_sha256=sha(provider),source_test_variance='snapshot-only failures before/after actual rune population and before context attachment; production unchanged')
         # The modern five-segment Mach-O skeleton is Space's own fixture.
         # Replace its test program and extend two real data bindings.
         source=(snapshot/'fixtures/darwin-mapped/process.asm').read_text()
@@ -174,6 +185,8 @@ code_end:
         kernel='import '+json.dumps(str(snapshot/'components/darwin-mapped-process.in'))+'\n'+kernel
         assert kernel.count('  shell(port)')==1;kernel=kernel.replace('  shell(port)','  rune-check(port)')
         kernel+='''
+var rune-test-stage:Int=0
+fn rune-test-attach(vm:Int,authority:Int,context:Int)->Int{if rune-test-stage==3{return -3;}return user-space-attach(vm,authority,context);}
 fn rune-free()->Int{let page=free-list;let count=0;while page!=0&&count<131072{count+=1;page=load64(page);}if page!=0{panic("rune free chain");}return count;}
 fn rune-check(port:Int)->void{
  let state=alloc(20480);cpu-mem-fill64(state,0,2560);let input=alloc(1024);cpu-mem-fill64(input,0,128);
@@ -199,6 +212,14 @@ fn rune-check(port:Int)->void{
    if cycle>0 && (heap-next!=heap||rune-free()!=free||domain-count!=domains||cap-count!=caps){panic("rune stable resources");}
    mode+=1;
   }
+  let stage=1;while stage<=3{
+   rune-test-stage=stage;
+   if darwin-mapped-prepare(0x11000000,IMAGE_SIZE,state,20480,DARWIN-MAPPED-IDENTITY)!=0{panic("rune setup failure prepare");}
+   let result=darwin-mapped-run(state,input,1024,DARWIN-MAPPED-IDENTITY,serial,memory,1000);rune-test-stage=0;
+   if result!=-12 || load64(state+56)!=0 || load64(state+64)!=0 || load64(state+168)!=0 || load64(state+48)!=3{panic("rune partial setup cleanup");}
+   if cycle>0 && (heap-next!=heap||rune-free()!=free||domain-count!=domains||cap-count!=caps){panic("rune failed setup resources");}
+   stage+=1;
+  }
   if cycle==0{heap=heap-next;free=rune-free();domains=domain-count;}
   cycle+=1;
  }
@@ -211,7 +232,7 @@ fn rune-check(port:Int)->void{
         command=['qemu-system-x86_64','-cpu','max','-kernel',str(out/'kernel.bin'),'-m','512M','-display','none','-no-reboot','-serial','file:'+str(out/'serial.log'),'-device','isa-debug-exit,iobase=0xf4,iosize=0x04','-device',f'loader,file={out}/rune.macho,addr=0x11000000,force-raw=on']
         with (out/'qemu.log').open('w') as log:result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=180)
         serial=(out/'serial.log').read_text();assert result.returncode==33 and '184 actual CPL3' in serial,serial[-4000:]
-        report.update(own_cpl3_entries=184,original_application_entries=0,kernel_sha256=sha(out/'kernel.bin'),fixture_sha256=sha(out/'rune.macho'))
+        report.update(own_cpl3_entries=184,setup_refusals=69,original_application_entries=0,kernel_sha256=sha(out/'kernel.bin'),fixture_sha256=sha(out/'rune.macho'))
     assert all((ROOT/name).read_bytes()==data for name,data in frozen.items()),'source changed during test'
     report['status']='passed';print('PASS Darwin rune data model'+(' and184 actual protected fixtures' if not a.model_only else ''),flush=True)
 except Exception as error:

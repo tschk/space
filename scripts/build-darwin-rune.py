@@ -9,7 +9,7 @@ import re
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--check',action='store_true');a=p.parse_args()
 source=(ROOT/'assets/darwin/rune/table.c').read_text()
-assert hashlib.sha256(source.encode()).hexdigest()=='2e99278105bb2e3f4ae38eaebabe8333c2c28dbc3d815fd15fb18c055ac5cc34'
+assert hashlib.sha256(source.encode()).hexdigest()=='28c298f0caa75f8da2b99ac84901eea6081923fb1b607e2be7a67755c9211f45'
 clean=re.sub(r'/\*.*?\*/','',source,flags=re.S)
 body=clean[clean.index('_RuneLocale _DefaultRuneLocale'):]
 body=body[body.index('= {')+3:body.index('\n};')]

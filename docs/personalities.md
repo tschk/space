@@ -108,6 +108,16 @@ Space Darwin personality follows that split:
 - `getcwd=192`, `getpagesize=276`, and the Mach/errno shims remain Space-local
   interfaces; they are not macOS binary ABI promises.
 
+The separate high-address owned mapper also has a finite C-locale data profile:
+`__DefaultRuneLocale` binds a private RO/NX guest object, and
+`__CurrentRuneLocale` binds a read-only guest pointer to it. Cached classes/case
+maps are pinned BSD-licensed Apple data, populated through the native owned VM
+API. This is distinct from function capsules and the older image/heap symbol
+policy. It does not provide locale mutation, multibyte conversion or a general
+libSystem/dyld runtime. Original macOS jq remains refused before entry at the
+next unavailable import,`____chkstk_darwin`. See the
+[data ownership and executable evidence](plans/2026-10-25-darwin-data-imports.md).
+
 BSD numbers used (Darwin where implemented; Space-local shims noted):
 
 | # | call | maps to |
