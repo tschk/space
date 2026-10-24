@@ -46,6 +46,16 @@ its failed run remains separate. The 12 layout controls and 99 file-control
 model checks are also included in the revised CI recipe. The full application
 lab remains separate from that smaller artifact-free CI subset.
 
+The corrected compiler pin builds successfully in hosted run40091839291, which
+then fails in its test step. Local recipe replay identifies the stale
+`check-local-stream.py` extractor: it copied intervening top-level declarations
+twice and omitted the native discard-tag validation now called by `vfs-close`.
+The harness now extracts each function through its own closing brace and includes
+those actual provider dependencies. All original stream/file-adapter assertions
+pass under default, lean and harden at
+`/workspace/space-ci-local-stream-corrected2.log`. No provider or assertion is
+changed to accommodate the test. The earlier failing outputs remain preserved.
+
 The complete matrix must be rerun from a new frozen source; focused repairs do
 not turn the earlier151-gate failure into a passing run. Adding the shared layout
 gate makes the next cached-artifact matrix152 gates. This does not complete the
