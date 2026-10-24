@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise actual strict CPL3 SYSCALL and INT80 with resumable register state."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -48,7 +49,7 @@ fn user-syscall-check(port:Int)->void{
   if load64(entropy)!=12345 || load64(entropy+8)!=67890{panic("unsupported entropy wrote output");}
  }
  let domain=domain-create-user();let stack=frame-alloc();let context=alloc(32);
- domain-map-user-code(domain,0x42000000,0x280000);
+ domain-map-user-code(domain,0x42000000,0x2e0000);
  domain-map-user-data(domain,0x43000000,stack);
  domain-user-syscall-hook=bridge-hook;
  let result=domain-enter-user-prepared(0x42000000,0,domain,0x43000ff0,context);
@@ -69,8 +70,8 @@ with (out/'compile.log').open('w') as log:
     ]:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'user-syscall.bin').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==4096
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1e0000 and len(payload)==4096
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2e0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

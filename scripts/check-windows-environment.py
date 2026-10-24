@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise process-owned Windows environments with real mutation/snapshot lifecycle."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -30,7 +31,7 @@ fn windows-env-test-refuse(image:Int,env:Int,bytes:Int)->void{
  if windows-command-environment-run(image,7168,-1,-1,line,strlen(line)+1,env,bytes)!=-22 || heap-next!=heap || free-list!=free || domain-count!=domains || domain-user-owned!=owned || windows-parameters-env-active!=0 || windows-parameters-env-input!=0 || windows-parameters-env-data!=0{panic("Windows invalid environment changed activation state");}
 }
 fn windows-environment-check(port:Int)->void{
- let image=0x280000;let line="sqlite3.exe -version";let env=alloc(2048);let bad=alloc(2048);
+ let image=0x2f0000;let line="sqlite3.exe -version";let env=alloc(2048);let bad=alloc(2048);
  let bytes=windows-env-test-add(env,0,"Zulu=last");bytes=windows-env-test-add(env,bytes,"ALPHA=one");bytes=windows-env-test-add(env,bytes,"EMPTY=");store8(env+bytes,0);bytes=bytes+1;
  if windows-application-entry(image,7168)!=-8 || windows-startup-entry(image,7168)!=-8 || windows-command-run(image,7168,-1,-1,line,strlen(line)+1)!=-8{panic("Previous Windows profiles widened environment imports");}
  windows-env-test-refuse(image,0,bytes);windows-env-test-refuse(image,env,1);windows-env-test-refuse(image,env,2049);
@@ -78,8 +79,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==7168
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==7168
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

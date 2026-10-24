@@ -1,6 +1,6 @@
 ; Trusted CPL0 interrupt ABI control, loaded by its private QEMU test only.
 BITS 64
-ORG 0x280000
+ORG 0x2e0000
 entry:
     pushfq
     push rbx
@@ -120,11 +120,11 @@ clobber_fx:
 callback_bridge:
     mov rax,rsp
     and eax,15
-    mov [0x280608],rax
+    mov [0x2e0608],rax
 %assign slot 0
 %rep 8
     mov qword [rsp+8+slot],0x2020+slot
 %assign slot slot+8
 %endrep
-    jmp qword [0x280600]
+    jmp qword [0x2e0600]
     times 4096-($-$$) db 0

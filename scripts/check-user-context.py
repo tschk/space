@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test actual CPL3 context suspension, independent continuation and supervisor restoration."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -36,8 +37,8 @@ with (out/'compile.log').open('w') as log:
     ]:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'user-syscall.bin').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==4096
-(out/'payload-kernel.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1e0000 and len(payload)==4096
+(out/'payload-kernel.bin').write_bytes(stage_fixture(kernel,payload,0x2e0000))
 subprocess.run(['python3',str(root/'scripts/pack-sci-image.py'),str(out/'payload-kernel.bin'),str(out/'combined.bin'),f'254:{out}/private.sci'],check=True,stdout=subprocess.DEVNULL,timeout=60)
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:

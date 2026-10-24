@@ -1,6 +1,6 @@
 ; Kernel canaries and guest observations are real CPU register/FXSAVE operations.
 BITS 64
-ORG 0x280000
+ORG 0x2e0000
 kernel_seed:
     push rbx
     push rbp

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Two retained SCI clients: focused actual keyboard/pointer input and owned pixels."""
 
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import importlib.util
@@ -138,15 +139,15 @@ client_image = module.translate(
 )
 right_image = module.translate((out / "right.sci").read_bytes(), json.loads((out / "right.component-metadata.json").read_text()))
 image = bytearray((out / "kernel.bin").read_bytes())
-assert len(image) < 0x180000, "retain kernel/injected image separation"
-for physical, blob in [(0x280000, input_image), (0x290000, client_image), (0x2A0000, right_image)]:
+assert len(image) < 0x1d0000, "retain kernel/injected image separation"
+for physical, blob in [(0x2d0000, input_image), (0x2e0000, client_image), (0x2f0000, right_image)]:
     offset = physical - 0x100000
     assert (
         len(image) <= offset
         and len(blob) <= 0x10000
         and physical + len(blob) < 0x300000
     )
-    image += bytes(offset - len(image)) + blob
+    image = bytearray(stage_fixture(image,blob,physical))
 (out / "combined.bin").write_bytes(image)
 serial_path, monitor_path = out / "serial.sock", out / "monitor.sock"
 for path in (serial_path, monitor_path):

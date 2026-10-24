@@ -3,13 +3,13 @@ package space.kernel
 // Test orchestration only. Session policy lives in gui-clients.in.
 fn gui-session-proof(port: Int) -> Int {
   if gui-init() != 1 { return 0 }
-  if sci-load-retained-component(port, 0x280000, "gui-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-load-retained-component(port, 0x2d0000, "gui-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
   let input-page = sci-sync-page
-  if sci-load-retained-component(port, 0x290000, "gui-left", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2e0000, "gui-left", cap-memory() | cap-display(), "init") != 42 { return 0 }
   let left = gui-admit(0)
   if left == 0 { return 0 }
-  if sci-load-retained-component(port, 0x2A0000, "gui-right", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2f0000, "gui-right", cap-memory() | cap-display(), "init") != 42 { return 0 }
   let right = gui-admit(1)
   if right == 0 || right == left { return 0 }
   // Refuse unfocused delivery without publishing even one event.

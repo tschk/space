@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise a separate multi-section/high-base protected PE32+ application profile."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -38,7 +39,7 @@ fn windows-application-refuse(image:Int,off:Int,value:Int,wide:Int)->void{
  if result!=-8 || heap-next!=heap || free-list!=free || domain-count!=domains || domain-user-owned!=owned{serial-write-dec-wide(com1(),off);panic("Windows application malformed image changed state");}
 }
 fn windows-application-check(port:Int)->void{
- let image=0x280000;
+ let image=0x2f0000;
  APP_ADMISSION
  windows-application-refuse(image,134,17,0);
  windows-application-refuse(image,150,0x222E,0);
@@ -113,8 +114,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==5632
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==5632
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

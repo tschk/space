@@ -959,7 +959,7 @@ var dsp-proof-free-list: Int = 0
 
 fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if fb-ready == 0 { return 0 }
-  let image = 0x280000
+  let image = 0x2f0000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
   if phase != 0 {
     if dsp-surfaces == 0 || dsp-surface-count == 0 || dsp-proof-domain == 0 { return 0 }
@@ -1009,7 +1009,7 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
 
 // Dedicated single-service proof. No app endpoint or seat-event delivery.
 fn input-sci-proof(port: Int) -> Int {
-  let image = 0x280000
+  let image = 0x2f0000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
   if sci-load-retained-component(port, image, "input-poll-proof", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   let domain = sci-sync-domain
@@ -1061,16 +1061,16 @@ fn input-sci-proof(port: Int) -> Int {
 // Two fixed proof endpoints, synchronous ownership handoff; no seat/focus manager.
 fn input-app-proof(port: Int) -> Int {
   if fb-ready == 0 || domain-get-current() != 0 { return 0 }
-  if load64(0x280000) != SCI-MAGIC-V2 || load64(0x290000) != SCI-MAGIC-V2 { return 0 }
+  if load64(0x2d0000) != SCI-MAGIC-V2 || load64(0x2e0000) != SCI-MAGIC-V2 { return 0 }
   sci-proof-input.unit = 0
   sci-proof-app.unit = 0
   dsp-init()
   let original-domains = domain-count
-  if sci-load-retained-component(port, 0x280000, "seat-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-load-retained-component(port, 0x2d0000, "seat-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   if sci-admit-input-sync(sci-sync-domain) == 0 || sci-proof-capture-input() == 0 { return 0 }
   let input-domain = sci-sync-domain
   let input-page = sci-sync-page
-  if sci-load-retained-component(port, 0x290000, "seat-client", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2e0000, "seat-client", cap-memory() | cap-display(), "init") != 42 { return 0 }
   let app-domain = sci-sync-domain
   let app-page = sci-sync-page
   let pixel = sci-sync-pixel-phys

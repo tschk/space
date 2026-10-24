@@ -135,14 +135,24 @@ for source,entry,base,name in [('private-range-import.in','private-entry','0x780
 image=(out/'build/standard.bin').read_bytes();table=struct.unpack_from('<Q',image,0xf00)[0]-0x100000
 magic,count=struct.unpack_from('<QQ',image,table);assert magic==0x5350414345424f4f
 specs=[]
+retained_kinds=[];unexercised_gui_kinds=[]
 for index in range(count):
  kind,physical,size,_=struct.unpack_from('<QQQQ',image,table+16+index*32)
+ # This instrumented image exercises native CLI lifecycle, not GUI launch.
+ # Preserve every CLI/library/demo and every lifecycle assertion. Separate
+ # GUI image/lifecycle gates still build and execute the complete GUI cohort.
+ if kind in (20,21,22):unexercised_gui_kinds.append(kind);continue
+ retained_kinds.append(kind)
  path=out/f'kind-{kind}.sci';path.write_bytes(image[physical-0x100000:physical-0x100000+size]);specs.append(f'{kind}:{path}')
+assert set(retained_kinds)==set(range(5,20)) and set(unexercised_gui_kinds)=={20,21,22}, 'unexpected standard image cohort'
 specs += [f'257:{out}/private-range-import.sci',f'258:{out}/private-parameters-import.sci',f'259:{out}/private-command-import.sci',f'256:{out}/private-startup-import.sci',f'254:{out}/global-state.sci',f'250:{out}/allocation.sci',f'251:{out}/private-import.sci',f'252:{out}/allocator.sci',f'253:{out}/private-foreign-import.sci']
 run(['python3',root/'scripts/pack-sci-image.py',out/'kernel.bin',out/'combined.bin',*specs],'pack.log')
 result=subprocess.run([sys.executable,str(root/'scripts/check-native-applications.py'),'--image',str(out/'combined.bin'),'--out',str(out/'applications'),'--repeat-cycles',str(a.cycles),'--allow-boot-denial'],cwd=root)
 serial=(out/'applications/serial.log').read_bytes();observations=re.findall(rb'lifecycle: observed ([0-9]+) aborts ([0-9]+)',serial)
-report={'status':'failed','compiler_sha256':hashlib.sha256(a.compiler.read_bytes()).hexdigest(),'image_sha256':hashlib.sha256((out/'combined.bin').read_bytes()).hexdigest(),'cycles':a.cycles,'driver_status':result.returncode,'observations':len(observations),'last_observation':[int(v) for v in observations[-1]] if observations else None,'original_source_sha256':hashlib.sha256((root/'components/sci-loader.in').read_bytes()).hexdigest(),'instrumented_loader_sha256':hashlib.sha256(loader.encode()).hexdigest()}
+report={'status':'failed','compiler_sha256':hashlib.sha256(a.compiler.read_bytes()).hexdigest(),'image_sha256':hashlib.sha256((out/'combined.bin').read_bytes()).hexdigest(),'cycles':a.cycles,'driver_status':result.returncode,'observations':len(observations),'last_observation':[int(v) for v in observations[-1]] if observations else None,'original_source_sha256':hashlib.sha256((root/'components/sci-loader.in').read_bytes()).hexdigest(),'instrumented_loader_sha256':hashlib.sha256(loader.encode()).hexdigest(),
+        'fixture_image_scope':'native CLI lifecycle; GUI cohort has separate complete-image/lifecycle gates',
+        'retained_boot_kinds':retained_kinds,'unexercised_gui_kinds':unexercised_gui_kinds,
+        'original_standard_image_sha256':hashlib.sha256(image).hexdigest()}
 report['registry_capacity_refusals']=serial.count(b'SCI: DENIED export registry capacity')
 report['registry_exact_fit_verified']=b'lifecycle: registry capacity refusal and exact-fit provider PASS' in serial
 report['private_import_refused_before_entry']=b'DENIED unresolved import runtime-instance-cap' in serial and b'DENIED unresolved import darwin-protected-run' in serial and b'DENIED unresolved import windows-startup-entry' in serial and b'DENIED unresolved import fs-range-release-file' in serial and b'DENIED unresolved import windows-parameters-dispatch' in serial and b'DENIED unresolved import windows-command-run' in serial and b'INVALID' not in serial

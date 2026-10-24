@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run one retained input SCI: real PS/2 keys consumed once, no app-seat claim."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -75,10 +76,10 @@ assert [(c['name'], c['capability_type'], c['args']) for c in metadata['capabili
 client = (out/'input.sci').read_bytes()
 assert struct.unpack_from('<Q', client, 8)[0] == 3
 image = bytearray((out/'kernel.bin').read_bytes())
-offset = 0x280000-0x100000
+offset = 0x2f0000-0x100000
 assert len(image) <= offset and len(client) <= 0x10000
-assert 0x280000+len(client) < 0x300000
-image += bytes(offset-len(image))+client
+assert 0x2f0000+len(client) < 0x300000
+image = bytearray(stage_fixture(image,client,0x2f0000))
 (out/'combined.bin').write_bytes(image)
 serial_path, monitor_path = out/'serial.sock', out/'monitor.sock'
 for path in (serial_path, monitor_path):

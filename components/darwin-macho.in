@@ -3,7 +3,7 @@ package space.kernel
 // ponytail: trusted in-place, single RX segment only; add mapping/dyld before
 // accepting ordinary macOS executables. Caller supplies a readable image buffer.
 const DARWIN-MACHO-MAGIC = 0xFEEDFACF
-const DARWIN-MACHO-LOAD-ADDR = 0x280000
+const DARWIN-MACHO-LOAD-ADDR = 0x2f0000
 const DARWIN-ENOEXEC = -8
 
 fn darwin-macho-entry(image: Int, size: Int) -> Int {

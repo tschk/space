@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify actual CPL0 PIT interrupts preserve interrupted CPU state."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -30,20 +31,20 @@ fn kernel-irq-check-tick(vector:Int)->void{
  store64(kernel-irq-state,load64(kernel-irq-state)+1);
  store64(kernel-irq-state+16,invoke1(load64(0x4198),0)&1024);
  store64(kernel-irq-state+32,vector);
- invoke1(0x280400,0);
+ invoke1(0x2e0400,0);
  outb(0x20,0x20);
 }
 fn user-syscall-check(port:Int)->void{
  kernel-irq-state=alloc(48);
- store64(0x280600,kernel-irq-check-tick);store64(0x280608,0);
+ store64(0x2e0600,kernel-irq-check-tick);store64(0x2e0608,0);
  let original=load64(0x4000);let cycle=0;
  while cycle<16{
   store64(kernel-irq-state,0);store64(kernel-irq-state+8,0);store64(kernel-irq-state+16,0);
   store64(kernel-irq-state+24,(cycle%2)*8);store64(kernel-irq-state+32,0);
-  cli();store64(0x4000,0x280500);sti();
-  let result=invoke1(0x280000,kernel-irq-state);
+  cli();store64(0x4000,0x2e0500);sti();
+  let result=invoke1(0x2e0000,kernel-irq-state);
   cli();store64(0x4000,original);sti();
-  if result!=42 || load64(kernel-irq-state+16)!=0 || load64(kernel-irq-state+32)!=32 || load64(0x280608)!=8{
+  if result!=42 || load64(kernel-irq-state+16)!=0 || load64(kernel-irq-state+32)!=32 || load64(0x2e0608)!=8{
    serial-write-cstr(port,"irq: result ");serial-write-hex(port,result);
    serial-write-cstr(port," R11 ");serial-write-hex(port,load64(kernel-irq-state+8));
    serial-write-cstr(port," callback DF ");serial-write-hex(port,load64(kernel-irq-state+16));
@@ -63,8 +64,8 @@ with (out/'compile.log').open('w') as log:
     ]:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'user-syscall.bin').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==4096
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1e0000 and len(payload)==4096
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2e0000))
 received=bytearray();serial=None
 report={'status':'failed','compiler':a.compiler,'kernel_sha256':hashlib.sha256(kernel).hexdigest(),'payload_sha256':hashlib.sha256(payload).hexdigest()}
 with (out/'qemu.log').open('w') as qlog:

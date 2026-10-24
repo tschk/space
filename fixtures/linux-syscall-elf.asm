@@ -1,8 +1,8 @@
 ; Trusted fixed-address x86_64 ELF fixture. No return address, no ret: entry
 ; uses raw Linux syscalls and must exit the process itself. Loaded RX at
-; 0x280000; data kept inside the single 4096-byte PT_LOAD.
+; 0x2f0000; data kept inside the single 4096-byte PT_LOAD.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
     dd 0x464c457f, 0x00010102, 0, 0
     dw 2, 62

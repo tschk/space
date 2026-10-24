@@ -208,6 +208,7 @@ def main():
     def check(name, script, *arguments, **options):
         return run(name, [sys.executable, ROOT / 'scripts' / script, *arguments], **options)
 
+    check('fixture-boot-layout','check-boot-fixture-layout.py','--out',args.out / 'fixture-boot-layout')
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Trigger real CPL3 divide, breakpoint, x87 and SSE exceptions and recover."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -27,7 +28,7 @@ source = source.replace('  shell(port)', '  user-syscall-check(port)\n  shell(po
 source += r'''
 fn user-syscall-check(port:Int)->void{
  let domain=domain-create-user();let stack=frame-alloc();let context=alloc(32);
- domain-map-user-code(domain,0x42000000,0x280000);domain-map-user-data(domain,0x43000000,stack);
+ domain-map-user-code(domain,0x42000000,0x2e0000);domain-map-user-data(domain,0x43000000,stack);
  let cycle=0;
  while cycle<8{
   let mode=0;
@@ -54,8 +55,8 @@ with (out/'compile.log').open('w') as log:
     ]:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'user-syscall.bin').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==4096
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1e0000 and len(payload)==4096
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2e0000))
 received=bytearray();serial=None
 report={'status':'failed','executions_expected':32 if a.vector is None else 8,
         'vectors':[0,3,16,19] if a.vector is None else [a.vector],

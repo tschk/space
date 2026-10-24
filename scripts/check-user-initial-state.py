@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check strict entry register confidentiality and exact kernel FX restoration."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -34,14 +35,14 @@ fn initial-launch(info:Int)->Int{
 }
 fn user-syscall-check(port:Int)->void{
  let domain=domain-create-user();let stack=frame-alloc();let context=alloc(32);let job=alloc(40);
- domain-map-user-code(domain,0x42000000,0x281000);domain-map-user-data(domain,0x43000000,stack);
+ domain-map-user-code(domain,0x42000000,0x2e1000);domain-map-user-data(domain,0x43000000,stack);
  store64(job,initial-launch);store64(job+8,domain);store64(job+16,stack);store64(job+24,context);
  domain-user-syscall-hook=bridge-hook;
  let i=0;
  while i<16{
   let mode=i%4;store64(job+32,mode|PROBE-MASK);
   let expected=42;if mode==1{expected=134;}if mode==2{expected=124;}
-  let result=invoke1(0x280000,job);
+  let result=invoke1(0x2e0000,job);
   if result!=expected{serial-write-hex(port,result);panic("initial state confidentiality or kernel restoration");}
   i=i+1;
  }
@@ -63,8 +64,8 @@ with (out/'compile.log').open('w') as log:
         else:
             subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'user-syscall.bin').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==8192
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1e0000 and len(payload)==8192
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2e0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

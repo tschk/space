@@ -2,13 +2,13 @@ package space.kernel
 
 fn gui-apps-proof(port: Int) -> Int {
   if gui-init() != 1 { return 0 }
-  if sci-load-retained-component(port, 0x280000, "apps-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
+  if sci-load-retained-component(port, 0x2b0000, "apps-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
   let input-page = sci-sync-page
-  if sci-load-retained-component(port, 0x2A0000, "gui-calc", cap-memory() | cap-display(), "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2c0000, "gui-calc", cap-memory() | cap-display(), "init") != 42 { return 0 }
   let calc = gui-admit(0)
   if calc == 0 { return 0 }
-  if sci-load-retained-component(port, 0x2C0000, "gui-editor", cap-memory() | cap-display() | cap-storage(), "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2e0000, "gui-editor", cap-memory() | cap-display() | cap-storage(), "init") != 42 { return 0 }
   let editor = gui-admit(1)
   if editor == 0 { return 0 }
   let message = alloc(8)

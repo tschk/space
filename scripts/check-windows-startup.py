@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise bounded protected Windows TEB/static TLS startup and CPU-state cleanup."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -31,7 +32,7 @@ fn windows-startup-refuse(image:Int,off:Int,value:Int,wide:Int)->void{
  if result!=-8 || heap-next!=heap || free-list!=free || domain-count!=domains || domain-user-owned!=owned{serial-write-dec-wide(com1(),off);panic("Windows TLS malformed changed state");}
 }
 fn windows-startup-check(port:Int)->void{
- let image=0x280000;
+ let image=0x2f0000;
  if windows-application-entry(image,5632)!=-8 || windows-protected-entry(image,5632)!=-8{panic("Existing PE profiles widened");}
  windows-startup-refuse(image,340,39,0);
  windows-startup-refuse(image,336,0x6ff0,0);
@@ -92,8 +93,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==5632
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==5632
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

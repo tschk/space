@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute protected Win64 file APIs over owned Space VFS descriptors."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -48,7 +49,7 @@ fn windows-files-refuse(image:Int,off:Int,value:Int)->void{
  if result!=-8 || heap-next!=heap || free-list!=free || domain-count!=domains{panic("Windows file import refusal changed state");}
 }
 fn windows-files-check(port:Int)->void{
- let image=0x280000;
+ let image=0x2f0000;
  windows-files-refuse(image,4608+64+5*8,-1);
  windows-files-refuse(image,4608+64+10*8,0x31C0);
  windows-files-refuse(image,4608+160+10*8,0x31C0);
@@ -100,8 +101,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==8704
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==8704
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

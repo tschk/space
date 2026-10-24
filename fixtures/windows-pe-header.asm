@@ -1,6 +1,6 @@
 ; Fixed-address PE32+ console fixture with real named import descriptors/IAT.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
     dw 0x5A4D
     times 60-($-$$) db 0

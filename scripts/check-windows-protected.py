@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute bounded protected PE32+ images and KERNEL32 imports inside Space."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -51,7 +52,7 @@ fn windows-check-invalid-image(image:Int,size:Int,expected:Int)->void{
  if result!=expected || heap!=heap-next || free!=free-list || domains!=domain-count || owned!=domain-user-owned{panic("Windows malformed outer bounds changed state");}
 }
 fn windows-process-check(port:Int)->void{
- let image=0x280000;
+ let image=0x2f0000;
  windows-check-invalid-image(0,5120,-8);windows-check-invalid-image(image,-1,-8);
  windows-check-invalid-image(image,1024,-8);windows-check-invalid-image(image,1536,-8);
  windows-check-invalid-image(image,5121,-8);windows-check-invalid-image(image,0x200200,-8);
@@ -175,8 +176,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==5120
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==5120
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

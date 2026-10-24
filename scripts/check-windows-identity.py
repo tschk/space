@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise protected Windows process/thread identity and TEB LastError."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -26,7 +27,7 @@ source+='''
 
 fn windows-identity-free()->Int{let n=0;let f=free-list;while f!=0 && n<4096{n=n+1;f=load64(f);}return n;}
 fn windows-identity-check(port:Int)->void{
- let image=0x280000;let line="sqlite3.exe -version";
+ let image=0x2f0000;let line="sqlite3.exe -version";
  if windows-application-entry(image,7168)!=-8 || windows-startup-entry(image,7168)!=-8{panic("Previous Windows profiles widened identity imports");}
  let caller-fs=rdmsr(0xc0000100);let caller-gs=rdmsr(0xc0000101);
  wrmsr64(0xc0000100,0x140005000);wrmsr64(0xc0000101,0x23456000);
@@ -59,8 +60,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==7168
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==7168
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'

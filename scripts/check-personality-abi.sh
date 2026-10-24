@@ -78,7 +78,7 @@ def main() -> int:
         ("LINUX-ESPIPE", -29),
         ("LINUX-ENOSYS", -38),
         ("LINUX-O-CREAT", 64),
-        ("LINUX-ELF-LOAD-ADDR", 0x280000),
+        ("LINUX-ELF-LOAD-ADDR", 0x2f0000),
     ])
     check("linux personality probes the ELF load address", "LINUX-ELF-LOAD-ADDR" in linux)
     check(

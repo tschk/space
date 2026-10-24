@@ -5,7 +5,7 @@ fn user-context-cold-check(port:Int)->void{
  let mask=load32(0x421c);
  if (mask&-65536)!=0 || (mask&0xffbf)!=0xffbf{panic("context cold MXCSR mask uninitialized");}
  let domain=domain-create-user();let stack=frame-alloc();let context=alloc(768);
- domain-map-user-code(domain,0x42000000,0x280000);domain-map-user-data(domain,0x43000000,stack);
+ domain-map-user-code(domain,0x42000000,0x2e0000);domain-map-user-data(domain,0x43000000,stack);
  if user-context-init(context,768,domain,0x42000000,0,0x43000ff0)!=0{panic("context cold init");}
  store64(context+184,0x80000000);
  if user-context-valid(context)!=0 || user-context-resume(context,2)!=-1{panic("context cold reserved MXCSR admitted");}
@@ -25,7 +25,7 @@ fn context-scope-check(port:Int,kind:Int,context:Int,cap:Int,pic:Int,flags:Int,f
  if load64(context+560)!=expected{panic("context guest FX capture");}
  if load64(context+688)!=kind || domain-current!=0 || cr3-read()!=load64(domain-table) || current-cap!=cap || inb(0x21)!=pic || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=context-hook{panic("context supervisor ownership restore");}
  if (invoke1(load64(0x4198),0)&512)!=(flags&512) || rdmsr(0xC0000100)!=fs || rdmsr(0xC0000101)!=gs{panic("context supervisor IRQ TLS restore");}
- let ignored=invoke1(0x280900,fxafter);let i=0;
+ let ignored=invoke1(0x2e0900,fxafter);let i=0;
  while i<512{if load8(fxbefore+i)!=load8(fxafter+i){serial-write-dec-wide(port,i);panic("context kernel FX restore");}i=i+1;}
 }
 fn user-context-check(port:Int)->void{
@@ -37,14 +37,14 @@ fn user-context-check(port:Int)->void{
  let parent=domain-create-user();let child=domain-create-user();
  let stack=frame-alloc();let child-stack=frame-alloc();let tls=frame-alloc();let child-tls=frame-alloc();
  store64(tls,0x12345678);store64(child-tls,0x12345678);
- domain-map-user-code(parent,0x42000000,0x280000);domain-map-user-data(parent,0x43000000,stack);domain-map-user-data(parent,0x44000000,tls);
- domain-map-user-code(child,0x42000000,0x280000);domain-map-user-data(child,0x43000000,child-stack);domain-map-user-data(child,0x44000000,child-tls);
+ domain-map-user-code(parent,0x42000000,0x2e0000);domain-map-user-data(parent,0x43000000,stack);domain-map-user-data(parent,0x44000000,tls);
+ domain-map-user-code(child,0x42000000,0x2e0000);domain-map-user-data(child,0x43000000,child-stack);domain-map-user-data(child,0x44000000,child-tls);
  let context=alloc(768);let cloned=alloc(768);let fxbefore=alloc(512);let fxafter=alloc(512);
  let oldhook=domain-user-syscall-hook;domain-user-syscall-hook=context-hook;
  let oldfs=rdmsr(0xC0000100);let oldgs=rdmsr(0xC0000101);
  wrmsr64(0xC0000100,tls);wrmsr64(0xC0000101,child-tls);
  let cap=current-cap;let pic=inb(0x21);let flags=invoke1(load64(0x4198),0);
- let ignored=invoke1(0x280800,fxbefore);
+ let ignored=invoke1(0x2e0800,fxbefore);
  let cycle=0;let heap=0;
  while cycle<10{
   if user-context-init(context,768,parent,0x42000000,0,0x43000ff0)!=0 || user-context-set-tls(context,0x44000000,0x44000000)!=0{panic("context init");}

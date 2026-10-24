@@ -1,6 +1,6 @@
 ; Trusted read-only VFS exercise. Darwin includes this with its own header/ABI.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
 %ifdef FOREIGN_DARWIN
     dd 0xfeedfacf, 0x01000007, 3, 2, 2, 96, 1, 0

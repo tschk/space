@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise bounded Windows command-line and process startup APIs."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -33,7 +34,7 @@ fn windows-parameters-copy(image:Int,line:Int,bytes:Int)->void{
  let i=0;while i<bytes{store8(image+5632+i,load8(line+i));i=i+1;}store64(image+5128,bytes);
 }
 fn windows-parameters-check(port:Int)->void{
- let image=0x280000;let line=alloc(1024);
+ let image=0x2f0000;let line=alloc(1024);
  if windows-application-entry(image,7168)!=-8 || windows-startup-entry(image,7168)!=-8 || windows-protected-entry(image,7168)!=-8{panic("Existing Windows profiles widened imports");}
  let text="sqlite3.exe \":memory:\" \"select 6*7;\"";let bytes=strlen(text)+1;
  let i=0;while i<bytes{store8(line+i,load8(text+i));i=i+1;}
@@ -79,8 +80,8 @@ with (out/'compile.log').open('w') as log:
     for command in commands:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 kernel=(out/'kernel.bin').read_bytes();payload=(out/'process.exe').read_bytes()
-assert len(kernel)<=0x180000 and len(payload)==7168
-(out/'combined.bin').write_bytes(kernel+bytes(0x180000-len(kernel))+payload)
+assert len(kernel)<=0x1f0000 and len(payload)==7168
+(out/'combined.bin').write_bytes(stage_fixture(kernel,payload,0x2f0000))
 received=bytearray();serial=None
 with (out/'qemu.log').open('w') as qlog:
     path=out/'serial.sock'
