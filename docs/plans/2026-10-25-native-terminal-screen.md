@@ -61,6 +61,29 @@ launcher/input/pointer/resize, both boot-image builds and263fps damage (minimum3
 The terminal-surface continuation needs its own final committed-source checks;
 the historical152-gate run retains its old scope. The full goal stays OPEN.
 
+## Extended-key continuation
+
+The native ring now admits a bounded1..8-byte sequence as one producer
+transaction: validate payload/header/space first, write cells, publish head
+once. Full queues return would-block with unchanged cells/head/epoch. The native
+seat checks its exact focus lease and delegates without any foreign key policy.
+`linux-terminal-keyboard.in` owns Linux VT encodings for the9 normalized
+navigation keys; ASCII/control bytes preserve their identity. These private
+kernel-linked helpers are denied as raw SCI imports.
+
+`/workspace/terminal-navigation-model1/report.json` passes147 controls in all3
+profiles, including all128 ASCII codes,9 exact navigation sequences, wrapping,
+backpressure, stale focus, revocation and overflow. The native queues remain
+single-producer/stopped-guest objects, not a concurrent producer API.
+
+`/workspace/vi-terminal-navigation-view1/report.json` and
+`/workspace/vi-terminal-navigation-minimal1/report.json` pass2 actual original
+vi processes and38 real PS/2 events each. Left, Backspace and Delete correct
+`native24` inside the line to`native42`; Home/Right/End move without changing
+the expected file. Both exact saved-file oracles and all294912 pixels in each
+visible capture pass. This extends the interactive slice, not general input
+methods, Unicode, mouse reporting or multi-session acceptance.
+
 Use the MIT-licensed VTE 0.13.1 transition rules as reproducible native data,
 checked against all 4,096 bytes evaluated by the original upstream Rust macro.
 Keep parser state separate from screen policy and rendering. Bound parameters,

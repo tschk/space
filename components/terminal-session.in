@@ -155,6 +155,21 @@ fn terminal-session-transfer(handle: Int, owner: Int, seat: Int, queue: Int, sen
 fn terminal-session-input(handle: Int, owner: Int, seat: Int, byte: Int) -> Int {
   return terminal-session-transfer(handle,owner,seat,0,1,byte)
 }
+fn terminal-session-input-sequence(handle: Int, owner: Int, seat: Int, packed: Int, count: Int) -> Int {
+  if count < 1 || count > 8 { return -1 }
+  if count < 8 && (packed >> (count * 8)) != 0 { return -1 }
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if seat != load64(row + 24) { return -2 }
+  let page = terminal-session-page(row,0)
+  if terminal-session-page-valid(page) == 0 { return -5 }
+  if load64(row + 56) == 0x7FFFFFFFFFFFFFFF { return -3 }
+  let result = input-page-send-bytes(page,packed,count)
+  if result == 0 { return TERMINAL-SESSION-WOULD-BLOCK }
+  if result != 1 { return -5 }
+  store64(row + 56,load64(row + 56) + 1)
+  return 0
+}
 fn terminal-session-read(handle: Int, owner: Int) -> Int {
   return terminal-session-transfer(handle,owner,-1,0,0,0)
 }

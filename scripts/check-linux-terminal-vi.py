@@ -16,6 +16,7 @@ p.add_argument('--app', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--root', choices=['standard','minimal'], default='standard')
 p.add_argument('--view', action='store_true', help='Also execute the protected native terminal surface (standard root only)')
+p.add_argument('--navigation',action='store_true',help='Real extended PS2 keys, interior insert/delete and home/right/end in original vi')
 p.add_argument('--oracle-python',type=Path,help='Pinned pyte/Pillow interpreter for --view pixel comparison')
 a = p.parse_args(); out = a.out.resolve(); compiler = a.compiler.resolve(); app = a.app.resolve()
 assert not a.view or a.root == 'standard'
@@ -66,6 +67,13 @@ def wait(marker):
             block = serial.recv(65536); assert block; received.extend(block)
         except socket.timeout: pass
 try:
+    if a.navigation:
+        fixture=snapshot/'fixtures/terminal-session/vi-checks.in'
+        text='import "../../components/linux-terminal-keyboard.in"\n'+fixture.read_text()
+        text=text.replace('key > 127 || terminal-seat-deliver(seat,key) != 0','linux-terminal-deliver-key(seat,key) != 0')
+        text=text.replace('keys != 14','keys != 22').replace('keys != 13','keys != 16')
+        fixture.write_text(text)
+        report['navigation']=True
     if a.view:
         fixture = snapshot / 'fixtures/terminal-session/vi-checks.in'
         text = fixture.read_text()
@@ -105,6 +113,7 @@ fn terminal-vi-view-refusals(port:Int,image:Int)->void{
         text = text.replace('  serial-write-cstr(port,"vi: trace ")','  if terminal-view-close(terminal-vi-view)!=1 || gui-protected-record(terminal-vi-view)!=0{panic("vi terminal view close")}\n  serial-write-cstr(port,"vi: trace ")',1)
         fixture.write_text(text)
         report['derived_fixture_sha256']=sha(fixture)
+    report['derived_fixture_sha256']=sha(snapshot/'fixtures/terminal-session/vi-checks.in')
     fnv = 0xcbf29ce484222325
     for byte in app.read_bytes(): fnv = ((fnv ^ byte) * 1099511628211) & ((1 << 64) - 1)
     if fnv >= 1 << 63: fnv -= 1 << 64
@@ -141,13 +150,18 @@ fn terminal-vi-view-refusals(port:Int,image:Int)->void{
         serial = connect(out / 'serial.sock'); monitor = connect(out / 'monitor.sock')
         for run, text in enumerate(['native42','again42']):
             wait(f'vi: keyboard ready {run}\n'.encode())
-            keys = [('i',105)] + [(c,ord(c)) for c in text] + [('esc',27),('shift-semicolon',58),('w',119),('q',113),('ret',10)]
+            typed='native24' if a.navigation and run==0 else text
+            edits=[('i',105)]+[(c,ord(c)) for c in typed]
+            if a.navigation:
+                if run==0: edits += [('left',129),('backspace',8),('delete',134),('4',52),('2',50)]
+                edits += [('home',132),('right',130),('end',133)]
+            keys = edits + [('esc',27),('shift-semicolon',58),('w',119),('q',113),('ret',10)]
             for index,(key,byte) in enumerate(keys):
                 monitor.sendall(f'sendkey {key} 50\n'.encode())
                 wait(f'vi: key {run} {index} {byte}\n'.encode())
                 # Let the actual key-up finish, especially Shift on the colon.
                 time.sleep(.08)
-                if a.view and index == len(text):
+                if a.view and index == len(edits)-1:
                     marker=f'vi: painted {run} {index+1} '.encode();wait(marker)
                     expression=re.escape(marker)+rb'(\d+)\n'
                     deadline=time.monotonic()+10
@@ -182,10 +196,10 @@ fn terminal-vi-view-refusals(port:Int,image:Int)->void{
         output = capture.read_bytes(); assert len(output) == size and b'\x1b[' in output and b'original' in output
     assert all((ROOT / name).read_bytes() == data for name,data in contents.items()), 'source changed during run'
     assert sha(compiler) == report['compiler_sha256'] and sha(app) == report['application_sha256']
-    report.update(status='passed',original_application_entries=2,actual_ps2_text_events=27,
+    report.update(status='passed',original_application_entries=2,actual_ps2_text_events=sum(len(x['keys']) for x in report['keyboard']),
         interactive_keyboard=True,interactive_gui=a.view,original_output_sha256=sha(capture),original_output_bytes=size,
         exact_saved_files=['native42original\n','again42native42original\n'],stable_after_warmup=True)
-    print('PASS original vi: two protected keyboard edit/save/reopen processes, 27 real PS2 text events, exact saved files and owned cleanup')
+    print(f"PASS original vi: two protected keyboard edit/save/reopen processes, {report['actual_ps2_text_events']} real PS2 text events, exact saved files and owned cleanup")
 except Exception as error:
     report.update(status='failed',error=str(error)); raise
 finally:

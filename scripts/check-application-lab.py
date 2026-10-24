@@ -226,6 +226,12 @@ def main():
     check('linux-terminal-vi-view','check-linux-terminal-vi.py','--in',args.compiler,
           '--app',applications['busybox-vi'],'--view','--oracle-python',args.terminal_oracle_python,
           '--out',args.out/'linux-terminal-vi-view')
+    check('linux-terminal-vi-navigation-view','check-linux-terminal-vi.py','--in',args.compiler,
+          '--app',applications['busybox-vi'],'--view','--navigation','--oracle-python',args.terminal_oracle_python,
+          '--out',args.out/'linux-terminal-vi-navigation-view')
+    check('linux-terminal-vi-navigation-minimal','check-linux-terminal-vi.py','--in',args.compiler,
+          '--app',applications['busybox-vi'],'--root','minimal','--navigation',
+          '--out',args.out/'linux-terminal-vi-navigation-minimal')
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),

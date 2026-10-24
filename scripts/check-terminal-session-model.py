@@ -15,7 +15,8 @@ a.out = a.out.resolve()
 assert not a.out.exists() or not any(a.out.iterdir()), 'preserve prior evidence'
 a.out.mkdir(parents=True, exist_ok=True)
 paths = [ROOT / name for name in ['components/terminal-session.in',
-    'components/terminal-seat.in', 'protocol/input.in', 'components/object.in']]
+    'components/terminal-seat.in', 'components/linux-terminal-keyboard.in',
+    'protocol/keyboard.in', 'protocol/input.in', 'components/object.in']]
 sources = {str(path.relative_to(ROOT)): path.read_bytes() for path in paths}
 def owned(name):
     return '\n'.join(line for line in sources[name].decode().splitlines()
@@ -31,7 +32,8 @@ def function(name):
         end += 1
     return object_source[start:end]
 native = '\n'.join(owned(name) for name in ['protocol/input.in',
-    'components/terminal-session.in', 'components/terminal-seat.in'])
+    'protocol/keyboard.in','components/terminal-session.in', 'components/terminal-seat.in',
+    'components/linux-terminal-keyboard.in'])
 native += '\n' + '\n'.join(function(name) for name in [
     'cap-check', 'cap-mint', 'cap-revoke', 'cap-memory', 'cap-input'])
 harness = '''
@@ -86,6 +88,19 @@ i=0;while i<507{if terminal-session-read(a,0)!=(i&255) || terminal-session-outpu
     'stable-lifetime-cycles': pair + '''terminal-session-close(a,0);terminal-session-close(b,1);let mark=heap-next;let cycle=0;let old=a;while cycle<22{let fresh=terminal-session-open(0,2,80,24);let peer=terminal-session-open(1,2,100,30);if fresh<=0 || peer<=0 || fresh==old || terminal-session-read(old,0)!=-6{return false;}terminal-seat-focus(fresh,0,2);if terminal-seat-deliver(2,65)!=0 || terminal-session-read(fresh,0)!=65{return false;}if terminal-session-close(fresh,0)!=0 || terminal-session-close(peer,1)!=0 || heap-next!=mark{return false;}old=fresh;cycle+=1;}return true;''',
 }
 checks = []
+cases.update({
+    'sequence-eight-bytes':pair+'''terminal-seat-focus(a,0,2);let epoch=terminal-session-query(a,0,4);if terminal-seat-deliver-sequence(2,-1,8)!=0 || terminal-session-query(a,0,2)!=8 || terminal-session-query(a,0,4)!=epoch+1{return false;}let i=0;while i<8{if terminal-session-read(a,0)!=255{return false;}i+=1;}return terminal-session-read(a,0)==-7 && terminal-session-read(b,1)==-7;''',
+    'sequence-invalid-atomic':pair+'''terminal-seat-focus(a,0,2);return terminal-seat-deliver-sequence(2,256,1)==-1 && terminal-seat-deliver-sequence(2,-1,7)==-1 && terminal-seat-deliver-sequence(2,0,0)==-1 && terminal-seat-deliver-sequence(2,0,9)==-1 && terminal-session-query(a,0,2)==0 && terminal-session-query(a,0,4)==1;''',
+    'sequence-authority':pair+'''terminal-seat-focus(a,0,2);let alias=cap-mint(2001,64);if terminal-seat-deliver-sequence(alias,65,1)!=-2 || terminal-session-input-sequence(a,1,2,65,1)!=-2{return false;}cap-revoke(2);return terminal-seat-deliver-sequence(2,65,1)==-2 && load64(terminal-session-page(terminal-session-row(a,0),0))==0;''',
+    'sequence-backpressure-wrap':pair+'''terminal-seat-focus(a,0,2);let cycle=0;while cycle<3{let i=0;while i<505{if terminal-seat-deliver(2,65)!=0{return false;}i+=1;}let row=terminal-session-row(a,0);let page=terminal-session-page(row,0);let head=load64(page);let epoch=terminal-session-query(a,0,4);let cell=load64(page+32+head*8);if terminal-seat-deliver-sequence(2,0x435b1b,3)!=-7 || load64(page)!=head || load64(page+32+head*8)!=cell || terminal-session-query(a,0,4)!=epoch{return false;}if terminal-session-read(a,0)!=65 || terminal-seat-deliver-sequence(2,0x435b1b,3)!=0{return false;}i=0;while i<504{if terminal-session-read(a,0)!=65{return false;}i+=1;}if terminal-session-read(a,0)!=27 || terminal-session-read(a,0)!=91 || terminal-session-read(a,0)!=67 || terminal-session-read(a,0)!=-7{return false;}cycle+=1;}return true;''',
+    'sequence-stale-focus':pair+'''terminal-seat-focus(a,0,2);terminal-session-close(a,0);let fresh=terminal-session-open(0,2,80,24);return terminal-seat-deliver-sequence(2,65,1)==-6 && terminal-session-query(fresh,0,2)==0;''',
+    'sequence-epoch-overflow':pair+'''let row=terminal-session-row(a,0);store64(row+56,0x7fffffffffffffff);return terminal-session-input-sequence(a,0,2,65,1)==-3 && terminal-session-query(a,0,2)==0;''',
+    'linux-key-ascii':pair+'''terminal-seat-focus(a,0,2);let i=0;while i<128{if linux-terminal-deliver-key(2,i)!=0 || terminal-session-read(a,0)!=i{return false;}i+=1;}return linux-terminal-deliver-key(2,-1)==-1 && linux-terminal-deliver-key(2,137)==-1 && linux-terminal-deliver-key(2,255)==-1 && terminal-session-query(a,0,2)==0;''',
+})
+for key,sequence in {128:b'\x1b[A',129:b'\x1b[D',130:b'\x1b[C',131:b'\x1b[B',132:b'\x1b[H',133:b'\x1b[F',134:b'\x1b[3~',135:b'\x1b[5~',136:b'\x1b[6~'}.items():
+    body=pair+f'terminal-seat-focus(a,0,2);if linux-terminal-deliver-key(2,{key})!=0{{return false;}}'
+    for byte in sequence: body+=f'if terminal-session-read(a,0)!={byte}{{return false;}}'
+    cases['linux-key-'+str(key)]=body+'return terminal-session-read(a,0)==-7 && terminal-session-read(b,1)==-7;'
 for name, body in cases.items():
     source = harness + native + '\nfn check()->Bool{' + body + '''}
 fn main()->Int{cap-mint(1001,4);cap-mint(1002,4);cap-mint(2001,64);cap-mint(1003,4);if check(){return 42;}return 99;}

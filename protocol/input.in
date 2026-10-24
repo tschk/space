@@ -68,6 +68,28 @@ fn input-page-send(page: Int, message: Int) -> Int {
   return 1
 }
 
+// Byte sequences on the same single-producer ring: validate the whole batch
+// and available space before any cell changes, then publish head once. One
+// producer owns head; this is not a multi-producer/interrupt synchronization API.
+fn input-page-send-bytes(page: Int, packed: Int, count: Int) -> Int {
+  if page == 0 || count < 1 || count > 8 { return -1 }
+  if count < 8 && (packed >> (count * 8)) != 0 { return -1 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  let tail = load64(page + 8)
+  if input-page-header-valid(capacity,head,tail,load64(page + 24)) == 0 { return -1 }
+  let used = head - tail
+  if used < 0 { used += capacity }
+  if capacity - 1 - used < count { return 0 }
+  let i = 0
+  while i < count {
+    store64(page + 32 + ((head + i) % capacity) * 8,(packed >> (i * 8)) & 255)
+    i += 1
+  }
+  store64(page,(head + count) % capacity)
+  return 1
+}
+
 fn input-page-recv(page: Int, message: Int) -> Int {
   if page == 0 || message == 0 { return -1 }
   let capacity = load64(page + 16)

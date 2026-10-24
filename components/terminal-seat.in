@@ -24,6 +24,13 @@ fn terminal-seat-deliver(seat: Int, byte: Int) -> Int {
   return terminal-session-input(terminal-seat-session,terminal-seat-owner,seat,byte)
 }
 
+fn terminal-seat-deliver-sequence(seat: Int, packed: Int, count: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if terminal-seat-session == 0 { return -6 }
+  if seat != terminal-seat-input { return -2 }
+  return terminal-session-input-sequence(terminal-seat-session,terminal-seat-owner,seat,packed,count)
+}
+
 fn terminal-seat-clear(seat: Int) -> Int {
   if user-space-kernel() == 0 { return -4 }
   if seat != terminal-seat-input { return -2 }
