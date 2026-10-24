@@ -423,9 +423,9 @@ fn darwin-image-segment(image: Int, ordinal: Int) -> Int {
   return 0
 }
 
-// Full chained-format validation before the finite dependency/import check.
-// Returns -38 for a required unavailable API; this is not library loading.
-fn darwin-image-import-preflight(plan: Int) -> Int {
+// Full chained-format validation independent of the selected symbol provider.
+// Unsupported chain features return -38; this does not resolve/load libraries.
+fn darwin-image-chain-preflight(plan: Int) -> Int {
   if plan <= 0 || plan > 0x100000000 - DARWIN-IMAGE-PLAN-BYTES || load64(plan) != DARWIN-IMAGE-PLAN-MAGIC || load64(plan + 8) != 1 || load64(plan + 120) != DARWIN-IMAGE-PLAN-BYTES { return -8 }
   let image = load64(plan + 24)
   let size = load64(plan + 16)
@@ -453,13 +453,11 @@ fn darwin-image-import-preflight(plan: Int) -> Int {
   if load32(h) != 0 || starts != 32 || load32(h + 20) != 1 || load32(h + 24) != 0 || load32(h + 28) != 0 || count < 1 || count > 256 { return -8 }
   let segment-count = load32(h + starts)
   if segment-count != load64(plan + 48) || segment-count > 8 || darwin-image-range(bytes,starts + 4,segment-count * 4) == 0 || imports < starts + 4 + segment-count * 4 || darwin-image-range(bytes,imports,count * 4) == 0 || symbols < imports + count * 4 || symbols >= bytes { return -8 }
-  let unavailable = 0
   let i = 0
   while i < count {
     let item = load32(h + imports + i * 4)
     let name = item >> 9
     if (item & 511) != 1 || name >= bytes - symbols || darwin-image-name-end(h + symbols + name,h + bytes) < 0 { return -8 }
-    if darwin-heap-symbol(image,file + symbols + name,file + bytes) == 0 { unavailable = 1 }
     i += 1
   }
   let links = 0
@@ -504,7 +502,14 @@ fn darwin-image-import-preflight(plan: Int) -> Int {
     i += 1
   }
   if links == 0 { return -8 }
-  if unavailable != 0 { return -38 }
+  return 0
+}
+
+// Preserve the original image/heap profile's closed import policy.
+fn darwin-image-import-preflight(plan: Int) -> Int {
+  let status = darwin-image-chain-preflight(plan)
+  if status != 0 { return status }
+  if darwin-image-unknown-import(plan) != 0 { return -38 }
   return 0
 }
 

@@ -3,6 +3,7 @@ package space.kernel
 import "darwin-image-plan.in"
 import "darwin-protected.in"
 import "user-address-space.in"
+import "darwin-rune.in"
 
 // Private trusted supervisor state, not a guest buffer or isolated SCI service.
 const DARWIN-MAPPED-MAGIC = 0x44574D4150500001
@@ -13,6 +14,7 @@ const DARWIN-MAPPED-ERRNO = 0x110004000
 const DARWIN-MAPPED-ARGUMENTS = 0x110005000
 const DARWIN-MAPPED-RETURN = 0x130000000
 const DARWIN-MAPPED-CAPSULES = 0x130001000
+const DARWIN-MAPPED-RUNE = 0x130002000
 var darwin-mapped-active: Int = 0
 
 // Change detection for an immutable trusted source, not authentication.
@@ -48,6 +50,33 @@ fn darwin-mapped-symbol(image: Int, start: Int, end: Int) -> Int {
   if darwin-protected-import-name(image,start,end,"_write") != 0 { return 1 }
   if darwin-protected-import-name(image,start,end,"_exit") != 0 { return 2 }
   if darwin-protected-import-name(image,start,end,"___error") != 0 { return 4 }
+  if darwin-image-string(image + start,image + end,"__DefaultRuneLocale") != 0 { return 8 }
+  if darwin-image-string(image + start,image + end,"__CurrentRuneLocale") != 0 { return 16 }
+  return 0
+}
+
+fn darwin-mapped-target(symbol: Int) -> Int {
+  if symbol == 8 { return DARWIN-MAPPED-RUNE }
+  if symbol == 16 { return DARWIN-MAPPED-RUNE + DARWIN-RUNE-CURRENT-OFFSET }
+  if symbol == 1 || symbol == 2 || symbol == 4 { return DARWIN-MAPPED-CAPSULES + darwin-protected-import-index(symbol) * 64 }
+  return 0
+}
+
+// Called only after structural/closed-symbol preflight; scalar provider query.
+fn darwin-mapped-data-needed(state: Int) -> Int {
+  let image = load64(state + 24)
+  let file = load64(state + 256 + 72)
+  let h = image + file
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let bytes = load64(state + 256 + 80)
+  let i = 0
+  while i < load32(h + 16) {
+    let name = load32(h + imports + i * 4) >> 9
+    let symbol = darwin-mapped-symbol(image,file + symbols + name,file + bytes)
+    if symbol == 8 || symbol == 16 { return 1 }
+    i += 1
+  }
   return 0
 }
 
@@ -60,7 +89,7 @@ fn darwin-mapped-preflight(state: Int) -> Int {
   let n = 0
   while n < 3840 { if load8(state + 256 + n) != load8(state + 16384 + n) { return -8 };n += 1 }
   if darwin-mapped-digest(image,size) != load64(state + 40) { return -8 }
-  status = darwin-image-import-preflight(state + 256)
+  status = darwin-image-chain-preflight(state + 256)
   if status != 0 { return status }
   let file = load64(state + 256 + 72)
   let bytes = load64(state + 256 + 80)
@@ -142,6 +171,10 @@ fn darwin-mapped-map(state: Int) -> Int {
     if status != 0 { return darwin-mapped-native(state,status) }
     i += 1
   }
+  if darwin-mapped-data-needed(state) != 0 {
+    let status = user-space-map-zero(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RUNE,USER-SPACE-READ)
+    if status != 0 { return darwin-mapped-native(state,status) }
+  }
   return 0
 }
 
@@ -198,7 +231,8 @@ fn darwin-mapped-fixups(state: Int) -> Int {
               let name = load32(h + imports + (raw & 0xFFFFFF) * 4) >> 9
               let symbol = darwin-mapped-symbol(image,file + symbols + name,file + bytes)
               if symbol == 0 { return -38 }
-              target = DARWIN-MAPPED-CAPSULES + darwin-protected-import-index(symbol) * 64
+              target = darwin-mapped-target(symbol)
+              if target == 0 { return -38 }
             }
             store64(state + 8192,target)
             let status = user-space-populate(load64(state + 56),load64(state + 72),load64(segment + 8) + relative,state + 8192,8)
@@ -261,6 +295,10 @@ fn darwin-mapped-startup(state: Int, input: Int) -> Int {
     i += 1
   }
   status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-CAPSULES,bounce,4096)
+  if status == 0 && darwin-mapped-data-needed(state) != 0 {
+    status = darwin-rune-populate(bounce,4096,DARWIN-MAPPED-RUNE)
+    if status == 0 { status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RUNE,bounce,4096) }
+  }
   return darwin-mapped-native(state,status)
 }
 
@@ -384,7 +422,7 @@ fn darwin-mapped-run(state: Int, input: Int, bytes: Int, identity: Int, serial: 
   if cap-check(memory,cap-memory()) == 0 || (serial >= 0 && cap-check(serial,cap-serial()) == 0) { return -13 }
   if user-space-quarantined(memory) != 0 { return -5 }
   store64(state + 72,memory);store64(state + 80,serial);store64(state + 88,0);store64(state + 96,0);store64(state + 104,budget);store64(state + 112,0);store64(state + 152,0);store64(state + 160,0);store64(state + 168,0)
-  let vm = user-space-create(memory,load64(state + 256 + 96) + 8)
+  let vm = user-space-create(memory,load64(state + 256 + 96) + 8 + darwin-mapped-data-needed(state))
   if vm == 0 { return -5 }
   if vm < 0 {
     if vm == -5 { let retained = user-space-quarantined(memory);if retained > 0 { store64(state + 56,retained);store64(state + 168,1);store64(state + 48,4) } }

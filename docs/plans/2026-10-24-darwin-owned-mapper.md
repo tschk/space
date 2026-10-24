@@ -1,5 +1,10 @@
 # Darwin high-address owned mapper
 
+The later [typed data-import continuation](2026-10-25-darwin-data-imports.md)
+adds a finite read-only C-locale object to this high-address profile while
+preserving the original lower-address/image policy. The three-import evidence
+and original-jq blocker below describe this historical checkpoint.
+
 Consume the committed original-image plan using the generic native
 `UserAddressSpace` object committed in `4a4b631` (`user-address-space.in`). Do not
 add the previously proposed independent576-entry mapping ledger/704-frame

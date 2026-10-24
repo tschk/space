@@ -18,6 +18,14 @@ Original Darwin applications, Objective-C/framework behavior and foreign GUI
 integration remain open. Native protected calculator/editor sessions are the
 current local GUI test foundation, with their scope recorded in that full goal.
 
+The [2026-10-25 data-import continuation](plans/2026-10-25-darwin-data-imports.md)
+uses Rosemary's ABI observation to identify direct rune-table loads, then checks
+Apple's published structure/table. Exact BSD-licensed Apple cache data is reused
+with its notice; no Rosemary implementation or host pointer is imported. Native
+read-only/non-executable object mappings advance the high-address fixture
+profile. The next original-jq blocker is`____chkstk_darwin`; original macOS
+application entry and framework/GUI support remain unproved.
+
 ## Recommendation
 
 Use Rosemary as a reference for the user-space macOS stack: Mach-O loading and

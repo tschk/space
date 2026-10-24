@@ -525,6 +525,7 @@ fn dyn-kernel-exportable(name: Int) -> Int {
   if dyn-name-prefix(name,"darwin-heap-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-image-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-mapped-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-rune-") != 0 { return 0 }
   if dyn-name-prefix(name,"user-context-") != 0 { return 0 }
   if dyn-name-prefix(name,"user-space-") != 0 || dyn-name-prefix(name,"domain-user-object-") != 0 { return 0 }
   if dyn-name-prefix(name,"fs-path-") != 0 { return 0 }

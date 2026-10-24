@@ -6,6 +6,7 @@ import io
 import json
 import re
 import shutil
+import struct
 import subprocess
 import tarfile
 from pathlib import Path
@@ -77,8 +78,23 @@ try:
     manifest = json.loads((snap / 'fixtures/applications/jq-1.8.1.json').read_text())
     pinned = next(x for x in manifest['apps'] if x['personality'] == 'darwin')
     assert sha(a.jq) == pinned['sha256'] and a.jq.stat().st_size == pinned['size_bytes']
+    original=a.jq.read_bytes();command=32
+    for _ in range(struct.unpack_from('<I',original,16)[0]):
+        kind,length=struct.unpack_from('<II',original,command)
+        if kind==0x80000034:fix,fixbytes=struct.unpack_from('<II',original,command+8)
+        command+=length
+    _,_,imports,symbols,count,_,_=struct.unpack_from('<7I',original,fix)
+    names=[];positions={}
+    for index in range(count):
+        name_offset=struct.unpack_from('<I',original,fix+imports+index*4)[0]>>9
+        position=fix+symbols+name_offset
+        name=original[position:fix+fixbytes].split(b'\0')[0].decode('ascii')
+        names.append(name);positions[name]=position
+    known={'_write','_exit','___error','__DefaultRuneLocale','__CurrentRuneLocale'}
+    missing=next(name for name in names if name not in known)
+    assert missing=='____chkstk_darwin'
     report['original_jq'] = {'sha256': sha(a.jq), 'executions': 0, 'admission': -38,
-                             'first_unavailable_import': '__DefaultRuneLocale'}
+                             'first_unavailable_import': missing,'supported_readonly_data_imports':['__DefaultRuneLocale','__CurrentRuneLocale']}
     assert run(['nasm', '-f', 'bin', str(snap / 'fixtures/darwin-mapped/process.asm'),
                 '-o', str(a.out / 'process.macho')], 'nasm.log').returncode == 0
     image_size = (a.out / 'process.macho').stat().st_size
@@ -202,6 +218,11 @@ fn mapped-check(port:Int)->void{
  serial-write-cstr(port,"darwin-mapped: 318 CPL3 executions 21 stable cycles PASS");serial-nl(port);outb(0xF4,16);
 }
 '''.replace('IMAGE_SIZE', str(image_size)).replace('JQ_SIZE', str(a.jq.stat().st_size)).replace('PRIVATE_SIZE', str((a.out / 'private.sci').stat().st_size))
+    checks = ''
+    for name,expected in [('__DefaultRuneLocale',8),(missing,0)]:
+        start=positions[name]
+        checks += f'if darwin-mapped-symbol(0x12000000,{start},{start+len(name)+1})!={expected}{{panic("mapped original typed import diagnostic");}}\n'
+    source=source.replace('// PROFILE_IMPORT_CONTROLS',checks+'\n// PROFILE_IMPORT_CONTROLS')
     positions = [m.start() for m in re.finditer(b'_write\x00', binary)]
     assert len(positions) == 2
     changes = '\n'.join(f'store8(0x11000000+{offset+i},{value});' for offset in positions for i, value in enumerate(b'_close'))

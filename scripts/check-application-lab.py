@@ -351,6 +351,8 @@ def main():
         check('darwin-mapped-' + variant, 'check-darwin-mapped.py', '--in', args.compiler,
               '--jq', applications['darwin'], '--root', variant,
               '--out', args.out / ('darwin-mapped-' + variant))
+        check('darwin-rune-' + variant,'check-darwin-rune.py','--in',args.compiler,
+              '--root',variant,'--out',args.out / ('darwin-rune-' + variant))
     check('darwin-files', 'check-darwin-files.py', '--in', args.compiler, '--out', args.out / 'darwin-files')
     check('windows-process', 'check-windows-protected.py', '--in', args.compiler,
           '--app', applications['windows'], '--out', args.out / 'windows-process')

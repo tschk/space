@@ -42,6 +42,7 @@ jobs:
         python3 -m venv /tmp/space-terminal-oracle
         /tmp/space-terminal-oracle/bin/pip install -r fixtures/terminal-session/oracle-requirements.txt
         /tmp/space-terminal-oracle/bin/python scripts/check-terminal-screen.py --in "$IN_BIN" --out /tmp/space-terminal-screen-ci
+        python3 scripts/check-darwin-rune.py --in "$IN_BIN" --model-only --out /tmp/space-darwin-rune-model-ci
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
         python3 scripts/check-local-stream.py --in "$IN_BIN" --build-dir /tmp/space-local-stream-ci

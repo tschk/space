@@ -162,8 +162,11 @@ The separate high-address Darwin mapper now consumes the generic native owned
 address-space object. Its finite three-import fixture passes318 actual CPL3
 entries and147 forced setup refusals over21 measured cycles, including exact
 RO/NX faults, real deadlines, source/plan checks and retained-owner recovery.
-The original pinned macOS jq still refuses-38 at `__DefaultRuneLocale` before
-native VM creation; it has zero executed entries. See the
+At that checkpoint the original pinned macOS jq refused-38 at
+`__DefaultRuneLocale` before native VM creation. The later
+[typed data-import continuation](plans/2026-10-25-darwin-data-imports.md) supplies
+the finite read-only C-locale object; the high-address mapper's next unavailable
+import is`____chkstk_darwin`. Original macOS jq still has zero executed entries. See the
 [mapper checkpoint](plans/2026-10-24-darwin-owned-mapper.md). Original Darwin
 applications and framework/GUI support remain required full-goal work.
 

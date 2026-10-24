@@ -1,0 +1,14 @@
+{
+  "upstream": "apple-oss-distributions/Libc",
+  "revision": "71bbe350ab79eef58113991d817ccc6165061a64",
+  "file": "locale/FreeBSD/table.c",
+  "source_sha256": "2e99278105bb2e3f4ae38eaebabe8333c2c28dbc3d815fd15fb18c055ac5cc34",
+  "license": "BSD-3-Clause (original numbered conditions 1,2,4)",
+  "cache_words": 768,
+  "cache_sha256": "077bf6846c3b063b6279868b5105fa249617470b147eccd851867c6e4a4b1dab",
+  "ABI_references": [
+    "include/runetype.h",
+    "include/_ctype.h"
+  ],
+  "scope": "Exact cached C-locale arrays only; no hosted runtime or Rosemary code"
+}
