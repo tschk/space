@@ -1,0 +1,120 @@
+package space.kernel
+import "vi-checks.in"
+import "../../components/terminal-view.in"
+import "../../components/linux-terminal-keyboard.in"
+import "../../components/file-observation.in"
+
+var vi-durable-view:Int=0
+var vi-durable-buffer:Int=0
+fn vi-durable-observe-text(authority:Int)->void{
+  let handle=file-observation-open("/tui.txt",authority)
+  if handle<=0 || file-observation-query(handle,authority,0)!=24{panic("durable vi readonly text observation");}
+  let data=file-observation-borrow(handle,authority)
+  if data<=0{panic("durable vi readonly text loan");}
+  let expected="again42native42original";let i=0
+  while i<23{if load8(data+i)!=load8(expected+i){panic("durable vi readonly exact text");}i+=1;}
+  if load8(data+23)!=10 || file-observation-return(handle,authority)!=0 || file-observation-close(handle,authority)!=0{panic("durable vi readonly text retirement");}
+}
+fn vi-durable-drain(session:Int,owner:Int)->Int{
+  let start=terminal-vi-trace-size
+  let count=terminal-vi-drain(session,owner)
+  if count>0 && terminal-view-write(vi-durable-view,terminal-vi-trace+start,count)!=1{panic("durable vi owned pixels");}
+  return count
+}
+fn vi-durable-check(port:Int)->void{
+  if nvme-ready!=1 || sf-mem-disk!=0 || volume-ready!=0{panic("durable vi real NVMe required");}
+  let authority=cap-mint(root-realm,cap-memory()|cap-storage()|cap-serial()|cap-timer())
+  let clock=cap-mint(root-realm,cap-timer())
+  if authority<0 || clock<0{panic("durable vi authority");}
+  if VI-DURABLE-STAGE==0{
+    if sf-disk-ready!=0{panic("durable vi expected blank owned disk");}
+    let result=0
+    if VI-DURABLE-UTC!=0{result=fs-metadata-format-utc(16384,2048,authority,clock);}
+    else{result=fs-format();}
+    if result!=0{panic("durable vi explicit format");}
+    let hash=-3750763034362895579;let i=0
+    while i<TERMINAL-VI-ELF-SIZE{hash=(hash^load8(0x10000000+i))*1099511628211;i+=1;}
+    if hash!=TERMINAL-VI-FNV{panic("durable vi original staging hash");}
+    if fs-write-file("/busybox",0x10000000,TERMINAL-VI-ELF-SIZE)!=0{panic("durable vi native install");}
+    let seed=alloc(16);i=0;while i<8{store8(seed+i,load8("original"+i));i+=1;}store8(seed+8,10)
+    if fs-write-file("/tui.txt",seed,9)!=0 || nvme-flush()!=0{panic("durable vi native seed");}
+    store8(0x10000000,0)
+  }else{
+    if sf-disk-ready!=1 || load64(0x10000000)!=0{panic("durable vi cold boot has no staged ELF");}
+    if VI-DURABLE-UTC!=0 && VI-DURABLE-STAGE<2{
+      if fs-metadata-bind-clock(authority,clock)!=0{panic("durable vi native clock binding");}
+    }
+  }
+  vi-durable-buffer=alloc(64)
+  if VI-DURABLE-STAGE==1{terminal-vi-file("native42original",16,vi-durable-buffer);}
+  if VI-DURABLE-STAGE==2{
+    if VI-DURABLE-UTC!=0 && fs-metadata-clock-authority!=-1{panic("durable vi readonly clock unbound");}
+    vi-durable-observe-text(authority)
+  }
+  let observation=file-observation-open("/busybox",authority)
+  if observation<=0 || file-observation-query(observation,authority,0)!=TERMINAL-VI-ELF-SIZE{panic("durable vi executable observation");}
+  let image=file-observation-borrow(observation,authority)
+  if image<=0 || image==0x10000000 || file-observation-query(observation,authority,2)!=1{panic("durable vi native executable loan");}
+  let hash=-3750763034362895579;let i=0
+  while i<TERMINAL-VI-ELF-SIZE{hash=(hash^load8(image+i))*1099511628211;i+=1;}
+  if hash!=TERMINAL-VI-FNV{panic("durable vi persisted original ELF");}
+  serial-write-cstr(port,"vi-durable: original ELF from native filesystem ");serial-write-dec-wide(port,VI-DURABLE-STAGE);serial-nl(port)
+  if VI-DURABLE-STAGE==2{
+    if file-observation-return(observation,authority)!=0 || file-observation-close(observation,authority)!=0{panic("durable vi verify loan cleanup");}
+    serial-write-cstr(port,"vi-durable: cold readonly ELF and exact text verified PASS");serial-nl(port);return;
+  }
+  if gui-protected-launch-valid()!=1{panic("durable vi launch lease");}
+  if out-set-bga-mode(port,1024,768,100,100)<=0{panic("durable vi display mode");}
+  let renderer=boot-image-find(270)
+  vi-durable-view=terminal-view-open(port,renderer,runtime-instance-image-boot-size(renderer))
+  if vi-durable-view<=0{panic("durable vi protected view");}
+  let owner=cap-mint(obj-alloc(271),cap-memory())
+  let seat=cap-mint(obj-alloc(272),cap-input())
+  let session=terminal-session-open(owner,seat,80,24)
+  if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("durable vi native seat");}
+  terminal-vi-trace=alloc(65536);terminal-vi-trace-size=0
+  serial-write-cstr(port,"vi-durable: trace address ");serial-write-dec-wide(port,terminal-vi-trace);serial-nl(port)
+  let caller=current-cap;let fs=rdmsr(0xc0000100);let gs=rdmsr(0xc0000101)
+  if linux-process-source-name!=0 || linux-process-source-name-valid("/busybox")!=1{panic("durable vi source label");}
+  linux-process-source-name="/busybox"
+  ps2-kbd-init()
+  let token=linux-process-terminal-start(image,TERMINAL-VI-ELF-SIZE,"/busybox","vi","/tui.txt",authority,session,owner)
+  if token<=0 || linux-process-terminal-query(token,authority,0)!=1{panic("durable vi actual retained start");}
+  // An active loan keeps the immutable executable bytes alive even after its
+  // owner requests close. No new loans are admitted during retirement.
+  if file-observation-close(observation,authority)!=-5 || file-observation-borrow(observation,authority)!=-4{panic("durable vi retained executable lifetime");}
+  serial-write-cstr(port,"vi-durable: keyboard ready");serial-nl(port)
+  let keys=0;let turns=0
+  while linux-process-terminal-query(token,authority,0)==1 && turns<500000000{
+    let progress=vi-durable-drain(session,owner)
+    if progress>0{
+      serial-write-cstr(port,"vi-durable: painted ");serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,terminal-vi-trace-size);serial-nl(port)
+    }
+    let key=ps2-kbd-getchar()
+    if key>=0{
+      if linux-terminal-deliver-key(seat,key)!=0{panic("durable vi actual key delivery");}
+      serial-write-cstr(port,"vi-durable: key ");serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,key);serial-nl(port)
+      keys+=1;progress=1
+    }
+    let deadline=linux-process-terminal-query(token,authority,4)
+    if deadline>0{let now=counter-read-authorized(authority);if now<0{panic("durable vi timer authority");}if now>=deadline{progress=1;}}
+    if terminal-session-query(session,owner,2)>0{progress=1;}
+    if progress!=0{linux-process-terminal-resume(token,authority);}
+    if domain-current!=0 || user-context-active!=0 || domain-user-syscall-hook!=0 || rdmsr(0xc0000100)!=fs || rdmsr(0xc0000101)!=gs || current-cap!=caller{panic("durable vi supervisor restoration");}
+    if file-observation-query(observation,authority,2)!=1{panic("durable vi lost source loan");}
+    turns+=1
+  }
+  vi-durable-drain(session,owner)
+  let expected=22;if VI-DURABLE-STAGE==1{expected=16;}
+  if linux-process-terminal-query(token,authority,0)!=2 || linux-process-terminal-query(token,authority,1)!=0 || keys!=expected{panic("durable vi exact completion");}
+  if linux-process-terminal-close(token,authority)!=0{panic("durable vi CPU retirement");}
+  linux-process-source-name=0
+  if file-observation-return(observation,authority)!=0 || file-observation-close(observation,authority)!=0 || file-observation-query(observation,authority,0)!=-6{panic("durable vi source retirement");}
+  if terminal-session-close(session,owner)!=0 || terminal-seat-clear(seat)!=0 || terminal-view-close(vi-durable-view)!=1{panic("durable vi native retirement");}
+  if linux-process-active!=0 || linux-process-cleanup-failed!=0 || current-cap!=caller || domain-current!=0 || user-context-active!=0 || domain-user-syscall-hook!=0{panic("durable vi final ownership");}
+  if VI-DURABLE-STAGE==0{terminal-vi-file("native42original",16,vi-durable-buffer);}
+  else{terminal-vi-file("again42native42original",23,vi-durable-buffer);}
+  if nvme-flush()!=0{panic("durable vi actual flush");}
+  serial-write-cstr(port,"vi-durable: saved exact and retired ");serial-write-dec-wide(port,VI-DURABLE-STAGE);serial-nl(port)
+  serial-write-cstr(port,"vi-durable: trace size ");serial-write-dec-wide(port,terminal-vi-trace-size);serial-nl(port)
+}
