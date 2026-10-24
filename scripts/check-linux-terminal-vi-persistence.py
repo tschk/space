@@ -74,8 +74,11 @@ def build(command,log):subprocess.run(list(map(str,command)),stdout=log,stderr=s
 class VM:
     def __init__(self,folder,command):
         self.folder=folder;self.received=bytearray();self.serial=self.monitor=None
-        self.log=(folder/'qemu.log').open('w');self.process=subprocess.Popen(command,stdout=self.log,stderr=subprocess.STDOUT)
-        self.serial=self.connect(folder/'serial.sock');self.monitor=self.connect(folder/'monitor.sock')
+        self.log=(folder/'qemu.log').open('w')
+        try:self.process=subprocess.Popen(command,stdout=self.log,stderr=subprocess.STDOUT)
+        except Exception:self.log.close();raise
+        try:self.serial=self.connect(folder/'serial.sock');self.monitor=self.connect(folder/'monitor.sock')
+        except Exception:self.close();raise
     def connect(self,path):
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
@@ -105,20 +108,20 @@ class VM:
         image=self.folder/'editing.ppm';stream=self.folder/'editing-stream.bin'
         self.monitor.sendall(f'stop\npmemsave {address:#x} {size} "{stream}"\nscreendump "{image}"\ncont\n'.encode())
         deadline=time.monotonic()+10
-        while (not image.exists() or image.stat().st_size<1024*768*3 or not stream.exists() or stream.stat().st_size!=size) and time.monotonic()<deadline:time.sleep(.02)
+        while (not image.exists() or image.stat().st_size<1024*768*3+16 or not stream.exists() or stream.stat().st_size!=size) and time.monotonic()<deadline:time.sleep(.02)
         oracle=self.folder/'pixels.json'
         with (self.folder/'pixels.log').open('w') as log:
             build([a.oracle_python,snapshot/'scripts/check-terminal-view-pixels.py','--capture',image,'--stream',stream,
                    '--font',snapshot/'assets/fonts/desktop/DejaVuSansMono.ttf','--out',oracle],log)
         return json.loads(oracle.read_text())
     def close(self):
-        (self.folder/'serial.log').write_bytes(self.received)
         if self.serial:self.serial.close()
         if self.monitor:self.monitor.close()
         self.process.terminate()
         try:self.process.wait(timeout=5)
         except subprocess.TimeoutExpired:self.process.kill();self.process.wait()
         self.log.close()
+        (self.folder/'serial.log').write_bytes(self.received)
 
 try:
     fnv=0xcbf29ce484222325
@@ -147,6 +150,7 @@ try:
                  '-rtc',f'base=2026-10-{25+stage}T00:00:00,clock=vm']
         if stage==0:command+=['-device',f'loader,file={app},addr=0x10000000,force-raw=on']
         entry=dict(stage=stage,qemu_command=command,kernel_sha256=sha(folder/'combined.bin'),elf_staged=stage==0,disk_before=before,original_application_entries=0)
+        entry['status']='running';report['boots'].append(entry)
         vm=None
         try:
             vm=VM(folder,command)
@@ -173,11 +177,12 @@ try:
         after=sha(disk)
         if stage==2:assert after==before,'read-only verification boot modified the disk'
         entry.update(status='passed',disk_after=after,persisted_elf_sha256=hashlib.sha256(executable).hexdigest(),persisted_text_sha256=hashlib.sha256(text).hexdigest(),persisted_text=text.decode('ascii'))
-        report['boots'].append(entry);print('PASS cold vi boot',stage,'staged ELF' if stage==0 else 'filesystem-only ELF',flush=True)
+        print('PASS cold vi boot',stage,'staged ELF' if stage==0 else 'filesystem-only ELF',flush=True)
     assert all((ROOT/name).read_bytes()==data for name,data in frozen.items()),'source changed during run'
     assert sha(compiler)==report['compiler_sha256'] and sha(app)==pin['sha256']
     report.update(status='passed',original_application_entries=2,keyboard_events=38,cold_boots=3,readonly_verification=True)
     print('PASS original interactive vi:3 cold NVMe boots,2 original processes,38 PS2 keys,exact saved text and filesystem-only ELF reopen',flush=True)
 except Exception as error:
+    if report['boots'] and report['boots'][-1]['status']=='running':report['boots'][-1].update(status='failed',error=str(error))
     report.update(status='failed',error=str(error));raise
 finally:(out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
