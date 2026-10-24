@@ -65,7 +65,8 @@ try:
     private = []
     for index, (name, declaration, call) in enumerate([
         ('terminal-session-open', 'owner:Int,seat:Int,columns:Int,rows:Int', 'info,info,80,24'),
-        ('terminal-seat-deliver', 'seat:Int,byte:Int', 'info,65')]):
+        ('terminal-seat-deliver', 'seat:Int,byte:Int', 'info,65'),
+        ('terminal-view-send', 'token:Int,first:Int,last:Int,closing:Int', 'info,129,0,0')]):
         source = out / f'private-{index}.in'; binary = out / f'private-{index}.sci'
         source.write_text('package space.fixture\ninterrupt fn ' + name + '(' + declaration + ')->Int{}\n'
             'fn private-entry(info:Int)->Int{store64(0x13000000,42);return ' + name + '(' + call + ');}\n')
@@ -89,7 +90,7 @@ if load64(0x13000000)!=0 || heap-next!=heap || free-list!=free || cap-count!=cap
 store64(0x40d0,prior-boot);
 }
 '''.replace('NAME',json.dumps(item['name'])).replace('ADDRESS',str(address)).replace('SIZE',str(item['size']))
-    checks += 'serial-write-cstr(port,"terminal: two SCI imports refused before entry PASS");serial-nl(port);'
+    checks += 'serial-write-cstr(port,"terminal: three SCI imports refused before entry PASS");serial-nl(port);'
     source = (snapshot / 'kernel/kernel-root.in').read_text()
     source = re.sub(r'import "\.\./([^"]+)"', lambda m: 'import ' + json.dumps(str(snapshot / m[1])), source)
     fixture = 'retained-checks.in' if a.retained else 'checks.in'
@@ -123,7 +124,7 @@ store64(0x40d0,prior-boot);
                  if a.retained else b'terminal: revoked owners retired with stable resources PASS\n')
         wait(final)
         wait(b'space> ')
-    assert b'terminal: two SCI imports refused before entry PASS\n' in received
+    assert b'terminal: three SCI imports refused before entry PASS\n' in received
     if a.retained:
         assert b'terminal: 22 actual CPL3 echo waits, 440 idle probes and restored TLS PASS\n' in received
         assert b'terminal: actual termios roundtrip/drain/flush geometry nonblock and timed poll PASS\n' in received

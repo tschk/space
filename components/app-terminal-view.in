@@ -1,0 +1,61 @@
+package space.app.gui
+import "terminal-screen-paint.in"
+import "../protocol/native-protected.in"
+import "../protocol/gui-window.in"
+import "../protocol/display.in"
+import "../protocol/terminal-view.in"
+
+component GuiProtectedTerminalView {
+ target "x86_64-unknown-none"
+ capability memory: GuiMemory(map)
+ capability display: GuiDisplay(present,window)
+}
+interface GuiMemory {fn map()->void}
+interface GuiDisplay {fn present()->void
+ fn window()->void}
+interrupt fn chan-page-send-frame(page:Int,object:Int,opcode:Int,arg0:Int,arg1:Int)->Int{}
+interrupt fn chan-page-recv-frame(page:Int,message:Int)->Int{}
+var terminal-view-started=0
+fn client-entry(info:Int)->Int{
+  if info!=NATIVE-PROTECTED-INFO || load64(info)!=20 || load64(info+8)!=0 || load64(info+16)!=NATIVE-PROTECTED-HEAP || load64(info+24)!=NATIVE-PROTECTED-HEAP-BYTES{return 1;}
+  if load64(info+32)!=0x70000000 || load64(info+72)!=0x70001000 || load64(info+80)!=SCI-CANVAS-BYTES || load64(info+88)!=0{return 2;}
+  let memory=NATIVE-PROTECTED-HEAP+4096;
+  if terminal-view-started==0{
+    if load64(info+64)!=NATIVE-PROTECTED-INFO+256{return 3;}
+    let config=NATIVE-PROTECTED-INFO+256;
+    if load64(config)!=GUI-WINDOW-CONFIG-MAGIC || load64(config+8)<=0 || load64(config+16)!=768 || load64(config+24)!=384 || load64(config+32)!=2{return 4;}
+    terminal-screen-init(memory);terminal-view-started=1;
+    if chan-page-send-frame(0x70000000,SPDP-OBJ-COMPOSITOR,SPDP-COMPOSITOR-CREATE-SURFACE,0,0)!=1{return 5;}
+  }else{
+    if load64(info+64)!=0{return 6;}
+    let message=NATIVE-PROTECTED-HEAP+128;
+    if chan-page-recv-frame(0x70000000,message)!=1 || load64(0x70000000)!=load64(0x70000008){return 7;}
+    if load64(message)!=TERMINAL-VIEW-OBJECT{return 8;}
+    let opcode=load64(message+8);let first=load64(message+16);let last=load64(message+24);
+    if opcode==TERMINAL-VIEW-CLOSE{
+      if first!=0 || last!=0{return 9;}
+      if chan-page-send-frame(0x70000000,SPDP-OBJ-SURFACE,SPDP-SURFACE-DESTROY,0,0)!=1{return 10;}
+      if chan-page-send-frame(0x70000000,SPDP-OBJ-SHM,SPDP-SHM-POOL-DESTROY,0,0)!=1{return 11;}
+      return 42;
+    }
+    if opcode!=TERMINAL-VIEW-BYTES{return 12;}
+    let count=first&127;
+    if count<1 || count>15{return 13;}
+    let index=0;
+    // Validate the entire payload before changing parser/cell state.
+    while index<15{
+      let byte=0;if index<7{byte=(first>>((index+1)*8))&255;}else{byte=(last>>((index - 7)*8))&255;}
+      if (index>=count && byte!=0) || (index<count && byte>=128){return 14;}index+=1;
+    }
+    index=0;while index<count{
+      let byte=0;if index<7{byte=(first>>((index+1)*8))&255;}else{byte=(last>>((index - 7)*8))&255;}
+      if terminal-screen-feed(memory,byte)!=0{return 15;}index+=1;
+    }
+    if (first&128)==0{return 42;}
+  }
+  if terminal-screen-paint(memory,0x70001000)!=0{return 16;}
+  if chan-page-send-frame(0x70000000,SPDP-OBJ-SURFACE,SPDP-SURFACE-ATTACH,0,0)!=1{return 17;}
+  if chan-page-send-frame(0x70000000,SPDP-OBJ-SURFACE,SPDP-SURFACE-DAMAGE,0,(768<<16)|384)!=1{return 18;}
+  if chan-page-send-frame(0x70000000,SPDP-OBJ-SURFACE,SPDP-SURFACE-COMMIT,0,0)!=1{return 19;}
+  return 42;
+}

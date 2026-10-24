@@ -1,0 +1,12 @@
+{
+  "source_sha256": "54bf827eb99404e8f430c330ad30f063334f637eba0109b6a18d4f566a8e9dd8",
+  "pillow": "12.3.0",
+  "cell": [
+    9,
+    16
+  ],
+  "font_pixels": 14,
+  "baseline": 13,
+  "coverage": "ASCII 32..126 only",
+  "coverage_sha256": "a9d55a1563288289095f1c1427adf9098cb47eaaca82006849a5f4be950a223a"
+}

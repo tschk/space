@@ -45,6 +45,8 @@ def main():
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
     parser.add_argument('--busybox-vfork', type=Path, help='Separate pinned upstream xargs ELF; otherwise cache busybox-vfork or --download builds it')
     parser.add_argument('--busybox-vi', type=Path, help='Separate pinned upstream vi ELF; otherwise cache busybox-vi or --download builds it')
+    parser.add_argument('--terminal-oracle-python',type=Path,default=Path(sys.executable),
+                        help='Interpreter with fixtures/terminal-session/oracle-requirements.txt for screen/pixel comparisons')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
                         help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
@@ -219,6 +221,11 @@ def main():
         check('linux-terminal-vi-keyboard-' + variant, 'check-linux-terminal-vi.py',
               '--in', args.compiler, '--app', applications['busybox-vi'],
               '--root', variant, '--out', args.out / ('linux-terminal-vi-keyboard-' + variant))
+    run('terminal-screen-model',[args.terminal_oracle_python,ROOT/'scripts/check-terminal-screen.py',
+                               '--in',args.compiler,'--out',args.out/'terminal-screen-model'])
+    check('linux-terminal-vi-view','check-linux-terminal-vi.py','--in',args.compiler,
+          '--app',applications['busybox-vi'],'--view','--oracle-python',args.terminal_oracle_python,
+          '--out',args.out/'linux-terminal-vi-view')
     built = run('images', ['bash', 'scripts/build-images.sh'], timeout=900)
     for variant in ['standard', 'minimal']:
         check('native-' + variant, 'check-native-applications.py', '--image', args.out / 'images' / (variant + '.bin'),

@@ -53,8 +53,8 @@ def changed(image, metadata, mutate):
 
 
 for profile in ('default', 'lean', 'harden'):
-    for editor in (False, True):
-        name = 'GuiProtectedWindowEditor' if editor else 'GuiProtectedWindowCalc'
+    for name in ('GuiProtectedWindowCalc','GuiProtectedWindowEditor','GuiProtectedTerminalView'):
+        editor = name == 'GuiProtectedWindowEditor'
         directory = out / (profile + '-' + name)
         directory.mkdir()
         storage = 'capability storage: GuiNoteFile(read, write)' if editor else ''
@@ -165,4 +165,4 @@ fn client-entry(info:Int)->Int{{
 
 report['status'] = 'pass'
 (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-print(f"PASS protected GUI packaging: six actual SCI artifacts, {len(report['refusals'])} refusal controls; no execution claim")
+print(f"PASS protected GUI packaging: {len(report['artifacts'])} actual SCI artifacts, {len(report['refusals'])} refusal controls; no execution claim")

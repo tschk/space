@@ -1,0 +1,24 @@
+{
+  "repository": "https://github.com/alacritty/vte",
+  "version": "0.13.1",
+  "revision": "89c12df969145ffb5084d1122627d7292c2c638f",
+  "license": "MIT (chosen from Apache-2.0 OR MIT)",
+  "scope": "State/action definitions and transition-table source only; native screen handling remains separate.",
+  "files": [
+    {
+      "file": "table.rs",
+      "upstream_path": "src/table.rs",
+      "sha256": "e8a343a1015e0683cc1f081717fdf5d518daae75667400fc42a405f6592a4a35"
+    },
+    {
+      "file": "definitions.rs",
+      "upstream_path": "src/definitions.rs",
+      "sha256": "7f223b5c0676951590d8b0904dab36f9c753839ea5e1f7eae655625a0166cb18"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "upstream_path": "LICENSE-MIT",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    }
+  ]
+}

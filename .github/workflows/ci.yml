@@ -13,7 +13,7 @@ jobs:
       inauguration-path: inauguration
       # Inauguration 0.9.325: native execution, growing boot data and SCI layouts.
       inauguration-ref: 8530dd3a99cca7de38db50772ddcbde5d0b77745
-      install-deps: "nasm qemu-system-x86"
+      install-deps: "nasm qemu-system-x86 python3-venv"
       build-command: |
         mkdir -p /tmp/space-boot
         command nasm -f bin boot/multiboot.asm -o /tmp/space-boot/trampoline.bin
@@ -39,6 +39,9 @@ jobs:
         python3 scripts/check-terminal-session-model.py --in "$IN_BIN" --out /tmp/space-terminal-model-ci
         python3 scripts/check-terminal-session.py --in "$IN_BIN" --out /tmp/space-terminal-native-ci
         python3 scripts/check-terminal-session.py --in "$IN_BIN" --retained --out /tmp/space-terminal-retained-ci
+        python3 -m venv /tmp/space-terminal-oracle
+        /tmp/space-terminal-oracle/bin/pip install -r fixtures/terminal-session/oracle-requirements.txt
+        /tmp/space-terminal-oracle/bin/python scripts/check-terminal-screen.py --in "$IN_BIN" --out /tmp/space-terminal-screen-ci
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"
         python3 scripts/check-local-stream.py --in "$IN_BIN" --build-dir /tmp/space-local-stream-ci

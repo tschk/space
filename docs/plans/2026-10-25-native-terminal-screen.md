@@ -5,6 +5,62 @@ terminal queues and retained CPU waits, saves exact bytes and reopens in a new
 protected process. Its output is still an ANSI stream, not a desktop surface.
 The full project goal remains active while this display path is implemented.
 
+## Implemented finite slice
+
+`terminal-screen.in` is a pure client-owned 32 KiB ASCII80x24 model. Parameters
+are bounded to32 and decimal values saturate at65535; unknown string payloads
+cannot invoke devices or clipboard operations. Cursor motion, J/K erase,
+scrolling/margins, deferred wrapping, basic indexed SGR and separate normal/
+alternate cells support the actual pinned vi stream. This is not Unicode,
+complete terminal emulation or resize support.
+
+`app-terminal-view.in` compiles to a separate profile3 CPL3 SCI image with only
+memory/display grants. It owns parser state, cells and staging pixels. Pinned
+DejaVuMono14 coverage fits every exercised ASCII glyph in9x16 cells. Its finite
+canvas is768x384, with80 columns centered inside720 pixels. The existing GUI
+configuration scale2 is admission bookkeeping for this fixed profile; terminal
+metrics are physical pixels and no terminal scaling behavior is claimed.
+
+The private supervisor in `terminal-view.in` leases the existing generation-owned
+GUI record, private SPDP ring, accepted snapshot and compositor surface. Version1
+application frames carry up to15 bytes and an explicit present flag, never a raw
+guest pointer. The client validates complete payloads before changing cells.
+Only the existing validated ATTACH/DAMAGE/COMMIT reply and exact invocation epoch
+publish pixels. Linux is stopped while the native SCI client runs; supervisor
+TLS/hook/domain state is checked before the foreign process resumes. Keyboard
+authority remains with the native seat rather than the renderer. These supervisor
+helpers are denied as SCI imports; this is still a trusted supervisor library,
+not an isolated terminal service.
+
+Opening currently requires the existing quiescent GUI scene. It does not yet
+install an ordinary launcher action, place foreign clients in the desktop tiling
+graph or allow two concurrent foreign terminal processes. Close retires routing,
+surface/pool references and owned SCI resources using the existing lifecycle.
+
+## Executed evidence
+
+- `/workspace/terminal-screen-model4/report.json`: all4096 transitions and103
+  complete-cell comparisons against independent pyte0.8.2 pass in all3 compiler
+  profiles. The original captured vi stream is an oracle input, not new
+  application execution. Failed extractor/oversized test-function/oracle-DCS
+  diagnostics remain preserved; mature pyte does not implement DCS screen policy.
+- `/workspace/vi-terminal-live-view4/report.json`: two actual original protected
+  vi processes,27 real PS/2 text events, exact17-/24-byte files, save/reopen,
+  supervisor restoration and stable resources afterwarmup pass. Both actual
+  QEMU captures match all294912 terminal pixels against an independent
+  pyte/Pillow/DejaVu oracle using the captured live stream prefix. Host-generated
+  expected pixels are never substituted for QEMU screenshots.
+- `/workspace/terminal-view-package1/report.json`:9 emitted SCI policy artifacts
+  and222 refusal controls pass; packaging evidence does not claim execution.
+- `/workspace/terminal-view-denial-retained1/report.json`:27 own protected Linux
+  control activations and3 real forbidden SCI imports pass, including the new
+  private renderer-supervisor prefix. These are not upstream application entries.
+
+The frozen keyboard commit `2b6c796` separately passes hosted CI and desktop
+launcher/input/pointer/resize, both boot-image builds and263fps damage (minimum30).
+The terminal-surface continuation needs its own final committed-source checks;
+the historical152-gate run retains its old scope. The full goal stays OPEN.
+
 Use the MIT-licensed VTE 0.13.1 transition rules as reproducible native data,
 checked against all 4,096 bytes evaluated by the original upstream Rust macro.
 Keep parser state separate from screen policy and rendering. Bound parameters,

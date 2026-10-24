@@ -7,7 +7,8 @@ from pathlib import Path
 POLICIES = {"space.app.gui/GuiCalc", "space.app.gui/GuiEditor",
             "space.app.gui/GuiWindowCalc", "space.app.gui/GuiWindowEditor"}
 CANVAS = (0x5350414345434E56, 1, 768, 384, 3072, 1179648, 1, 0)
-PROTECTED_POLICIES = {"space.app.gui/GuiProtectedWindowCalc", "space.app.gui/GuiProtectedWindowEditor"}
+PROTECTED_POLICIES = {"space.app.gui/GuiProtectedWindowCalc", "space.app.gui/GuiProtectedWindowEditor",
+                      "space.app.gui/GuiProtectedTerminalView"}
 NATIVE_PROTECTED_MAGIC = 0x5350434E41545631
 NATIVE_GUI_PAGED = 3
 PROTECTED_BASE = 0x60000000

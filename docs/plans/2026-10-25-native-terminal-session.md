@@ -85,6 +85,8 @@ throughout. The earlier failed cold-resource witness and incorrect fixture mode
 selector remain preserved. Earlier passing direct-call mechanics and the later
 optional adapter have separate receipts.
 
-Actual original vi, terminal controls, timed readiness, screen/parser integration
-and two concurrent foreign applications remain active continuation work. None
-of the 26 own fixture entries is an upstream application entry.
+The later [terminal-screen continuation](2026-10-25-native-terminal-screen.md)
+adds actual original vi keyboard editing, finite raw controls/timed readiness
+and a protected SCI screen/pixel path. Two concurrent foreign applications,
+broader terminal disciplines and ordinary desktop launch remain open. None of
+these own control-fixture entries is an upstream application entry.

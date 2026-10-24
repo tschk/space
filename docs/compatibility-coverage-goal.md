@@ -14,9 +14,11 @@ Status: **active; full goal incomplete**. Current shipped behavior and local tes
 evidence are checkpoints, never a reason to close the full goal. On 2026-10-25
 Australia/Melbourne, original vi passed real PS/2 edit/save/reopen on both roots:
 two protected processes and 27 text events per root, with exact persisted file
-bytes. Desktop ANSI rendering, resize, concurrent foreign terminals and the
-remaining Windows/macOS application rows are still required. The next active
-implementation is the [client-owned terminal screen](plans/2026-10-25-native-terminal-screen.md).
+bytes. A later client-owned SCI terminal now renders live vi output: both real
+QEMU captures match294912 independently expected pixels. Resize, concurrent
+foreign terminals, ordinary desktop launch and the remaining Windows/macOS
+application rows are still required. The [terminal screen continuation](plans/2026-10-25-native-terminal-screen.md)
+records this finite slice and its next integration boundary.
 
 Current shipped behavior and local test
 results must be recorded separately from this destination. Work proceeds through
@@ -26,7 +28,7 @@ file does not create a scheduled or unattended background task.
 Continuation, 2026-10-25 Australia/Melbourne: the full goal was never completed.
 Native owned terminal queues and separate seat focus leases now pass 99 modeled
 controls and actual QEMU keyboard/lifetime/import-denial checks. Retained foreign
-activation waits and interactive original vi are the active implementation work;
+activation waits, interactive original vi and a finite native SCI screen now work;
 see the [native terminal continuation](plans/2026-10-25-native-terminal-session.md).
 These focused checks do not widen the historical 152-gate receipt below.
 

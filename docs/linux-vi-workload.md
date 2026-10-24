@@ -92,6 +92,12 @@ the unchanged upstream ELF, restored supervisor state and stable resources
 after warmup. `scripts/check-linux-terminal-vi.py` preserves the original ANSI
 output separately; this is keyboard/file evidence, not a desktop screenshot.
 
+The optional protected terminal view now also renders actual vi output in a
+separate CPL3 SCI client. Two live QEMU captures each match294912 independently
+expected terminal pixels. See the [screen contract and evidence](plans/2026-10-25-native-terminal-screen.md).
+This finite ASCII80x24 scenario does not complete resize, simultaneous foreign
+clients, ordinary desktop launch or reboot persistence acceptance.
+
 The native backend retains CPU/VM state while input or output would block.
 Its bounded raw termios, single-descriptor poll, descriptor flags and native
 geometry support this application without changing regular-file readiness.
@@ -114,8 +120,8 @@ availability, while Linux correctly reports a regular file readable at EOF.
 Changing that readiness to make the application pass would be incorrect.
 
 The EX scenario proves original application editing/file behavior. The newer
-keyboard scenario additionally proves real input and retained waits. ANSI output
-rendered by Space, resize events, two concurrent terminal clients and general
-TUI support remain open. Those stay in
+keyboard scenario additionally proves real input and retained waits; the later
+surface scenario proves actual ANSI screen pixels. Resize events, two concurrent
+terminal clients and general TUI support remain open. Those stay in
 the [full goal](compatibility-coverage-goal.md), with the next native session
 boundary explained in the [console/GUI reference review](terminal-gui-reference.md).

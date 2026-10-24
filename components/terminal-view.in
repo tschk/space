@@ -1,0 +1,53 @@
+package space.kernel
+import "gui-protected-clients.in"
+import "../protocol/terminal-view.in"
+
+// Optional trusted supervisor for the fixed ASCII terminal SCI profile. Uses
+// the existing generation-owned GUI records, ring, accepted pixels and SPDP.
+// Opening requires a quiescent GUI scene; ordinary desktop integration is open.
+fn terminal-view-open(port:Int,image:Int,available:Int)->Int{
+  if gui-protected-launch-valid()!=1 || gui-protected-init(1)!=1{return 0;}
+  let record=gui-protected-records;
+  store64(record+64,768);store64(record+72,384);store64(record+80,2);
+  store64(gui-protected-layout+40,(fb-width - 768)/2);
+  store64(gui-protected-layout+56,(fb-height - 384)/2);
+  return gui-protected-open(port,0,image,available);
+}
+fn terminal-view-send(token:Int,first:Int,last:Int,closing:Int)->Int{
+  let record=gui-protected-record(token);
+  if record==0 || record!=gui-protected-records{return 0;}
+  if closing<0 || closing>1{return 0;}
+  let page=load64(record+16);
+  if chan-page-frame-valid(page)!=1 || load64(page)!=load64(page+8){return 0;}
+  let capacity=load64(page+16);let consumed=(load64(page)+4)%capacity;
+  let opcode=TERMINAL-VIEW-BYTES;if closing==1{opcode=TERMINAL-VIEW-CLOSE;}
+  if chan-page-send-frame(page,TERMINAL-VIEW-OBJECT,opcode,first,last)!=1{return 0;}
+  let handle=load64(record);
+  if native-protected-run(handle,100)!=42{gui-protected-retire(record);return 0;}
+  if load64(page+16)!=capacity || load64(page)!=consumed{gui-protected-retire(record);return 0;}
+  if closing==1 || (first&128)!=0{
+    if gui-protected-reply(record,0,closing,0)!=1{gui-protected-retire(record);return 0;}
+  }else if load64(page)!=load64(page+8){gui-protected-retire(record);return 0;}
+  return 1;
+}
+// Source is supervisor-owned, never a guest address. Validate all bytes and
+// bounds before invoking the client. Linux/native queues remain separate.
+fn terminal-view-write(token:Int,source:Int,bytes:Int)->Int{
+  if bytes<=0 || bytes>507 || gui-protected-record(token)==0{return 0;}
+  let i=0;while i<bytes{if load8(source+i)>=128{return 0;}i+=1;}
+  let offset=0;
+  while offset<bytes{
+    let count=bytes - offset;if count>15{count=15;}
+    let first=count;if offset+count==bytes{first|=128;}
+    let last=0;let index=0;
+    while index<count{
+      let byte=load8(source+offset+index);
+      if index<7{first|=byte<<((index+1)*8);}else{last|=byte<<((index - 7)*8);}index+=1;
+    }
+    if terminal-view-send(token,first,last,0)!=1{return 0;}offset+=count;
+  }
+  return 1;
+}
+fn terminal-view-close(token:Int)->Int{
+  return terminal-view-send(token,0,0,1);
+}

@@ -1,0 +1,46 @@
+package space.terminal
+import "terminal-screen.in"
+import "terminal-font.in"
+import "../protocol/gui-canvas.in"
+
+var terminal-palette:[Int]=[0x131822,0xd56b78,0x8ac79a,0xd4bc83,0x88b5ff,0xba9cd9,0x87c7cc,0xd6dce7,0x596474,0xef8f9a,0xa3dfae,0xf2d59a,0xa7caff,0xd4b9f0,0xa6e2e5,0xf3f5f8]
+fn terminal-paint-blend(fg:Int,bg:Int,alpha:Int)->Int{
+  let r=(((fg>>16)&255)*alpha+((bg>>16)&255)*(255 - alpha))/255;
+  let g=(((fg>>8)&255)*alpha+((bg>>8)&255)*(255 - alpha))/255;
+  let b=((fg&255)*alpha+(bg&255)*(255 - alpha))/255;
+  return 0xff000000|(r<<16)|(g<<8)|b;
+}
+// Destination is the client's granted canvas. Fixed initial geometry; neither
+// terminal font metrics nor a foreign process determine shell decorations.
+fn terminal-screen-paint(memory:Int,pixels:Int)->Int{
+  if load64(memory)!=TERMINAL-SCREEN-MAGIC{return -1;}
+  let y=0;
+  while y<384{
+    let x=0;while x<24{
+      store32(pixels+y*SCI-CANVAS-STRIDE+x*4,0xff131822);
+      store32(pixels+y*SCI-CANVAS-STRIDE+(744+x)*4,0xff131822);x+=1;
+    }
+    y+=1;
+  }
+  let row=0;
+  while row<24{
+    let column=0;
+    while column<80{
+      let cell=terminal-screen-cell(memory,column,row);
+      let code=cell&255;let foreground=(cell>>8)&15;let background=(cell>>16)&15;let flags=(cell>>24)&3;
+      if (flags&1)!=0 && foreground<8{foreground+=8;}
+      if (flags&2)!=0{let temporary=foreground;foreground=background;background=temporary;}
+      let fg=terminal-palette[foreground];let bg=terminal-palette[background];
+      let gy=0;while gy<16{
+        let gx=0;while gx<9{
+          let alpha=terminal-font-coverage(code,gx,gy);
+          let color=terminal-paint-blend(fg,bg,alpha);
+          if load64(memory+184)==1 && column==load64(memory+16) && row==load64(memory+24) && gy>=14{color=0xff88b5ff;}
+          store32(pixels+(row*16+gy)*SCI-CANVAS-STRIDE+(24+column*9+gx)*4,color);gx+=1;
+        }gy+=1;
+      }
+      column+=1;
+    }row+=1;
+  }
+  return 0;
+}

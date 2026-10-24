@@ -1,0 +1,8 @@
+{
+  "scope": "Captured original BusyBox vi output for host/native screen comparisons only; replay is not application execution",
+  "sha256": "f783f242f1bac32c097348255990ced0fea0435086632197c3b06189efc32a1b",
+  "bytes": 1284,
+  "application_sha256": "22e06756b81d069041080e5582854a7cd0bbf63e50f3002703d2b9a1035d8c5e",
+  "space_commit": "2b6c7964768dbba576fcb9f63f0254d601a3e3cd",
+  "source_receipt": "/workspace/vi-keyboard-terminal-standard3/report.json"
+}
