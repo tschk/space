@@ -43,3 +43,35 @@ as a real dependency/loader target, and implement typed Windows messages/drawing
 and Darwin imports/framework objects over native surface and seat contracts.
 Native calculator/editor pixels, original fbv BMP output and hosted Rosemary or
 Wine execution do not complete the cross-OS FLTK acceptance rows.
+
+## Edit platform dependency audit
+
+The same pinned Microsoft Edit revision was inspected beyond its README:
+[`sys/unix.rs`](https://github.com/microsoft/edit/blob/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/unix.rs)
+and [`sys/windows.rs`](https://github.com/microsoft/edit/blob/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/windows.rs).
+Their measured hashes are in the reference receipt. These are observed source
+requirements, not a complete import inventory or a successful build/run.
+
+| Platform path | Observed terminal requirements | Current Space gap |
+|---|---|---|
+| Unix initialization | `sigaction(SIGWINCH)`, `isatty`, redirected-input `/dev/tty`, `fcntl(F_GETFL/F_SETFL)`, get/set terminal attributes, `VMIN=1`/`VTIME=0`, window geometry | An owned terminal endpoint, genuine mode storage and restoration, geometry and resize delivery |
+| Linux input | Finite waits use `ppoll` with a timespec; input toggles `O_NONBLOCK`, handles `EINTR`/`EAGAIN` and preserves split UTF-8 | The current syscall 7 profile handles only immediate regular files. It does not implement terminal readiness or syscall 271 `ppoll` |
+| Darwin input | Finite waits use `poll` in milliseconds; the same source uses target-specific libc terminal layouts/constants | Separate Darwin structure/flag/error translation plus the native terminal wait contract; Linux layouts are unsuitable |
+| Windows initialization | Dynamically resolves `ReadConsoleInputExW` through kernel32/kernelbase, sets input/output modes and UTF-8 code pages, registers control handler, queries `CONSOLE_SCREEN_BUFFER_INFOEX` | Console objects, typed import resolution and these APIs are absent from the finite protected PE profile |
+| Windows input/output | `WaitForSingleObject` on the input handle, `ReadConsoleInputExW` including nonblocking flag, UTF-16 key records and resize records, partial `WriteFile` output | A process-handle wait fixture does not establish console readiness. Native seat events need an owned console adapter and actual suspended-context wakeup |
+
+The scheduler integration also needs an explicit change: the current
+`linux-process-family-run` enters with interrupts masked and cancels a closed
+pipe/wait graph when no row is runnable. A terminal can receive future external
+seat events, so that branch cannot be reused as terminal deadlock detection.
+Return an owned suspended activation to the supervisor, service focused seat and
+timer events outside the guest dispatch, then revalidate its generation/grants
+before resuming its saved CPU context with the remaining IRQ budget. Closing
+the window must cancel that activation and release the queues and VM exactly
+once. This is the next implementation contract, not existing terminal behavior.
+
+The current `display-terminal.in` buffers shell commands and scrollback and
+`display-seat.in` consumes those commands itself. They must not be presented as
+PTYs or used to report an original TUI success. Acceptance requires real
+keyboard events reaching original vi, a rendered screen, exact saved/reopened
+file bytes, two independent sessions, resize/focus and teardown checks.

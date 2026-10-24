@@ -137,7 +137,7 @@ This is a bounded **single-client pixel proof**, not authenticated cross-client
 surface ownership, seat input, or an interactive SCI desktop window. Its live
 domain retains the page; reclamation is not introduced. The synchronous drain
 adds no scheduler/wakeup mechanism. The optional QEMU check exclusively uses
-the existing Linux-proof slot at physical `0x280000`, bounds the fixture below
+the fixture slot at physical `0x2f0000`, bounds the fixture below
 the 3MiB heap, checks both geometries and old-rectangle removal, and validates
 actual SCI-generated pixels. `check-spdp-page-frames.py` covers malformed frame
 and grant/adoption refusals under all compiler profiles.

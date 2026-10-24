@@ -53,5 +53,15 @@
     "url": "https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/appkit/src/event.rs",
     "bytes": 69362,
     "sha256": "1e9e2280f4977b832345a82fd1114226612b8703257d242fd32a8f693266f9a3"
+  },
+  "edit-unix.rs": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/unix.rs",
+    "bytes": 22183,
+    "sha256": "8e86bd4ff17da295f59342d5ce2f9ffa1906d8c10b9983f9c6d2969c5772e541"
+  },
+  "edit-windows.rs": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/windows.rs",
+    "bytes": 23028,
+    "sha256": "90b508e401b9363faf4c03ae2b228fbfe2eeb5c994db6d1256917fdaba622485"
   }
 }

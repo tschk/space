@@ -51,3 +51,16 @@ ordinary image and dedicated GUI gates. No CLI scenario, repeated cycle, abort,
 capacity or resource assertion is removed: the focused repeat passes all81
 scenarios, including70 repeated calc/checksum cycles. Its receipt records both
 the original standard image hash and the explicitly retained/excluded kinds.
+
+The follow-up address audit found a separate historical diagnostic outside the
+application matrix: `check-real-app-admission.py` still appended whole original
+applications at the old low fixture address. It now uses separate QEMU raw
+loaders at `0x08000000` for the exact original bytes and `0x07ffffe0` for its
+32-byte descriptor, with independent kernel/heap, acquisition and RAM guards.
+No original image header, preferred address or validator rule is changed.
+`/workspace/legacy-admission-relocated/report.json` records two boots each for
+the pinned Linux, Darwin and Windows jq artifacts: all six validator calls
+refuse, all three applications are **blocked**, and there are zero test errors
+or foreign application entries. Its expected exit status is 1. This diagnostic
+only measures the old trusted in-place validators; it says nothing about the
+newer protected personality execution profiles, where original Linux jq runs.

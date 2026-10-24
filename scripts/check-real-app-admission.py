@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Probe pinned real ELF/Mach-O/PE binaries with Space's actual QEMU loaders.
 
-This measures admission, not application execution. Refused applications are
+This measures legacy trusted in-place admission, not protected personality
+support or application execution. Refused applications are
 reported blocked and the command returns 1. Foreign payloads are never invoked
 by the trusted CPL0 fixture runner. A native host reference is labeled separately.
 """
@@ -18,7 +19,7 @@ import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = 0x280000
+BASE = 0x08000000
 DESCRIPTOR = BASE - 32
 
 
@@ -37,7 +38,7 @@ def describe(data, abi):
         return {'format': 'ELF64', 'machine': machine, 'type': elf_type,
                 'program_headers': count, 'load_segments': sum(s[0] == 1 for s in segments),
                 'interpreter': any(s[0] == 3 for s in segments),
-                'blockers': ['Current loader requires one fixed-address RX program header, no BSS or process startup.']}
+                'blockers': ['Legacy trusted in-place validator requires one fixed-address RX program header, no BSS or process startup.']}
     if abi == 'darwin':
         header = struct.unpack_from('<8I', data)
         assert header[0] == 0xfeedfacf and header[1] == 0x1000007, 'expected x86_64 Mach-O'
@@ -47,13 +48,13 @@ def describe(data, abi):
             assert size >= 8 and offset + size <= len(data)
             commands.append(hex(cmd)); offset += size
         return {'format': 'Mach-O64', 'load_commands': commands, 'flags': hex(header[6]),
-                'blockers': ['Current loader requires exactly one fixed-address RX segment and LC_MAIN; ordinary dyld/PIE/framework startup is unsupported.']}
+                'blockers': ['Legacy trusted in-place validator requires exactly one fixed-address RX segment and LC_MAIN; ordinary dyld/PIE/framework startup is unsupported.']}
     assert data[:2] == b'MZ', 'expected DOS/PE header'
     pe = struct.unpack_from('<I', data, 60)[0]
     signature, machine, sections = struct.unpack_from('<IHH', data, pe)
     assert signature == 0x4550 and machine == 0x8664, 'expected x86_64 PE'
     return {'format': 'PE32+', 'pe_header_offset': pe, 'sections': sections,
-            'blockers': ['Current loader requires one fixed-address section and a bounded KERNEL32 import list; general relocation/import/process startup is unsupported.']}
+            'blockers': ['Legacy trusted in-place validator requires one fixed-address section and a bounded KERNEL32 import list; general relocation/import/process startup is unsupported.']}
 
 
 def connect(path, process):
@@ -72,15 +73,18 @@ def connect(path, process):
 def probe(kernel, binary, abi, directory):
     data = binary.read_bytes()
     image = kernel.read_bytes()
-    descriptor_offset = DESCRIPTOR - 0x100000
-    assert len(image) <= descriptor_offset, 'probe kernel overlaps descriptor/payload'
-    # Preserve every input byte and its actual size. No fixture-sized truncation.
-    combined = image + bytes(descriptor_offset - len(image))
-    combined += struct.pack('<4Q', {'linux': 1, 'darwin': 2, 'windows': 3}[abi], len(data), 0, 0) + data
-    (directory / 'combined.bin').write_bytes(combined)
+    assert 0x100000 + len(image) <= 0x300000, 'probe kernel overlaps the native heap'
+    assert 0 < len(data) <= 32 * 1024 * 1024, 'payload exceeds the acquisition bound'
+    assert BASE + len(data) <= 256 * 1024 * 1024, 'payload exceeds QEMU RAM'
+    # Stage the complete original input separately, beyond both the growing
+    # kernel and its heap. Never append arbitrary applications across the heap.
+    descriptor = directory / 'descriptor.bin'
+    descriptor.write_bytes(struct.pack('<4Q', {'linux': 1, 'darwin': 2, 'windows': 3}[abi], len(data), 0, 0))
     path = directory / 'serial.sock'
-    command = ['qemu-system-x86_64', '-kernel', str(directory / 'combined.bin'),
+    command = ['qemu-system-x86_64', '-kernel', str(kernel),
                '-m', '256M', '-display', 'none', '-no-reboot',
+               '-device', f'loader,file={binary},addr={BASE:#x},force-raw=on',
+               '-device', f'loader,file={descriptor},addr={DESCRIPTOR:#x},force-raw=on',
                '-serial', f'unix:{path},server=on,wait=on']
     received = bytearray()
     with (directory / 'qemu.log').open('w') as log:
@@ -141,21 +145,23 @@ def main():
               'manifest_sha256': sha(a.manifest), 'compiler_sha256': sha(a.compiler),
               'space_commit': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
               'loader_sha256': {name: sha(ROOT / name) for name in ['components/posix.in', 'components/darwin-macho.in', 'components/windows-pe.in']},
+              'validator_scope': 'Legacy trusted in-place validators only; not protected personality coverage.',
+              'payload_physical_address': BASE, 'descriptor_physical_address': DESCRIPTOR,
               'apps': []}
     report_path = a.out / 'report.json'
     def save():
         report_path.write_text(json.dumps(report, indent=2) + '\n')
     source = a.out / 'probe.in'
-    source.write_text('package space.kernel\nimport ' + json.dumps(str(ROOT / 'kernel/kernel-root.in')) + '''
+    source.write_text(('package space.kernel\nimport ' + json.dumps(str(ROOT / 'kernel/kernel-root.in')) + '''
 fn real-app-probe-entry(mb-info: Int) -> Int {
   let port = com1()
   serial-init(port)
-  let kind = load64(0x27FFE0)
-  let size = load64(0x27FFE8)
+  let kind = load64(PROBE-DESCRIPTOR)
+  let size = load64(PROBE-DESCRIPTOR + 8)
   let rc = -99
-  if kind == 1 { rc = posix-elf-entry(0x280000, size) }
-  if kind == 2 { rc = darwin-macho-entry(0x280000, size) }
-  if kind == 3 { rc = win-pe-entry(0x280000, size) }
+  if kind == 1 { rc = posix-elf-entry(PROBE-PAYLOAD, size) }
+  if kind == 2 { rc = darwin-macho-entry(PROBE-PAYLOAD, size) }
+  if kind == 3 { rc = win-pe-entry(PROBE-PAYLOAD, size) }
   serial-write-cstr(port, "real-app: validator result ")
   serial-write-dec-wide(port, rc)
   serial-nl(port)
@@ -163,7 +169,7 @@ fn real-app-probe-entry(mb-info: Int) -> Int {
   serial-nl(port)
   return kernel-entry(mb-info)
 }
-''')
+''').replace('PROBE-DESCRIPTOR', str(DESCRIPTOR)).replace('PROBE-PAYLOAD', str(BASE)))
     subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'boot/multiboot.asm'), '-o', str(a.out / 'trampoline.bin')], check=True)
     kernel = a.out / 'kernel.bin'
     with (a.out / 'compile.log').open('w') as log:
@@ -190,7 +196,7 @@ fn real-app-probe-entry(mb-info: Int) -> Int {
             assert binary.stat().st_size == app['size_bytes'], 'binary size mismatch'
             row['binary_description'] = describe(binary.read_bytes(), app['personality'])
             if app['size_bytes'] > 0x200000:
-                row['binary_description']['blockers'].insert(0, 'Binary exceeds current 2 MiB fixture admission limit.')
+                row['binary_description']['blockers'].insert(0, 'Binary exceeds the legacy validator 2 MiB admission limit.')
             row['host_reference'] = {'status': 'not-run', 'reason': 'Host platform does not match this binary.'}
             if app['personality'] == 'linux' and platform.system() == 'Linux' and platform.machine() == 'x86_64':
                 binary.chmod(binary.stat().st_mode | 0o100)
@@ -211,7 +217,7 @@ fn real-app-probe-entry(mb-info: Int) -> Int {
             outcomes = {case['application_status'] for case in row['probes']}
             assert len(outcomes) == 1, 'loader admission changed between repeated boots'
             row['application_status'] = outcomes.pop()
-            print(f"{row['application_status'].upper()} {app['id']}: admission measured in two QEMU boots; no foreign execution", flush=True)
+            print(f"{row['application_status'].upper()} {app['id']}: legacy admission measured in two QEMU boots; no foreign execution", flush=True)
         except (OSError, AssertionError, ValueError, subprocess.SubprocessError) as error:
             row.update(application_status='test-error', error=str(error))
             print(f"ERROR {app['id']}: {error}", flush=True)

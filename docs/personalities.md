@@ -151,7 +151,7 @@ For user-space frameworks and the staged GUI path, see the
 ## Trusted Mach-O fixture path
 
 `darwinmacho` validates and invokes a boot-injected thin x86_64 Mach-O image at
-0x280000. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
+`0x2f0000`. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
 MH_NOUNDEFS, exactly one RX LC_SEGMENT_64 with no sections, and one LC_MAIN.
 The segment must already reside at its declared address, be entirely file-backed,
 and contain the entry after the commands. Command bounds and all 64-bit ranges
