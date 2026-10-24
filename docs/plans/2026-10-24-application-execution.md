@@ -7,6 +7,13 @@ This checkpoint does not close that goal or narrow its required outcomes.
 
 ## Latest integrated checkpoint
 
+The latest695-file implementation commit5b54e1e passes all144 gates at
+`/workspace/lab144/report.json`, with zero failed/blocked and source/compiler/
+application integrity passed. It includes all five stored-application gates,
+legacy/default GUI behavior, native isolation and the previous Windows/Darwin
+fixtures. These are scoped supported scenarios; the full goal remains OPEN.
+
+
 The next686-file commitad0a0be passes all139 gates at
 `/workspace/lab139-retry/report.json`, including source/compiler/application
 integrity and actual Windows Find RAM/NVMe checks. The initial interrupted139

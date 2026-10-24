@@ -128,3 +128,32 @@ Legacy original fbv CLI/counting regressions also pass44 upstream entries plus
 auxiliary/readlink negative controls fail the actual named fixture with42/99;
 the original named-source app failure remains available as its own glibc/GP
 receipt. The new API has no data/VM ledger or alternate syscall dispatcher.
+
+
+## Integrated checkpoint and additional family diagnostic
+
+`/workspace/lab144/report.json` passes144/144 gates from695 committed files at
+5b54e1e, with no failed/blocked gate or changed source/compiler/application input.
+It includes all five stored-application gates and the earlier native, Linux,
+Windows/Darwin fixture and desktop matrix. The exact frozen compiler remains
+0.9.325, SHA256d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75.
+
+The separate standard-root named-family diagnostic passes100 ordinary BusyBox,
+53 child/self-exec and47 shared-vfork activations, each with21 fault/authority/
+pointer/cleanup cycles. `/workspace/named-family-handoff.json` records their
+common frozen source and exact reversible valid-launch delegation selector.
+These diagnostic launches use the named profile with existing external ELF
+sources, not native-file observations; they are not extra integration gates.
+An initial adapter forced the new API onto invalid legacy calls and failed their
+error-priority model. That receipt remains retained; the corrected selector
+preserves invalid legacy calls and every original assertion while selecting the
+named profile only for admitted kernel launches. No production guard was weakened.
+
+The native loan interface relies on trusted callers returning each retained
+reference exactly once; it does not provide separate transferable loan tokens.
+Capture shares the filesystem's synchronous owner and excludes concurrent
+writers. Inode/geometry checks are not a filesystem transaction or content
+signature. Accepted bytes are immutable under this provider's contract, not
+hardware protection against other privileged code. A future public SCI storage
+service still needs its own isolated provider, namespace/object authority and
+transferable ownership contract. Those remain part of the full goal.

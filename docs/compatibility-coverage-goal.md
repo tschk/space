@@ -17,6 +17,14 @@ file does not create a scheduled or unattended background task.
 
 ## Active local execution checkpoint — 2026-10-24
 
+Latest complete checkpoint: **144/144 passed**, zero failed/blocked, from695
+committed files at5b54e1e in `/workspace/lab144/report.json`. Source, compiler
+and application integrity all pass. This includes the five stored-application
+gates, named executable identity, Windows Find and the full earlier Linux,
+Darwin/Windows fixture, native isolation and GUI/desktop matrix. It does not
+complete the full project goal or demonstrate original macOS/Windows apps.
+
+
 The latest completed whole-tree checkpoint passes all131 gates at
 `/workspace/lab131/report.json`, from657 committed files at f54a293, with source,
 compiler and application integrity passed. It includes shared vfork/xargs,

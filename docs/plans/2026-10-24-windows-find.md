@@ -140,3 +140,10 @@ integrity. It includes both Find gates. The first attempt stopped during UTC
 persistence without a final report; its completed gates and interruption receipt
 remain under `/workspace/lab139` and `/workspace/lab139-interruption.json`. No
 passing final status is assigned to that interrupted attempt.
+
+
+The subsequent695-file source5b54e1e also passes the complete144-gate matrix at
+`/workspace/lab144/report.json`, with integrity passed. Both Find gates remain
+green alongside native file observations, original Linux workloads and desktop
+regressions. This does not change the root-only Find contract or establish
+original Windows application execution.
