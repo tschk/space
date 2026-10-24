@@ -38,6 +38,14 @@ foreign output/file/stream fixtures. The first context repeat caught two old
 physical FPU-helper offsets and remains preserved separately from its passing
 corrected repeat.
 
+Space CI now pins the exact tested Inauguration 0.9.325 source revision
+`0a0a5a2baf8ebe105df73f93820a72048da164d1`, published for review in
+[compiler draft PR446](https://github.com/tschk/inauguration/pull/446).
+The previous 0.9.251 pin failed at the project-build step in run40091348021;
+its failed run remains separate. The 12 layout controls and 99 file-control
+model checks are also included in the revised CI recipe. The full application
+lab remains separate from that smaller artifact-free CI subset.
+
 The complete matrix must be rerun from a new frozen source; focused repairs do
 not turn the earlier151-gate failure into a passing run. Adding the shared layout
 gate makes the next cached-artifact matrix152 gates. This does not complete the
