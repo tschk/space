@@ -17,36 +17,40 @@ file does not create a scheduled or unattended background task.
 
 ## Active local execution checkpoint — 2026-10-24
 
-Latest complete passing checkpoint: **144/144 passed**, zero failed/blocked, from695
-committed files at5b54e1e in `/workspace/lab144/report.json`. Source, compiler
-and application integrity all pass. This includes the five stored-application
-gates, named executable identity, Windows Find and the full earlier Linux,
-Darwin/Windows fixture, native isolation and GUI/desktop matrix. It does not
-complete the full project goal or demonstrate original macOS/Windows apps.
+Latest complete passing checkpoint: **152/152 passed**, zero failed or blocked,
+from **720 committed source files at `c408746`**. The receipt is
+`/workspace/lab152/report.json`, SHA-256
+`8c5227678bbfa5aacb99dcb1ce74f6d5f638cc797c2f91de31faaea4407c4a70`.
+Source, compiler and original application integrity checks pass, with no changed
+inputs. The run finished on 2026-10-24 at 23:13 Australia/Melbourne.
 
-New focused work after that frozen checkpoint improves the desktop's actual
-typography and dark palette and executes original BusyBox vi EX edit/save plus
-separate-process reopen/edit/save. Both native roots pass44 original vi
-activations; each two-boot NVMe schema profile passes88, with exact persisted
-bytes and stable lifetime checks. Native regular-file readiness and inline
-resize are bounded prerequisites; focused keyboard/PTY/ANSI desktop integration
-remains OPEN. The three new private provider/font SCI imports are denied before
-entry in the bounded boot profile. See [vi scope](linux-vi-workload.md),
-[desktop evidence](plans/2026-10-24-desktop-fonts.md) and the
-[Wine/ReactOS/Rosemary/terminal review](terminal-gui-reference.md).
+This integrates the measured DejaVu font advances, terminal cells and baselines,
+dark desktop palette, exact font/framebuffer oracles and real desktop keyboard,
+pointer, focus, resize, close/reopen, persistence and performance checks. Actual
+[QEMU screenshots](screenshots/2026-10-24/README.md) show both the native shell
+and the protected native calculator/editor; those clients retain their own
+bitmap text and the editor's eight-ASCII-byte limit.
 
-Seven new gates are added to the main lab: file-control models, four vi root/
-persistence profiles, exact desktop font coverage and desktop visual behavior.
-The first717-file151-gate source (`34239e7`) finished136 passed/15 failed, with
-source/compiler/application integrity passed. The15 failures are pre-execution
-image-size/staging guards; their receipt remains `/workspace/lab151/report.json`.
+Original BusyBox vi now performs EX-command edit/save and separate-process
+reopen/edit/save. Each RAM root passes 44 original vi activations; each two-boot
+NVMe schema profile passes 88, with exact persisted bytes and stable lifetime
+checks. Native regular-file readiness and inline resize are bounded prerequisites.
+**Interactive keyboard/PTY/ANSI TUI acceptance remains OPEN**, as do original
+Windows/macOS applications and foreign GUI acceptance. The denied private SCI
+imports, own CPU fixtures and modeled provider controls remain separately counted.
+See [vi scope](linux-vi-workload.md), [desktop evidence](plans/2026-10-24-desktop-fonts.md)
+and the [Wine/ReactOS/Rosemary/terminal review](terminal-gui-reference.md).
+
+The first expanded 151-gate run at `34239e7` finished **136 passed / 15 failed**,
+with integrity passed. Its unchanged receipt remains `/workspace/lab151/report.json`.
 The [layout repair](plans/2026-10-24-fixture-boot-layout.md) preserves all exercised
-assertions and the unchanged heap boundary. Its additional host layout gate makes
-the next complete matrix152 gates. The measured font profile also fixes spacing,
-cell widths, baselines and UTF-8 caret/fallback geometry. A fresh frozen run is
-required; no152-gate result is claimed here. The144/144 receipt above retains its
-exact earlier scope. No percentage of general OS compatibility is inferred.
+assertions and the unchanged heap boundary; the fresh 152-gate run passes those
+previously failing gates. The earlier 144/144 result at `5b54e1e` retains its
+separate 695-file scope. No percentage of general OS compatibility is inferred.
 
+Later legacy admission diagnostics and CI-harness repairs have separate focused
+receipts. They do not rewrite the frozen integration source or turn rejected
+applications into execution coverage. The full project goal remains active.
 
 An earlier whole-tree checkpoint passes all131 gates at
 `/workspace/lab131/report.json`, from657 committed files at f54a293, with source,

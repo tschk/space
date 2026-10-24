@@ -38,7 +38,7 @@ foreign output/file/stream fixtures. The first context repeat caught two old
 physical FPU-helper offsets and remains preserved separately from its passing
 corrected repeat.
 
-Space CI now pins the exact tested Inauguration 0.9.325 source revision
+Space CI first advanced to the tested Inauguration 0.9.325 implementation
 `0a0a5a2baf8ebe105df73f93820a72048da164d1`, published for review in
 [compiler draft PR446](https://github.com/tschk/inauguration/pull/446).
 The previous 0.9.251 pin failed at the project-build step in run40091348021;
@@ -82,3 +82,24 @@ refuse, all three applications are **blocked**, and there are zero test errors
 or foreign application entries. Its expected exit status is 1. This diagnostic
 only measures the old trusted in-place validators; it says nothing about the
 newer protected personality execution profiles, where original Linux jq runs.
+
+
+The fresh frozen `c408746` source now passes **152/152**, including all previously
+failing layout gates, with source/compiler/application integrity passed. The
+720-file receipt is `/workspace/lab152/report.json`, SHA-256
+`8c5227678bbfa5aacb99dcb1ce74f6d5f638cc797c2f91de31faaea4407c4a70`.
+The failed 151-gate run remains unchanged. Later diagnostic and CI-harness
+repairs above have separate focused evidence.
+
+
+The final CI pin advances to `8530dd3a99cca7de38db50772ddcbde5d0b77745`
+after current-Clippy cleanup in that same compiler draft. Local extended unit
+checks pass 2,850 tests with one existing ignored test; all-target extended
+Clippy, formatting, cargo check, target matrix, `in update`, owned-native and
+default integration suites pass. Existing platform skips and 16 tolerated
+polyglot evaluation warnings remain explicit. The rebuilt release compiler is
+byte-identical to the frozen binary used for all 152 Space gates. Separate
+proof: `/workspace/compiler-ci-fix-proof.json`. Hosted Space run40092713741 passes
+both build/test and website jobs at Space source `23eb877`, before the final
+compiler-pin/documentation/screenshot commit. Later CI runs retain their own
+source scope.

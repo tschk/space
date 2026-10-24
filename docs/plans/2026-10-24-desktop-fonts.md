@@ -13,7 +13,7 @@ bounded encoding are in [the font directory](../../assets/fonts/desktop/README.m
 `font-desktop-atlas.in` owns static encoded masks; `font-desktop-render.in` adapts
 the 24-pixel masks to existing clipping/pitch/offset rules. Existing 16-pixel
 blending is reused. Missing glyphs retain the existing fallback policy. Only
-ASCII is covered; spacing, shaping, richer editor content and integrated
+ASCII is covered; complex shaping, richer editor content and integrated
 concurrent foreign windows remain open.
 
 The first two standard-image builds correctly refused the larger generated
@@ -52,18 +52,25 @@ integration receipt or complete the [full goal](../compatibility-coverage-goal.m
 
 The later measured profile removes the old bitmap grid's excessive tracking.
 UI advances come from the same pinned FreeType font used for coverage; terminal
-cells are10 pixels at2x and15 pixels at3x, with13/19-pixel baselines. Caret
+cells are 10 pixels at 2x and 15 pixels at 3x, with 13/19-pixel baselines. Caret
 measurement, hit testing and drawing use the same profile. Missing-glyph boxes
 fit inside a terminal cell, including UTF-8 fallback at both scales. The terminal
 caret is narrower. The profile is enabled during framebuffer initialization
 before text-cache invalidation; there is no public live font-provider switch.
 The controlled legacy bitmap model and protected clients keep their old metrics.
 
-`/workspace/desktop-metrics-pixels3/report.json` checks380 glyph/scale/face advance
+`/workspace/desktop-metrics-pixels3/report.json` checks 380 glyph/scale/face advance
 cases through both raw and cached lookup, full-frame pixels, native baseline and
 UTF-8 caret/hit/fallback behavior at both scales. The ordinary launcher, output
 mode/scale, exact title/fetch pixel and protected default GUI checks also pass.
-`/workspace/desktop-metrics-damage1` passes250 fps against the same30-fps bound;
+`/workspace/desktop-metrics-damage1` passes 250 fps against the same 30-fps bound;
 this profile now renders the mature glyphs during stress rather than selecting
 the legacy bitmap shortcut. Sources and receipts remain separate from the first
 font checkpoint and the earlier151-gate source.
+
+
+The measured profile is now integrated in the separate frozen `c408746`
+152/152 passing application lab, with source/compiler/application integrity
+passed. [QEMU captures and provenance](../screenshots/2026-10-24/README.md) are
+checked into the draft for visual review. This result does not extend the older
+font or integration receipts or cover the protected clients' bitmap typography.

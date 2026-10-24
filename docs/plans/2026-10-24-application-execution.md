@@ -525,3 +525,25 @@ mapper/path/directory gates, six Linux migration/control gates and four original
 application corpora on the minimal root. It must run from a fresh committed
 checkout with its own manifest; no earlier lab receipt is widened by these
 focused results.
+
+
+## Complete 152-gate checkpoint
+
+The frozen source `c40874677336f08b1508a4a06956ef7c53da5f25` passes all
+152 gates from 720 committed inputs at `/workspace/lab152/report.json`, with
+source/compiler/application integrity passed and no changed inputs. The report
+SHA-256 is `8c5227678bbfa5aacb99dcb1ce74f6d5f638cc797c2f91de31faaea4407c4a70`.
+It completes at 23:13 Australia/Melbourne on 2026-10-24.
+
+The frozen source-built compiler binary SHA-256 is
+`d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75`.
+This checkpoint includes original vi EX edit/save/reopen on both RAM roots and
+both NVMe schemas, native file controls, measured mature desktop fonts and the
+prior protected execution, persistence, GUI and lifetime matrix. The earlier
+151-gate run remains 136 passed / 15 failed; its layout failures and their repair
+are [recorded separately](2026-10-24-fixture-boot-layout.md).
+
+[Actual screenshots](../screenshots/2026-10-24/README.md) include provenance and
+exact pixel-preserving PNG hashes. Interactive foreign TUI/GUI, original
+Windows/macOS apps and the remaining [full goal](../compatibility-coverage-goal.md)
+remain open. Later diagnostic and CI-harness checks retain their own scope.

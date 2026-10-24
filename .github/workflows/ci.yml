@@ -12,7 +12,7 @@ jobs:
     with:
       inauguration-path: inauguration
       # Inauguration 0.9.325: native execution, growing boot data and SCI layouts.
-      inauguration-ref: 0a0a5a2baf8ebe105df73f93820a72048da164d1
+      inauguration-ref: 8530dd3a99cca7de38db50772ddcbde5d0b77745
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot
