@@ -20,6 +20,13 @@ foreign terminals, ordinary desktop launch and the remaining Windows/macOS
 application rows are still required. The [terminal screen continuation](plans/2026-10-25-native-terminal-screen.md)
 records this finite slice and its next integration boundary.
 
+The later [interactive durability continuation](plans/2026-10-25-interactive-vi-durability.md)
+also passes three cold NVMe boots on both schemas. Installation is staged only
+once; later boots load the unchanged ELF from Space's filesystem, edit through
+real keyboard input and preserve exact saved text. Immutable observations make
+the final verification boot truly read-only. This is an integration cohort;
+ordinary product launch, resize and concurrent foreign terminals remain open.
+
 Current shipped behavior and local test
 results must be recorded separately from this destination. Work proceeds through
 reviewable implementation/test commits on the requested draft PR branch. This
@@ -34,13 +41,14 @@ These focused checks do not widen the historical 152-gate receipt below.
 
 ## Complete local execution checkpoint — 2026-10-25
 
-**161/161 passed**, zero failed or blocked, from766 committed source files at
-`3ac91e0`, with source/compiler/original-app integrity passing. Full receipt SHA256:
-`ca6e8b365eb89b9a2ec35ecd47ae5c05bc8878293416d43dc1059aa63fd9ad20`.
-The [execution record](plans/2026-10-25-application-execution.md) separates this
-complete frozen run from the later typed Darwin data and client-font changes.
-The latter have their own actual runtime/visual/lifetime/persistence checks.
-The expanded163-gate definition has not been run as one complete new matrix.
+**163/163 passed**, zero failed or blocked, from782 committed source files at
+`8f70aaf`, with source/compiler/original-app integrity passing. Full receipt SHA256:
+`0f47089ddbd877f7bfe71b0f6c2c64c050d2fb4c06cb13068e55f5d56645b82b`.
+The [execution record](plans/2026-10-25-application-execution.md) includes typed
+Darwin data and client-font changes in this complete frozen run. The later two
+interactive cold-boot gates have separate passing receipts; current165-gate
+definitions have not been run as one complete matrix. No runtime changes were
+made after the frozen163-gate source. The earlier161/161 receipt is preserved.
 All broader application rows below remain required.
 
 ## Historical local execution checkpoint — 2026-10-24
@@ -382,7 +390,7 @@ must be reported separately from foreign compatibility.
 | Target/profile | Initial named upstream version | Required scenario and oracle |
 |---|---|---|
 | Native Space | Repository `calc`, `notes`, `files`, terminal and their SCI artifacts, pinned to the tested Space commit | Calculate a known result, edit/save/reopen exact text, list/create/read files, launch two independent terminal sessions, switch focus, close one and keep the other responsive. Reboot and verify saved bytes. |
-| Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Fixed-size real keyboard/ANSI/edit/save/reopen now passes; full interactive acceptance including resize, concurrency and reboot remains open. |
+| Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Fixed-size real keyboard/ANSI/edit/save/cold-reopen now passes both native filesystem schemas; resize, concurrency and ordinary product launch remain open. |
 | Darwin x86_64 Mach-O TUI | Microsoft Edit source commit `cb6de0a8966aecd01d19a3541dab1829d0e679ca`; native artifact acquisition/build still required | The same focused edit/save/reopen/resize/two-client workflow through actual Darwin startup, descriptors and termios. Source review only; zero Space application entries. |
 | Windows x86_64 PE TUI | Microsoft Edit at the same pinned source commit; native artifact acquisition/build still required | The same workflow through real Win32 console records/modes/output and file handles, with focused input, independent sessions and cleanup. Source review only; zero Space application entries. |
 | Linux ELF CLI | BusyBox 1.36.1, [upstream](https://busybox.net/downloads/); Lua 5.4.7, [upstream](https://www.lua.org/ftp/); SQLite 3.46.1, [upstream](https://www.sqlite.org/2024/) | BusyBox `echo`/`cat`/`wc` and shell pipeline operate on known files with exact stdout/status; Lua computes and reads/writes a file; SQLite creates a database, commits/query rows and reopens it after restart. |

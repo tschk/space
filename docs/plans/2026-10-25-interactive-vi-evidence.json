@@ -1,0 +1,33 @@
+{
+  "goal_status": "OPEN",
+  "scope": "Interactive original vi integration over existing runtime providers; independent of the frozen163-gate run",
+  "checks": [
+    {
+      "name": "schema1",
+      "source_commit": "4b170b6e2060e0db9859b1a6c369d166fa651aac",
+      "receipt": "/workspace/vi-durable-harness-final/report.json",
+      "sha256": "4d132a7cf9ebbd42cc9fc60b8ef2e0151bfabbb7fca47d3af474fe5b9326e0a8",
+      "original_application_entries": 2,
+      "cold_boots": 3,
+      "keyboard_events": 38,
+      "pixels_per_capture": 294912,
+      "readonly_disk_sha256": "6602bc6cdca9e9be699db27bb4374e6ec85c27f5954c0f18e8ba3391e7ffe90a"
+    },
+    {
+      "name": "schema2",
+      "source_commit": "82f42100e8bf3bda7511ac5af31a4e36e2aebc40",
+      "receipt": "/workspace/vi-durable-final-utc/report.json",
+      "sha256": "4a39953ce71530b354e3ab69fa54d563649cff474a0a7bc112096b2c3c756fd7",
+      "original_application_entries": 2,
+      "cold_boots": 3,
+      "keyboard_events": 38,
+      "pixels_per_capture": 294912,
+      "readonly_disk_sha256": "4327a7aa866a024beb34031512c9cc55dc17255c401d65201ec3e7a8768a5ce5"
+    }
+  ],
+  "failed_probes": [
+    "/workspace/vi-durable-nvme1/report.json",
+    "/workspace/vi-durable-nvme2/report.json",
+    "/workspace/vi-durable-nvme-utc1/report.json"
+  ]
+}
