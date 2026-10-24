@@ -119,6 +119,7 @@ fn text-set-ui-face(face: Int) -> Int {
 
 // Terminal cell metric invariants (independent of text-ui-face).
 fn text-term-cell-w() -> Int {
+  if desktop-fonts-active != 0 && (fb-font-scale == 2 || fb-font-scale == 3) { return 5 * fb-font-scale }
   return 8 * fb-font-scale + 2
 }
 
@@ -127,10 +128,12 @@ fn text-term-cell-h() -> Int {
 }
 
 fn text-term-baseline() -> Int {
+  if desktop-fonts-active != 0 && (fb-font-scale == 2 || fb-font-scale == 3) { return 13 * fb-font-scale / 2 }
   return 7 * fb-font-scale
 }
 
 fn text-face-baseline(face: Int, scale: Int) -> Int {
+  if desktop-fonts-active != 0 && face != FONT-FACE-TTF && (scale == 2 || scale == 3) { return 13 * scale / 2 }
   return 7 * scale
 }
 
@@ -142,6 +145,10 @@ fn text-is-supported-cp(cp: Int) -> Int {
 // Compute pixel advance for (face, codepoint, scale).
 fn text-glyph-advance-raw(face: Int, cp: Int, scale: Int) -> Int {
   if scale <= 0 { scale = 2 }
+  if desktop-fonts-active != 0 && face != FONT-FACE-TTF {
+    let advance = desktop-font-advance(face,cp,scale)
+    if advance > 0 { return advance }
+  }
   if face == FONT-FACE-TTF && ttf-font-valid != 0 {
     let px-size = 8 * scale
     let gid = ttf-map-char(cp)
@@ -298,6 +305,7 @@ fn text-draw-fallback-box(x: Int, y: Int, scale: Int, color: Int) -> void {
   if fb-ready == 0 { return }
   if scale <= 0 { scale = 2 }
   let bw = 6 * scale
+  if desktop-fonts-active != 0 && (scale == 2 || scale == 3) { bw = 5 * scale }
   let bh = 7 * scale
   fb-fill-rect(x, y, bw, scale, color)
   fb-fill-rect(x, y + bh - scale, bw, scale, color)

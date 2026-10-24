@@ -1,0 +1,67 @@
+package space.kernel
+// Test-only adapter: actual ELF/runtime calls and independent resource witnesses.
+var compiler-corpus-authority:Int=0
+var compiler-corpus-witness-domain:Int=0
+var compiler-corpus-witness-frame:Int=0
+var compiler-corpus-witness-flags:Int=0
+var compiler-corpus-heap:Int=0
+var compiler-corpus-free:Int=0
+var compiler-corpus-domains:Int=0
+var compiler-corpus-owned:Int=0
+var compiler-corpus-fs:Int=0
+var compiler-corpus-cap:Int=0
+var compiler-corpus-count:Int=0
+
+fn compiler-corpus-init()->Void {
+ compiler-corpus-witness-domain=domain-create-user()
+ compiler-corpus-witness-frame=frame-alloc()
+ if compiler-corpus-witness-domain<=0 || compiler-corpus-witness-frame<=0{panic("compiler corpus witness allocation");}
+ store64(compiler-corpus-witness-frame,0x0654321ABCDEF123)
+ domain-map-user-data(compiler-corpus-witness-domain,0x400000,compiler-corpus-witness-frame)
+ compiler-corpus-witness-flags=domain-page-flags(compiler-corpus-witness-domain,0x400000)
+ compiler-corpus-authority=cap-mint(root-realm,cap-memory()|cap-serial())
+ if compiler-corpus-authority<0{panic("compiler corpus capability");}
+ linux-process-trace=1
+ linux-process-budget-ticks=100
+}
+
+fn compiler-corpus-baseline()->Void {
+ compiler-corpus-heap=heap-next
+ compiler-corpus-free=linux-check-free-count()
+ compiler-corpus-domains=domain-count
+ compiler-corpus-owned=domain-user-owned
+ compiler-corpus-fs=rdmsr(0xC0000100)
+ compiler-corpus-cap=current-cap
+}
+
+fn compiler-corpus-case(port:Int,id:Int,image:Int,size:Int,expected:Int,measured:Int)->Void {
+ serial-write-cstr(port,"compiler-corpus: begin ");serial-write-dec-wide(port,compiler-corpus-count)
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);serial-nl(port)
+ let status=linux-process-run(image,size,"/inauguration-corpus","","",compiler-corpus-authority)
+ linux-check(expected,status)
+ linux-check(0,domain-current)
+ linux-check(0,domain-user-syscall-hook)
+ linux-check(0,user-budget-active)
+ linux-check(0,linux-process-active)
+ linux-check(0,linux-process-pages)
+ linux-check(0x0654321ABCDEF123,load64(compiler-corpus-witness-frame))
+ linux-check(compiler-corpus-witness-flags,domain-page-flags(compiler-corpus-witness-domain,0x400000))
+ if measured!=0 {
+  linux-check(compiler-corpus-heap,heap-next)
+  linux-check(compiler-corpus-free,linux-check-free-count())
+  linux-check(compiler-corpus-domains,domain-count)
+  linux-check(compiler-corpus-owned,domain-user-owned)
+  linux-check(compiler-corpus-fs,rdmsr(0xC0000100))
+  linux-check(compiler-corpus-cap,current-cap)
+ }
+ serial-write-cstr(port,"compiler-corpus: end ");serial-write-dec-wide(port,compiler-corpus-count)
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id)
+ serial-write-cstr(port," status ");serial-write-dec-wide(port,status);serial-nl(port)
+ compiler-corpus-count=compiler-corpus-count+1
+}
+
+fn compiler-corpus-finish(port:Int)->Void {
+ linux-check(0,domain-destroy-user(compiler-corpus-witness-domain))
+ frame-free(compiler-corpus-witness-frame)
+ serial-write-cstr(port,"compiler-corpus: passed activations ");serial-write-dec-wide(port,compiler-corpus-count);serial-nl(port)
+}

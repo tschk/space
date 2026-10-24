@@ -1,0 +1,85 @@
+package space.kernel
+import "../protocol/native-protected.in"
+import "sci-validate.in"
+import "../protocol/gui-canvas.in"
+
+fn native-protected-import-id(name: Int) -> Int {
+  if dyn-str-eq(name,"abort") != 0 { return 1 }
+  if dyn-str-eq(name,"malloc") != 0 { return 2 }
+  if dyn-str-eq(name,"calloc") != 0 { return 3 }
+  if dyn-str-eq(name,"realloc") != 0 { return 4 }
+  if dyn-str-eq(name,"free") != 0 { return 5 }
+  if dyn-str-eq(name,"serial-write-cstr") != 0 || dyn-str-eq(name,"api-write") != 0 { return 6 }
+  if dyn-str-eq(name,"serial-write-dec-wide") != 0 || dyn-str-eq(name,"api-write-dec") != 0 { return 7 }
+  if dyn-str-eq(name,"serial-write-hex") != 0 { return 8 }
+  if dyn-str-eq(name,"serial-nl") != 0 { return 9 }
+  if dyn-str-eq(name,"serial-putc") != 0 || dyn-str-eq(name,"serial-put") != 0 || dyn-str-eq(name,"api-putch") != 0 { return 10 }
+  if dyn-str-eq(name,"api-args") != 0 { return 11 }
+  if dyn-str-eq(name,"api-heap-base") != 0 { return 12 }
+  if dyn-str-eq(name,"chan-page-send-frame") != 0 { return 13 }
+  if dyn-str-eq(name,"chan-page-recv-frame") != 0 { return 14 }
+  if dyn-str-eq(name,"gui-note-read") != 0 { return 15 }
+  if dyn-str-eq(name,"gui-note-write") != 0 { return 16 }
+  return 0
+}
+fn native-protected-import-right(id: Int) -> Int {
+  if id >= 2 && id <= 5 { return cap-memory() }
+  if id >= 6 && id <= 10 { return cap-serial() }
+  if id == 12 { return cap-memory() }
+  if id == 13 || id == 14 { return cap-display() }
+  if id == 15 || id == 16 { return cap-storage() }
+  return 0
+}
+
+// Structural validation uses the independently trusted readable extent. This
+// profile never resolves a guest import through the ordinary kernel registry.
+fn native-protected-image-valid(image: Int, available: Int, grants: Int) -> Int {
+  if runtime-instance-image-valid(image,available) == 0 || load64(image) != SCI-MAGIC-V2 { return 0 }
+  let bytes = load64(image + 24)
+  if bytes != available || bytes <= 128 || bytes > 0x200000 || load64(image + 16) != NATIVE-PROTECTED-IMAGE + 64 { return 0 }
+  let required = load64(image + 8)
+  if (required & cap-memory()) == 0 || (required & (-1 ^ grants)) != 0 { return 0 }
+  let tail = image + bytes - NATIVE-PROTECTED-TRAILER
+  let original = load64(tail + 24)
+  let text = load64(tail + 32)
+  let data = load64(tail + 40)
+  let size = load64(tail + 48)
+  let profile = load64(tail + 16)
+  if load64(tail) != NATIVE-PROTECTED-MAGIC || load64(tail + 8) != NATIVE-PROTECTED-VERSION || load64(tail + 56) != 0 { return 0 }
+  let trailers = 64
+  if profile == NATIVE-PROTECTED-GUI-PAGED {
+    trailers = 128
+    if required != 20 && required != 52 { return 0 }
+    let canvas = tail - 64
+    if load64(canvas) != SCI-CANVAS-MAGIC || load64(canvas + 8) != SCI-CANVAS-VERSION || load64(canvas + 16) != SCI-CANVAS-WIDTH || load64(canvas + 24) != SCI-CANVAS-HEIGHT || load64(canvas + 32) != SCI-CANVAS-STRIDE || load64(canvas + 40) != SCI-CANVAS-BYTES || load64(canvas + 48) != SCI-CANVAS-FLAGS || load64(canvas + 56) != 0 { return 0 }
+  } else {
+    if (required & -6) != 0 { return 0 }
+  }
+  if original != bytes - trailers || text <= 0 || text > original - 64 { return 0 }
+  if profile == NATIVE-PROTECTED-IMMUTABLE {
+    if text != original - 64 || data != 0 || size != 0 { return 0 }
+  } else {
+    if (profile != NATIVE-PROTECTED-PAGED && profile != NATIVE-PROTECTED-GUI-PAGED) || data < ((64 + text + 4095) & -4096) || data > original || (data & 4095) != 0 || size < 0 || size > original - data { return 0 }
+    let bindings = load64(image + 40)
+    if load64(image + 32) <= 0 || (bindings & 4095) != 0 || bindings < ((data + size + 4095) & -4096) || bindings > original { return 0 }
+  }
+  let count = load64(image + 48)
+  if count > 128 { return 0 }
+  let table = image + load64(image + 56)
+  let i = 0
+  while i < count {
+    let record = table + i * 16
+    let id = native-protected-import-id(image + load64(record))
+    let site = load64(record + 8)
+    if id == 0 || (profile != NATIVE-PROTECTED-GUI-PAGED && id > 12) || (profile == NATIVE-PROTECTED-GUI-PAGED && id >= 6 && id <= 12) || (native-protected-import-right(id) & required) != native-protected-import-right(id) || site < 0 || site > text - 5 { return 0 }
+    i = i + 1
+  }
+  count = load64(image + 32)
+  table = image + load64(image + 40)
+  i = 0
+  while i < count {
+    if load64(table + i * 16 + 8) >= text { return 0 }
+    i = i + 1
+  }
+  return profile
+}

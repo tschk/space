@@ -1,0 +1,38 @@
+{
+  "application": "LuaBinaries Lua 5.2.4 MacOS10.11 Intel",
+  "profile": "inspection-only; not executable coverage",
+  "source_index": "https://luabinaries.sourceforge.net/download.html",
+  "archive_url": "https://sourceforge.net/projects/luabinaries/files/5.2.4/Tools%20Executables/lua-5.2.4_MacOS1011_bin.tar.gz/download",
+  "version_assurance": "Archive listing and embedded Lua 5.2.4 string; downloaded binaries not executed on host or Space. Build recipe, compiler provenance and exact source modifications are unknown.",
+  "license_reference": "https://www.lua.org/license.html",
+  "license_limit": "Lua is MIT licensed; archive has no bundled license/readme and its complete binary dependency licensing/build provenance has not been audited.",
+  "files": [
+    {
+      "name": "lua-5.2.4_MacOS1011_bin.tar.gz",
+      "size_bytes": 161645,
+      "sha256": "0da72cf3418667ca8eada3b450b9a1fb349d4eac916cab2ec39339b4032e2fce"
+    },
+    {
+      "name": "lua52",
+      "size_bytes": 199640,
+      "sha256": "da796afb263673da3fe03725ae546323379c37a7d346ecf94526aea8cf16dbae"
+    },
+    {
+      "name": "luac52",
+      "size_bytes": 137688,
+      "sha256": "938cd8c9e1db5f022a125092bc07bba6e6389a254fd2108481818278d518ac06"
+    }
+  ],
+  "full_goal_limit": "Intermediate Lua5.2.4 inspection does not replace the Lua5.4.7 goal or count as application execution.",
+  "inspection_dependencies": {
+    "lua52": [
+      "/usr/lib/libedit.3.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ],
+    "luac52": [
+      "/usr/lib/libedit.3.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ]
+  },
+  "inspection_dependency_limit": "Both executables declare libedit even when no libedit symbol appears in luac52 undefined imports; no dependency is silently omitted."
+}

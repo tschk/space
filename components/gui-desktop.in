@@ -1,0 +1,100 @@
+package space.kernel
+import "gui-protected-session-run.in"
+
+// Standard-image policy only. Protected artifact presence selects that profile
+// exclusively; a denied or incomplete protected cohort never falls back.
+var gui-desktop-layout: Int = 0
+
+fn gui-desktop-profile() -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if boot-image-find(BOOT-IMAGE-GUI-PROTECTED-CALC) != 0 || boot-image-find(BOOT-IMAGE-GUI-PROTECTED-EDITOR) != 0 { return 3 }
+  if boot-image-find(BOOT-IMAGE-GUI-CALC) != 0 && boot-image-find(BOOT-IMAGE-GUI-EDITOR) != 0 { return 1 }
+  return 0
+}
+
+fn gui-desktop-available() -> Int {
+  if domain-get-current() != 0 || fb-ready == 0 || gui-session-input-handle != 0 || boot-image-find(BOOT-IMAGE-GUI-SEAT) == 0 { return 0 }
+  let profile = gui-desktop-profile()
+  if profile == 3 {
+    if gui-protected-records != 0 && (load64(gui-protected-records) != 0 || load64(gui-protected-records + 96) != 0) { return 0 }
+    if gui-protected-launch-valid() != 1 || boot-image-find(BOOT-IMAGE-GUI-PROTECTED-CALC) == 0 || boot-image-find(BOOT-IMAGE-GUI-PROTECTED-EDITOR) == 0 { return 0 }
+    let calc = boot-image-find(BOOT-IMAGE-GUI-PROTECTED-CALC)
+    let editor = boot-image-find(BOOT-IMAGE-GUI-PROTECTED-EDITOR)
+    if native-protected-image-valid(calc, runtime-instance-image-boot-size(calc), 20) != 3 || native-protected-image-valid(editor, runtime-instance-image-boot-size(editor), 52) != 3 { return 0 }
+    return 1
+  }
+  if profile == 1 { return 1 }
+  return 0
+}
+
+fn gui-desktop-run(port: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  let profile = gui-desktop-profile()
+  if gui-desktop-available() != 1 {
+    serial-write-cstr(port, "gui: selected application profile unavailable; no fallback"); serial-nl(port)
+    return 0
+  }
+  let result = 0
+  if profile == 3 {
+    serial-write-cstr(port, "gui: protected CPL3 calculator/editor; trusted SCI input driver"); serial-nl(port)
+    result = gui-protected-session-run(port)
+  } else { result = gui-session-run(port) }
+  // Restore the desktop decoder at the device-owner boundary. Its previous
+  // partial packets and held-key state cannot survive another input instance.
+  let caps = ps2-kbd-caps
+  if mouse-init() != 0 { result = 0 }
+  if ps2-kbd-init() != 0 { result = 0 }
+  ps2-kbd-caps = caps
+  if result != 1 {
+    serial-write-cstr(port, "gui: selected application session failed; no fallback"); serial-nl(port)
+  }
+  return result
+}
+
+// Desktop action adapter: the bounded two-app session temporarily owns scanout.
+// Preserve the caller's output/window layout, rather than embedding app content
+// in the command bar or claiming concurrent native tiling integration.
+fn gui-desktop-command(port: Int) -> Int {
+  if domain-get-current() != 0 || comp-running != 1 || comp-count < 0 || comp-count > COMP-MAX-WINDOWS { return 0 }
+  if gui-desktop-layout == 0 { gui-desktop-layout = alloc(COMP-MAX-WINDOWS * 16) }
+  let count = comp-count
+  let width = fb-width
+  let height = fb-height
+  let numerator = out-scale-num
+  let denominator = out-scale-den
+  let x = mouse-x
+  let y = mouse-y
+  let i = 0
+  while i < count {
+    let base = comp-win-base(i)
+    let saved = gui-desktop-layout + i * 16
+    store32(saved, load32(base + 4)); store32(saved + 4, load32(base + 8))
+    store32(saved + 8, load32(base + 12)); store32(saved + 12, load32(base + 16))
+    i += 1
+  }
+  let result = gui-desktop-run(port)
+  if fb-width != width || fb-height != height || out-scale-num != numerator || out-scale-den != denominator {
+    if out-set-bga-mode(port, width, height, numerator, denominator) <= 0 { result = 0 }
+  }
+  if comp-count != count { return 0 }
+  i = 0
+  while i < count {
+    let base = comp-win-base(i)
+    let saved = gui-desktop-layout + i * 16
+    store32(base + 4, load32(saved)); store32(base + 8, load32(saved + 4))
+    store32(base + 12, load32(saved + 8)); store32(base + 16, load32(saved + 12))
+    store32(base + 20, load32(base + 20) | COMP-WIN-DIRTY)
+    i += 1
+  }
+  mouse-x = x
+  mouse-y = y
+  mouse-buttons = 0
+  mouse-cycle = 0
+  comp-drag-mode = -1
+  comp-cur-drawn = 0
+  comp-bg-drawn = 0
+  comp-full-redraw = 1
+  comp-dmg-full()
+  serial-write-cstr(port, "gui: desktop output/layout/input restored"); serial-nl(port)
+  return result
+}

@@ -79,3 +79,26 @@ Floating restore, scrolling columns, new independent terminal sessions, browser
 launch and the output/text architecture remain unfinished. Resolution and multiple
 typefaces now take priority over expanding this command set. See the current
 handoff for exact evidence, including the standalone SCI baseline compiler failure.
+
+## Pointer resize regression (2026-10-23)
+
+The seat adapter now tests the bottom-right 8×8 resize grip independently of
+the title bar. Previously the resize branch was nested inside the title-bar
+test, so ordinary windows could never enter it. Resizing retains the pointer's
+offset within the grip, avoiding an initial size jump, and preserves the existing
+minimum content dimensions. The command-bar lifecycle checker exercises actual
+click/drag handlers for resize, minimum bounds, content clicks and title-bar
+moves. The QEMU desktop launcher gate additionally shrinks and restores a tiled
+window through real PS/2 pointer events and checks the exposed/restored pixels.
+These are prototype window interactions, not foreign-client resize notifications
+or proof of an isolated GUI application runtime.
+
+Fresh verification used source-built Inauguration `0.9.322` (`7d152155`):
+`check-commandbar.py --target jit` passed 39 checks over default/lean/harden;
+a baseline-handler control failed the new resize case as expected. The complete
+`check-desktop-launcher.py` QEMU gate passed, including real pointer resize,
+restoration, keyboard/pointer command selection, focus, minimize/restore, terminal
+input and Escape. The default command-bar native+JIT gate retains its assertions
+and fails on this Linux host because native writable globals require the macOS
+executable assembly path. Explicit target selection records narrower evidence;
+it does not mark that native baseline green.

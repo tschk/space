@@ -1,6 +1,6 @@
 ; Trusted read-only VFS exercise. Darwin includes this with its own header/ABI.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
 %ifdef FOREIGN_DARWIN
     dd 0xfeedfacf, 0x01000007, 3, 2, 2, 96, 1, 0
@@ -14,6 +14,7 @@ image:
 %define OPEN 0x2000005
 %define READ 0x2000003
 %define CLOSE 0x2000006
+%define SEEK 0x20000C7
 %define WRITE 0x2000004
 %define EXIT 0x2000001
 %else
@@ -29,6 +30,7 @@ image:
 %define OPEN 2
 %define READ 0
 %define CLOSE 3
+%define SEEK 8
 %define WRITE 1
 %define EXIT 60
 %endif
@@ -99,12 +101,84 @@ entry:
     mov edi, 3
     syscall
     expect_error 9
+    mov eax, SEEK
+    mov edi, 3                    ; seeking cannot touch the host's descriptor
+    xor esi, esi
+    xor edx, edx
+    syscall
+    expect_error 9
     mov eax, OPEN
     lea rdi, [rel path]
     xor esi, esi
     syscall
     expect_ok
     mov rbx, rax
+    mov eax, SEEK
+    mov rdi, rbx
+    mov rsi, -1
+    xor edx, edx
+    syscall
+    expect_error 22
+    mov eax, SEEK
+    mov rdi, rbx
+    xor esi, esi
+    mov edx, 3                    ; unsupported whence preserves the offset
+    syscall
+    expect_error 22
+    mov eax, SEEK
+    mov rdi, rbx
+    xor esi, esi
+    mov edx, 1                    ; failed seeks did not mutate the offset
+    syscall
+    expect_ok
+    test rax, rax
+    jnz fail
+    mov eax, SEEK
+    mov rdi, rbx
+    mov rsi, -9
+    mov edx, 2                    ; SEEK_END: last nine bytes
+    syscall
+    expect_ok
+    cmp rax, 18
+    jne fail
+    mov eax, READ
+    mov rdi, rbx
+    lea rsi, [rel buffer]
+    mov edx, 9
+    syscall
+    expect_ok
+    cmp rax, 9
+    jne fail
+    lea rsi, [rel buffer]
+    lea rdi, [rel expected + 18]
+    mov ecx, 9
+    cld
+    repe cmpsb
+    jne fail
+    mov eax, SEEK
+    mov rdi, rbx
+    xor esi, esi
+    mov edx, 1                    ; SEEK_CUR observes read advancement
+    syscall
+    expect_ok
+    cmp rax, 27
+    jne fail
+    mov eax, SEEK
+    mov rdi, rbx
+    xor esi, esi
+    xor edx, edx                  ; rewind before the full read
+    syscall
+    expect_ok
+    test rax, rax
+    jnz fail
+    mov eax, READ
+    mov rdi, rbx
+    lea rsi, [rel buffer]
+    xor edx, edx                  ; no data or offset change on a zero-byte read
+    syscall
+    expect_ok
+    test rax, rax
+    jnz fail
     mov eax, READ
     mov rdi, rbx
     xor esi, esi
@@ -153,6 +227,12 @@ entry:
     jnz fail
     mov eax, CLOSE
     mov rdi, rbx
+    syscall
+    expect_error 9
+    mov eax, SEEK
+    mov rdi, rbx
+    xor esi, esi
+    xor edx, edx
     syscall
     expect_error 9
     mov eax, WRITE

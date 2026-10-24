@@ -15,3 +15,6 @@ s.out
 .amp/portals/
 .inauguration/
 vendor/
+
+# Local Python test-runner bytecode
+__pycache__/

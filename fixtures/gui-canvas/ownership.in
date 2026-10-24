@@ -1,0 +1,138 @@
+package space.fixture
+var canvas-free:Int=-1
+var canvas-heap:Int=0
+var canvas-caps:Int=0
+var canvas-domains:Int=0
+var canvas-objects:Int=0
+var canvas-exports:Int=0
+var canvas-fragmented:Int=0
+var canvas-entry-if:Int=0
+fn canvas-free-count()->Int{
+ let cursor=free-list;let count=0;
+ while cursor!=0{if cursor<0x100000 || cursor>=heap-end || (cursor&4095)!=0 || count>131072{panic("canvas free list");}count=count+1;cursor=load64(cursor);}
+ return count;
+}
+fn canvas-pte(domain:Int,virt:Int)->Int{
+ let e4=load64(load64(domain-table+domain*24)+((virt>>39)&511)*8);
+ if (e4&1)==0{return 0;}
+ let e3=load64((e4&PAGE-ADDRESS-MASK)+((virt>>30)&511)*8);
+ if (e3&1)==0 || (e3&128)!=0{return 0;}
+ let e2=load64((e3&PAGE-ADDRESS-MASK)+((virt>>21)&511)*8);
+ if (e2&1)==0 || (e2&128)!=0{return 0;}
+ return load64((e2&PAGE-ADDRESS-MASK)+((virt>>12)&511)*8);
+}
+fn canvas-check(handle:Int,round:Int)->void{
+ let owner=runtime-instance-record(handle,1);if owner==0{panic("canvas live owner");}
+ let state=load64(owner);let view=load64(state+40);let ledger=load64(state+112);let domain=load64(state);
+ if ledger==0 || load64(state+304)!=288 || runtime-instance-pixel-bytes(state)!=1179648 || view!=0x100000000+domain*0x40000000{panic("canvas ledger extent");}
+ let pde=runtime-instance-view-pde(view);
+ if pde!=load64(state+312) || (load64(pde)&PAGE-ADDRESS-MASK)!=load64(ledger+4088){panic("canvas table ownership");}
+ if load32(view+8)!=canvas-entry-if{panic("canvas caller IF not restored before entry");}
+ let page=0;let previous=0;
+ while page<288{
+  let physical=load64(ledger+page*8);
+  if page!=0 && physical - previous!=4096 && physical - previous!=-4096{canvas-fragmented=canvas-fragmented+1;}
+  previous=physical;
+  let guest=canvas-pte(domain,0x70001000+page*4096);
+  let server=canvas-pte(0,view+page*4096);
+  if (guest&PAGE-ADDRESS-MASK)!=physical || (guest&7)!=7 || (guest&PAGE-NX)==0 || (server&PAGE-ADDRESS-MASK)!=physical || (server&7)!=3 || (server&PAGE-NX)==0{panic("canvas page permissions or backing");}
+  if load32(view+page*4096)!=round*4096+page || load32(physical)!=round*4096+page || load32(view+page*4096+4092)!=0x11000000+round*4096+page{panic("canvas noncontiguous server view");}
+  page=page+1;
+ }
+}
+fn canvas-malformed(port:Int,image:Int)->void{
+ let tail=image+load64(image+24) - 64;
+ let crossing=alloc(8192);let copied=0;
+ while copied<64{store8(crossing+copied,load8(image+copied));store8(crossing+8192 - 64+copied,load8(tail+copied));copied=copied+1;}
+ store64(crossing+16,0xfffff040);store64(crossing+24,8192);
+ let before-heap=heap-next;let before-free=canvas-free-count();let before-caps=cap-count;let before-domains=domain-count;
+ let field=1;
+ while field<8{
+  let value=load64(tail+field*8);store64(tail+field*8,value+1);
+  if sci-load-retained-component(port,image,"malformed-canvas",20,0)!=-1{panic("canvas malformed profile accepted");}
+  store64(tail+field*8,value);field=field+1;
+ }
+ if sci-load-runtime-component(port,image,"sync-canvas",20,1,0)!=-1 || sci-load-runtime-component(port,image,"async-canvas",20,0,0)!=-1{panic("canvas wrong lifetime accepted");}
+ let required=load64(image+8);store64(image+8,3);
+ if sci-load-retained-component(port,image,"ungranted-canvas",3,0)!=-1{panic("canvas wrong authority accepted");}store64(image+8,required);
+ let entry=load64(image+16);store64(image+16,0x100000040);
+ if sci-load-retained-component(port,image,"high-image-canvas",20,0)!=-1{panic("canvas high image accepted");}
+ store64(image+16,entry);
+ if sci-load-retained-component(port,crossing,"crossing-image-canvas",20,0)!=-1{panic("canvas crossing image accepted");}
+ if heap-next!=before-heap || canvas-free-count()!=before-free || cap-count!=before-caps || domain-count!=before-domains || runtime-instance-live!=0 || runtime-instance-last-handle!=0{panic("canvas profile refusal allocated resources");}
+}
+fn canvas-run(port:Int)->void{
+ let image=boot-image-find(254);canvas-malformed(port,image);
+ canvas-entry-if=invoke1(load64(0x4198),0)&512;
+ let held=alloc(2048*8);let page=0;
+ while page<2048{let frame=frame-alloc();store64(held+page*8,frame);store64(frame,0x33110000+page);page=page+1;}
+ page=0;while page<2048{frame-free(load64(held+page*8));page=page+2;}
+ let cycle=0;
+ while cycle<70{
+  if sci-load-retained-component(port,image,"canvas-left",20,0)!=42{panic("canvas left initial");}
+  let left=runtime-instance-last-handle;let left-entry=sci-sync-entry;let left-info=sci-sync-info;
+  let left-state=load64(runtime-instance-record(left,1));let left-parent=load64(load64(left-state+112)+4080);
+  canvas-check(left,1);
+  if cycle==0 && canvas-fragmented==0{panic("canvas fixture failed to fragment backing");}
+  if sci-load-retained-component(port,image,"canvas-right",20,0)!=42{panic("canvas right initial");}
+  let right=runtime-instance-last-handle;let right-entry=sci-sync-entry;let right-info=sci-sync-info;
+  let right-state=load64(runtime-instance-record(right,1));let right-parent=load64(load64(right-state+112)+4080);
+  canvas-check(right,1);canvas-check(left,1);
+  if runtime-instance-resume(left,left-entry,left-info)!=42{panic("canvas left resume");}canvas-check(left,2);canvas-check(right,1);
+  if runtime-instance-resume(right,right-entry,right-info)!=42{panic("canvas right resume");}canvas-check(right,2);
+  if cycle%2==1{let handle=left;left=right;right=handle;let entry=left-entry;left-entry=right-entry;right-entry=entry;let info=left-info;left-info=right-info;right-info=info;}
+  if runtime-instance-retire(left)!=0 || runtime-instance-release(left)!=0{panic("canvas first release");}
+  if runtime-instance-resume(left,left-entry,left-info)!=-1{panic("canvas stale resume");}
+  if runtime-instance-resume(right,right-entry,right-info)!=42{panic("canvas survivor resume");}canvas-check(right,3);
+  if runtime-instance-retire(right)!=0 || runtime-instance-release(right)!=0 || load64(left-parent)!=0 || load64(right-parent)!=0{panic("canvas server view not unmapped");}
+  let frames=canvas-free-count();
+  if canvas-free==-1{canvas-free=frames;canvas-heap=heap-next;canvas-caps=cap-count;canvas-domains=domain-count;canvas-objects=obj-arena-next;canvas-exports=dyn-count;}
+  else{if frames!=canvas-free || heap-next!=canvas-heap || cap-count!=canvas-caps || domain-count!=canvas-domains || obj-arena-next!=canvas-objects || dyn-count!=canvas-exports{panic("canvas resources drift");}}
+  if runtime-instance-live!=0 || domain-current!=0 || cr3-read()!=load64(domain-table){panic("canvas leaked live state");}
+  serial-write-cstr(port,"canvas: cycle ");serial-write-dec-wide(port,cycle+1);serial-nl(port);cycle=cycle+1;
+ }
+ page=1;while page<2048{let frame=load64(held+page*8);if load64(frame)!=0x33110000+page{panic("canvas overwrote held frame");}frame-free(frame);page=page+2;}
+ serial-write-cstr(port,"canvas: noncontiguous pages exact server mappings lifetime malformed refusal and stable resources PASS");serial-nl(port);
+}
+
+
+fn canvas-oom-run(port:Int)->void{
+ let flags=invoke1(load64(0x4198),0);
+ let image=boot-image-find(254);
+ let slots=heap-end/4096;
+ let held=alloc(slots*8);
+ let saved-caps=alloc(cap-table-cap*16);
+ let saved-domains=alloc(MAX-DOMAINS*24);
+ sti();canvas-entry-if=512;
+ if sci-load-retained-component(port,image,"oom-peer",20,0)!=42{panic("canvas OOM peer startup");}
+ let peer=runtime-instance-last-handle;let peer-info=sci-sync-info;let peer-entry=sci-sync-entry;
+ canvas-check(peer,1);
+ let capacity=runtime-instance-frame-capacity();
+ let budget=runtime-instance-canvas-frame-budget(load64(image+24));
+ let available=capacity - budget + 1;
+ if available<=0 || available>slots{panic("canvas OOM capacity fixture");}
+ let i=0;while i<available{store64(held+i*8,frame-alloc());i=i+1;}
+ if runtime-instance-frame-capacity()!=budget - 1{panic("canvas OOM did not constrain declared budget");}
+ serial-write-cstr(port,"canvas: admission budget ");serial-write-dec-wide(port,budget);serial-write-cstr(port," capacity ");serial-write-dec-wide(port,runtime-instance-frame-capacity());serial-nl(port);
+ let before-free=free-list;let before-heap=heap-next;let before-caps=cap-count;let before-domains=domain-count;let before-objects=obj-arena-next;let before-clones=domain-clone-owned;let before-live=runtime-instance-live;let before-exports=dyn-count;
+ i=0;while i<cap-table-cap*16{store8(saved-caps+i,load8(cap-table-base+i));i=i+1;}
+ i=0;while i<MAX-DOMAINS*24{store8(saved-domains+i,load8(domain-table+i));i=i+1;}
+ if sci-load-retained-component(port,image,"oom-refused-if1",20,0)!=-1 || (invoke1(load64(0x4198),0)&512)!=512{panic("canvas OOM refusal or IF1 restoration");}
+ if runtime-instance-last-handle!=0 || sci-sync-handle!=0 || sci-sync-page!=0 || sci-sync-info!=0{panic("canvas OOM published state");}
+ if runtime-instance-resume(peer,peer-entry,peer-info)!=42{panic("canvas OOM lost peer");}canvas-check(peer,2);
+ cli();canvas-entry-if=0;
+ if sci-load-retained-component(port,image,"oom-refused-if0",20,0)!=-1 || (invoke1(load64(0x4198),0)&512)!=0{panic("canvas OOM refusal or IF0 restoration");}
+ if free-list!=before-free || heap-next!=before-heap || cap-count!=before-caps || domain-count!=before-domains || obj-arena-next!=before-objects || domain-clone-owned!=before-clones || runtime-instance-live!=before-live || dyn-count!=before-exports || runtime-instance-launch-guard!=0{panic("canvas OOM allocation side effect");}
+ i=0;while i<cap-table-cap*16{if load8(saved-caps+i)!=load8(cap-table-base+i){panic("canvas OOM capability changed");}i=i+1;}
+ i=0;while i<MAX-DOMAINS*24{if load8(saved-domains+i)!=load8(domain-table+i){panic("canvas OOM domain changed");}i=i+1;}
+ i=0;while i<available{frame-free(load64(held+i*8));i=i+1;}
+ sti();canvas-entry-if=512;
+ if sci-load-retained-component(port,image,"oom-recovered",20,0)!=42{panic("canvas OOM recovery");}
+ let recovered=runtime-instance-last-handle;let recovered-info=sci-sync-info;let recovered-entry=sci-sync-entry;
+ canvas-check(recovered,1);
+ if runtime-instance-resume(peer,peer-entry,peer-info)!=42{panic("canvas OOM surviving peer resume");}canvas-check(peer,3);
+ if runtime-instance-resume(recovered,recovered-entry,recovered-info)!=42{panic("canvas OOM recovered resume");}canvas-check(recovered,2);
+ if runtime-instance-retire(peer)!=0 || runtime-instance-release(peer)!=0 || runtime-instance-retire(recovered)!=0 || runtime-instance-release(recovered)!=0 || runtime-instance-live!=0{panic("canvas OOM final cleanup");}
+ if (flags&512)==0{cli();}
+ serial-write-cstr(port,"canvas: actual constrained memory budget refusal IF restoration peer recovery PASS");serial-nl(port);
+}

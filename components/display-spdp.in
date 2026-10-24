@@ -13,6 +13,8 @@ var dsp-surfaces: Int = 0
 var dsp-surface-count: Int = 0
 var dsp-pools: Int = 0
 var dsp-pool-sizes: Int = 0
+var dsp-strides: Int = 0
+var dsp-background: Int = 0x00000080
 var dsp-mouse-x: Int = 0
 var dsp-mouse-y: Int = 0
 var dsp-running: Int = 0
@@ -28,6 +30,7 @@ fn dsp-init() -> void {
   dsp-surfaces = alloc(DSP-MAX-SURFACES * dsp-surface-size())
   dsp-pools = alloc(DSP-MAX-POOLS * 8)
   dsp-pool-sizes = alloc(DSP-MAX-POOLS * 8)
+  dsp-strides = alloc(DSP-MAX-SURFACES * 8)
   dsp-msg = alloc(SPDP-MSG-SIZE)
   let i = 0
   while i < DSP-MAX-POOLS {
@@ -36,6 +39,8 @@ fn dsp-init() -> void {
     i = i + 1
   }
   dsp-surface-count = 0
+  i = 0
+  while i < DSP-MAX-SURFACES { store64(dsp-strides + i * 8, 0); i += 1 }
   dsp-mouse-x = 0
   dsp-mouse-y = 0
 }
@@ -52,6 +57,7 @@ fn dsp-create-surface() -> Int {
   store64(base + 24, 0)
   store64(base + 32, 0)
   store64(base + 40, 0)
+  store64(dsp-strides + id * 8, 0)
   dsp-surface-count = dsp-surface-count + 1
   return id
 }
@@ -75,7 +81,7 @@ fn dsp-composite() -> void {
   if fb-ready == 0 {
     return
   }
-  fb-fill-rect(0, 0, fb-width, fb-height, 0x00000080)
+  fb-fill-rect(0, 0, fb-width, fb-height, dsp-background)
 
   let i = 0
   while i < dsp-surface-count {
@@ -94,10 +100,11 @@ fn dsp-composite() -> void {
       if w > 0 && h > 0 && pool-id >= 0 && pool-id < DSP-MAX-POOLS {
         let pool = load64(dsp-pools + pool-id * 8)
         let pool-size = load64(dsp-pool-sizes + pool-id * 8)
-        let need = buf-off + w * h * 4
-        if pool != 0 && need <= pool-size {
+        let src-pitch = load64(dsp-strides + i * 8)
+        if src-pitch == 0 { src-pitch = w * 4 }
+        let need = dsp-buffer-end(pool-size, buf-off, w, h, src-pitch)
+        if pool != 0 && need >= 0 {
           let buf = pool + buf-off
-          let src-pitch = w * 4
           let row = 0
           while row < h {
             let dst-y = sy + row
@@ -126,6 +133,16 @@ fn dsp-composite() -> void {
   return
 }
 
+// Return exclusive end only when every sampled row fits the owned pool. The
+// quotient check avoids overflow even for malicious pitch/extent arguments.
+fn dsp-buffer-end(size: Int, offset: Int, width: Int, height: Int, stride: Int) -> Int {
+  if size <= 0 || offset < 0 || offset > size || width <= 0 || width > 65535 || height <= 0 || height > 65535 { return -1 }
+  let row = width * 4
+  if stride < row || (stride & 3) != 0 || row > size - offset { return -1 }
+  if height - 1 > (size - offset - row) / stride { return -1 }
+  return offset + (height - 1) * stride + row
+}
+
 fn dsp-clear-cursor() -> void {
   let x = dsp-prev-cx
   let y = dsp-prev-cy
@@ -140,7 +157,8 @@ fn dsp-draw-cursor() -> void {
   let cy = 8
   let x = dsp-mouse-x
   let y = dsp-mouse-y
-  dsp-clear-cursor()
+  // dsp-composite has already repainted the entire background and surfaces.
+  // Clearing the old cursor here would erase freshly rendered client content.
   dsp-prev-cx = x
   dsp-prev-cy = y
   let i = 0
@@ -295,6 +313,7 @@ fn dsp-surface-destroy(sid: Int) -> void {
   store64(base + 24, 0)
   store64(base + 32, 0)
   store64(base + 40, 0)
+  store64(dsp-strides + sid * 8, 0)
   return
 }
 
@@ -324,7 +343,16 @@ fn dsp-surface-attach(sid: Int, packed: Int) -> void {
   let base = dsp-surfaces + sid * dsp-surface-size()
   store64(base + 8, pool-id)
   store64(base + 16, offset)
+  store64(dsp-strides + sid * 8, 0)
   return
+}
+
+// Explicit server-owned buffer metadata. Legacy packed SPDP geometry keeps its
+// original interpretation and tightly packed stride unless this is called.
+fn dsp-surface-stride(sid: Int, stride: Int) -> Int {
+  if dsp-surface-valid(sid) == 0 || stride < 0 || stride > 16777216 || (stride & 3) != 0 { return 0 }
+  store64(dsp-strides + sid * 8, stride)
+  return 1
 }
 
 fn dsp-surface-geometry(sid: Int, packed: Int) -> void {

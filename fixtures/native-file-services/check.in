@@ -1,0 +1,216 @@
+package space.kernel
+
+fn file-service-check(port: Int, actual: Int, expected: Int, label: Int) -> void {
+  if actual != expected {
+    serial-write-cstr(port, "file-services: failed ")
+    serial-write-cstr(port, label)
+    serial-write-cstr(port, " got ")
+    serial-write-dec-wide(port, actual)
+    serial-write-cstr(port, " expected ")
+    serial-write-dec-wide(port, expected)
+    serial-nl(port)
+    panic("native file service assertion")
+  }
+}
+fn file-service-free-blocks() -> Int {
+  let n = 0
+  let b = load64(sf-super + SF-SB-DATA-START)
+  while b < load64(sf-super + SF-SB-TOTAL-BLOCKS) {
+    if sf-block-used(b) == 0 { n = n + 1 }
+    b = b + 1
+  }
+  return n
+}
+fn file-service-lease-proof(port: Int, mount: Int, inode: Int, other: Int) -> void {
+  file-service-check(port, fs-range-count, 0, "initial empty ledger")
+  file-service-check(port, fs-range-lease(1,mount,inode,100,100,0),0,"first shared")
+  let heap = heap-next
+  let free = file-service-free-blocks()
+  file-service-check(port, fs-range-lease(2,mount,inode,100,100,0),0,"overlapping shared")
+  file-service-check(port, fs-range-lease(3,mount,inode,120,1,1),-2,"exclusive conflicts with shared")
+  fs-range-release-owner(2)
+  file-service-check(port, fs-range-lease(1,mount,inode,120,20,1),0,"own exclusive upgrade splits shared")
+  file-service-check(port, fs-range-count,3,"upgrade produces three ranges")
+  file-service-check(port, fs-range-lease(2,mount,inode,125,1,0),-2,"upgraded interval conflicts")
+  file-service-check(port, fs-range-lease(2,mount,inode,100,10,0),0,"shared prefix preserved")
+  fs-range-release-owner(2)
+  file-service-check(port, fs-range-lease(1,mount,inode,125,5,2),0,"middle unlock splits exclusive")
+  file-service-check(port, fs-range-count,4,"unlock retains both exclusive tails")
+  file-service-check(port, fs-range-lease(2,mount,inode,125,5,1),0,"released middle available")
+  file-service-check(port, fs-range-lease(3,mount,inode,130,1,0),-2,"exclusive suffix retained")
+  fs-range-release-owner-file(1,mount,inode)
+  file-service-check(port, fs-range-count,1,"owner-file cleanup preserves other owner")
+  fs-range-release-owner(2)
+  file-service-check(port, fs-range-lease(1,mount,inode,1073741824,512,1),0,"SQLite-sized beyond EOF range")
+  file-service-check(port, file-service-free-blocks(),free,"beyond EOF lease allocates no storage")
+  file-service-check(port, fs-range-lease(1,mount,other,1073741824,512,1),0,"independent file identity")
+  file-service-check(port, fs-range-lease(2,mount,inode,1073741824,1,0),-2,"same actual file conflicts")
+  fs-range-release-owner(1)
+  file-service-check(port, fs-range-lease(1,mount,inode,0,0,0),0,"shared infinity")
+  file-service-check(port, fs-range-lease(2,mount,inode,9223372036854775807,0,1),-2,"infinite overlap near maximum")
+  file-service-check(port, fs-range-lease(1,mount,inode,9223372036854775807,0,1),0,"own infinite-tail upgrade")
+  file-service-check(port, fs-range-lease(2,mount,inode,9223372036854775806,1,0),0,"finite prefix retained")
+  file-service-check(port, fs-range-lease(2,mount,inode,9223372036854775807,0,0),-2,"infinite tail remains exclusive")
+  fs-range-release-owner(1)
+  fs-range-release-owner(2)
+  file-service-check(port, fs-range-lease(0,mount,inode,0,1,0),-1,"invalid owner")
+  file-service-check(port, fs-range-lease(1,mount+1,inode,0,1,0),-1,"wrong mount identity")
+  file-service-check(port, fs-range-lease(1,mount,1,0,1,0),-1,"directory is not a byte-range file")
+  file-service-check(port, fs-range-lease(1,mount,inode,-1,1,0),-1,"negative start")
+  file-service-check(port, fs-range-lease(1,mount,inode,0,-1,0),-1,"negative length")
+  file-service-check(port, fs-range-lease(1,mount,inode,9223372036854775807,1,0),-1,"endpoint overflow")
+  file-service-check(port, fs-range-lease(1,mount,inode,0,1,3),-1,"invalid kind")
+  file-service-check(port, fs-range-count,0,"invalid requests leave empty ledger")
+  file-service-check(port, fs-range-lease(1,mount,inode,0,10,1),0,"capacity seed")
+  let owner = 2
+  while owner <= 128 {
+    file-service-check(port, fs-range-lease(owner,mount,inode,100+owner*2,1,1),0,"fill bounded ledger")
+    owner = owner + 1
+  }
+  file-service-check(port, fs-range-count,128,"exact capacity")
+  file-service-check(port, fs-range-lease(129,mount,inode,10000,1,1),-3,"capacity refusal")
+  file-service-check(port, fs-range-lease(1,mount,inode,3,1,2),-3,"split capacity refusal is atomic")
+  file-service-check(port, fs-range-lease(129,mount,inode,3,1,0),-2,"failed split kept old ownership")
+  file-service-check(port, fs-range-lease(1,mount,inode,10,1,1),0,"merge succeeds at capacity")
+  file-service-check(port, fs-range-count,128,"merge consumes no slot")
+  owner = 1
+  while owner <= 128 { fs-range-release-owner(owner); owner = owner + 1 }
+  let cycle = 0
+  while cycle < 21 {
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741824,1,0),0,"repeat shared pending")
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741826,510,0),0,"repeat shared region")
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741824,1,2),0,"repeat release pending")
+    file-service-check(port, fs-range-lease(2,mount,inode,1073741826,510,0),0,"repeat second reader")
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741826,510,1),-2,"repeat upgrade conflict")
+    fs-range-release-owner-file(2,mount,inode)
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741826,510,1),0,"repeat exclusive upgrade")
+    file-service-check(port, fs-range-lease(1,mount,inode,1073741826,510,0),0,"repeat shared downgrade")
+    file-service-check(port, fs-range-lease(1,mount,inode,0,0,2),0,"repeat release all")
+    file-service-check(port, fs-range-count,0,"repeat cleanup")
+    file-service-check(port, heap-next,heap,"retained ledger heap")
+    file-service-check(port, file-service-free-blocks(),free,"lease storage allocation unchanged")
+    cycle = cycle + 1
+  }
+}
+fn file-service-flush-proof(port: Int) -> void {
+  let data = alloc(4096)
+  let i = 0
+  while i < 4096 { store8(storage-data-page + i, (i * 17 + 3) & 255); store8(data + i, load8(storage-data-page + i)); i = i + 1 }
+  let heap = heap-next
+  let caller = domain-current
+  let root = cr3-read()
+  let authority = current-cap
+  let tail = nvme-io-sq-tail
+  let flushes = nvme-flush-completions
+  file-service-check(port,nvme-flush(),0,"actual namespace FLUSH completion")
+  file-service-check(port,nvme-flush-completions,flushes+1,"actual matched successful FLUSH witness")
+  let sqe = nvme-iosq + tail * 64
+  file-service-check(port,load32(sqe)&255,NVME-CMD-FLUSH,"SQE FLUSH opcode")
+  file-service-check(port,load32(sqe+4),1,"SQE actual namespace1")
+  file-service-check(port,load64(sqe+24),0,"FLUSH no PRP1")
+  file-service-check(port,load64(sqe+32),0,"FLUSH no PRP2")
+  file-service-check(port,load64(sqe+40),0,"FLUSH no SLBA")
+  file-service-check(port,load64(sqe+48),0,"FLUSH no NLB")
+  i = 0
+  while i < 4096 { file-service-check(port,load8(storage-data-page+i),load8(data+i),"FLUSH no DMA data mutation"); i = i + 1 }
+  file-service-check(port,domain-current,caller,"FLUSH restores logical caller")
+  file-service-check(port,cr3-read(),root,"FLUSH restores actual CR3")
+  file-service-check(port,current-cap,authority,"FLUSH restores capability context")
+  file-service-check(port,load64(storage-mailbox+STORAGE-OP-OFF),0,"FLUSH mailbox completed")
+  let cycle = 0
+  while cycle < 130 { file-service-check(port,nvme-flush(),0,"FLUSH CQ phase wrap"); cycle = cycle + 1 }
+  file-service-check(port,nvme-flush-completions,flushes+131,"phasewrap successful FLUSH witness")
+  flushes = nvme-flush-completions
+  // Actual controller refusal, not a fabricated completion result.
+  file-service-flush-invalid-namespace = 1
+  let status = nvme-flush()
+  if status <= 0 { panic("invalid namespace did not produce hardware completion status") }
+  serial-write-cstr(port,"file-services: controller FLUSH refusal status "); serial-write-dec-wide(port,status); serial-nl(port)
+  file-service-check(port,fs-sync-path("lease.bin"),-1,"file sync propagates FLUSH hardware error")
+  file-service-check(port,fs-sync-path("/"),-1,"directory sync propagates FLUSH hardware error")
+  file-service-check(port,nvme-flush-completions,flushes,"hardware errors never counted successful")
+  file-service-check(port,load64(storage-mailbox+STORAGE-OP-OFF),0,"failed FLUSH mailbox completed")
+  file-service-check(port,domain-current,caller,"failed FLUSH logical caller restored")
+  file-service-check(port,cr3-read(),root,"failed FLUSH CR3 restored")
+  file-service-check(port,current-cap,authority,"failed FLUSH authority restored")
+  file-service-flush-invalid-namespace = 0
+  file-service-check(port,nvme-flush(),0,"good FLUSH after controller error")
+  file-service-check(port,nvme-flush-completions,flushes+1,"successful witness resumes after error")
+  // Backend and mailbox refusal must not publish a bogus command.
+  let saved = nvme-ready
+  nvme-ready = 0
+  file-service-check(port,nvme-flush(),-1,"missing backend refusal")
+  nvme-ready = saved
+  saved = storage-ready
+  storage-ready = 0
+  file-service-check(port,nvme-flush(),-1,"unready storage refusal")
+  storage-ready = saved
+  store64(storage-mailbox+STORAGE-OP-OFF,99)
+  file-service-check(port,nvme-flush(),-1,"busy mailbox bounded refusal")
+  file-service-check(port,load64(storage-mailbox+STORAGE-OP-OFF),99,"busy outstanding command preserved")
+  store64(storage-mailbox+STORAGE-OP-OFF,0)
+  file-service-check(port,nvme-submit(STORAGE-OP-FLUSH,1,0),-1,"invalid FLUSH mailbox arguments")
+  let error = nvme-read(4294967296,1,data)
+  if error <= 0 { panic("out of range read lacked controller completion error") }
+  i = 0
+  while i < 4096 { file-service-check(port,load8(data+i),(i*17+3)&255,"failed read preserves caller buffer"); i = i + 1 }
+  file-service-check(port,nvme-flush(),0,"FLUSH after read completion error")
+  file-service-check(port,domain-current,caller,"all errors preserve logical caller")
+  file-service-check(port,cr3-read(),root,"all errors preserve actual CR3")
+  file-service-check(port,current-cap,authority,"all errors preserve authority")
+  file-service-check(port,heap-next,heap,"FLUSH retained resources")
+}
+
+fn native-file-service-proof(port: Int, phase: Int) -> void {
+  if phase == -1 {
+    if sf-mem-disk == 0 { panic("file service RAM backend missing") }
+  } else {
+    file-service-check(port,nvme-ready,1,"actual NVMe backend")
+    file-service-check(port,sf-mem-disk,0,"NVMe no RAM fallback")
+  }
+  if phase == 1 { file-service-check(port,fs-format(),0,"owned NVMe format") }
+  let stat = alloc(64)
+  let other-stat = alloc(64)
+  let output = alloc(64)
+  if phase == -1 || phase == 1 {
+    file-service-check(port,fs-write-file("lease.bin","native lease content",20),0,"create lease file")
+    file-service-check(port,fs-write-file("other.bin","other",5),0,"create second identity")
+    file-service-check(port,fs-set-mode("lease.bin",384),0,"persist native permission0600")
+  }
+  file-service-check(port,fs-stat("lease.bin",stat),0,"real stat")
+  let mount = load64(stat + SF-ST-MOUNT)
+  let inode = load64(stat + SF-ST-INODE)
+  if mount <= 0 || inode <= 1 { panic("file identity is not actual mounted inode") }
+  file-service-check(port,inode,sf-lookup-path("lease.bin")+1,"identity derives from actual inode")
+  file-service-check(port,load32(stat+SF-ST-MODE),384,"permission0600 readback or remount")
+  file-service-check(port,fs-stat("/lease.bin",other-stat),0,"absolute alias stat")
+  file-service-check(port,load64(other-stat+SF-ST-INODE),inode,"aliases share inode identity")
+  file-service-check(port,load64(other-stat+SF-ST-MOUNT),mount,"aliases share mount identity")
+  file-service-check(port,fs-stat("other.bin",other-stat),0,"second actual stat")
+  let other = load64(other-stat + SF-ST-INODE)
+  if other == inode { panic("different objects share identity") }
+  file-service-check(port,load64(other-stat+SF-ST-MOUNT),mount,"same mounted filesystem")
+  file-service-check(port,fs-set-mode("lease.bin",512),-1,"reject unsupported permissions")
+  file-service-check(port,fs-set-mode("missing",384),-1,"missing mode target")
+  file-service-check(port,fs-stat("lease.bin",stat),0,"mode after refusal")
+  file-service-check(port,load32(stat+SF-ST-MODE),384,"refused mode unchanged")
+  let sync = 0
+  file-service-check(port,fs-sync-path("lease.bin"),sync,"honest file sync backend")
+  file-service-check(port,fs-sync-path("/"),sync,"honest directory sync backend")
+  file-service-check(port,fs-sync-path("missing"),-1,"missing sync target")
+  if phase != -1 { file-service-flush-proof(port) }
+  file-service-lease-proof(port,mount,inode,other)
+  file-service-check(port,fs-read-file("lease.bin",output,64),20,"lease never changes file size")
+  let i = 0
+  while i < 20 { file-service-check(port,load8(output+i),load8("native lease content"+i),"content unchanged"); i=i+1 }
+  file-service-check(port,fs-range-lease(1,mount,other,0,0,1),0,"lease object before destruction")
+  file-service-check(port,fs-delete("other.bin"),0,"destroy leased native object")
+  file-service-check(port,fs-range-count,0,"destruction revokes object leases")
+  file-service-check(port,fs-write-file("other.bin","other",5),0,"reuse freed inode")
+  file-service-check(port,fs-range-lease(2,mount,other,0,0,1),0,"reused object has no stale lease")
+  fs-range-release-owner(2)
+  file-service-check(port,fs-sync-path("lease.bin"),0,"final successful file barrier")
+  file-service-check(port,fs-sync-path("/"),0,"final successful directory barrier")
+  serial-write-cstr(port,"file-services: actual metadata mode sync leases PASS")
+  serial-nl(port)
+}

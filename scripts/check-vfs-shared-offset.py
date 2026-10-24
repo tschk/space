@@ -24,7 +24,7 @@ source = "\n".join(
     for line in (root / "components/darwin.in").read_text().splitlines()
     if line.startswith("const DARWIN-")
 )
-source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\nconst VFS-O-RDONLY=0;\nconst VFS-O-WRONLY=1;\nconst VFS-O-RDWR=2;\n"
+source += "\nconst VFS-MAX-FDS=16;\nconst VFS-O-CREAT=64;\nconst VFS-O-RDONLY=0;\nconst VFS-O-WRONLY=1;\nconst VFS-O-RDWR=2;\nconst VFS-FD-DISCARD=4;\n"
 source += "var heap:[Int]=[" + ",".join(["0"] * 32768) + "];\n"
 source += """
 var cursor:Int=8;
@@ -74,6 +74,12 @@ for name in ["vfs-stream-pair-valid", "vfs-stream-valid", "vfs-stream-release",
              "vfs-stream-read", "vfs-stream-write"]:
     source += extract("vfs.in", name) + "\n"
 for name in [
+    "vfs-discard-tagged",
+    "vfs-discard-valid",
+    "vfs-discard-read",
+    "vfs-discard-write",
+    "vfs-discard-seek",
+    "vfs-dup-file-into",
     "vfs-fd-table-alloc",
     "vfs-fd-clear",
     "vfs-fd-open-file",
@@ -82,6 +88,8 @@ for name in [
     "vfs-fd-alloc",
     "vfs-fd-valid",
     "vfs-open",
+    "vfs-open-borrowed-path",
+    "vfs-open-path",
     "vfs-close",
     "vfs-dup-file",
     "vfs-read",
@@ -96,8 +104,45 @@ for name in [
     "darwin-sys-fcntl",
 ]:
     source += extract("darwin.in", name) + "\n"
+# Check the trusted foreign helper's authority and ownership before VFS access.
+source += """
+var foreign-fds:Int=0;
+var foreign-storage-cap:Int=-1;
+var sf-mem-disk:Int=1;
+fn cap-storage()->Int{return 2;}
+fn cap-check(cap:Int,right:Int)->Int{if cap==71 && right==2{return 1;}return 0;}
+"""
+for name in ["foreign-fd-owned", "foreign-file-seek"]:
+    source += extract("foreign-exec.in", name) + "\n"
+source += """
+fn foreign-seek-controls()->Int{
+ vfs-fd-table-alloc();let fd=vfs-open(99,2);
+ foreign-fds=1<<fd;foreign-storage-cap=71;volume-ready=0;
+ if foreign-file-seek(fd,9,0)!=9{return 301;}
+ foreign-fds=0;
+ if foreign-file-seek(fd,22,0)!=-9 || vfs-fd-offset(fd)!=9{return 302;}
+ foreign-fds=1<<fd;foreign-storage-cap=-1;
+ if foreign-file-seek(fd,22,0)!=-13 || vfs-fd-offset(fd)!=9{return 303;}
+ foreign-storage-cap=71;volume-ready=1;
+ if foreign-file-seek(fd,22,0)!=-38 || vfs-fd-offset(fd)!=9{return 304;}
+ volume-ready=0;sf-mem-disk=0;
+ if foreign-file-seek(fd,22,0)!=-38 || vfs-fd-offset(fd)!=9{return 305;}
+ sf-mem-disk=1;
+ if foreign-file-seek(fd,-1,0)!=-22 || vfs-fd-offset(fd)!=9{return 306;}
+ if foreign-file-seek(fd,0,3)!=-22 || vfs-fd-offset(fd)!=9{return 307;}
+ if foreign-file-seek(fd,-9,2)!=91 || foreign-file-seek(fd,-1,1)!=90{return 308;}
+ if foreign-file-seek(3,9223372036854775807,0)!=9223372036854775807{return 309;}
+ if foreign-file-seek(3,1,1)!=-22 || vfs-fd-offset(fd)!=9223372036854775807{return 310;}
+ vfs-close(fd);
+ if foreign-file-seek(fd,0,0)!=-9{return 311;}
+ if foreign-file-seek(-1,0,0)!=-9 || foreign-file-seek(16,0,0)!=-9{return 312;}
+ foreign-fds=0;foreign-storage-cap=-1;volume-ready=1;
+ return 42;
+}
+"""
 source += """
 fn main()->Int{
+ let seek-result=foreign-seek-controls();if seek-result!=42{return seek-result;}
  let access-result=access-controls();if access-result!=42{return access-result;}
  vfs-fd-table-alloc();
  let original=vfs-open(99,2);let independent=vfs-open(99,2);
@@ -296,5 +341,5 @@ with tempfile.TemporaryDirectory(prefix="space-vfs-offset-") as directory:
         if not report.get("success") or report.get("eval_result") != {"Int": 42}:
             raise SystemExit(f"FAIL {profile}: {run.stdout}\n{run.stderr}")
         print(
-            f"PASS {profile}: shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, Windows duplicate lifetime/exhaustion, failures, access-mode denial/aliases/adapters"
+            f"PASS {profile}: foreign seek authority/refusal, shared I/O/seek offsets, independent opens, dup2, close/reuse, table restore, flags, Windows duplicate lifetime/exhaustion, failures, access-mode denial/aliases/adapters"
         )

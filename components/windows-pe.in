@@ -99,7 +99,7 @@ fn win-pe-reject(image: Int, off: Int, value: Int) -> Int {
 }
 
 fn win-pe-demo(port: Int) -> void {
-  let image = 0x280000
+  let image = 0x2f0000
   let entry = win-pe-entry(image, 4096)
   if entry != 512 {
     serial-write-cstr(port, "windows: PE fixture missing or invalid")

@@ -1,0 +1,3 @@
+// Synthetic negative control: ordinary user code cannot disable CPU interrupts.
+var entered:Int=0;
+fn main()->Int {entered=entered+1;cli();return entered;}

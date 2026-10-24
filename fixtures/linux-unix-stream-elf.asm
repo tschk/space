@@ -1,6 +1,6 @@
 ; Raw Linux x86_64 local-stream transport acceptance.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
     dd 0x464c457f, 0x00010102, 0, 0
     dw 2, 62

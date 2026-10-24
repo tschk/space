@@ -1,0 +1,599 @@
+{
+  "schema_version": 1,
+  "classification": "Unmodified official x86_64 Windows CLI artifacts; current protected runtime refuses both before allocation.",
+  "verification": "Primary upstream HTTPS release acquisition; hashes pinned after download, not independently published signature verification. Original bytes are unchanged; do not redistribute bundled executables without their upstream license obligations.",
+  "apps": [
+    {
+      "id": "sqlite-3.46.1-windows-x86_64-official",
+      "name": "sqlite3",
+      "version": "3.46.1",
+      "personality": "windows",
+      "filename": "sqlite3.exe",
+      "sha256": "0e56e76eed7efaaf74884cf7c5337ebc65bf1c22eef2f513f4c4b7c8e8dfbb07",
+      "size_bytes": 3773952,
+      "archive": {
+        "filename": "sqlite-tools-win-x64-3460100.zip",
+        "url": "https://www.sqlite.org/2024/sqlite-tools-win-x64-3460100.zip",
+        "sha256": "c86c0fe0b0b46cfaac40812a26c958bbf2378b6ef9d784d6354d9f5bd66e566b",
+        "member": "sqlite3.exe"
+      },
+      "license": "Public domain SQLite; official shell includes separately attributed components.",
+      "license_reference": "https://www.sqlite.org/copyright.html",
+      "modified": false,
+      "scenario": {
+        "args": [
+          "-version"
+        ],
+        "expected_exit_code": 0,
+        "executed_on_space": false,
+        "expected_stdout_prefix": "3.46.1 "
+      },
+      "dependency_evidence": {
+        "filename": "sqlite3.exe",
+        "sha256": "0e56e76eed7efaaf74884cf7c5337ebc65bf1c22eef2f513f4c4b7c8e8dfbb07",
+        "size_bytes": 3773952,
+        "pe_offset": 256,
+        "section_count": 9,
+        "preferred_base": "0x140000000",
+        "entry": "0x140003a8a",
+        "image_bytes": 3850240,
+        "headers_bytes": 1024,
+        "dll_characteristics": "0x8160",
+        "sections": [
+          {
+            "name": ".text",
+            "virtual": 3073420,
+            "rva": 4096,
+            "raw_bytes": 3073536,
+            "raw_offset": 1024,
+            "flags": "0x60000020"
+          },
+          {
+            "name": ".rdata",
+            "virtual": 499870,
+            "rva": 3080192,
+            "raw_bytes": 500224,
+            "raw_offset": 3074560,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".data",
+            "virtual": 91296,
+            "rva": 3584000,
+            "raw_bytes": 41984,
+            "raw_offset": 3574784,
+            "flags": "0xc0000040"
+          },
+          {
+            "name": ".pdata",
+            "virtual": 124680,
+            "rva": 3678208,
+            "raw_bytes": 124928,
+            "raw_offset": 3616768,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".idata",
+            "virtual": 6727,
+            "rva": 3805184,
+            "raw_bytes": 7168,
+            "raw_offset": 3741696,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".00cfg",
+            "virtual": 373,
+            "rva": 3813376,
+            "raw_bytes": 512,
+            "raw_offset": 3748864,
+            "flags": "0x40000040"
+          },
+          {
+            "name": "_RDATA",
+            "virtual": 863,
+            "rva": 3817472,
+            "raw_bytes": 1024,
+            "raw_offset": 3749376,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".rsrc",
+            "virtual": 4812,
+            "rva": 3821568,
+            "raw_bytes": 5120,
+            "raw_offset": 3750400,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".reloc",
+            "virtual": 18071,
+            "rva": 3829760,
+            "raw_bytes": 18432,
+            "raw_offset": 3755520,
+            "flags": "0x42000040"
+          }
+        ],
+        "directories": {
+          "1": {
+            "rva": 3806776,
+            "size": 40
+          },
+          "2": {
+            "rva": 3821568,
+            "size": 4812
+          },
+          "3": {
+            "rva": 3678208,
+            "size": 113076
+          },
+          "5": {
+            "rva": 3829760,
+            "size": 7256
+          },
+          "6": {
+            "rva": 3365552,
+            "size": 56
+          },
+          "10": {
+            "rva": 3365168,
+            "size": 320
+          },
+          "12": {
+            "rva": 3805184,
+            "size": 1592
+          }
+        },
+        "imports": {
+          "KERNEL32.dll": [
+            "GetStdHandle",
+            "GetEnvironmentVariableA",
+            "SetCurrentDirectoryW",
+            "CreateFileW",
+            "FindClose",
+            "FindFirstFileW",
+            "GetFileType",
+            "SetFileTime",
+            "DebugBreak",
+            "CloseHandle",
+            "GetCurrentProcess",
+            "GetCurrentProcessId",
+            "GetSystemTime",
+            "FreeLibrary",
+            "GetProcAddress",
+            "LoadLibraryA",
+            "SystemTimeToFileTime",
+            "MultiByteToWideChar",
+            "WideCharToMultiByte",
+            "GetConsoleMode",
+            "SetConsoleMode",
+            "ReadConsoleW",
+            "WriteConsoleW",
+            "SetConsoleCtrlHandler",
+            "GetConsoleScreenBufferInfo",
+            "SetConsoleTextAttribute",
+            "FlushFileBuffers",
+            "GetTickCount",
+            "QueryPerformanceCounter",
+            "MapViewOfFile",
+            "CreateFileMappingW",
+            "FormatMessageA",
+            "GetSystemTimeAsFileTime",
+            "GetProcessHeap",
+            "GetFileSize",
+            "LockFileEx",
+            "LocalFree",
+            "UnlockFile",
+            "HeapDestroy",
+            "HeapCompact",
+            "HeapAlloc",
+            "LoadLibraryW",
+            "GetSystemInfo",
+            "HeapReAlloc",
+            "DeleteFileW",
+            "DeleteFileA",
+            "WaitForSingleObjectEx",
+            "CreateFileA",
+            "FlushViewOfFile",
+            "OutputDebugStringW",
+            "GetFileAttributesExW",
+            "GetFileAttributesA",
+            "GetLastError",
+            "GetDiskFreeSpaceA",
+            "FormatMessageW",
+            "GetTempPathA",
+            "Sleep",
+            "HeapSize",
+            "HeapValidate",
+            "UnmapViewOfFile",
+            "GetFileAttributesW",
+            "WaitForSingleObject",
+            "CreateMutexW",
+            "GetTempPathW",
+            "UnlockFileEx",
+            "SetEndOfFile",
+            "GetFullPathNameA",
+            "SetFilePointer",
+            "LockFile",
+            "OutputDebugStringA",
+            "GetDiskFreeSpaceW",
+            "WriteFile",
+            "GetFullPathNameW",
+            "HeapFree",
+            "HeapCreate",
+            "ReadFile",
+            "AreFileApisANSI",
+            "RaiseException",
+            "InitializeCriticalSection",
+            "EnterCriticalSection",
+            "LeaveCriticalSection",
+            "TryEnterCriticalSection",
+            "DeleteCriticalSection",
+            "GetCurrentThreadId",
+            "RtlCaptureContext",
+            "RtlLookupFunctionEntry",
+            "RtlVirtualUnwind",
+            "UnhandledExceptionFilter",
+            "SetUnhandledExceptionFilter",
+            "TerminateProcess",
+            "IsProcessorFeaturePresent",
+            "IsDebuggerPresent",
+            "GetStartupInfoW",
+            "GetModuleHandleW",
+            "InitializeSListHead",
+            "GetStringTypeW",
+            "RtlUnwindEx",
+            "InterlockedPushEntrySList",
+            "InterlockedFlushSList",
+            "SetLastError",
+            "InitializeCriticalSectionAndSpinCount",
+            "TlsAlloc",
+            "TlsGetValue",
+            "TlsSetValue",
+            "TlsFree",
+            "LoadLibraryExW",
+            "EncodePointer",
+            "RtlPcToFileHeader",
+            "ExitProcess",
+            "GetModuleHandleExW",
+            "DuplicateHandle",
+            "CreateProcessW",
+            "GetDriveTypeW",
+            "GetFileInformationByHandle",
+            "PeekNamedPipe",
+            "SystemTimeToTzSpecificLocalTime",
+            "FileTimeToSystemTime",
+            "FindFirstFileExW",
+            "FindNextFileW",
+            "SetStdHandle",
+            "CreateThread",
+            "ExitThread",
+            "ResumeThread",
+            "FreeLibraryAndExitThread",
+            "GetModuleFileNameW",
+            "GetCommandLineA",
+            "GetCommandLineW",
+            "GetCurrentThread",
+            "GetExitCodeProcess",
+            "FlsAlloc",
+            "FlsGetValue",
+            "FlsSetValue",
+            "FlsFree",
+            "GetDateFormatW",
+            "GetTimeFormatW",
+            "CompareStringW",
+            "LCMapStringW",
+            "GetLocaleInfoW",
+            "IsValidLocale",
+            "GetUserDefaultLCID",
+            "EnumSystemLocalesW",
+            "GetConsoleOutputCP",
+            "SetFilePointerEx",
+            "GetFileSizeEx",
+            "CreatePipe",
+            "GetCurrentDirectoryW",
+            "SetFileAttributesW",
+            "CreateDirectoryW",
+            "GetTimeZoneInformation",
+            "IsValidCodePage",
+            "GetACP",
+            "GetOEMCP",
+            "GetCPInfo",
+            "GetEnvironmentStringsW",
+            "FreeEnvironmentStringsW",
+            "SetEnvironmentVariableW",
+            "RtlUnwind"
+          ]
+        },
+        "import_count": 157
+      },
+      "embedded_identity": [
+        "3.46.1",
+        "2024-08-13 09:16:08 c9c2ab54ba1f5f46360f1b4f35d849cd3f080e6fc2b6c60e91b16c63f69a1e33"
+      ]
+    },
+    {
+      "id": "7zip-24.09-windows-x86_64-standalone-official",
+      "name": "7za",
+      "version": "24.09",
+      "personality": "windows",
+      "filename": "7za.exe",
+      "sha256": "fbb3dadcc29bcbc5460484d858c5f33f99e5317f5f6cd8d9c83f4dd8c39b3e30",
+      "size_bytes": 1327616,
+      "archive": {
+        "filename": "7z2409-extra.7z",
+        "url": "https://github.com/ip7z/7zip/releases/download/24.09/7z2409-extra.7z",
+        "sha256": "43ae97658d0fc5b4eec4d409d85f7bed74a80945fd5704333a3599e0bd79b5fc",
+        "member": "x64/7za.exe",
+        "license_member": "License.txt",
+        "license_sha256": "d34a018bd862e4eb96d5995a06b7d922b32f37f3006a647b488e07dfbca18895",
+        "upstream_fallback_reason": "https://www.7-zip.org/a/7z2409-extra.7z returned404; official maintainer GitHub release supplied the pinned archive."
+      },
+      "license": "LGPL-2.1-or-later plus BSD-2-Clause/BSD-3-Clause portions; preserve complete included License.txt for binary redistribution.",
+      "license_reference": "https://github.com/ip7z/7zip/tree/24.09",
+      "modified": false,
+      "scenario": {
+        "args": [
+          "i"
+        ],
+        "expected_exit_code": 0,
+        "executed_on_space": false,
+        "expected_stdout_contains": "7-Zip (a) 24.09 (x64)"
+      },
+      "dependency_evidence": {
+        "filename": "7za.exe",
+        "sha256": "fbb3dadcc29bcbc5460484d858c5f33f99e5317f5f6cd8d9c83f4dd8c39b3e30",
+        "size_bytes": 1327616,
+        "pe_offset": 248,
+        "section_count": 6,
+        "preferred_base": "0x400000",
+        "entry": "0x4e8d00",
+        "image_bytes": 1388544,
+        "headers_bytes": 1024,
+        "dll_characteristics": "0x8160",
+        "sections": [
+          {
+            "name": ".text",
+            "virtual": 982654,
+            "rva": 4096,
+            "raw_bytes": 983040,
+            "raw_offset": 1024,
+            "flags": "0x60000020"
+          },
+          {
+            "name": ".rdata",
+            "virtual": 264928,
+            "rva": 987136,
+            "raw_bytes": 265216,
+            "raw_offset": 984064,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".data",
+            "virtual": 51856,
+            "rva": 1253376,
+            "raw_bytes": 2560,
+            "raw_offset": 1249280,
+            "flags": "0xc0000040"
+          },
+          {
+            "name": ".pdata",
+            "virtual": 64680,
+            "rva": 1306624,
+            "raw_bytes": 65024,
+            "raw_offset": 1251840,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".rsrc",
+            "virtual": 2000,
+            "rva": 1372160,
+            "raw_bytes": 2048,
+            "raw_offset": 1316864,
+            "flags": "0x40000040"
+          },
+          {
+            "name": ".reloc",
+            "virtual": 8320,
+            "rva": 1376256,
+            "raw_bytes": 8704,
+            "raw_offset": 1318912,
+            "flags": "0x42000040"
+          }
+        ],
+        "directories": {
+          "1": {
+            "rva": 1248284,
+            "size": 120
+          },
+          "2": {
+            "rva": 1372160,
+            "size": 2000
+          },
+          "3": {
+            "rva": 1306624,
+            "size": 64680
+          },
+          "5": {
+            "rva": 1376256,
+            "size": 4916
+          },
+          "12": {
+            "rva": 987136,
+            "size": 1184
+          }
+        },
+        "imports": {
+          "OLEAUT32.dll": [
+            {
+              "ordinal": 7
+            },
+            {
+              "ordinal": 9
+            },
+            {
+              "ordinal": 10
+            },
+            {
+              "ordinal": 2
+            },
+            {
+              "ordinal": 6
+            },
+            {
+              "ordinal": 4
+            }
+          ],
+          "USER32.dll": [
+            "CharUpperW",
+            "CharPrevExA"
+          ],
+          "ADVAPI32.dll": [
+            "OpenProcessToken",
+            "SystemFunction036",
+            "GetFileSecurityW",
+            "SetFileSecurityW",
+            "RegOpenKeyExW",
+            "AdjustTokenPrivileges",
+            "LookupPrivilegeValueW",
+            "RegQueryValueExW",
+            "RegCloseKey"
+          ],
+          "msvcrt.dll": [
+            "_exit",
+            "_c_exit",
+            "_XcptFilter",
+            "_onexit",
+            "__dllonexit",
+            "?terminate@@YAXXZ",
+            "??1type_info@@UEAA@XZ",
+            "__C_specific_handler",
+            "_beginthreadex",
+            "realloc",
+            "_purecall",
+            "_isatty",
+            "memset",
+            "strlen",
+            "_cexit",
+            "wcscmp",
+            "strcmp",
+            "memmove",
+            "fflush",
+            "fputc",
+            "fputs",
+            "_iob",
+            "fgetc",
+            "free",
+            "malloc",
+            "memcmp",
+            "__CxxFrameHandler",
+            "_CxxThrowException",
+            "memcpy",
+            "exit",
+            "__getmainargs",
+            "__initenv",
+            "_initterm",
+            "__setusermatherr",
+            "_commode",
+            "_fmode",
+            "__set_app_type",
+            "wcsstr"
+          ],
+          "KERNEL32.dll": [
+            "ResumeThread",
+            "SetThreadAffinityMask",
+            "CreateEventW",
+            "SetEvent",
+            "ResetEvent",
+            "CreateSemaphoreW",
+            "ReleaseSemaphore",
+            "InitializeCriticalSection",
+            "GetVersion",
+            "MoveFileW",
+            "WaitForSingleObject",
+            "GetLargePageMinimum",
+            "VirtualFree",
+            "VirtualAlloc",
+            "GetOEMCP",
+            "LocalFileTimeToFileTime",
+            "GetConsoleMode",
+            "SetConsoleMode",
+            "SetFileApisToOEM",
+            "GetCommandLineW",
+            "GetConsoleScreenBufferInfo",
+            "SetConsoleCtrlHandler",
+            "GetProcessTimes",
+            "QueryPerformanceFrequency",
+            "QueryPerformanceCounter",
+            "DeleteCriticalSection",
+            "SetProcessAffinityMask",
+            "OpenEventW",
+            "UnmapViewOfFile",
+            "MapViewOfFile",
+            "OpenFileMappingW",
+            "WaitForMultipleObjects",
+            "LeaveCriticalSection",
+            "EnterCriticalSection",
+            "GetSystemTimeAsFileTime",
+            "FileTimeToDosDateTime",
+            "DosDateTimeToFileTime",
+            "IsProcessorFeaturePresent",
+            "GlobalMemoryStatusEx",
+            "GetSystemInfo",
+            "GetProcessAffinityMask",
+            "FileTimeToLocalFileTime",
+            "FileTimeToSystemTime",
+            "CompareFileTime",
+            "GetModuleHandleW",
+            "GetProcAddress",
+            "GetCurrentProcess",
+            "GetDiskFreeSpaceExW",
+            "GetDiskFreeSpaceW",
+            "GetLastError",
+            "MultiByteToWideChar",
+            "WideCharToMultiByte",
+            "FreeLibrary",
+            "LoadLibraryW",
+            "GetModuleFileNameW",
+            "LocalFree",
+            "FormatMessageW",
+            "CloseHandle",
+            "SetFileTime",
+            "CreateFileW",
+            "SetFileAttributesW",
+            "RemoveDirectoryW",
+            "MoveFileWithProgressW",
+            "CreateHardLinkW",
+            "CreateDirectoryW",
+            "DeleteFileW",
+            "SetCurrentDirectoryW",
+            "GetCurrentDirectoryW",
+            "GetTempPathW",
+            "SetLastError",
+            "GetCurrentProcessId",
+            "GetTickCount",
+            "GetCurrentThreadId",
+            "GetFileInformationByHandle",
+            "GetStdHandle",
+            "FindClose",
+            "FindFirstFileW",
+            "FindNextFileW",
+            "FindFirstStreamW",
+            "FindNextStreamW",
+            "GetFileAttributesW",
+            "GetLogicalDriveStringsW",
+            "DeviceIoControl",
+            "GetFileSize",
+            "SetFilePointer",
+            "ReadFile",
+            "WriteFile",
+            "SetEndOfFile"
+          ]
+        },
+        "import_count": 143
+      },
+      "embedded_identity": [
+        "7-Zip (a) 24.09 (x64) : Copyright (c) 1999-2024 Igor Pavlov : 2024-11-29"
+      ]
+    }
+  ]
+}

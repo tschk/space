@@ -1,0 +1,239 @@
+package space.kernel
+
+// Kernel-owned bounded synchronous session: two retained SCI clients. Private
+// records are never mapped or passed to a guest. Tokens identify generations,
+// never raw pages, capabilities or ring selectors. This is CPL0 integration.
+var gui-records: Int = 0
+var gui-replies: Int = 0
+var gui-focused: Int = 0
+var gui-generation: Int = 0
+var gui-lifetime-epoch: Int = 0
+const GUI-RECORD-SIZE = 144
+const GUI-TOKEN = 104
+const GUI-ACTIVE = 112
+const GUI-SURFACE = 120
+const GUI-HANDLE = 128
+
+fn gui-init() -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if gui-records != 0 { return 0 }
+  gui-records = alloc(2 * GUI-RECORD-SIZE)
+  gui-replies = alloc(128)
+  let i = 0
+  while i < 2 * GUI-RECORD-SIZE { store64(gui-records + i, 0); i += 8 }
+  dsp-init()
+  return 1
+}
+
+// Internal record lookup, always guarded by kernel authority and exact token.
+fn gui-record(token: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 || token <= 0 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let record = gui-records + slot * GUI-RECORD-SIZE
+    if load64(record + GUI-ACTIVE) == 1 && load64(record + GUI-TOKEN) == token { return record }
+    slot += 1
+  }
+  return 0
+}
+
+fn gui-restore(token: Int) -> Int {
+  let record = gui-record(token)
+  if record == 0 { return 0 }
+  sci-sync-ring-unit = load64(record + 0)
+  sci-sync-page = load64(record + 8)
+  sci-sync-domain = load64(record + 16)
+  sci-sync-grants = load64(record + 24)
+  sci-sync-pixel-phys = load64(record + 32)
+  sci-sync-pixel-size = load64(record + 40)
+  sci-sync-pixel-pool = load64(record + 48)
+  sci-sync-entry = load64(record + 56)
+  sci-sync-code-start = load64(record + 64)
+  sci-sync-code-end = load64(record + 72)
+  sci-sync-info = load64(record + 80)
+  sci-sync-cap = load64(record + 88)
+  sci-sync-object = load64(record + 96)
+  sci-sync-handle = load64(record + GUI-HANDLE)
+  let owner = runtime-instance-record(sci-sync-handle, 1)
+  if owner == 0 || load64(owner + 24) != sci-sync-object || load64(owner + 32) != sci-sync-cap || load64(owner + 40) != sci-sync-domain { return 0 }
+  let state = load64(owner)
+  if load64(state + 32) != sci-sync-page || load64(state + 40) != sci-sync-pixel-phys || load64(state + 288) != sci-sync-entry || state + 128 != sci-sync-info { return 0 }
+  return sci-sync-provenance-valid(sci-sync-domain, 4)
+}
+
+// Kernel-only two-phase fence. No ring/pixel dereference follows release.
+fn gui-retire(record: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 { return 0 }
+  if record != gui-records && record != gui-records + GUI-RECORD-SIZE { return 0 }
+  let handle = load64(record + GUI-HANDLE)
+  let owner = runtime-instance-record(handle, 1)
+  if owner == 0 { owner = runtime-instance-record(handle, 2) }
+  if owner == 0 || load64(owner + 24) != load64(record + 96) || load64(owner + 32) != load64(record + 88) || load64(owner + 40) != load64(record + 16) { return 0 }
+  let state = load64(owner)
+  if load64(state + 32) != load64(record + 8) || load64(state + 40) != load64(record + 32) { return 0 }
+  if runtime-instance-retire(handle) != 0 { return 0 }
+  store64(record + GUI-ACTIVE, 0)
+  if gui-focused == load64(record + GUI-TOKEN) { gui-focused = 0 }
+  let page = load64(record + 8)
+  // Normal close was fully consumed; failed exchanges discard their owned
+  // pending replies after entry is fenced, including malformed headers.
+  store64(page, 0)
+  store64(page + 8, 0)
+  let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let sid = load64(record + GUI-SURFACE)
+  if sid >= 0 { dsp-surface-destroy(sid) }
+  dsp-shm-destroy-pool(slot)
+  dsp-composite()
+  if runtime-instance-release(handle) != 0 { return 0 }
+  store64(record + GUI-HANDLE, 0)
+  gui-lifetime-epoch += 1
+  return 1
+}
+
+// Validate the entire bounded response before mutating compositor state.
+// Each guest has only local surface0/pool0, translated to its owned server IDs.
+fn gui-reply(record: Int, initial: Int, closing: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 { return 0 }
+  if record != gui-records && record != gui-records + GUI-RECORD-SIZE { return 0 }
+  if initial < 0 || initial > 1 || closing < 0 || closing > 1 || (initial == 1 && closing == 1) { return 0 }
+  if load64(record + GUI-HANDLE) != sci-sync-handle || runtime-instance-record(sci-sync-handle, 1) == 0 { return 0 }
+  if load64(record + 8) != sci-sync-page || load64(record + 16) != sci-sync-domain || load64(record + 32) != sci-sync-pixel-phys || load64(record + 88) != sci-sync-cap { return 0 }
+  if sci-sync-provenance-valid(sci-sync-domain, 4) != 1 { return 0 }
+  let page = sci-sync-page
+  let count = 3
+  if initial == 1 { count = 4 }
+  if closing == 1 { count = 2 }
+  if chan-page-frame-valid(page) == 0 { return 0 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  if load64(page + 8) != (head + count * 4) % capacity { return 0 }
+  let i = 0
+  while i < count {
+    if chan-page-recv-frame(page, gui-replies + i * 32) != 1 { return 0 }
+    i += 1
+  }
+  i = 0
+  while i < count {
+    let message = gui-replies + i * 32
+    let object = SPDP-OBJ-SURFACE
+    let opcode = SPDP-SURFACE-ATTACH
+    let arg = 0
+    if closing == 1 {
+      opcode = SPDP-SURFACE-DESTROY
+      if i == 1 { object = SPDP-OBJ-SHM; opcode = SPDP-SHM-POOL-DESTROY }
+    } else {
+      let index = i - initial
+      if index == -1 { object = SPDP-OBJ-COMPOSITOR; opcode = SPDP-COMPOSITOR-CREATE-SURFACE }
+      if index == 1 { opcode = SPDP-SURFACE-DAMAGE; arg = (64 << 16) | 16 }
+      if index == 2 { opcode = SPDP-SURFACE-COMMIT }
+    }
+    if load64(message) != object || load64(message + 8) != opcode || load64(message + 16) != 0 || load64(message + 24) != arg { return 0 }
+    i += 1
+  }
+  let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let sid = load64(record + GUI-SURFACE)
+  if closing == 1 {
+    return gui-retire(record)
+  } else {
+    if initial == 1 {
+      sid = dsp-create-surface()
+      if sid < 0 { return 0 }
+      store64(record + GUI-SURFACE, sid)
+      store64(dsp-pools + slot * 8, sci-sync-pixel-phys)
+      store64(dsp-pool-sizes + slot * 8, 4096)
+    }
+    dsp-surface-attach(sid, slot << 32)
+    dsp-surface-geometry(sid, ((40 + slot * 120) << 48) | (80 << 32) | (64 << 16) | 16)
+    dsp-surface-commit(sid)
+  }
+  dsp-composite()
+  return 1
+}
+
+// Admit only the loader's current validated instance into an unused fixed slot.
+fn gui-admit(slot: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 || slot < 0 || slot > 1 { return 0 }
+  let record = gui-records + slot * GUI-RECORD-SIZE
+  if load64(record + GUI-TOKEN) != 0 { return 0 }
+  if sci-sync-pixel-size != 4096 { return 0 }
+  if runtime-instance-record(sci-sync-handle, 1) == 0 { return 0 }
+  if sci-sync-provenance-valid(sci-sync-domain, 4) == 0 || (sci-sync-grants != (cap-memory() | cap-display()) && sci-sync-grants != (cap-memory() | cap-display() | cap-storage())) { return 0 }
+  let other = gui-records + (1 - slot) * GUI-RECORD-SIZE
+  if load64(other + GUI-TOKEN) != 0 {
+    if load64(other + 8) == sci-sync-page || load64(other + 16) == sci-sync-domain || load64(other + 32) == sci-sync-pixel-phys { return 0 }
+  }
+  store64(record + 0, sci-sync-ring-unit)
+  store64(record + 8, sci-sync-page)
+  store64(record + 16, sci-sync-domain)
+  store64(record + 24, sci-sync-grants)
+  store64(record + 32, sci-sync-pixel-phys)
+  store64(record + 40, sci-sync-pixel-size)
+  store64(record + 48, sci-sync-pixel-pool)
+  store64(record + 56, sci-sync-entry)
+  store64(record + 64, sci-sync-code-start)
+  store64(record + 72, sci-sync-code-end)
+  store64(record + 80, sci-sync-info)
+  store64(record + 88, sci-sync-cap)
+  store64(record + 96, sci-sync-object)
+  store64(record + GUI-HANDLE, sci-sync-handle)
+  store64(record + GUI-SURFACE, -1)
+  if gui-reply(record, 1, 0) != 1 { gui-retire(record); return 0 }
+  gui-generation += 1
+  let token = gui-generation
+  store64(record + GUI-TOKEN, token)
+  store64(record + GUI-ACTIVE, 1)
+  if gui-focused == 0 { gui-focused = token }
+  return token
+}
+
+fn gui-key(token: Int, time: Int, code: Int) -> Int {
+  if token != gui-focused || code < 0 || code > 65535 || time < 0 { return 0 }
+  return gui-event(token, SPDP-SEAT-KEYBOARD-KEY, time, code)
+}
+
+fn gui-pointer(time: Int, x: Int, y: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 || time < 0 || y < 80 || y >= 96 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let left = 40 + slot * 120
+    let record = gui-records + slot * GUI-RECORD-SIZE
+    if x >= left && x < left + 64 && load64(record + GUI-ACTIVE) == 1 {
+      gui-focused = load64(record + GUI-TOKEN)
+      return gui-event(gui-focused, SPDP-SEAT-POINTER-BUTTON, time, 1)
+    }
+    slot += 1
+  }
+  return 0
+}
+
+fn gui-event(token: Int, opcode: Int, time: Int, code: Int) -> Int {
+  if domain-get-current() != 0 || token != gui-focused || time < 0 { return 0 }
+  if opcode != SPDP-SEAT-KEYBOARD-KEY && opcode != SPDP-SEAT-POINTER-BUTTON { return 0 }
+  if code < 0 || code > 65535 { return 0 }
+  if gui-restore(token) != 1 { return 0 }
+  let record = gui-record(token)
+  let page = sci-sync-page
+  if chan-page-frame-valid(page) == 0 || load64(page) != load64(page + 8) { return 0 }
+  let capacity = load64(page + 16)
+  let consumed = (load64(page) + 4) % capacity
+  if chan-page-send-frame(page, SPDP-OBJ-SEAT, opcode, time, spdp-seat-key(code, 1)) != 1 { return 0 }
+  if sci-sync-enter(sci-sync-domain, 0) != 42 { gui-retire(record); return 0 }
+  if load64(page + 16) != capacity || load64(page) != consumed { gui-retire(record); return 0 }
+  let closing = 0
+  if opcode == SPDP-SEAT-KEYBOARD-KEY && code == 27 { closing = 1 }
+  if gui-reply(record, 0, closing) != 1 { gui-retire(record); return 0 }
+  return 1
+}
+
+// Reuse bounded manager storage only after both exact instances were released.
+fn gui-reopen() -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if gui-records == 0 { return gui-init() }
+  if load64(gui-records + GUI-ACTIVE) != 0 || load64(gui-records + GUI-RECORD-SIZE + GUI-ACTIVE) != 0 { return 0 }
+  if load64(gui-records + GUI-HANDLE) != 0 || load64(gui-records + GUI-RECORD-SIZE + GUI-HANDLE) != 0 { return 0 }
+  let i = 0
+  while i < 2 * GUI-RECORD-SIZE { store64(gui-records + i, 0); i += 8 }
+  gui-focused = 0
+  dsp-surface-count = 0
+  return 1
+}

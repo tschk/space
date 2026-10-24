@@ -1,0 +1,37 @@
+package space.kernel
+
+// The image's byte structure and independently trusted readable extent must
+// already have passed runtime-instance-image-valid. Registry rows are owned by
+// the supervisor. This pass resolves every import without patching or mapping.
+fn runtime-instance-image-target(name: Int, index: Int, owned: Int) -> Int {
+  if index < 0 || index >= dyn-count { return -1 }
+  let target = load64(dyn-fn-tab + index * 8)
+  if owned != 0 {
+    if dyn-str-eq(name,"malloc") != 0 { target = runtime-instance-malloc }
+    if dyn-str-eq(name,"calloc") != 0 { target = runtime-instance-calloc }
+    if dyn-str-eq(name,"realloc") != 0 { target = runtime-instance-realloc }
+    if dyn-str-eq(name,"free") != 0 { target = runtime-instance-free }
+  }
+  return target
+}
+
+fn runtime-instance-image-bindings(image: Int, entry: Int, owned: Int) -> Int {
+  if load64(image) != SCI-MAGIC-V2 { return 1 }
+  if dyn-count < 0 || dyn-count > DYN-MAX-EXPORTS { return 0 }
+  let count = load64(image + SCI-V2-IMPORT-COUNT)
+  let table = image + load64(image + SCI-V2-IMPORT-TABLE)
+  let i = 0
+  while i < count {
+    let record = table + i * 16
+    let name = image + load64(record)
+    let site = load64(record + 8)
+    let target = runtime-instance-image-target(name,dyn-resolve-idx(name),owned)
+    // The validated image and entry fit below 4GiB. Reject negative target
+    // addresses before subtraction, so this difference cannot wrap Int64.
+    if target <= 0 { return 0 }
+    let delta = target - entry - site - 5
+    if delta < -2147483648 || delta > 2147483647 { return 0 }
+    i = i + 1
+  }
+  return 1
+}

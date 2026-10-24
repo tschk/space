@@ -1,0 +1,139 @@
+package space.fixture
+// Genuine stopped CPU clone: shared companion survives peer detach, then last
+// release retains quarantine until trusted page-table repair and recovery.
+fn lvfork-pde(domain:Int,address:Int)->Int {
+ let root=load64(domain-table+domain*24);
+ let pdpt=load64(root+((address>>39)&511)*8)&PAGE-ADDRESS-MASK;
+ let pd=load64(pdpt+((address>>30)&511)*8)&PAGE-ADDRESS-MASK;
+ return pd+((address>>21)&511)*8;
+}
+fn lvfork-peer-check()->void {
+ let repeat=0;
+ while repeat<4{
+  linux-process-state-reset();let row=linux-process-states;
+  let heap=heap-next;let free=lvm-free-count();let owned=domain-user-owned;let domains=domain-count;
+  lvm-check(0,linux-process-state-use-cache(row));
+  let token=linux-process-vm-create(lvm-authority);if token<=0{panic("vfork peer VM");}
+  lvm-check(0,linux-process-vm-use(token,0));
+  lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));
+  // mov eax,58; syscall; test rax,rax; jz child; exit42; child: exit43.
+  let code=linux-process-vm-buffer;
+  store64(code,0x48050F0000003AB8);store64(code+8,0x00003CB80C74C085);
+  store64(code+16,0x050F0000002ABF00);store64(code+24,0x002BBF0000003CB8);store64(code+32,0x0B0F050F0000);
+  lvm-check(0,linux-process-vm-populate(0x20001000,code,40));
+  let context=load64(row+LPS-USER-CONTEXT);
+  let binding=linux-process-vm-attach(context,0x20001000,0x20000FF0);if binding<=0{panic("vfork peer attach");}
+  linux-process-active=1;linux-process-stdout-open=1;linux-process-stderr-open=1;
+  lvm-check(0,linux-process-files-init(-1));linux-process-pipes-init();
+  let pid=linux-process-state-register(row,0,linux-process-domain,0);if pid<=0{panic("vfork peer PID");}
+  linux-process-current-record=row;linux-process-current-pid=pid;lvm-check(0,linux-process-state-save(row));
+  let hook=domain-user-syscall-hook;domain-user-syscall-hook=linux-process-dispatch;
+  lvm-check(USER-CONTEXT-SUSPEND,user-space-resume(binding,lvm-authority,10));
+  lvm-check(8,load64(row+LPS-PENDING));lvm-check(0,linux-process-state-save(row));store64(row+LPS-PENDING,0);
+  let child=linux-process-vfork-child(row);if child<=0{panic("vfork peer child");}
+  lvm-check(token,load64(child+LPS-VM-OBJECT));
+  lvm-check(LINUX-STATE-VFORK-WAIT,load64(row+LPS-STATUS));
+  lvm-check(3,user-space-refs(token,lvm-authority));
+  let child-binding=load64(child+LPS-VM-BINDING);if child-binding==binding{panic("vfork counted child binding");}
+  lvm-check(child,linux-process-schedule-ready(row));
+  lvm-check(-2,user-space-copy-in(child-binding,lvm-foreign,0x20000000,linux-process-vm-buffer,8));
+  lvm-check(-1,user-space-copy-out(child-binding,lvm-authority,0x20001000,linux-process-vm-buffer,8));
+  let caprow=cap-table-base+lvm-authority*16;let target=load64(caprow);let rights=load64(caprow+8);
+  lvm-check(0,cap-revoke(lvm-authority));
+  lvm-check(-2,user-space-resume(child-binding,lvm-authority,10));
+  lvm-check(-2,user-space-copy-in(binding,lvm-authority,0x20000000,linux-process-vm-buffer,8));
+  lvm-check(LINUX-STATE-VFORK-WAIT,load64(row+LPS-STATUS));lvm-check(3,user-space-refs(token,lvm-authority));
+  store64(caprow,target);store64(caprow+8,rights);
+  lvm-check(0,linux-process-state-load(child));
+  lvm-check(USER-CONTEXT-EXIT,user-space-resume(child-binding,lvm-authority,10));
+  lvm-check(43,load64(load64(child+LPS-USER-CONTEXT)+720));
+  if repeat<2{
+  lvm-check(0,linux-process-schedule-finish(child,USER-CONTEXT-EXIT,43,0));
+  lvm-check(LINUX-STATE-READY,load64(row+LPS-STATUS));
+  lvm-check(-6,user-space-binding-phase(child-binding,lvm-authority));
+  lvm-check(1,user-space-refs(token,lvm-authority));lvm-check(0,user-space-constructor-owned(token,lvm-authority));
+  if linux-process-vm-row(token)==0{panic("vfork peer companion erased");}
+  lvm-check(0,linux-process-state-load(row));store64(context+112,load64(child+LPS-PID));
+  lvm-check(USER-CONTEXT-EXIT,user-space-resume(binding,lvm-authority,10));lvm-check(42,load64(context+720));
+  domain-user-syscall-hook=hook;lvm-check(0,linux-process-state-save(row));
+  let pde=lvfork-pde(linux-process-domain,0x20000000);let original=load64(pde);store64(pde,original|128);
+  lvm-check(-5,linux-process-state-drop-pages(row));
+  lvm-check(-6,user-space-binding-phase(binding,lvm-authority));
+  lvm-check(0,user-space-refs(token,lvm-authority));lvm-check(USER-SPACE-QUARANTINED,user-space-phase(token,lvm-authority));
+  if linux-process-vm-row(token)==0{panic("vfork last release lost companion");}
+  lvm-check(-5,linux-process-run(0,0,"/closed","","",lvm-authority));
+  store64(pde,original);linux-process-active=0;lvm-check(0,linux-process-cleanup-recover());
+  lvm-check(-6,user-space-phase(token,lvm-authority));lvm-check(0,linux-process-vm-row(token));
+  }else{
+   let domain=linux-process-domain;let reference=domain-user-object-table+domain*24+8;
+   lvm-check(2,load64(reference));store64(reference,0);
+   lvm-check(-5,linux-process-schedule-finish(child,USER-CONTEXT-EXIT,43,0));
+   lvm-check(LINUX-STATE-VFORK-WAIT,load64(row+LPS-STATUS));
+   lvm-check(LINUX-STATE-QUARANTINED,load64(child+LPS-STATUS));
+   lvm-check(token,load64(child+LPS-VM-OBJECT));lvm-check(child-binding,load64(child+LPS-VM-BINDING));
+   lvm-check(3,user-space-refs(token,lvm-authority));lvm-check(1,user-space-constructor-owned(token,lvm-authority));
+   lvm-check(-5,linux-process-schedule-close-children(row));
+   lvm-check(-5,linux-process-release());
+   lvm-check(LINUX-STATE-QUARANTINED,load64(row+LPS-STATUS));
+   lvm-check(-5,linux-process-run(0,0,"/closed","","",lvm-authority));
+   store64(reference,2);linux-process-active=0;
+   lvm-check(0,linux-process-cleanup-recover());domain-user-syscall-hook=hook;
+   lvm-check(-6,user-space-phase(token,lvm-authority));lvm-check(0,linux-process-vm-row(token));
+   lvm-check(0,load64(row+LPS-VM-OBJECT));lvm-check(0,load64(child+LPS-VM-OBJECT));
+  }
+  lvm-check(owned,domain-user-owned);
+  if repeat==1 || repeat==3{lvm-check(heap,heap-next);lvm-check(free,lvm-free-count());lvm-check(domains,domain-count);}
+  repeat=repeat+1;
+ }
+ serial-write-cstr(com1(),"linux-vfork: shared detach refusal keeps parent blocked and repair reclaims both peers PASS");serial-nl(com1());
+ serial-write-cstr(com1(),"linux-vfork: shared peer survives and final release quarantine recovery PASS");serial-nl(com1());
+}
+fn lvfork-deadline-witness()->void {
+ let child=linux-process-states+LINUX-STATE-BYTES;
+ lvm-check(LINUX-STATE-REAPED,load64(child+LPS-STATUS));
+ lvm-check(USER-CONTEXT-DEADLINE,load64(child+LPS-STOP-KIND));
+ lvm-check(9,load64(child+LPS-WAIT-STATUS));
+ lvm-check(0,load64(child+LPS-BUDGET));
+ lvm-check(-1,user-context-remaining(load64(child+LPS-USER-CONTEXT)));
+ lvm-check(0,load64(load64(child+LPS-USER-CONTEXT)+760));
+ lvm-check(0,load64(child+LPS-VM-OBJECT));lvm-check(0,load64(child+LPS-VM-BINDING));
+ serial-write-cstr(com1(),"linux-vfork: real child Deadline releases blocked parent with SIGKILL wait PASS");serial-nl(com1());
+}
+
+// A failed native clone-binding owns no child VM reference. Retain quarantine
+// through the source process, never publish an uncounted alias process owner.
+fn lvfork-unpublished-check()->void {
+ let iteration=0;
+ while iteration<2{
+  linux-process-state-reset();let row=linux-process-states;let slot=row+LINUX-STATE-BYTES;
+  let heap=heap-next;let free=lvm-free-count();let owned=domain-user-owned;let domains=domain-count;
+  lvm-check(0,linux-process-state-use-cache(row));let token=linux-process-vm-create(lvm-authority);
+  if token<=0{panic("vfork unpublished VM");}
+  lvm-check(0,linux-process-vm-use(token,0));
+  lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));
+  store64(linux-process-vm-buffer,0x0F050F0000003AB8);
+  lvm-check(0,linux-process-vm-populate(0x20001000,linux-process-vm-buffer,8));
+  let context=load64(row+LPS-USER-CONTEXT);let binding=linux-process-vm-attach(context,0x20001000,0x20000FF0);
+  if binding<=0{panic("vfork unpublished binding");}
+  linux-process-active=1;linux-process-stdout-open=1;linux-process-stderr-open=1;
+  lvm-check(0,linux-process-files-init(-1));linux-process-pipes-init();
+  let pid=linux-process-state-register(row,0,linux-process-domain,0);if pid<=0{panic("vfork unpublished PID");}
+  linux-process-current-record=row;linux-process-current-pid=pid;lvm-check(0,linux-process-state-save(row));
+  let hook=domain-user-syscall-hook;domain-user-syscall-hook=linux-process-dispatch;
+  lvm-check(USER-CONTEXT-SUSPEND,user-space-resume(binding,lvm-authority,10));
+  lvm-check(0,linux-process-state-save(row));store64(row+LPS-PENDING,0);
+  let reference=domain-user-object-table+linux-process-domain*24+8;
+  lvm-check(1,load64(reference));store64(reference,32);
+  lvm-check(-5,linux-process-vfork-child(row));
+  lvm-check(LINUX-STATE-FREE,load64(slot+LPS-STATUS));lvm-check(0,load64(slot+LPS-VM-OBJECT));lvm-check(0,load64(slot+LPS-VM-BINDING));
+  lvm-check(token,load64(row+LPS-VM-OBJECT));lvm-check(binding,load64(row+LPS-VM-BINDING));
+  lvm-check(2,user-space-refs(token,lvm-authority));lvm-check(USER-SPACE-QUARANTINED,user-space-phase(token,lvm-authority));
+  lvm-check(1,linux-process-cleanup-failed);lvm-check(0,linux-process-active);
+  lvm-check(-5,linux-process-run(0,0,"/closed","","",lvm-authority));
+  store64(reference,1);domain-user-syscall-hook=hook;lvm-check(0,linux-process-cleanup-recover());
+  lvm-check(-6,user-space-phase(token,lvm-authority));lvm-check(0,linux-process-vm-row(token));lvm-check(owned,domain-user-owned);
+  if iteration!=0{lvm-check(heap,heap-next);lvm-check(free,lvm-free-count());lvm-check(domains,domain-count);}
+  iteration=iteration+1;
+ }
+ serial-write-cstr(com1(),"linux-vfork: failed binding publication retains only counted source owner recovery PASS");serial-nl(com1());
+}

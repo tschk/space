@@ -1,0 +1,27 @@
+package space.fixture
+component OwnedAllocator {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ export entry: AllocatorEntry
+}
+interface DebugConsole{fn write(msg:String)->void}
+interface AllocatorEntry{fn allocator-entry(info:Int)->Int}
+interrupt fn malloc(n:Int)->Int{}
+interrupt fn calloc(n:Int,size:Int)->Int{}
+interrupt fn realloc(pointer:Int,n:Int)->Int{}
+interrupt fn free(pointer:Int)->void{}
+fn allocator-entry(info:Int)->Int{
+ let pointer=malloc(16);if pointer==0{return 1;}
+ let i=0;while i<16{store8(pointer+i,i+1);i=i+1;}
+ let grown=realloc(pointer,64);if grown==0{return 2;}
+ i=0;while i<16{if load8(grown+i)!=i+1{return 3;}i=i+1;}
+ if realloc(grown,0x200001)!=0 || load8(grown)!=1{return 4;}
+ free(pointer);free(1);free(grown);free(grown);
+ let zero=calloc(2,8);if zero==0{return 5;}
+ i=0;while i<16{if load8(zero+i)!=0{return 6;}i=i+1;}
+ free(zero);
+ if malloc(0x200001)!=0 || calloc(0x7fffffffffffffff,2)!=0 || realloc(1,16)!=0{return 7;}
+ let vector=[7,11,24];return vector[0]+vector[1]+vector[2];
+}

@@ -1,5 +1,7 @@
 package space.kernel
 
+import "../protocol/keyboard.in"
+
 // PS/2 mouse driver for the Space nanokernel.
 // Uses polling (no IRQ) to read 3-byte mouse packets from the PS/2 controller.
 // The PS/2 controller is accessed via ports 0x60 (data) and 0x64 (status/control).
@@ -220,14 +222,22 @@ fn mouse-right-pressed() -> Int {
 
 var ps2-kbd-shift: Int = 0
 
+var ps2-kbd-caps: Int = 0
+var ps2-kbd-caps-held: Int = 0
 var ps2-kbd-ctrl: Int = 0
+var ps2-kbd-extended: Int = 0
+var ps2-kbd-pause: Int = 0
 
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
   ps2-kbd-shift = 0
+  ps2-kbd-caps = 0
+  ps2-kbd-caps-held = 0
   ps2-kbd-ctrl = 0
+  ps2-kbd-extended = 0
+  ps2-kbd-pause = 0
   return 0
 }
 
@@ -304,53 +314,31 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
 }
 
 fn ps2-kbd-getchar() -> Int {
-  if ps2-kbd-has-data() == 0 {
-    return -1
-  }
+  if ps2-kbd-has-data() == 0 { return -1 }
   let sc = inb(PS2-DATA)
-  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
-  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
-  if sc == 0x2A || sc == 0x36 {
-    ps2-kbd-shift = 1
+  // Set1 Pause is E1 plus five bytes; do not interpret its embedded Ctrl bytes.
+  if ps2-kbd-pause > 0 { ps2-kbd-pause -= 1; return -1 }
+  if sc == 0xE1 { ps2-kbd-pause = 5; ps2-kbd-extended = 0; return -1 }
+  if sc == 0xE0 { ps2-kbd-extended = 1; return -1 }
+  if ps2-kbd-extended == 1 {
+    ps2-kbd-extended = 0
+    if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 2; return -1 }
+    if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -3; return -1 }
+    // PrintScreen's synthetic E0 Shift bytes and all break codes are ignored.
+    return ps2-extended-ascii(sc)
+  }
+  if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -2; return -1 }
+  if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
+  if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
+  if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }
+  if sc == 0xB6 { ps2-kbd-shift = ps2-kbd-shift & -3; return -1 }
+  if sc == 0x3A {
+    if ps2-kbd-caps-held == 0 { ps2-kbd-caps = ps2-kbd-caps ^ 1 }
+    ps2-kbd-caps-held = 1
     return -1
   }
-  if sc == 0xAA || sc == 0xB6 {
-    ps2-kbd-shift = 0
-    return -1
-  }
-  if (sc & 0x80) != 0 {
-    return -1
-  }
-  let ch = ps2-scancode-ascii(sc)
-  if ch < 0 {
-    return -1
-  }
-  if ps2-kbd-ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
-  if ps2-kbd-shift != 0 {
-    if ch >= 97 && ch <= 122 {
-      return ch - 32
-    }
-    if ch == 49 { return 33 }
-    if ch == 50 { return 64 }
-    if ch == 51 { return 35 }
-    if ch == 52 { return 36 }
-    if ch == 53 { return 37 }
-    if ch == 54 { return 94 }
-    if ch == 55 { return 38 }
-    if ch == 56 { return 42 }
-    if ch == 57 { return 40 }
-    if ch == 48 { return 41 }
-    if ch == 45 { return 95 }
-    if ch == 61 { return 43 }
-    if ch == 91 { return 123 }
-    if ch == 93 { return 125 }
-    if ch == 59 { return 58 }
-    if ch == 39 { return 34 }
-    if ch == 96 { return 126 }
-    if ch == 92 { return 124 }
-    if ch == 44 { return 60 }
-    if ch == 46 { return 62 }
-    if ch == 47 { return 63 }
-  }
-  return ch
+  if sc == 0xBA { ps2-kbd-caps-held = 0; return -1 }
+  if (sc & 0x80) != 0 { return -1 }
+  return ps2-modified-ascii(ps2-scancode-ascii(sc), ps2-kbd-shift, ps2-kbd-caps, ps2-kbd-ctrl)
 }

@@ -72,7 +72,7 @@ def dhcp_find_opt(bootp: bytes, end: int, code: int) -> int:
 def main() -> int:
     process = src("components/process.in")
     vfs = src("components/vfs.in")
-    shell = src("components/shell.in")
+    shell = src("components/shell.in") + "\n" + src("components/shell-common.in")
     dhcp = src("components/dhcp.in")
     libc = src("components/libc.in")
     syscall = src("components/syscall.in")

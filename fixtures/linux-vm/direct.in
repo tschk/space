@@ -1,0 +1,43 @@
+package space.fixture
+
+// Trusted direct-adapter negatives still need an actual owned address space
+// and a genuinely initialized execution binding. No raw-domain fallback.
+var linux-fixture-buffer: Int = 0
+fn linux-fixture-create(authority:Int)->Int {
+ linux-process-state-reset();let row=linux-process-states;
+ linux-check(0,linux-process-state-use-cache(row));
+ if linux-fixture-buffer==0{linux-fixture-buffer=alloc(4096);}
+ let vm=linux-process-vm-create(authority);if vm<=0{panic("Linux fixture owned VM");}
+ linux-check(0,linux-process-vm-use(vm,0));
+ linux-process-active=1;linux-process-stdout-open=1;linux-process-stderr-open=1;
+ linux-process-clear-tid=0;
+ linux-check(0,linux-process-files-init(-1));linux-process-pipes-init();
+ let pid=linux-process-state-register(row,0,linux-process-domain,0);
+ if pid<=0{panic("Linux fixture process registration");}
+ linux-process-current-record=row;linux-process-current-pid=pid;
+ linux-process-pipe-family=pid;
+ linux-check(0,linux-process-state-save(row));return row;
+}
+fn linux-fixture-attach(entry:Int,stack:Int)->void {
+ let row=linux-process-current-record;
+ let binding=linux-process-vm-attach(load64(row+LPS-USER-CONTEXT),entry,stack);
+ if binding<=0{panic("Linux fixture native binding");}
+ linux-check(0,linux-process-state-save(row));
+}
+fn linux-fixture-begin(authority:Int)->void {
+ linux-fixture-create(authority);
+ linux-check(1,linux-process-map-page(0x20000000,6));
+ linux-check(1,linux-process-map-page(0x20001000,5));
+ // Data-protection negatives must not revoke the fixture's saved user stack.
+ linux-check(1,linux-process-map-page(0x20003000,6));
+ // mov eax,60; mov edi,42; syscall; ud2. No fabricated lifecycle phase.
+ store64(linux-fixture-buffer,0x002ABF0000003CB8);store64(linux-fixture-buffer+8,0x0B0F050F0000);
+ linux-check(0,linux-process-vm-populate(0x20001000,linux-fixture-buffer,16));
+ linux-fixture-attach(0x20001000,0x20003FF0);
+}
+fn linux-fixture-copy-in(address:Int,buffer:Int,count:Int)->void {
+ linux-check(0,linux-process-copy-in(address,buffer,count));
+}
+fn linux-fixture-copy-out(address:Int,buffer:Int,count:Int)->void {
+ linux-check(0,linux-process-copy-out(address,buffer,count));
+}

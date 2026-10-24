@@ -1,0 +1,267 @@
+package space.fixture
+
+fn us-bounds()->void {
+ let vm=us-new(us-authority);let domain=user-space-domain(vm,us-authority);
+ let physical=user-space-frame(vm,us-authority,0x44000000);
+ let heap=heap-next;let free=us-free-count();let owned=domain-user-owned;
+ us-check(-2,user-space-pages(vm,us-foreign));us-check(-2,user-space-map-zero(vm,us-foreign,0x45000000,2));
+ us-check(-1,user-space-map-zero(vm,us-authority,0x45000001,2));
+ us-check(-1,user-space-map-zero(vm,us-authority,0x45000000,4));
+ us-check(-3,user-space-map-zero(vm,us-authority,0x45000000,2));
+ us-check(-1,user-space-write(vm,us-authority,0x44000FFC,us-source,8));
+ us-check(0,load64(physical+4088));us-check(100,load64(physical));
+ us-check(-1,user-space-write(vm,us-authority,0x44000000,heap-next+1,8));
+ us-check(-1,user-space-write(vm,us-authority,0x44000000,us-source,65537));
+ us-check(-1,user-space-write(vm,us-authority,0x42000000,us-source,8));
+ us-check(-1,domain-destroy-user(domain));us-check(-1,domain-user-object-revoke(domain,vm+256));
+ us-check(-1,domain-user-object-reference(domain,vm+256,1));
+ us-check(heap,heap-next);us-check(free,us-free-count());us-check(owned,domain-user-owned);
+ let binding=us-prepare(vm,us-authority,4,8);
+ us-check(-1,user-space-attach(vm,us-authority,us-context(4)));
+ us-check(-1,user-space-attach(vm,us-authority,us-context(4)+16));
+ us-check(-1,user-space-clone-binding(binding,us-authority,us-context(5),768));
+ us-check(-4,user-space-populate(vm,us-authority,0x42000000,us-code,8));
+ us-check(0,user-space-protect(vm,us-authority,0x42000000,USER-SPACE-READ));
+ us-check(-6,user-space-resume(binding,us-authority,100));
+ us-check(0,user-space-protect(vm,us-authority,0x42000000,USER-SPACE-EXECUTE));
+ us-check(-6,user-space-resume(binding,us-authority,100));
+ us-check(0,user-space-release-binding(binding,us-authority));
+ binding=us-prepare(vm,us-authority,4,8);us-check(0,user-space-release(vm,us-authority));
+ us-run(binding,us-authority,USER-CONTEXT-EXIT,47,us-context(4),100);
+ us-check(0,user-space-release-binding(binding,us-authority));
+ vm=us-new(us-authority);let context=us-context(5);
+ us-check(0,user-context-init(context,768,user-space-domain(vm,us-authority),0x42000000,8,0x43000FF0));
+ us-check(0,user-context-set-tls(context,0x44000000,0x44000000));
+ binding=us-positive(user-space-attach(vm,us-authority,context));
+ us-check(0,user-space-unmap(vm,us-authority,0x44000000));
+ us-check(-6,user-space-resume(binding,us-authority,100));
+ us-check(0,user-space-release-binding(binding,us-authority));us-check(0,user-space-release(vm,us-authority));
+ serial-write-cstr(com1(),"user-space: authority bounds atomic refusal and revoked code TLS views PASS");serial-nl(com1());
+}
+fn us-faults()->void {
+ let mode=3;
+ while mode<=7 {
+  let vm=us-new(us-authority);
+  if mode==3{us-check(0,user-space-protect(vm,us-authority,0x44000000,USER-SPACE-READ));}
+  let binding=us-prepare(vm,us-authority,6,mode);us-check(0,user-space-release(vm,us-authority));
+  us-active-vm=vm;us-active-binding=binding;
+  if mode<=5{
+   us-run(binding,us-authority,USER-CONTEXT-FAULT,142,us-context(6),100);
+   us-check(14,load64(us-context(6)+696));
+   let error=4;if mode==3{error=7;}else if mode==4{error=21;}
+   us-check(error,load64(us-context(6)+704));
+  }else if mode==6{us-run(binding,us-authority,USER-CONTEXT-EXIT,46,us-context(6),100);}
+  else{us-run(binding,us-authority,USER-CONTEXT-DEADLINE,124,us-context(6),2);}
+  us-check(100,load64(user-space-frame(vm,us-authority,0x44000000)));
+  us-check(0,user-space-release-binding(binding,us-authority));us-check(0,load64(us-context(6)+736));
+  mode=mode+1;
+ }
+ serial-write-cstr(com1(),"user-space: actual CPL3 RO NX unmapped faults busy refusal and IRQ deadline PASS");serial-nl(com1());
+}
+fn us-revocation()->void {
+ let vm=us-new(us-revocable);let binding=us-prepare(vm,us-revocable,7,8);
+ us-check(vm,user-space-binding-space(binding,us-revocable));
+ us-check(-2,user-space-binding-space(binding,us-foreign));
+ let object=load64(cap-table-base+us-revocable*16);let rights=load64(cap-table-base+us-revocable*16+8);
+ us-check(0,user-space-release(vm,us-revocable));
+ store64(cap-table-base+us-revocable*16,object+1);
+ us-check(-2,user-space-resume(binding,us-revocable,100));
+ us-check(-2,user-space-write(vm,us-revocable,0x44000000,us-source,8));
+ us-check(1,user-space-refs(vm,us-revocable));
+ store64(cap-table-base+us-revocable*16,object);us-check(0,cap-revoke(us-revocable));
+ us-check(1,user-space-refs(vm,us-revocable));us-check(3,user-space-pages(vm,us-revocable));
+ us-check(vm,user-space-binding-space(binding,us-revocable));
+ us-check(-2,user-space-binding-space(binding,us-foreign));
+ us-check(-2,user-space-write(vm,us-revocable,0x44000000,us-source,8));
+ us-check(-2,user-space-protect(vm,us-revocable,0x44000000,1));
+ us-check(-2,user-space-unmap(vm,us-revocable,0x44000000));
+ us-check(-2,user-space-resume(binding,us-revocable,100));
+ us-check(-2,user-space-release-binding(binding,us-foreign));
+ us-check(0,user-space-release-binding(binding,us-revocable));us-check(0,load64(us-context(7)+736));
+ us-check(-6,user-space-pages(vm,us-revocable));
+ us-check(-6,user-space-binding-space(binding,us-revocable));
+ // Trusted fixture restores its preallocated grant only after complete teardown.
+ store64(cap-table-base+us-revocable*16,object);store64(cap-table-base+us-revocable*16+8,rights);
+ serial-write-cstr(com1(),"user-space: revoked grant denies entry mutation but retains owner cleanup PASS");serial-nl(com1());
+}
+fn us-quarantine()->void {
+ us-release-retry();
+ let vm=us-new(us-authority);let domain=user-space-domain(vm,us-authority);
+ let binding=us-prepare(vm,us-authority,8,8);us-check(0,user-space-release(vm,us-authority));
+ let root=load64(domain-table+domain*24);
+ let pdpt=load64(root+((0x44000000>>39)&511)*8)&PAGE-ADDRESS-MASK;
+ let pd=load64(pdpt+((0x44000000>>30)&511)*8)&PAGE-ADDRESS-MASK;
+ let slot=pd+((0x44000000>>21)&511)*8;let original=load64(slot);
+ let frame=user-space-frame(vm,us-authority,0x44000000);let heap=heap-next;let free=us-free-count();let owned=domain-user-owned;
+ store64(slot,original|128);
+ us-check(-5,user-space-release-binding(binding,us-authority));
+ us-check(-6,user-space-binding-phase(binding,us-authority));
+ us-check(0,user-space-constructor-owned(vm,us-authority));
+ us-check(0,load64(us-context(8)+736));us-check(2,user-space-phase(vm,us-authority));
+ us-check(0,user-space-refs(vm,us-authority));us-check(3,user-space-pages(vm,us-authority));
+ us-check(frame,user-space-frame(vm,us-authority,0x44000000));
+ us-check(vm,load64(domain-user-object-table+domain*24));
+ us-check(0,load64(domain-user-object-table+domain*24+8));us-check(0,load64(domain-user-object-table+domain*24+16));
+ us-check(-1,domain-destroy-user(domain));us-check(-5,user-space-recover(vm,us-authority));
+ us-check(heap,heap-next);us-check(free,us-free-count());us-check(owned,domain-user-owned);us-check(100,load64(frame));
+ store64(slot,original);us-check(0,user-space-recover(vm,us-authority));
+ us-check(0,load64(domain-user-object-table+domain*24));us-check(-6,user-space-recover(vm,us-authority));
+ us-check(-6,user-space-resume(binding,us-authority,100));
+ let next=us-new(us-authority);if next==vm{panic("user-space stale generation reused");}
+ us-check(domain,user-space-domain(next,us-authority));us-check(-6,user-space-pages(vm,us-authority));
+ us-check(0,user-space-release(next,us-authority));
+ serial-write-cstr(com1(),"user-space: retained quarantine repaired exact-owner teardown and stale generation PASS");serial-nl(com1());
+}
+fn us-capacity()->void {
+ let vm=us-new(us-authority);let target=us-positive(user-space-create(us-authority,2));
+ us-check(-3,user-space-copy-into(target,vm,us-authority));us-check(0,user-space-pages(target,us-authority));
+ us-check(0,user-space-release(target,us-authority));us-check(0,user-space-release(vm,us-authority));
+ let i=0;while i<USER-SPACE-MAX{store64(us-handles+i*8,us-positive(user-space-create(us-authority,1)));i=i+1;}
+ let heap=heap-next;let free=us-free-count();us-check(-3,user-space-create(us-authority,1));
+ us-check(heap,heap-next);us-check(free,us-free-count());
+ i=0;while i<USER-SPACE-MAX{us-check(0,user-space-release(load64(us-handles+i*8),us-authority));i=i+1;}
+ vm=us-new(us-authority);i=0;
+ while i<32{store64(us-bindings+i*8,us-prepare(vm,us-authority,i,8));i=i+1;}
+ us-check(33,user-space-refs(vm,us-authority));let context=us-context(32);
+ us-check(0,user-context-init(context,768,user-space-domain(vm,us-authority),0x42000000,8,0x43000FF0));
+ us-check(-3,user-space-attach(vm,us-authority,context));us-check(33,user-space-refs(vm,us-authority));
+ us-check(0,user-space-release(vm,us-authority));i=0;
+ while i<32{us-check(0,user-space-release-binding(load64(us-bindings+i*8),us-authority));us-check(0,load64(us-context(i)+736));i=i+1;}
+ us-check(-6,user-space-pages(vm,us-authority));
+ serial-write-cstr(com1(),"user-space: bounded VM binding and copy capacity atomic admission PASS");serial-nl(com1());
+}
+fn us-bridge()->void {
+ let vm=us-new-limit(us-authority,4);let other=us-new(us-authority);
+ us-check(0,user-space-map-zero(vm,us-authority,0x44001000,USER-SPACE-WRITE));
+ let binding=us-prepare(vm,us-authority,9,9);let other-binding=us-prepare(other,us-authority,10,8);
+ let sibling=us-prepare(vm,us-authority,14,8);us-sibling-binding=sibling;
+ us-other-binding=other-binding;us-active-binding=binding;us-active-vm=vm;
+ us-check(0,user-space-borrow-begin(binding,us-authority,0x44000000,8,USER-SPACE-WRITE));
+ let heap=heap-next;let free=us-free-count();let refs=user-space-refs(vm,us-authority);
+ us-check(-4,user-space-map-zero(vm,us-authority,0x45000000,2));
+ us-check(-4,user-space-protect(vm,us-authority,0x44000000,1));
+ us-check(-4,user-space-unmap(vm,us-authority,0x44000000));
+ us-check(-4,user-space-write(vm,us-authority,0x44000000,us-source,8));
+ us-check(-4,user-space-attach(vm,us-authority,us-context(11)));
+ us-check(-4,user-space-release-binding(binding,us-authority));us-check(-4,user-space-release(vm,us-authority));
+ us-check(-4,user-space-resume(binding,us-authority,100));
+ us-check(-4,user-space-copy-in(binding,us-authority,0x44000000,us-source,8));
+ us-check(-2,user-space-borrow-end(binding,us-foreign));
+ us-check(heap,heap-next);us-check(free,us-free-count());us-check(refs,user-space-refs(vm,us-authority));
+ us-check(0,user-space-borrow-end(binding,us-authority));us-check(-4,user-space-borrow-end(binding,us-authority));
+ let i=0;while i<13{store8(us-source+32+i,0x61+i);store8(us-source+48+i,0);i=i+1;}
+ us-check(0,user-space-copy-out(binding,us-authority,0x44000FFB,us-source+32,13));
+ us-check(0,user-space-copy-in(binding,us-authority,0x44000FFB,us-source+48,13));
+ i=0;while i<13{us-check(0x61+i,load8(us-source+48+i));i=i+1;}
+ store64(us-source+16,0x1122334455667788);
+ us-check(-1,user-space-copy-in(binding,us-authority,0x44001FFC,us-source+16,8));
+ us-check(0x1122334455667788,load64(us-source+16));
+ us-check(0,user-space-release(vm,us-authority));
+ us-run(binding,us-authority,USER-CONTEXT-EXIT,48,us-context(9),100);
+ us-check(777,load64(user-space-frame(vm,us-authority,0x44000000)));
+ us-check(0,user-space-release-binding(sibling,us-authority));
+ us-check(0,user-space-release-binding(binding,us-authority));
+ us-check(0,user-space-release-binding(other-binding,us-authority));us-check(0,user-space-release(other,us-authority));
+ vm=us-new(us-revocable);binding=us-prepare(vm,us-revocable,11,8);
+ us-check(0,user-space-borrow-begin(binding,us-revocable,0x44000000,8,USER-SPACE-READ));
+ let object=load64(cap-table-base+us-revocable*16);let rights=load64(cap-table-base+us-revocable*16+8);
+ us-check(0,cap-revoke(us-revocable));
+ us-check(-2,user-space-copy-in(binding,us-revocable,0x44000000,us-source,8));
+ us-check(0,user-space-borrow-end(binding,us-revocable));
+ us-check(0,user-space-release-binding(binding,us-revocable));us-check(0,user-space-release(vm,us-revocable));
+ store64(cap-table-base+us-revocable*16,object);store64(cap-table-base+us-revocable*16+8,rights);
+ serial-write-cstr(com1(),"user-space: checked active copy bridge held borrow and revoked release PASS");serial-nl(com1());
+}
+fn us-reinitialize()->void {
+ let first=us-new(us-authority);let second=us-new(us-authority);
+ let old=us-prepare(first,us-authority,12,8);let context=us-context(12);
+ us-check(0,user-context-init(context,768,user-space-domain(second,us-authority),0x42000000,8,0x43000FF0));
+ us-check(-6,user-space-resume(old,us-authority,100));
+ us-check(-6,user-space-clone-binding(old,us-authority,us-context(13),768));
+ us-check(0,user-space-release-binding(old,us-authority));
+ us-check(USER-CONTEXT-MAGIC,load64(context+736));us-check(1,user-context-valid(context));
+ let fresh=us-positive(user-space-attach(second,us-authority,context));
+ us-check(0,user-space-release(first,us-authority));us-check(0,user-space-release(second,us-authority));
+ us-run(fresh,us-authority,USER-CONTEXT-EXIT,47,context,100);
+ us-check(0,user-space-release-binding(fresh,us-authority));
+ serial-write-cstr(com1(),"user-space: reinitialized foreign context refuses stale binding without invalidation PASS");serial-nl(com1());
+}
+fn us-cold-unchanged(heap:Int,free:Int,domains:Int,owned:Int,generation:Int)->void {
+ us-check(0,user-space-table);us-check(0,user-space-bindings);
+ us-check(heap,heap-next);us-check(free,free-list);us-check(domains,domain-count);
+ us-check(owned,domain-user-owned);us-check(generation,user-space-generation);
+}
+fn us-cold()->void {
+ us-check(0,user-space-table);us-check(0,user-space-bindings);
+ let states=alloc(MAX-DOMAINS*8);let frames=alloc(64*8);let i=0;
+ while i<64{store64(frames+i*8,frame-alloc());i=i+1;}
+ i=0;while i<64{frame-free(load64(frames+i*8));i=i+1;}
+ let flags=invoke1(load64(0x4198),0);cli();
+ let end=heap-end;let heap=heap-next;let free=free-list;let domains=domain-count;
+ let owned=domain-user-owned;let generation=user-space-generation;
+ // No frames after the exact bump-cache reservation: refuse before allocations.
+ free-list=0;heap-end=((heap+USER-SPACE-CACHE-BYTES+4095)&-4096)+63*4096;
+ us-check(-3,user-space-create(us-authority,1));us-cold-unchanged(heap,0,domains,owned,generation);
+ // Actual reusable frames cannot substitute for one missing metadata bump byte.
+ free-list=free;heap-end=heap+USER-SPACE-CACHE-BYTES - 1;
+ us-check(-3,user-space-create(us-authority,1));us-cold-unchanged(heap,free,domains,owned,generation);
+ heap-end=end;user-space-generation=0x7fffffffffffff;
+ us-check(-3,user-space-create(us-authority,1));us-cold-unchanged(heap,free,domains,owned,0x7fffffffffffff);
+ user-space-generation=generation;
+ i=0;while i<MAX-DOMAINS{store64(states+i*8,load64(domain-table+i*24+8));if i>0{store64(domain-table+i*24+8,DOMAIN-ACTIVE);}i=i+1;}
+ domain-count=MAX-DOMAINS;
+ us-check(-3,user-space-create(us-authority,1));us-cold-unchanged(heap,free,MAX-DOMAINS,owned,generation);
+ i=0;while i<MAX-DOMAINS{store64(domain-table+i*24+8,load64(states+i*8));i=i+1;}domain-count=domains;
+ // Exact cache bump bytes plus actual reusable frames admits a genuine domain.
+ heap-end=heap+USER-SPACE-CACHE-BYTES;
+ let vm=us-positive(user-space-create(us-authority,1));
+ us-check(heap+USER-SPACE-CACHE-BYTES,heap-next);us-check(1,user-space-refs(vm,us-authority));
+ us-check(0,user-space-release(vm,us-authority));
+ heap-end=end;if (flags&512)!=0{sti();}
+ serial-write-cstr(com1(),"user-space: cold frame metadata generation domain admission bounds PASS");serial-nl(com1());
+}
+fn us-claim-control()->void {
+ // Executed only against an explicitly recorded snapshot provider-refusal delta.
+ us-check(-5,user-space-create(us-authority,1));
+ let vm=us-positive(user-space-quarantined(us-authority));
+ let domain=user-space-domain(vm,us-authority);let row=domain-user-object-table+domain*24;
+ us-check(USER-SPACE-QUARANTINED,user-space-phase(vm,us-authority));
+ us-check(1,user-space-refs(vm,us-authority));us-check(0,user-space-pages(vm,us-authority));
+ us-check(0,load64(row));us-check(0,load64(row+8));us-check(0,load64(row+16));
+ us-check(-2,user-space-phase(vm,us-foreign));
+ let heap=heap-next;let free=us-free-count();let owned=domain-user-owned;
+ us-check(-5,user-space-release(vm,us-authority));
+ us-check(0,user-space-refs(vm,us-authority));us-check(-5,user-space-recover(vm,us-authority));
+ us-check(heap,heap-next);us-check(free,us-free-count());us-check(owned,domain-user-owned);
+ us-check(0,domain-user-object-claim(domain,vm));us-check(0,user-space-recover(vm,us-authority));
+ us-check(-6,user-space-pages(vm,us-authority));us-check(0,user-space-quarantined(us-authority));
+ us-check(0,load64(row));us-check(0,domain-user-owned&(1<<domain));
+ serial-write-cstr(com1(),"user-space: injected provider claim refusal retained discovery repair recovery PASS");serial-nl(com1());
+}
+
+fn us-release-retry()->void {
+ let vm=us-new(us-authority);let binding=us-prepare(vm,us-authority,15,8);
+ us-check(1,user-space-constructor-owned(vm,us-authority));
+ us-check(1,user-space-binding-phase(binding,us-authority));
+ us-check(-2,user-space-binding-phase(binding,us-foreign));
+ us-check(-2,user-space-constructor-owned(vm,us-foreign));
+ us-check(0,user-space-release(vm,us-authority));
+ us-check(0,user-space-constructor-owned(vm,us-authority));
+ let domain=user-space-domain(vm,us-authority);let owner=domain-user-object-table+domain*24;
+ us-check(1,load64(owner+8));let heap=heap-next;let free=us-free-count();let owned=domain-user-owned;
+ // Trusted provider invariant corruption forces a real decrement refusal.
+ store64(owner+8,0);
+ us-check(-5,user-space-release-binding(binding,us-authority));
+ us-check(2,user-space-binding-phase(binding,us-authority));
+ us-check(1,user-space-refs(vm,us-authority));us-check(USER-SPACE-QUARANTINED,user-space-phase(vm,us-authority));
+ us-check(0,load64(us-context(15)+736));us-check(-4,user-space-recover(vm,us-authority));
+ us-check(heap,heap-next);us-check(free,us-free-count());us-check(owned,domain-user-owned);
+ // The consumer retains its token until public projection confirms detachment.
+ store64(owner+8,1);
+ us-check(-5,user-space-release-binding(binding,us-authority));
+ us-check(-6,user-space-binding-phase(binding,us-authority));us-check(0,user-space-refs(vm,us-authority));
+ us-check(-6,user-space-release-binding(binding,us-authority));
+ us-check(0,user-space-recover(vm,us-authority));us-check(-6,user-space-constructor-owned(vm,us-authority));
+ us-check(-6,user-space-pages(vm,us-authority));
+ serial-write-cstr(com1(),"user-space: public release projection retained retry versus committed detach PASS");serial-nl(com1());
+}

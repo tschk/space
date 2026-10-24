@@ -70,7 +70,7 @@ const LINUX-STAT-OFF-BLOCKS = 64
 
 const LINUX-S-IFREG = 0x81A4
 const LINUX-ELF-MAGIC = 0x00010102464C457F
-const LINUX-ELF-LOAD-ADDR = 0x280000
+const LINUX-ELF-LOAD-ADDR = 0x2f0000
 
 const LINUX-EINVAL = -22
 const LINUX-ESPIPE = -29
@@ -284,6 +284,7 @@ fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     return LINUX-ENOEXEC
   }
+  if runtime-instance-image-ready(image,size,0) == 0 { return LINUX-ENOEXEC }
   serial-write-cstr(port, "posix: execve loading SCI from ")
   serial-write-cstr(port, path)
   serial-nl(port)

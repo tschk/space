@@ -1,0 +1,17 @@
+package space.fixture.input
+component InputNonzero {
+  target "x86_64-unknown-none"
+  capability serial: DebugConsole(write)
+  capability input: InputDevice(publish)
+}
+interface InputDevice {
+  fn publish(event: Int) -> void
+}
+fn input-poll-entry(info: Int) -> Int {
+  let page = load64(info + 32)
+  store64(page, 0)
+  store64(page + 8, 0)
+  store64(page + 16, 508)
+  store64(page + 24, 8)
+  return 7
+}

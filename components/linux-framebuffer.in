@@ -1,0 +1,122 @@
+package space.kernel
+import "native-canvas.in"
+import "linux-process.in"
+
+// Explicit foreign edge lease; native canvas owns presentation, native VM owns
+// all source pages. One process, open descriptor and mapping, no shared aliases.
+var linux-framebuffer-canvas:Int=0
+var linux-framebuffer-owner:Int=0
+var linux-framebuffer-target:Int=0
+var linux-framebuffer-vm:Int=0
+var linux-framebuffer-bound:Int=0
+var linux-framebuffer-fd:Int=-1
+var linux-framebuffer-address:Int=0
+var linux-framebuffer-retired:Int=0
+var linux-framebuffer-presents:Int=0
+
+fn linux-framebuffer-authorized()->Int{
+ if linux-framebuffer-canvas<=0{return -19;}
+ if cap-check(linux-framebuffer-owner,cap-memory()|cap-display())==0 || load64(cap-table-base+linux-framebuffer-owner*16)!=linux-framebuffer-target || cap-check(linux-process-authority,cap-memory())==0{return -13;}
+ if linux-framebuffer-vm!=0 && linux-framebuffer-vm!=linux-process-vm{return -5;}
+ return 0;
+}
+fn linux-framebuffer-is(fd:Int)->Int{
+ if fd<3 || linux-framebuffer-canvas<=0 || fd!=linux-framebuffer-fd || linux-process-files==0{return 0;}
+ if load64(linux-process-files+fd*8)!=-10{return 0;}return 1;
+}
+fn linux-framebuffer-open(flags:Int)->Int{
+ let status=linux-framebuffer-authorized();if status!=0{return status;}
+ if (flags & -524289)!=2{return -22;}
+ if linux-framebuffer-fd!=-1{return -16;}
+ let fd=3;while fd<VFS-MAX-FDS && (linux-process-file-host(fd)>=3 || linux-framebuffer-is(fd)!=0){fd+=1;}
+ if fd==VFS-MAX-FDS{return -24;}
+ if linux-framebuffer-vm==0{linux-framebuffer-vm=linux-process-vm;}
+ linux-framebuffer-fd=fd;store64(linux-process-files+fd*8,-10);store64(linux-process-file-fdflags+fd*8,(flags>>19)&1);return fd;
+}
+fn linux-framebuffer-close(fd:Int)->Int{
+ if linux-framebuffer-is(fd)==0{return -9;}
+ // Descriptor withdrawal requires no source/display authority. Mappings survive.
+ store64(linux-process-files+fd*8,-9);store64(linux-process-file-fdflags+fd*8,0);linux-framebuffer-fd=-1;return 0;
+}
+fn linux-framebuffer-put32(address:Int,value:Int)->void{let i=0;while i<4{linux-process-store8(address+i,(value>>(i*8))&255);i+=1;}}
+fn linux-framebuffer-ioctl(fd:Int,request:Int,buffer:Int)->Int{
+ if linux-framebuffer-is(fd)==0{return -9;}
+ let status=linux-framebuffer-authorized();if status!=0{return status;}
+ let bytes=0;if request==0x4600{bytes=160;}else if request==0x4602{bytes=80;}else{return -25;}
+ if linux-process-range(buffer,bytes,1)==0{return -14;}
+ let i=0;while i<bytes{linux-process-store8(buffer+i,0);i+=1;}
+ if request==0x4600{
+  linux-framebuffer-put32(buffer,256);linux-framebuffer-put32(buffer+4,128);linux-framebuffer-put32(buffer+8,256);linux-framebuffer-put32(buffer+12,128);linux-framebuffer-put32(buffer+24,32);
+  // RGBX8888: red16/8, green8/8, blue0/8, unused transparency.
+  linux-framebuffer-put32(buffer+32,16);linux-framebuffer-put32(buffer+36,8);linux-framebuffer-put32(buffer+44,8);linux-framebuffer-put32(buffer+48,8);linux-framebuffer-put32(buffer+60,8);
+  linux-framebuffer-put32(buffer+88,0xFFFFFFFF);linux-framebuffer-put32(buffer+92,0xFFFFFFFF);
+ }else{
+  let name="Space canvas";i=0;while load8(name+i)!=0{linux-process-store8(buffer+i,load8(name+i));i+=1;}
+  linux-framebuffer-put32(buffer+24,NATIVE-CANVAS-BYTES);linux-framebuffer-put32(buffer+32,2);linux-framebuffer-put32(buffer+48,NATIVE-CANVAS-STRIDE);
+ }
+ return 0;
+}
+fn linux-framebuffer-mmap(address:Int,length:Int,protection:Int,flags:Int,fd:Int,offset:Int)->Int{
+ if linux-framebuffer-is(fd)==0{return -9;}
+ let status=linux-framebuffer-authorized();if status!=0{return status;}
+ if address!=0 || length!=NATIVE-CANVAS-BYTES || protection!=3 || flags!=1 || offset!=0{return -22;}
+ if linux-framebuffer-address!=0{return -16;}
+ if linux-framebuffer-retired!=0{return -95;}
+ if native-canvas-query(linux-framebuffer-canvas,linux-framebuffer-owner,5)!=1{return -5;}
+ if linux-framebuffer-bound==0{
+  status=native-canvas-bind(linux-framebuffer-canvas,linux-framebuffer-owner,linux-process-vm,linux-process-authority);if status!=0{return status;}
+  linux-framebuffer-bound=1;
+ }
+ let mapped=linux-process-mmap-anonymous(0,length,3,0x22,-1,0);if mapped<0{return mapped;}
+ linux-framebuffer-address=mapped;return mapped;
+}
+fn linux-framebuffer-overlap(address:Int,length:Int)->Int{
+ if linux-framebuffer-address==0 || length<=0{return 0;}
+ if address<0 || address>0x7FFFFFFFFFFFFFFF - length{return 1;}
+ if address<linux-framebuffer-address+NATIVE-CANVAS-BYTES && address+length>linux-framebuffer-address{return 1;}return 0;
+}
+fn linux-framebuffer-unmap(address:Int,length:Int)->Int{
+ if address!=linux-framebuffer-address || length!=NATIVE-CANVAS-BYTES{return -22;}
+ let status=linux-framebuffer-authorized();if status!=0{return status;}
+ status=native-canvas-upload(linux-framebuffer-canvas,linux-framebuffer-owner,linux-process-binding,address);if status!=0{return status;}
+ // Publish succeeded, but keep the recorded mapping until every page withdraws.
+ status=linux-process-munmap-anonymous(address,length);if status!=0{return status;}
+ linux-framebuffer-address=0;linux-framebuffer-retired=1;linux-framebuffer-presents+=1;return 0;
+}
+fn linux-framebuffer-run(image:Int,size:Int,arg0:Int,arg1:Int,arg2:Int,authority:Int,canvas:Int,owner:Int)->Int{
+ if user-space-kernel()==0 || linux-process-active!=0 || linux-framebuffer-canvas!=0 || linux-process-device-entry!=0 || linux-process-device-busy!=0{return -16;}
+ if cap-check(authority,cap-memory()|cap-serial())==0{return -13;}
+ let phase=native-canvas-query(canvas,owner,5);if phase<0{return phase;}if phase!=1{return -5;}
+ if native-canvas-query(canvas,owner,4)!=0{return -22;}
+ if linux-process-device-request==0{if heap-next>heap-end || heap-end - heap-next<64{return -12;}linux-process-device-request=alloc(64);}
+ linux-process-device-entry=linux-framebuffer-native-entry;
+ linux-framebuffer-canvas=canvas;linux-framebuffer-owner=owner;linux-framebuffer-target=load64(cap-table-base+owner*16);
+ linux-framebuffer-vm=0;linux-framebuffer-bound=0;linux-framebuffer-fd=-1;linux-framebuffer-address=0;linux-framebuffer-retired=0;linux-framebuffer-presents=0;
+ let result=linux-process-run-counted-input(image,size,arg0,arg1,arg2,authority,-1,3);
+ let ended=linux-framebuffer-end();if ended!=0{return ended;}return result;
+}
+
+// Explicit release after ordinary job teardown or successful native recovery.
+// A retained VM must not lose its edge lease through a failed cleanup result.
+fn linux-framebuffer-end()->Int{
+ if user-space-kernel()==0 || linux-process-active!=0{return -16;}
+ if linux-process-cleanup-failed!=0{return -5;}
+ linux-process-device-entry=0;
+ linux-framebuffer-canvas=0;linux-framebuffer-owner=0;linux-framebuffer-target=0;linux-framebuffer-vm=0;linux-framebuffer-bound=0;linux-framebuffer-fd=-1;linux-framebuffer-address=0;linux-framebuffer-retired=0;
+ return 0;
+}
+
+// Raw native Int->Int adapter entry; synchronous, status-only, no exceptions.
+fn linux-framebuffer-native-entry(request:Int)->Int{
+ if request!=linux-process-device-request || request==0{return -5;}
+ let operation=load64(request);let a=load64(request+8);let b=load64(request+16);let c=load64(request+24);let d=load64(request+32);let e=load64(request+40);let f=load64(request+48);
+ if operation==0{return linux-framebuffer-is(a);}
+ if operation==1{if strcmp(a,"/dev/fb0")!=0{return -19;}return linux-framebuffer-open(b);}
+ if operation==2{return linux-framebuffer-close(a);}
+ if operation==3{let status=linux-framebuffer-authorized();if status!=0{return status;}if linux-framebuffer-is(a)==0{return -9;}return 2;}
+ if operation==4{return linux-framebuffer-ioctl(a,b,c);}
+ if operation==5{return linux-framebuffer-mmap(a,b,c,d,e,f);}
+ if operation==6{return linux-framebuffer-overlap(a,b);}
+ if operation==7{return linux-framebuffer-unmap(a,b);}
+ return -95;
+}

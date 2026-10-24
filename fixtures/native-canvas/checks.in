@@ -1,0 +1,158 @@
+package space.fixture
+import "../../components/native-canvas.in"
+var nct-owner:Int=-1
+var nct-memory:Int=-1
+var nct-wrong:Int=-1
+var nct-no-display:Int=-1
+var nct-context-a:Int=0
+var nct-context-b:Int=0
+var nct-code:Int=0
+var nct-entries:Int=0
+var nct-current:Int=0
+fn nct-check(expected:Int,actual:Int)->void{
+ if expected!=actual{serial-write-cstr(com1(),"native-canvas: expected ");serial-write-dec-wide(com1(),expected);serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);serial-nl(com1());panic("native canvas contract");}
+}
+fn nct-positive(value:Int)->Int{if value<=0{nct-check(1,value);}return value;}
+fn nct-free()->Int{let frame=free-list;let count=0;while frame!=0 && count<131072{count+=1;frame=load64(frame);}if frame!=0{panic("native canvas free cycle");}return count;}
+fn nct-hook(frame:Int)->Int{
+ let number=load64(frame+112);
+ if number==902{
+  let heap=heap-next;let free=nct-free();
+  nct-check(-4,native-canvas-query(nct-current,nct-owner,4));nct-check(-4,native-canvas-new(nct-owner,256,128,64,64));
+  nct-check(heap,heap-next);nct-check(free,nct-free());store64(frame+112,0);return 1;
+ }
+ if number==901{store64(frame+112,load64(frame+72));return 0;}
+ panic("native canvas unexpected producer call");return 0;
+}
+// Test-only transfer interposer: every reported read invokes the real native API.
+// The checker substitutes exactly one call in its private provider source copy.
+var nct-transfer-vm:Int=0
+var nct-transfer-pde:Int=0
+var nct-transfer-original:Int=0
+var nct-transfer-mode:Int=0
+var nct-transfer-reads:Int=0
+var nct-transfer-attempts:Int=0
+fn nct-transfer(binding:Int,memory:Int,address:Int,output:Int,count:Int)->Int{
+ nct-transfer-attempts+=1;
+ let result=user-space-copy-in(binding,memory,address,output,count);
+ if result==0{
+  nct-transfer-reads+=1;
+  if nct-transfer-mode==1{nct-check(0,cap-revoke(nct-memory));nct-transfer-mode=0;}
+  if nct-transfer-mode==2{nct-check(0,cap-revoke(nct-owner));nct-transfer-mode=0;}
+  if nct-transfer-mode==3{
+   let domain=user-space-domain(nct-transfer-vm,nct-memory);let root=load64(domain-table+domain*24);
+   let pdpt=load64(root+((address>>39)&511)*8)&PAGE-ADDRESS-MASK;let pd=load64(pdpt+((address>>30)&511)*8)&PAGE-ADDRESS-MASK;
+   nct-transfer-pde=pd+((address>>21)&511)*8;nct-transfer-original=load64(nct-transfer-pde);
+   store64(nct-transfer-pde,nct-transfer-original|128);nct-transfer-mode=0;
+  }
+ }
+ return result;
+}
+fn nct-vm(context:Int)->Int{
+ let vm=nct-positive(user-space-create(nct-memory,64));
+ nct-check(0,user-space-map-zero(vm,nct-memory,0x20000000,USER-SPACE-EXECUTE));
+ nct-check(0,user-space-map-zero(vm,nct-memory,0x21000000,USER-SPACE-WRITE));
+ let offset=0;while offset<NATIVE-CANVAS-BYTES{nct-check(0,user-space-map-zero(vm,nct-memory,0x20010000+offset,USER-SPACE-WRITE));offset+=4096;}
+ nct-check(0,user-space-populate(vm,nct-memory,0x20000000,nct-code,4096));
+ nct-check(0,user-context-init(context,768,user-space-domain(vm,nct-memory),0x20000000,0,0x21000FF0));return vm;
+}
+fn nct-run(vm:Int,binding:Int,context:Int,color:Int,kind:Int)->void{
+ nct-check(0,user-context-init(context,768,user-space-domain(vm,nct-memory),0x20000000,color,0x21000FF0));
+ let cap=current-cap;let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let flags=invoke1(load64(0x4198),0)&512;
+ nct-check(kind,user-space-resume(binding,nct-memory,100));nct-entries+=1;
+ nct-check(0,domain-current);nct-check(0,user-context-active);nct-check(0,user-budget-active);nct-check(cap,current-cap);
+ nct-check(fs,rdmsr(0xC0000100));nct-check(gs,rdmsr(0xC0000101));nct-check(flags,invoke1(load64(0x4198),0)&512);
+ if kind==USER-CONTEXT-EXIT{nct-check(42,load64(context+720));}
+ else{nct-check(14,load64(context+696));nct-check(7,load64(context+704));}
+}
+fn nct-pixels(x:Int,y:Int,color:Int)->void{
+ let row=0;while row<128{let column=0;while column<256{nct-check(color&0xFFFFFF,load32(fb-addr+(y+row)*fb-pitch+(x+column)*4)&0xFFFFFF);column+=1;}row+=1;}
+}
+fn nct-barrier(port:Int,stage:Int)->void{
+ serial-write-cstr(port,"native-canvas: pixels ");serial-write-dec-wide(port,stage);serial-nl(port);
+ let remaining=100000000;while (inb(port+5)&1)==0 && remaining>0{remaining-=1;}
+ if remaining==0{panic("native canvas host capture deadline");}nct-check(113,inb(port));
+}
+fn native-canvas-check(port:Int)->void{
+ nct-check(-1,dyn-resolve-idx("native-canvas-new"));if dyn-resolve-idx("serial-write-cstr")<0{panic("native canvas public registry control");}
+ let table=alloc(48);store64(table,BOOT-IMAGE-TABLE-MAGIC);store64(table+8,1);store64(table+16,254);store64(table+24,0x2f0000);store64(table+32,NCT-PRIVATE-SIZE);store64(table+40,0);
+ let previous=load64(0x40d0);store64(0x40d0,table);let priorheap=heap-next;let priorcaps=cap-count;let priordomains=domain-count;let live=runtime-instance-live;
+ nct-check(-1,sci-load-runtime-component(port,0x2f0000,"private-native-canvas",1,1,0));
+ nct-check(priorheap,heap-next);nct-check(priorcaps,cap-count);nct-check(priordomains,domain-count);nct-check(live,runtime-instance-live);store64(0x40d0,previous);
+ if out-set-bga-mode(port,1024,768,100,100)<=0{panic("native canvas output");}
+ nct-owner=cap-mint(root-realm,cap-memory()|cap-display());nct-memory=cap-mint(root-realm,cap-memory());nct-wrong=cap-mint(root-realm,cap-memory());nct-no-display=cap-mint(root-realm,cap-memory());
+ nct-context-a=(alloc(831)+63)&-64;nct-context-b=(alloc(831)+63)&-64;nct-code=alloc(4096);cpu-mem-copy64(nct-code,0x13000000,512);
+ let initial-heap=heap-next;let initial-free=nct-free();let initial-domains=domain-count;let initial-count=dsp-surface-count;
+ nct-check(-2,native-canvas-new(nct-no-display,256,128,64,64));nct-check(-1,native-canvas-new(nct-owner,257,128,64,64));
+ let end=heap-end;heap-end=heap-next+64;nct-check(-3,native-canvas-new(nct-owner,256,128,64,64));heap-end=end;
+ nct-check(0,native-canvas-table);nct-check(initial-heap,heap-next);nct-check(initial-free,nct-free());nct-check(initial-domains,domain-count);nct-check(initial-count,dsp-surface-count);
+ let hook=domain-user-syscall-hook;domain-user-syscall-hook=nct-hook;
+ let heap=0;let free=0;let domains=0;let caps=cap-count;let objects=obj-arena-next;let owned=domain-user-owned;
+ let cycle=0;while cycle<22{
+  let vm-a=nct-vm(nct-context-a);let vm-b=nct-vm(nct-context-b);
+  let binding-a=nct-positive(user-space-attach(vm-a,nct-memory,nct-context-a));let binding-b=nct-positive(user-space-attach(vm-b,nct-memory,nct-context-b));
+  let a=nct-positive(native-canvas-new(nct-owner,256,128,64,64));let b=nct-positive(native-canvas-new(nct-owner,256,128,352,64));
+  dsp-background=0x0011161F;dsp-mouse-x=900;dsp-mouse-y=700;
+  nct-check(0,native-canvas-bind(a,nct-owner,vm-a,nct-memory));nct-check(0,native-canvas-bind(b,nct-owner,vm-b,nct-memory));
+  nct-check(2,user-space-refs(vm-a,nct-memory));nct-check(2,user-space-refs(vm-b,nct-memory));
+  nct-check(256,native-canvas-query(a,nct-owner,0));nct-check(128,native-canvas-query(a,nct-owner,1));nct-check(1024,native-canvas-query(a,nct-owner,2));nct-check(1,native-canvas-query(a,nct-owner,3));nct-check(0,native-canvas-query(a,nct-owner,4));
+  nct-current=a;nct-run(vm-a,binding-a,nct-context-a,0x12336699,USER-CONTEXT-EXIT);nct-check(0,native-canvas-upload(a,nct-owner,binding-a,0x20010000));
+  nct-current=b;nct-run(vm-b,binding-b,nct-context-b,0x32663322,USER-CONTEXT-EXIT);nct-check(0,native-canvas-upload(b,nct-owner,binding-b,0x20010000));
+  nct-pixels(64,64,0x336699);nct-pixels(352,64,0x663322);if cycle==0{nct-barrier(port,0);}
+  nct-check(-6,native-canvas-upload(a,nct-owner,binding-b,0x20010000));nct-check(-2,native-canvas-upload(a,nct-no-display,binding-a,0x20010000));
+  nct-check(-1,native-canvas-upload(a,nct-owner,binding-a,0x20000000));nct-check(1,native-canvas-query(a,nct-owner,4));nct-pixels(64,64,0x336699);
+  nct-current=a;nct-run(vm-a,binding-a,nct-context-a,0x09000000,USER-CONTEXT-EXIT);nct-pixels(64,64,0x336699);if cycle==0{nct-barrier(port,1);}
+  let revoke-mode=1;while revoke-mode<=2{
+   let grant=nct-memory;if revoke-mode==2{grant=nct-owner;}
+   let grant-row=cap-table-base+grant*16;let grant-target=load64(grant-row);let grant-rights=load64(grant-row+8);
+   nct-transfer-reads=0;nct-transfer-attempts=0;nct-transfer-mode=revoke-mode;
+   nct-check(-2,native-canvas-upload(a,nct-owner,binding-a,0x20010000));
+   nct-check(1,nct-transfer-reads);nct-check(1,nct-transfer-attempts);nct-check(0,nct-transfer-mode);
+   store64(grant-row,grant-target);store64(grant-row+8,grant-rights);
+   nct-check(1,native-canvas-query(a,nct-owner,4));nct-pixels(64,64,0x336699);nct-pixels(352,64,0x663322);
+   revoke-mode+=1;
+  }
+  nct-check(0,native-canvas-upload(a,nct-owner,binding-a,0x20010000));nct-pixels(64,64,0);nct-pixels(352,64,0x663322);if cycle==0{nct-barrier(port,2);}
+  nct-run(vm-a,binding-a,nct-context-a,-1,USER-CONTEXT-FAULT);nct-check(2,native-canvas-query(a,nct-owner,4));nct-pixels(64,64,0);
+  let owner-row=cap-table-base+nct-owner*16;let owner-target=load64(owner-row);let owner-rights=load64(owner-row+8);
+  nct-check(0,cap-revoke(nct-owner));nct-check(-2,native-canvas-close(a,nct-owner));store64(owner-row,owner-target);store64(owner-row+8,owner-rights);
+  nct-check(2,native-canvas-query(a,nct-owner,4));
+  let memory-row=cap-table-base+nct-memory*16;let target=load64(memory-row);let rights=load64(memory-row+8);
+  nct-check(0,cap-revoke(nct-memory));nct-check(-2,native-canvas-upload(b,nct-owner,binding-b,0x20010000));nct-check(0,native-canvas-close(a,nct-owner));nct-check(-6,native-canvas-query(a,nct-owner,4));
+  nct-pixels(64,64,0x11161F);nct-pixels(352,64,0x663322);if cycle==0{nct-barrier(port,3);}
+  store64(memory-row,target);store64(memory-row+8,rights);
+  nct-current=b;nct-run(vm-b,binding-b,nct-context-b,0x32663322,USER-CONTEXT-EXIT);nct-check(0,native-canvas-upload(b,nct-owner,binding-b,0x20010000));
+  let fresh=nct-positive(native-canvas-new(nct-owner,256,128,64,64));if fresh==a{panic("native canvas generation ABA");}nct-check(-6,native-canvas-query(a,nct-owner,4));
+  nct-check(0,native-canvas-bind(fresh,nct-owner,vm-a,nct-memory));nct-current=fresh;nct-run(vm-a,binding-a,nct-context-a,0x0A123456,USER-CONTEXT-EXIT);
+  nct-check(0,native-canvas-upload(fresh,nct-owner,binding-a,0x20010000));nct-pixels(64,64,0x123456);
+
+  nct-transfer-vm=vm-a;nct-transfer-mode=3;nct-transfer-reads=0;nct-transfer-attempts=0;
+  nct-check(-5,native-canvas-upload(fresh,nct-owner,binding-a,0x20010000));nct-check(1,nct-transfer-reads);nct-check(2,nct-transfer-attempts);
+  nct-check(USER-SPACE-QUARANTINED,user-space-phase(vm-a,nct-memory));nct-check(1,native-canvas-query(fresh,nct-owner,4));nct-pixels(64,64,0x123456);nct-pixels(352,64,0x663322);
+  // Real renderer association uncertainty must fence without destroying it.
+  let fresh-row=native-canvas-row(fresh,nct-owner);let pool=load64(fresh-row+72);let sid=load64(fresh-row+64);
+  let accepted=load64(dsp-pools+pool*8);store64(dsp-pools+pool*8,nct-code);
+  nct-check(-5,native-canvas-close(fresh,nct-owner));nct-check(2,native-canvas-query(fresh,nct-owner,5));
+  nct-check(nct-code,load64(dsp-pools+pool*8));nct-check(1,dsp-surface-valid(sid));
+  nct-check(-4,native-canvas-upload(fresh,nct-owner,binding-a,0x20010000));nct-check(-4,native-canvas-new(nct-owner,256,128,64,64));
+  store64(dsp-pools+pool*8,accepted);
+  if cycle==0{
+   let generation=out-generation;
+   nct-positive(out-set-bga-mode(port,1280,720,100,100));nct-check(-5,native-canvas-upload(b,nct-owner,binding-b,0x20010000));
+   nct-positive(out-set-bga-mode(port,1024,768,100,100));if out-generation<=generation{panic("native canvas output generation");}
+   nct-check(-5,native-canvas-upload(b,nct-owner,binding-b,0x20010000));nct-check(2,native-canvas-query(b,nct-owner,4));
+   dsp-composite();nct-pixels(64,64,0x123456);nct-pixels(352,64,0x663322);
+  }
+  nct-check(0,native-canvas-close(fresh,nct-owner));nct-check(0,native-canvas-close(b,nct-owner));nct-check(-6,native-canvas-close(b,nct-owner));
+  if cycle==0{nct-barrier(port,4);}
+  nct-check(2,user-space-refs(vm-a,nct-memory));nct-check(2,user-space-refs(vm-b,nct-memory));
+  nct-check(-5,user-space-release-binding(binding-a,nct-memory));nct-check(-6,user-space-binding-phase(binding-a,nct-memory));nct-check(1,user-space-refs(vm-a,nct-memory));
+  nct-check(-5,user-space-release(vm-a,nct-memory));nct-check(0,user-space-constructor-owned(vm-a,nct-memory));nct-check(0,user-space-refs(vm-a,nct-memory));
+  store64(nct-transfer-pde,nct-transfer-original);nct-check(0,user-space-recover(vm-a,nct-memory));nct-check(-6,user-space-phase(vm-a,nct-memory));nct-check(0,user-space-release-binding(binding-b,nct-memory));nct-check(0,user-space-release(vm-b,nct-memory));
+  nct-check(owned,domain-user-owned);nct-check(caps,cap-count);nct-check(objects,obj-arena-next);
+  if cycle==0{heap=heap-next;free=nct-free();domains=domain-count;}else{nct-check(heap,heap-next);nct-check(free,nct-free());nct-check(domains,domain-count);}
+  serial-write-cstr(port,"native-canvas: lifecycle ");serial-write-dec-wide(port,cycle);serial-nl(port);cycle+=1;
+ }
+ domain-user-syscall-hook=hook;nct-check(132,nct-entries);
+ serial-write-cstr(port,"native-canvas: actual owned upload two producers 132 entries 22 PF 21 stable cycles PASS");serial-nl(port);
+}

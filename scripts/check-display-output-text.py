@@ -134,6 +134,10 @@ var text-cache-evictions:Int=0;
 var heap-cursor:Int=256;
 var fallback-draws:Int=0;
 var ttf-font-valid:Int=0;
+// These owning-function models retain the legacy bitmap profile. Mature font
+// advances/carets/fallback are checked against pixels in actual QEMU separately.
+var desktop-fonts-active:Int=0;
+fn desktop-font-advance(face:Int,cp:Int,scale:Int)->Int{return 0;}
 var ttf-upem:Int=1000;
 fn ttf-map-char(cp:Int)->Int{return 0;}
 fn ttf-glyph-advance(gid:Int)->Int{return 600;}

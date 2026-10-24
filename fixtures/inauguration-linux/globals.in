@@ -1,0 +1,10 @@
+// Synthetic compiler corpus: mutable data and calls, no Space interfaces.
+var counter:Int=19;
+var values:[Int]=[3,5,7];
+fn change()->Int {values[1]=values[1]+counter;counter=counter+1;return values[1];}
+fn main()->Int {
+ if values[0]!=3 || values[2]!=7{return 1;}
+ if change()!=24 || counter!=20{return 2;}
+ if change()!=44 || counter!=21{return 3;}
+ return counter+values[1]+8;
+}

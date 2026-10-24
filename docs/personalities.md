@@ -1,11 +1,26 @@
 # Compatibility personalities
 
+The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
+Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
+edit/save/reopen profile executes original vi; focused interactive TUI support
+remains open. Native providers own readiness, bytes and identity, with Linux
+structures/errors at the edge. They remain private kernel-linked prototypes.
+
 Space provides bounded foreign ABI fixtures and translator microservices.
 The compatibility surface maps onto Space VFS, process, and serial primitives;
 it does not provide a general Linux, macOS, or Windows process environment.
 
 **Progress + milestones:** [`personalities-roadmap.md`](personalities-roadmap.md)
 Verify: `bash scripts/check-personalities.sh`.
+
+The separately imported [initial Linux framebuffer profile](plans/2026-10-24-linux-framebuffer-app.md)
+now runs the original pinned fbv BMP viewer against an explicitly owned native
+canvas:22 original activations,88 separately counted syscall/failure controls,
+exact pixels and21 resource cycles. Ordinary CLI images import only the optional
+private device contract; they acquire no display implementation or authority.
+The profile admits one completed mapping per sole-process lease and publishes
+on checked stopped unmap. Interactive input, remapping/aliases, X11 and FLTK
+remain open. Neither private adapter is an isolated SCI service.
 
 ## ReactOS / NT layering (research takeaway)
 
@@ -130,11 +145,13 @@ BSD numbers used (Darwin where implemented; Space-local shims noted):
 Checks: `scripts/check-darwin-personality.sh`, `scripts/check-windows-personality.sh`.
 
 Source review and acceptance checks: [ravynOS Darwin reference](ravynos-darwin-review.md).
+For user-space frameworks and the staged GUI path, see the
+[Rosemary macOS reference](rosemary-macos-reference.md).
 
 ## Trusted Mach-O fixture path
 
 `darwinmacho` validates and invokes a boot-injected thin x86_64 Mach-O image at
-0x280000. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
+`0x2f0000`. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
 MH_NOUNDEFS, exactly one RX LC_SEGMENT_64 with no sections, and one LC_MAIN.
 The segment must already reside at its declared address, be entirely file-backed,
 and contain the entry after the commands. Command bounds and all 64-bit ranges
@@ -189,7 +206,16 @@ Linux and Darwin return variants check the same cleanup when the entry returns n
 Asynchronous volume RPC and direct NVMe SparkFS are rejected by this runner,
 which disables interrupts. Fixture commands require a fresh descriptor table.
 Existing VFS path copies use the bump allocator; descriptor cleanup does not
-reclaim those allocations. File writes, process isolation and general Windows
+reclaim those allocations.
+
+Linux `lseek=8` and Darwin Unix-class `lseek=199` now seek only execution-owned
+regular-file descriptors with a storage grant. SET/CUR/END use VFS offsets;
+invalid whence, negative targets and host/closed descriptors are refused. The
+file fixtures check tail reads, read advancement and rewind on both ABIs.
+Windows fixtures additionally check a boundary-crossing output-count pointer
+refuses without consuming data, and zero-byte read success preserves position.
+
+File writes, process isolation and general Windows
 path/sharing semantics remain unsupported.
 
 Run `bash scripts/check-foreign-syscalls.sh` (also included in personality gates).

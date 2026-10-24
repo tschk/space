@@ -1,0 +1,52 @@
+package space.kernel
+import "../linux-process/checks.in"
+import "../linux-pipes/checks.in"
+import "../linux-children/checks.in"
+import "retry-checks.in"
+
+fn blocking-check-case(port:Int,id:Int,image:Int,size:Int,mode:Int,measured:Int)->void {
+ serial-write-cstr(port,"blocking-corpus: begin ");serial-write-dec-wide(port,child-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);serial-nl(port);
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let authority=current-cap;
+ linux-process-budget-ticks=100;if mode==2{linux-process-budget-ticks=10;}
+ if mode==4{linux-process-budget-ticks=10000;}
+ let before=ticks;
+ let result=linux-process-run(image,size,"/blocking-corpus","","",pipe-check-authority);
+ let expected=42;if mode==1{expected=125;}else if mode==2{expected=124;}else if mode==3{expected=134;}else if mode==4{expected=126;}
+ linux-check(expected,result);
+ linux-check(0,linux-process-pipe-last-signal);
+ if mode==0{linux-check(USER-CONTEXT-EXIT,load64(linux-process-states+LPS-STOP-KIND));}
+ if mode==1{linux-check(LINUX-PROCESS-STOP-DEADLOCK,load64(linux-process-states+LPS-STOP-KIND));}
+ if mode==2{
+  linux-check(USER-CONTEXT-DEADLINE,load64(linux-process-states+LPS-STOP-KIND));
+  linux-check(0,load64(linux-process-states+LPS-BUDGET));
+  if ticks - before<10{panic("blocking IRQ witness");}
+ }
+ if mode==3{
+  linux-check(USER-CONTEXT-FAULT,load64(linux-process-states+LPS-STOP-KIND));
+  linux-check(6,load64(linux-process-states+LPS-STOP-DETAIL));
+ }
+ if mode==4{
+  linux-check(LINUX-PROCESS-STOP-POLICY,load64(linux-process-states+LPS-STOP-KIND));
+  linux-check(1,linux-process-work-exhausted);linux-check(LINUX-PROCESS-WORK-MAX,linux-process-work);
+  if load64(linux-process-states+LPS-BUDGET)<=0{panic("policy cancellation must not fabricate IRQ exhaustion");}
+ }
+ linux-check(fs,rdmsr(0xC0000100));linux-check(gs,rdmsr(0xC0000101));linux-check(authority,current-cap);
+ let i=0;while i<LINUX-STATE-MAX{
+  let row=linux-process-states+i*LINUX-STATE-BYTES;
+  let state=load64(row+LPS-STATUS);
+  if state!=LINUX-STATE-FREE && state!=LINUX-STATE-REAPED{panic("blocking retained process record");}
+  if state==LINUX-STATE-REAPED{
+   linux-check(0,load64(load64(row+LPS-USER-CONTEXT)+736));
+   linux-check(0,load64(load64(row+LPS-SPARE-CONTEXT)+736));
+  }
+  linux-check(0,load64(row+LPS-DOMAIN));linux-check(0,load64(row+LPS-PAGES));
+  linux-check(0,load64(row+LPS-SPARE-DOMAIN));linux-check(0,load64(row+LPS-SPARE-PAGES));
+  i=i+1;
+ }
+ pipe-check-released(measured);
+ serial-write-cstr(port,"blocking-corpus: end ");serial-write-dec-wide(port,child-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);
+ serial-write-cstr(port," status ");serial-write-dec-wide(port,result);serial-nl(port);
+ child-check-count=child-check-count+1;
+}

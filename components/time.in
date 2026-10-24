@@ -2,7 +2,7 @@ package space.time
 
 component Time {
   target "x86_64-unknown-none"
-  deterministic true
+  deterministic false
   checkpoint none
 
   capability time: TimeSource(read)
@@ -63,65 +63,88 @@ var time-component-h: Int = 0
 var time-component-mi: Int = 0
 var time-component-s: Int = 0
 
-fn time-component-wallclock() -> Int {
-  // Read RTC registers
-  let s = time-component-rtc-read(0x00)
-  let m = time-component-rtc-read(0x02)
-  let h = time-component-rtc-read(0x04)
-  let d = time-component-rtc-read(0x07)
-  let mo = time-component-rtc-read(0x08)
-  let y = time-component-rtc-read(0x09)
-  let c = time-component-rtc-read(0x32)
+// A bounded UTC RTC profile: two complete identical samples, with UIP clear
+// before and after each. Never spin indefinitely in a kernel service.
+fn time-component-raw-snapshot() -> Int {
   let rb = time-component-rtc-read(0x0B)
+  let result = time-component-rtc-read(0x00)
+  result = result | (time-component-rtc-read(0x02) << 8)
+  result = result | (time-component-rtc-read(0x04) << 16)
+  result = result | (time-component-rtc-read(0x07) << 24)
+  result = result | (time-component-rtc-read(0x08) << 32)
+  result = result | (time-component-rtc-read(0x09) << 40)
+  result = result | (time-component-rtc-read(0x32) << 48)
+  return result | (rb << 56)
+}
 
-  // BCD to binary
-  if (rb & 0x04) == 0 {
-    s = time-component-bcd-to-bin(s)
-    m = time-component-bcd-to-bin(m)
-    h = ((h & 0x7F) & 0x0F) + (((h & 0x7F) / 16) * 10) | (h & 0x80)
-    d = time-component-bcd-to-bin(d)
-    mo = time-component-bcd-to-bin(mo)
-    y = time-component-bcd-to-bin(y)
-    if c != 0 { c = time-component-bcd-to-bin(c) }
-  }
-
-  // 12-hour to 24-hour
-  if (rb & 0x02) == 0 {
-    let pm = (h & 0x80)
-    h = h & 0x7F
-    if pm != 0 {
-      if h != 12 { h = h + 12 }
-    } else {
-      if h == 12 { h = 0 }
+fn time-component-stable-snapshot() -> Int {
+  let attempt = 0
+  while attempt < 256 {
+    attempt = attempt + 1
+    if (time-component-rtc-read(0x0A) & 0x80) == 0 {
+      let first = time-component-raw-snapshot()
+      if (time-component-rtc-read(0x0A) & 0x80) == 0 {
+        let second = time-component-raw-snapshot()
+        if (time-component-rtc-read(0x0A) & 0x80) == 0 && first == second { return first }
+      }
     }
   }
+  return -1
+}
 
-  // Full year
-  if c != 0 {
-    y = c * 100 + y
+fn time-component-decode-byte(value: Int, binary: Int) -> Int {
+  if value < 0 || value > 255 { return -1 }
+  if binary != 0 { return value }
+  if (value & 15) > 9 || (value >> 4) > 9 { return -1 }
+  return time-component-bcd-to-bin(value)
+}
+
+fn time-component-month-days(year: Int, month: Int) -> Int {
+  if month == 2 { return 28 + time-component-is-leap-year(year) }
+  if month == 4 || month == 6 || month == 9 || month == 11 { return 30 }
+  return 31
+}
+
+fn time-component-wallclock() -> Int {
+  let raw = time-component-stable-snapshot()
+  if raw == -1 { return -1 }
+  let rb = (raw >> 56) & 255
+  // SET inhibits the RTC update cycle; this profile refuses frozen setup data.
+  if (rb & 0x80) != 0 { return -1 }
+  let binary = rb & 4
+  let s = time-component-decode-byte(raw & 255,binary)
+  let m = time-component-decode-byte((raw >> 8) & 255,binary)
+  let hour = (raw >> 16) & 255
+  let h = time-component-decode-byte(hour & 127,binary)
+  let d = time-component-decode-byte((raw >> 24) & 255,binary)
+  let mo = time-component-decode-byte((raw >> 32) & 255,binary)
+  let y = time-component-decode-byte((raw >> 40) & 255,binary)
+  let century = (raw >> 48) & 255
+  if s < 0 || s > 59 || m < 0 || m > 59 || h < 0 || y < 0 || y > 99 { return -1 }
+  if (rb & 2) == 0 {
+    if h < 1 || h > 12 { return -1 }
+    if h == 12 { h = 0 }
+    if (hour & 128) != 0 { h = h + 12 }
   } else {
+    if h > 23 || (hour & 128) != 0 { return -1 }
+  }
+  if century == 0 || century == 255 {
+    // The declared absent-century window is1980..2079.
     if y < 80 { y = y + 2000 } else { y = y + 1900 }
+  } else {
+    let c = time-component-decode-byte(century,binary)
+    if c < 19 || c > 99 { return -1 }
+    y = c * 100 + y
   }
-
-  // Days from 1970 to Jan 1 of y
-  let total-days = 0
-  let i = 1970
-  while i < y {
-    if time-component-is-leap-year(i) != 0 {
-      total-days = total-days + 366
-    } else {
-      total-days = total-days + 365
-    }
-    i = i + 1
-  }
-
-  // Days this year
-  let dbm = time-component-days-before-month(mo, time-component-is-leap-year(y))
-  total-days = total-days + dbm + (d - 1)
-
-  let ts = (total-days * 86400) + (h * 3600) + (m * 60) + s
-
-  // Store formatted fields for time_print
+  if y < 1970 || y > 9999 || mo < 1 || mo > 12 { return -1 }
+  if d < 1 || d > time-component-month-days(y,mo) { return -1 }
+  let prior = y - 1
+  let epoch-prior = 1969
+  let total-days = prior * 365 + prior / 4 - prior / 100 + prior / 400
+  total-days = total-days - (epoch-prior * 365 + epoch-prior / 4 - epoch-prior / 100 + epoch-prior / 400)
+  total-days = total-days + time-component-days-before-month(mo,time-component-is-leap-year(y)) + d - 1
+  let ts = total-days * 86400 + h * 3600 + m * 60 + s
+  // Publish only a validated coherent sample. Failure preserves the last one.
   time-component-ts = ts
   time-component-y = y
   time-component-mo = mo
@@ -129,13 +152,12 @@ fn time-component-wallclock() -> Int {
   time-component-h = h
   time-component-mi = m
   time-component-s = s
-
   return ts
 }
 
 fn time-component-entry(cap-info: Int) -> Int {
   let ts = time-component-wallclock()
-  if ts <= 0 {
+  if ts < 0 {
     return -1
   }
   return 0

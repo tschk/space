@@ -1,0 +1,3 @@
+package space.fixture
+interrupt fn windows-find-run(image:Int,size:Int,config:Int)->Int{}
+fn private-entry(info:Int)->Int{return windows-find-run(0,0,0);}

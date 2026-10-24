@@ -77,6 +77,8 @@ const SF-ST-NLINK = 16
 const SF-ST-CTIME = 24
 const SF-ST-MTIME = 32
 const SF-ST-ATIME = 40
+const SF-ST-INODE = 48
+const SF-ST-MOUNT = 56
 
 // --- runtime state ----------------------------------------------------------
 
@@ -87,3 +89,7 @@ var sf-block-buf: Int = 0
 var sf-initialized: Int = 0
 var sf-disk-ready: Int = 0
 var sf-mem-disk: Int = 0
+
+// Identity belongs to the mounted service/format epoch, not a pathname hash.
+var sf-mount-id: Int = 0
+var sf-next-mount-id: Int = 1

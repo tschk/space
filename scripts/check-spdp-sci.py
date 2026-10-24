@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Real SCI frames control geometry and pixels in a loader-granted shared page."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import copy
 import hashlib
@@ -68,11 +69,11 @@ for name, bad_image, bad_metadata in invalid:
 subprocess.run(['python3', str(packager), str(out/'client.sci'), str(metadata_path), str(out/'client-space.sci')], check=True)
 image = bytearray((out/'kernel.bin').read_bytes())
 client = (out/'client-space.sci').read_bytes()
-offset = 0x280000 - 0x100000
+offset = 0x2f0000 - 0x100000
 # This fixture exclusively uses the existing Linux-proof slot, below the 3MiB heap.
 assert len(image) <= offset and len(client) <= 0x10000, 'fixture overlaps kernel/reserved heap'
-assert 0x280000 + len(client) <= 0x300000
-image += bytes(offset-len(image)) + client
+assert 0x2f0000 + len(client) <= 0x300000
+image = bytearray(stage_fixture(image,client,0x2f0000))
 (out/'combined.bin').write_bytes(image)
 serial_path, monitor_path = out/'serial.sock', out/'monitor.sock'
 for path in (serial_path, monitor_path):

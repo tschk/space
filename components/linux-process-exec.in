@@ -1,0 +1,166 @@
+package space.kernel
+
+// Copy complete bounded vectors into execution-owned supervisor storage before
+// replacing mappings. Invalid exec requests preserve the live stopped image.
+fn linux-process-exec-vector(vector: Int, pointers: Int, bytes: Int) -> Int {
+  if vector == 0 { return 0 }
+  let count = 0
+  let used = 0
+  while count <= LINUX-STATE-ARGS {
+    if linux-process-range(vector + count * 8,8,0) == 0 { return -14 }
+    let text = 0
+    let i = 0
+    while i < 8 { text = text | (linux-process-read8(vector + count * 8 + i) << (i * 8));i = i + 1 }
+    if text == 0 { return count }
+    if count == LINUX-STATE-ARGS { return -7 }
+    store64(pointers + count * 8,bytes + used)
+    i = 0
+    let done = 0
+    while done == 0 && i < 512 {
+      if linux-process-range(text + i,1,0) == 0 { return -14 }
+      let ch = linux-process-read8(text + i)
+      store8(bytes + used,ch)
+      used = used + 1
+      i = i + 1
+      if ch == 0 { done = 1 }
+    }
+    if done == 0 { return -7 }
+    count = count + 1
+  }
+  return -7
+}
+
+fn linux-process-exec-request(path: Int, argv: Int, env: Int) -> Int {
+  if linux-process-current-record == 0 { return -38 }
+  if linux-process-string-valid(path) == 0 { return -14 }
+  if linux-process-string-is(path,"/proc/self/exe") == 0 { return -2 }
+  let row = linux-process-current-record
+  if load64(row + LPS-EXEC-COUNT) >= 8 { return -11 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  let argc = linux-process-exec-vector(argv,load64(row + LPS-ARGV),load64(row + LPS-ARG-BUFFER))
+  if argc < 0 { return argc }
+  if argc == 0 { return -22 }
+  let envc = linux-process-exec-vector(env,load64(row + LPS-ENV),load64(row + LPS-ENV-BUFFER))
+  if envc < 0 { return envc }
+  if linux-process-preparations >= LINUX-PROCESS-PREPARATION-MAX { return -11 }
+  linux-process-preparations = linux-process-preparations + 1
+  store64(row + LPS-ARGC,argc)
+  store64(row + LPS-ENVC,envc)
+  store64(row + LPS-PENDING,2)
+  return 0
+}
+
+fn linux-process-exec-stack(row: Int, image: Int) -> Int {
+  linux-process-startup = 1;linux-process-startup-error = 0
+  return linux-process-startup-result(linux-process-exec-stack-build(row,image))
+}
+
+fn linux-process-exec-stack-build(row: Int, image: Int) -> Int {
+  // Reuse genuine ELF auxv/entropy construction, then rebuild real argc/argv/env
+  // vectors. Strings occupy their own16KiB area beneath the auxiliary entropy.
+  let original = linux-process-stack-build(image,linux-process-exe,"","")
+  if original < 0 { return original }
+  let strings = LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 32768
+  let stack = strings - 1024
+  let argc = load64(row + LPS-ARGC)
+  let envc = load64(row + LPS-ENVC)
+  linux-process-store64(stack,argc)
+  let next = stack + 8
+  let position = strings
+  let group = 0
+  while group < 2 {
+    let count = argc
+    let array = load64(row + LPS-ARGV)
+    if group == 1 { count = envc;array = load64(row + LPS-ENV) }
+    let i = 0
+    while i < count {
+      let text = load64(array + i * 8)
+      linux-process-stack-string(position,text)
+      linux-process-store64(next,position)
+      next = next + 8
+      position = position + strlen(text) + 1
+      i = i + 1
+    }
+    linux-process-store64(next,0)
+    next = next + 8
+    group = group + 1
+  }
+  let i = 0
+  while i < 224 { linux-process-store8(next + i,linux-process-read8(original + 64 + i));i = i + 1 }
+  return stack
+}
+
+fn linux-process-exec-close() -> void {
+  let i = 0
+  while i < VFS-MAX-FDS {
+    if linux-process-pipe-is(i) != 0 {
+      if load64(linux-process-pipe-fdflags + i * 8) != 0 { linux-process-pipe-close(i) }
+    } else if linux-process-file-host(i) >= 3 {
+      if load64(linux-process-file-fdflags + i * 8) != 0 { linux-process-file-close(i) }
+    } else if (i == 1 || i == 2) && load64(linux-process-file-fdflags + i * 8) != 0 {
+      if i == 1 { linux-process-stdout-open = 0 }
+      else { linux-process-stderr-open = 0 }
+      store64(linux-process-file-fdflags + i * 8,0)
+    }
+    i = i + 1
+  }
+}
+
+fn linux-process-exec-replace(row: Int) -> Int {
+  let image = load64(row + LPS-IMAGE)
+  let size = load64(row + LPS-IMAGE-SIZE)
+  let entry = linux-process-elf-entry(image,size)
+  if entry < 0 { return entry }
+  if heap-end - heap-next < 0x2000000 { return -12 }
+  if image < heap-next + 0x2000000 && image + size > heap-next { return -12 }
+  let token = linux-process-vm-create(linux-process-authority)
+  if token <= 0 {
+    if linux-process-vm-created > 0 {
+      store64(row + LPS-SPARE-VM,linux-process-vm-created)
+      store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      linux-process-cleanup-failed = 1
+    }
+    return token
+  }
+  store64(row + LPS-SPARE-VM,token);store64(row + LPS-SPARE-BINDING,0)
+  if linux-process-vm-use(token,0) != 0 { return linux-process-state-refuse(row) }
+  let domain = linux-process-domain
+  linux-process-staging-context = load64(row + LPS-SPARE-CONTEXT)
+  let status = linux-process-map-elf(image)
+  let stack = 0
+  if status == 0 { stack = linux-process-exec-stack(row,image);if stack < 0 { status = stack } }
+  let context = linux-process-staging-context
+  if status == 0 { store64(context + 144,stack) }
+  let binding = linux-process-binding
+  store64(row + LPS-SPARE-VM,token);store64(row + LPS-SPARE-BINDING,binding)
+  store64(row + LPS-SPARE-DOMAIN,domain);store64(row + LPS-SPARE-PAGES,linux-process-pages)
+  if status != 0 {
+    if linux-process-vm-drop(token,binding) != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-SPARE-BINDING,0) }
+      store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      linux-process-cleanup-failed = 1
+    } else {
+      store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+      store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
+    }
+    if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) }
+    if linux-process-cleanup-failed != 0 { return -5 }
+    return status
+  }
+  // The complete native replacement remains separately owned until old detach
+  // commits. Failed teardown preserves both object identities for recovery.
+  let old-context = load64(row + LPS-USER-CONTEXT)
+  if linux-process-state-drop-primary(row) != 0 { if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) } return -5 }
+  linux-process-exec-close()
+  store64(row + LPS-VM-OBJECT,token);store64(row + LPS-VM-BINDING,binding)
+  store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+  store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
+  store64(row + LPS-SPARE-CONTEXT,old-context)
+  store64(row + LPS-USER-CONTEXT,context)
+  if linux-process-vm-use(token,binding) != 0 { return linux-process-state-refuse(row) }
+  linux-process-clear-tid = 0
+  linux-process-pipe-signal = 0;linux-process-pipe-last-signal = 0
+  store64(row + LPS-EXEC-COUNT,load64(row + LPS-EXEC-COUNT) + 1)
+  if linux-process-state-save(row) != 0 { return linux-process-state-refuse(row) }
+  return 0
+}

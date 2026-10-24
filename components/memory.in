@@ -52,9 +52,10 @@ fn discover-memory(mb: Int) -> void {
   let data-size = load64(0x101000 + 72)
   let reserved-end = 0x300000
   if data-base != 0 || data-size != 0 {
-    // The boot lowerer fixes data at 2 MiB; the trampoline maps only 4 GiB.
+    // The boot header declares aligned initialized data after code/exports.
+    // Small images retain 2 MiB; the trampoline maps only the first 4 GiB.
     // Bound before addition so signed arithmetic and page rounding cannot wrap.
-    if data-base != 0x200000 || data-size <= 0 || data-size > 0xFFE00000 {
+    if data-base < 0x200000 || data-base >= 0x100000000 || (data-base & 4095) != 0 || data-size <= 0 || data-size > 0x100000000 - data-base {
       panic("invalid boot data range")
     }
     let data-end = data-base + data-size

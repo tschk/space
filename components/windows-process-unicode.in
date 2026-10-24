@@ -1,0 +1,92 @@
+package space.kernel
+
+import "text-unicode.in"
+
+// Explicit UTF8 execution profile: ACP and OEMCP are both65001. No native
+// locale/collation provider or arbitrary Windows codepage table is invented.
+fn windows-parameters-unicode-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-composed-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"GetACP")!=0{return 43;}
+ if windows-protected-name(image,size,name+2,"GetOEMCP")!=0{return 44;}
+ if windows-protected-name(image,size,name+2,"GetCPInfo")!=0{return 45;}
+ if windows-protected-name(image,size,name+2,"IsValidCodePage")!=0{return 46;}
+ if windows-protected-name(image,size,name+2,"MultiByteToWideChar")!=0{return 47;}
+ if windows-protected-name(image,size,name+2,"WideCharToMultiByte")!=0{return 48;}
+ return -1;
+}
+fn windows-parameters-unicode-fail(error:Int)->Int{windows-protected-error=error;return 0;}
+fn windows-parameters-unicode-int(value:Int)->Int{let n=value&0xffffffff;if n>=0x80000000{return n - 0x100000000;}return n;}
+fn windows-parameters-unicode-span(addr:Int,bytes:Int,writable:Int)->Int{
+ if bytes<0 || bytes>16384{return 0;}let at=0;while at<bytes{let n=bytes - at;if n>4096{n=4096;}if windows-protected-span(addr+at,n,writable)==0{return 0;}at=at+n;}return 1;
+}
+fn windows-parameters-unicode-store16(addr:Int,value:Int)->void{store8(windows-protected-physical(addr),value&255);store8(windows-protected-physical(addr+1),value>>8);}
+fn windows-parameters-unicode-load8(addr:Int)->Int{return load8(windows-protected-physical(addr));}
+fn windows-parameters-unicode-load16(addr:Int)->Int{return windows-parameters-unicode-load8(addr)|(windows-parameters-unicode-load8(addr+1)<<8);}
+fn windows-parameters-unicode-step(source:Int,index:Int,units:Int,wide:Int,strict:Int)->Int{
+ let remaining=units - index;
+ if wide!=0{
+  let first=windows-parameters-unicode-load16(source+index*2);let second=0;if remaining>1{second=windows-parameters-unicode-load16(source+(index+1)*2);}
+  let step=unicode-utf16-decode(first,second,remaining);if step>=0 || strict!=0{return step;}return (1<<32)|0xfffd;
+ }
+ let a=windows-parameters-unicode-load8(source+index);let b=0;let c=0;let d=0;
+ if remaining>1{b=windows-parameters-unicode-load8(source+index+1);}if remaining>2{c=windows-parameters-unicode-load8(source+index+2);}if remaining>3{d=windows-parameters-unicode-load8(source+index+3);}
+ let step=unicode-utf8-decode(a,b,c,d,remaining);if step>=0 || strict!=0{return step;}
+ return (unicode-utf8-invalid-prefix(a,b,c,remaining)<<32)|0xfffd;
+}
+fn windows-parameters-unicode-dispatch(frame:Int,num:Int)->Int{
+ if cap-check(windows-parameters-heap-authority,cap-memory())==0{return windows-parameters-unicode-fail(5);}
+ if num==0x10002b || num==0x10002c{return 65001;}
+ let cp=load64(frame+96)&0xffffffff;
+ if num==0x10002e{if cp==65001{return 1;}return 0;}
+ if cp!=0 && cp!=1 && cp!=65001{return windows-parameters-unicode-fail(87);}
+ if num==0x10002d{
+  let output=load64(frame+88);if output==0{return windows-parameters-unicode-fail(87);}
+  if windows-protected-span(output,20,1)==0{return windows-parameters-unicode-fail(998);}
+  // CPINFO: UINT MaxCharSize; BYTE DefaultChar[2]; BYTE LeadByte[12];
+  // eighteen ABI field bytes, plus two declared zero padding bytes.
+  let i=0;while i<20{store8(windows-protected-physical(output+i),0);i=i+1;}
+  windows-protected-store32(output,4);store8(windows-protected-physical(output+4),63);return 1;
+ }
+ let wide=0;if num==0x100030{wide=1;}
+ let flags=load64(frame+88)&0xffffffff;let source=load64(frame+56);let count=windows-parameters-unicode-int(load64(frame+48));let stack=load64(frame+144);
+ let stackbytes=16;if wide!=0{stackbytes=32;}
+ if windows-protected-span(stack+40,stackbytes,0)==0{return windows-parameters-unicode-fail(998);}
+ let output=windows-protected-load64(stack+40);let capacity=windows-parameters-unicode-int(windows-protected-load64(stack+48));
+ if source==0 || count==0 || capacity<0 || (output==0 && capacity!=0){return windows-parameters-unicode-fail(87);}
+ if wide!=0{if windows-protected-load64(stack+56)!=0 || windows-protected-load64(stack+64)!=0{return windows-parameters-unicode-fail(87);}}
+ let allowed=8;if wide!=0{allowed=128;}if flags!=0 && flags!=allowed{return windows-parameters-unicode-fail(1004);}
+ let width=1;if wide!=0{width=2;}
+ let units=count;
+ if count<0{
+  units=0;let found=0;while units<4096 && found==0{
+   if windows-protected-span(source+units*width,width,0)==0{return windows-parameters-unicode-fail(998);}
+   let value=windows-parameters-unicode-load8(source+units*width);if wide!=0{value=windows-parameters-unicode-load16(source+units*width);}
+   units=units+1;if value==0{found=1;}
+  }if found==0{return windows-parameters-unicode-fail(8);}
+ }else{if units>4096{return windows-parameters-unicode-fail(8);}if windows-parameters-unicode-span(source,units*width,0)==0{return windows-parameters-unicode-fail(998);}}
+ let outwidth=2;if wide!=0{outwidth=1;}
+ if capacity>0{
+  if capacity*outwidth>16384{return windows-parameters-unicode-fail(8);}
+  if windows-parameters-unicode-span(output,capacity*outwidth,1)==0{return windows-parameters-unicode-fail(998);}
+  if output<source+units*width && source<output+capacity*outwidth{return windows-parameters-unicode-fail(87);}
+ }
+ let strict=0;if flags!=0{strict=1;}
+ let needed=0;let i=0;while i<units{
+  let step=windows-parameters-unicode-step(source,i,units,wide,strict);if step<0{return windows-parameters-unicode-fail(1113);}
+  let scalar=step&0xffffffff;i=i+(step>>32);
+  if wide!=0{needed=needed+unicode-utf8-width(scalar);}else{needed=needed+1;if scalar>65535{needed=needed+1;}}
+ }
+ if capacity==0{return needed;}if capacity<needed{return windows-parameters-unicode-fail(122);}
+ // No service/guest interleaving between validation and publication. Complete
+ // input/output ranges and encoding were checked before this first write.
+ let at=0;i=0;while i<units{
+  let step=windows-parameters-unicode-step(source,i,units,wide,strict);let scalar=step&0xffffffff;i=i+(step>>32);
+  if wide!=0{let n=unicode-utf8-width(scalar);let j=0;while j<n{store8(windows-protected-physical(output+at),unicode-utf8-byte(scalar,j));at=at+1;j=j+1;}}
+  else{
+   if scalar>65535{scalar=scalar - 0x10000;windows-parameters-unicode-store16(output+at*2,0xd800|(scalar>>10));at=at+1;windows-parameters-unicode-store16(output+at*2,0xdc00|(scalar&1023));at=at+1;}
+   else{let value=scalar;store8(windows-protected-physical(output+at*2),value&255);store8(windows-protected-physical(output+at*2+1),value>>8);at=at+1;}
+  }
+ }return needed;
+}
+fn windows-command-unicode-run(image:Int,size:Int,config:Int)->Int{return windows-command-composed-run-profile(image,size,config,11);}

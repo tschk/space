@@ -38,21 +38,23 @@ EXPECTED="$4"
 KIND="${5:-serial}"
 SERIAL_LOG="$BUILD_DIR/$FIXTURE-serial.log"
 "$NASM" -I "$SPACE_DIR/fixtures/" -f bin "$SPACE_DIR/fixtures/$FIXTURE.asm" -o "$BUILD_DIR/fixture.bin"
-python3 - "$BUILD_DIR" "$ABI" "$KIND" <<'PY'
+python3 - "$BUILD_DIR" "$ABI" "$KIND" "$SCRIPT_DIR" <<'PY'
 from pathlib import Path
 import struct
 import sys
+sys.path.insert(0, sys.argv[4])
+from boot_fixture_layout import stage_fixture
 build = Path(sys.argv[1])
 image = (build / 'fixture.bin').read_bytes()
 assert len(image) == 4096
 if sys.argv[2] == 'linux':
     assert image[:8] == bytes.fromhex('7f454c4602010100')
     assert struct.unpack_from('<HHI', image, 16) == (2, 62, 1)
-    assert struct.unpack_from('<Q', image, 24)[0] == 0x280080
-    assert struct.unpack_from('<II6Q', image, 64) == (1, 5, 0, 0x280000, 0x280000, 4096, 4096, 4096)
+    assert struct.unpack_from('<Q', image, 24)[0] == 0x2f0080
+    assert struct.unpack_from('<II6Q', image, 64) == (1, 5, 0, 0x2f0000, 0x2f0000, 4096, 4096, 4096)
 elif sys.argv[2] == 'darwin':
     assert struct.unpack_from('<8I', image) == (0xfeedfacf, 0x1000007, 3, 2, 2, 96, 1, 0)
-    assert struct.unpack_from('<II16s4Q4I', image, 32) == (0x19, 72, b'__TEXT'+bytes(10), 0x280000, 4096, 0, 4096, 5, 5, 0, 0)
+    assert struct.unpack_from('<II16s4Q4I', image, 32) == (0x19, 72, b'__TEXT'+bytes(10), 0x2f0000, 4096, 0, 4096, 5, 5, 0, 0)
     assert struct.unpack_from('<IIQQ', image, 104) == (0x80000028, 24, 128, 0)
 else:
     assert image[:2] == b'MZ'
@@ -60,7 +62,7 @@ else:
     assert struct.unpack_from('<IHH', image, 128) == (0x4550, 0x8664, 1)
     assert struct.unpack_from('<H', image, 152)[0] == 0x20b
     assert struct.unpack_from('<I', image, 168)[0] == 512
-    assert struct.unpack_from('<Q', image, 176)[0] == 0x280000
+    assert struct.unpack_from('<Q', image, 176)[0] == 0x2f0000
     assert struct.unpack_from('<II', image, 272) == (0x800, 40)
     assert image[0x900:0x90d] == b'KERNEL32.dll\0'
     assert struct.unpack_from('<5I', image, 0x800) == (0x840, 0, 0, 0x900, 0x880)
@@ -71,8 +73,8 @@ else:
 if sys.argv[2] != 'windows':
     assert b'\x0f\x05' in image[128:]
 kernel = (build / 'kernel.bin').read_bytes()
-assert len(kernel) <= 0x180000, 'kernel overlaps foreign fixture'
-(build / 'combined.bin').write_bytes(kernel + bytes(0x180000-len(kernel)) + image)
+assert len(kernel) <= 0x1f0000, 'kernel overlaps foreign fixture'
+(build / 'combined.bin').write_bytes(stage_fixture(kernel,image,0x2f0000))
 PY
 mkfifo "$SERIAL_BASE.in" "$SERIAL_BASE.out"
 qemu-system-x86_64 -kernel "$BUILD_DIR/combined.bin" -m 512M -no-reboot \

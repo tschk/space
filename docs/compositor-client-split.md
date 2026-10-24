@@ -16,6 +16,30 @@ A future Wayland adapter must translate into these native contracts rather than
 replace them with foreign kernel semantics. Neither source modularization nor a
 kernel-linked window demo establishes isolated SCI desktop services.
 
+## Private owned canvas / original viewer checkpoint (2026-10-24)
+
+A separately imported private native canvas library owns staging/accepted frames
+and leases existing SPDP surfaces. Checked stopped uploads from native VM objects
+publish only after full copy and validation; uncertain close retains ownership.
+The [canvas evidence](plans/2026-10-24-native-canvas-upload.md) proves two real
+protected producers, exact pixels, revocation and teardown controls. The later
+[original fbv profile](plans/2026-10-24-linux-framebuffer-app.md) translates one
+bounded Linux device mapping onto that contract and the existing renderer.
+No second renderer, IPC fabric, foreign frame ledger or physical scanout map is
+introduced. These libraries remain kernel-linked, explicitly imported prototypes;
+ordinary launcher integration, concurrent tiling and interactive foreign seat
+routing remain required work.
+
+## Keyboard editing checkpoint (2026-10-24)
+
+The protected default still uses the existing SPDP seat and shared-page frame
+contracts. Normalized key values and private client cursor state now support
+interior edits, with real PS/2 input and independently specified caret pixels.
+No new input channel or compositor-side text buffer is introduced. See the
+[keyboard/editing contract and receipts](plans/2026-10-24-keyboard-editing.md)
+for bounds, USB model-only evidence and remaining keyboard limitations. The
+standard client editor is still an eight-byte field, not a full text editor.
+
 ## Problem
 
 Today every compositor window lives in the kernel's address space. The window
@@ -113,7 +137,7 @@ This is a bounded **single-client pixel proof**, not authenticated cross-client
 surface ownership, seat input, or an interactive SCI desktop window. Its live
 domain retains the page; reclamation is not introduced. The synchronous drain
 adds no scheduler/wakeup mechanism. The optional QEMU check exclusively uses
-the existing Linux-proof slot at physical `0x280000`, bounds the fixture below
+the fixture slot at physical `0x2f0000`, bounds the fixture below
 the 3MiB heap, checks both geometries and old-rectangle removal, and validates
 actual SCI-generated pixels. `check-spdp-page-frames.py` covers malformed frame
 and grant/adoption refusals under all compiler profiles.
@@ -273,3 +297,194 @@ dead-domain, pending/malformed-ring, no-consume, overconsume and no-replay contr
 The old pixel proof and one-service input proof remain separate regressions.
 This is one fixed client recipient, not a focus manager, app isolation boundary,
 scheduler, authenticated multi-client seat or complete desktop environment.
+
+## Bounded two-client session (2026-10-24)
+
+`components/gui-clients.in` extends the synchronous integration path with two
+kernel-owned retained SCI instance records and generation tokens. The manager
+accepts only a fixed local surface0/pool0 protocol, validates the complete reply
+batch before dispatch and translates it to the instance's compositor surface and
+pool. Guests receive no record pointer, arbitrary ring selector or compositor
+pool allocation authority. Keyboard delivery requires the focused token; pointer
+button hit testing changes focus and delivers one typed seat frame.
+
+The loader allocates/maps each client's pixel and ring pages. The client writes
+its pixel page while synchronously executing, consumes one event and returns a
+complete bounded attach/damage/commit batch; the compositor reads only after
+return and validation. This single-flight ownership rule has no asynchronous
+buffer-release fence. Close retires the exact runtime generation, withdraws its
+token/routing, drains its owned exchange and detaches/composites the surface/pool
+before releasing owned backing. The manager is kernel-linked
+and clients use existing CPL0 clone domains, so this proves neither hostile-code
+hardware isolation nor general multi-client SPDP authorization. Foreign GUI
+applications remain a separate protected process/adapter milestone.
+
+`scripts/check-gui-clients.py` builds a temporary root around
+`fixtures/gui-clients/session.in`, input SCI and two independently emitted client
+SCI images. Its acceptance sequence checks every client pixel and its border:
+left keyboard render, real PS/2 pointer click focusing/rendering right, right
+keyboard render, right Escape close, stale-token refusal and surviving left
+keyboard render. It also checks guest-context and stale-capability refusal, unfocused input
+refusal, complete malformed batch
+refusal before compositor changes and stable post-initialization allocation
+counters. This fixture is a native integration workload, not an upstream GUI app.
+The original single-client SPDP/input tests remain independent regressions.
+
+Initial execution exposed shared leaf page tables in `create-shared-domain-pml4`:
+a later loader mapping could replace an earlier client's ring mapping. Clones now
+copy present non-huge leaf PTs into individually owned frames, preserving flags;
+large identity leaves remain copied values. The runtime's explicit clone-owned
+ledger now releases those private table frames without freeing borrowed identity
+mappings.
+
+Fresh local execution with source-built Inauguration 0.9.322 passed the full
+three-SCI QEMU sequence, including genuine pointer focus and exact pixels after
+all five interactions. The unchanged `check-sci-seat.py` also passed default,
+lean and harden guard profiles. Artifacts, compiler/source hashes, serial log and
+six full-resolution screenshots are retained under the selected build directory
+(default `/tmp/space-gui-clients`). This native fixture checkpoint does not
+complete the real-application GUI corpus in the full compatibility goal.
+
+### Useful bounded native GUI applications
+
+`components/app-gui-calc.in` and `components/app-gui-editor.in` build independent
+SCI applications with named memory/display declarations. `gui-widget.in` imports
+the existing `font.in` assets and glyph lookup into each SCI image, allocates font
+state in its own heap and writes only its granted pixel page. It introduces no
+new font parser or shaper. The calculator accepts an eight-character single
+binary integer expression with `+`, `-`, `*` or `/`, computes on Enter and renders
+its answer or a bounded error. The editor accepts eight printable characters and
+Backspace; it now declares a separate fixed-file storage capability for Ctrl-S
+and startup reopen. These are small native apps, with no full notes application,
+foreign application or CPL3 isolation claim.
+
+`scripts/pack-gui-sci.py` has an explicit two-identity policy, validating exact
+`GuiMemory(map)` / `GuiDisplay(present)` metadata and the editor's explicit
+`GuiNoteFile(read, write)` authority before SCI ordinal/envelope translation. Unknown identities, entry points, interfaces,
+operations and mismatched export metadata are negative packaging cases.
+
+`scripts/check-gui-apps.py` uses a separate temporary-root orchestration; it keeps
+the synthetic retained-client checker unchanged. Its real PS/2 scenario enters
+`6*7`, checks exact existing-font glyph pixels for `42`, clicks the other SCI
+surface, edits/backspaces a field to `notes`, checks calculator pixels remain
+unchanged, closes the editor, refuses its token, then computes `6*8` → `48` in the
+surviving calculator. It then checks `1/0` renders `err` and the same instance
+recovers to compute `6+7` → `13`. Every client pixel and border is compared with the glyph
+assets, while domain/capability/allocation counters stay stable after setup.
+
+The workflow exposed missing Shift normalization in input SCI. Kernel and SCI
+PS/2 decoders now reuse `protocol/keyboard.in`: separate left/right Shift bits,
+shifted US punctuation, Caps Lock letters with repeat-make suppression, and
+existing Ctrl-letter normalization. Releasing one Shift keeps the other active;
+releasing both restores unshifted input. The launcher gate executes both actual
+decoders under default/lean/harden with those sequences. Normalized key-down
+routing still does not provide raw key releases, repeat policy, right-Ctrl/Alt,
+IME or general keyboard-layout support.
+
+### Retained buffer retirement and reclaim boundary
+
+The private runtime catalog owns each retained instance through a generation
+handle bound to its exact component ID, private capability, domain and ledger.
+GUI records capture that handle alongside the physical endpoint snapshot.
+Before event publication, the manager checks that the handle still identifies
+that exact entry/capinfo/ring/pixel owner. Resume establishes the instance's
+allocator and domain context. Retire prevents further entry; the GUI then
+withdraws token/focus routing, drains/discards the owned ring and removes every
+surface/pool consumer before release. In-flight writes finish when synchronous
+entry returns; no compositor read overlaps it. Failed exchanges use the same
+one-way fence. Closed endpoints are never dereferenced after release.
+
+The loader records private image/import copies, heap frames, ring/pixel frames
+and explicitly clone-owned tables. Kernel ring/pixel aliases and the temporary
+root-realm edge are restored immediately after initial activation, before
+publishing the handle; teardown cannot later restore a freed predecessor's
+alias. The empty CPL3-tree teardown remains inapplicable to identity-map clones.
+Only the explicit ledger's private frames are released. This remains trusted
+CPL0 lifecycle management, not termination of hostile native code.
+
+`check-gui-lifecycle.py --observe` instruments product entry/close calls in a
+temporary root and requires more than128 sessions with stable resource counts,
+actual backing release, stale-generation/canary/new-client refusal, wrong-owner
+and guest denial, and no kernel alias referencing a free frame. Its ordinary
+mode tests the unchanged distributable image separately. See the
+[lifetime plan](plans/2026-10-24-retained-gui-lifetime.md) for the recorded
+19-session capacity baseline and ownership contract.
+
+### Standard-image session integration
+
+The ordinary standard image now packages explicit optional GUI kinds20/21/22.
+The full shell's `gui apps` action delegates to `components/gui-session.in`; no
+fixture source is imported into the kernel and no foreign application code lives
+in the shell. This service launches input/calculator/editor from the boot-image
+registry through explicit `sci-load-retained-component` activation, routes pointer/Tab focus and keyboard events, and runs until both apps
+are closed. It preserves the surviving client after one closes. Reopening clears
+only fully released manager records, reuses its tables/event scratch and mints
+fresh GUI/runtime tokens. The input instance is fenced and released after both
+clients close. Preflight checks count reusable runtime/domain/private-cap slots;
+partial launch and failed exchanges retire already admitted instances.
+
+`check-standard-gui.py` exercises the distributable build, including same-boot
+close/reopen and minimal-image refusal. See [native GUI session usage and limits](native-gui-session.md).
+This product entry point is independent of the temporary-root proof orchestration.
+
+### Readable standard application profile
+
+The default standard kinds20/21 now select `GuiWindowCalc`/`GuiWindowEditor`,
+with explicit `GuiDisplay(present, window)` declarations and the exact bounded
+canvas trailer. The original64×16 named clients remain one-page fixtures;
+`GUI_PROFILE=legacy` explicitly builds that profile. Their existing protocol
+checks remain separate from the readable application tests.
+
+Each readable client owns288 possibly noncontiguous BGRA pages, mapped into a
+contiguous kernel-only view above4GiB. The compositor stores a separate explicit
+stride per surface and checks the final sampled byte against the owned pool;
+old packed geometry and48-byte surface records keep their original meaning.
+The supervisor configures visible dimensions that fit the output and translates
+local surface0/pool0 into the same exact generation-owned server records.
+
+Clients paint backgrounds, Sans titles/labels and Mono content/result/status,
+with visible focus border/caret and real keyboard/pointer input. Versioned SPDP
+surface configure/ACK and seat focus events carry scalar generation/extent/scale
+data. The entire response is validated before compositor mutation. Ctrl+G text
+size and Ctrl+O output mode preserve content through actual hardware resize;
+both shortcuts are visible in the windows. The current trusted CPL0 startup
+borrows a48-byte supervisor visual config read-only, copies its scalar fields
+and retains no pointer; a protected startup will require an owned bounded copy.
+
+The input service's optional version1 scalar poll argument updates its physical
+output bounds and clamps position after shrink; legacy zero preserves the old
+descriptor behavior. This fixes real pointer reach beyond the old800×600 range.
+Motion updates the visible cursor. Since the compositor already repaints the
+entire scene, it does not clear an old cursor rectangle over fresh client pixels.
+
+`check-gui-windows.py` checks all six1024/1280/1920 output and2×/3× text
+combinations, exact labels/content/caret/status/hints, both pointer targets,
+live resize and close/survivor/reopen. Standard product,129-session ownership and
+fiveboot NVMe gates auto-detect the actual artifact profile and keep their
+assertions. See [native GUI usage](native-gui-session.md) and the
+[readable profile plan](plans/2026-10-24-readable-native-gui.md).
+
+
+### Native GUI persistence
+
+The editor's exact artifact mask is now52 (memory4, display16, storage32), while
+the calculator and synthetic clients remain20. The session explicitly grants the
+editor's declared profile; manager admission accepts only those two exact pixel
+profiles. No existing client receives storage implicitly. The standard-only
+`gui-note-store.in` service exposes a bounded eight-byte `/gui-note.txt` contract
+through the existing filesystem facade. Current-domain/capability checks precede
+pointer access, filesystem calls and allocation, and a real NVMe backend is
+required. `check-gui-persistence.py` drives Ctrl-S with actual PS/2 events and
+verifies save/reopen, VM reboot/remount, shortening, empty save, independent
+calculator survival and missing-storage-grant refusal without target inode/byte
+mutation. See [native GUI usage](native-gui-session.md) for limits and commands.
+
+The standalone display SCI's fill/copy calls now import the existing native CPU
+memory contracts explicitly, matching the kernel compositor's wrappers. Its
+GUI application action remains unavailable because that artifact has no GUI
+supervisor binding; it never imports private kernel launch authority. This
+repairs the standalone build closure without changing the ordinary protected
+desktop launch policy or creating another renderer. Runtime-component and
+legacy Volume checks use an explicit read-only SCI selftest artifact rather
+than relying on automatic persistent diagnostic-file writes. See the
+[UTC metadata/runtime regression evidence](plans/2026-10-24-native-utc-file-metadata.md).

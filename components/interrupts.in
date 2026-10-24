@@ -1,5 +1,7 @@
 package space.kernel
 
+import "user-budget.in"
+
 // --- interrupts: IDT, PIC, PIT timer ---------------------------------------
 // Interrupt dispatcher, called from the assembly timer stub with the vector in
 // the first argument. Counts ticks and acknowledges the interrupt controller.
@@ -9,10 +11,21 @@ fn isr-dispatch(vector: Int) -> void {
   return
 }
 
-// CPU exception handler. Reports the fault and halts the nanokernel rather than
-// letting an unhandled fault triple-fault the machine.
-fn exception-handler(vector: Int, error-code: Int, rip: Int) -> void {
+// CPU exceptions from an active CPL3 invocation terminate that guest. Kernel
+// exceptions remain fatal; the assembly capsule verifies the CPU-saved CS too.
+fn exception-handler(vector: Int, error-code: Int, rip: Int, cs: Int) -> Int {
   let port = com1()
+  let active = load64(0x4118)
+  if (cs & 3) == 3 && active != 0 {
+    if load64(active) != 0 {
+      serial-write-cstr(port, "space: guest fault vector 0x")
+      serial-write-hex(port, vector)
+      serial-write-cstr(port, " rip 0x")
+      serial-write-hex(port, rip)
+      serial-nl(port)
+      return 128 + vector
+    }
+  }
   serial-nl(port)
   serial-write-cstr(port, "space: *** CPU EXCEPTION vector 0x")
   serial-write-hex(port, vector)
@@ -32,7 +45,7 @@ fn exception-handler(vector: Int, error-code: Int, rip: Int) -> void {
   while true {
     hlt()
   }
-  return
+  return -1
 }
 
 // Install a 64-bit interrupt gate into the IDT.
@@ -75,6 +88,7 @@ fn pit-init() -> void {
 
 fn interrupts-init() -> void {
   store64(0x4000, isr-dispatch)
+  store64(0x41A0, user-budget-tick)
   let timer-stub = load64(0x4008)
   let default-stub = load64(0x4010)
   idt-base = alloc(256 * 16)
@@ -85,9 +99,12 @@ fn interrupts-init() -> void {
   // Wire CPU exception vectors to the fault handler.
   store64(0x4050, exception-handler)
   idt-set(0, load64(0x4030))
+  idt-set-user(3, load64(0x4178))
   idt-set(6, load64(0x4038))
   idt-set(13, load64(0x4040))
   idt-set(14, load64(0x4048))
+  idt-set(16, load64(0x4180))
+  idt-set(19, load64(0x4188))
   // Wire the syscall trap (int 0x80) with DPL=3 so user-mode code can invoke it.
   store64(0x4070, syscall-dispatch)
   idt-set-user(0x80, load64(0x4068))

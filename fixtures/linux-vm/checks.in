@@ -1,0 +1,151 @@
+package space.fixture
+import "../../components/linux-process.in"
+import "capacity.in"
+import "invariant.in"
+import "constructor.in"
+import "startup.in"
+
+var lvm-refused-entries: Int = 0
+fn lvm-refused-hook(frame:Int)->Int {lvm-refused-entries=lvm-refused-entries+1;return 0;}
+var lvm-authority: Int = -1
+var lvm-foreign: Int = -1
+var lvm-witness-buffer: Int = 0
+var lvm-witness-reader: Int = 0
+var lvm-witness-writer: Int = 0
+var lvm-heap: Int = 0
+var lvm-free: Int = 0
+var lvm-domains: Int = 0
+var lvm-owned: Int = 0
+var lvm-native: Int = 0
+var lvm-caps: Int = 0
+var lvm-runs: Int = 0
+
+fn lvm-check(expected:Int,actual:Int)->void {
+ if expected!=actual{
+  serial-write-cstr(com1(),"linux-vm: expected ");serial-write-dec-wide(com1(),expected);
+  serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);serial-nl(com1());
+  panic("Linux owned VM migration");
+ }
+}
+fn lvm-native-count()->Int {
+ let i=3;let count=0;while i<VFS-MAX-FDS{if vfs-fd-valid(i)!=0{count=count+1;}i=i+1;}return count;
+}
+fn lvm-free-count()->Int {
+ let frame=free-list;let count=0;
+ while frame!=0 && count<131072{count=count+1;frame=load64(frame);}
+ if frame!=0{panic("Linux VM free-list cycle");}return count;
+}
+fn lvm-init()->void {
+ lvm-authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage());
+ lvm-foreign=cap-mint(root-realm,cap-memory());
+ lvm-witness-buffer=alloc(16);lvm-check(0,vfs-stream-pair(1,1,0,lvm-witness-buffer));
+ lvm-witness-reader=load32(lvm-witness-buffer);lvm-witness-writer=load32(lvm-witness-buffer+4);
+ lvm-check(8,vfs-stream-write(lvm-witness-writer,"VM-OWNER",8));
+ linux-process-budget-ticks=100;linux-process-trace=1;
+}
+fn lvm-baseline()->void {
+ lvm-heap=heap-next;lvm-free=lvm-free-count();lvm-domains=domain-count;
+ lvm-owned=domain-user-owned;lvm-native=lvm-native-count();lvm-caps=cap-count;
+}
+fn lvm-case(image:Int,size:Int,measured:Int)->void {
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
+ lvm-check(42,linux-process-run(image,size,"/vm-migration","","",lvm-authority));
+ lvm-check(fs,rdmsr(0xC0000100));lvm-check(gs,rdmsr(0xC0000101));lvm-check(cap,current-cap);
+ lvm-check(0,domain-current);lvm-check(load64(domain-table),cr3-read());
+ lvm-check(0,user-context-active);lvm-check(0,user-budget-active);lvm-check(0,domain-user-syscall-hook);
+ lvm-check(0,linux-process-active);lvm-check(0,linux-process-cleanup-failed);
+ lvm-check(0,linux-process-pages);
+ if measured!=0{
+  lvm-check(lvm-heap,heap-next);lvm-check(lvm-free,lvm-free-count());
+  lvm-check(lvm-domains,domain-count);lvm-check(lvm-owned,domain-user-owned);
+  lvm-check(lvm-native,lvm-native-count());lvm-check(lvm-caps,cap-count);
+ }
+ lvm-runs=lvm-runs+1;
+ serial-write-cstr(com1(),"linux-vm: migration activation ");serial-write-dec-wide(com1(),lvm-runs);serial-write-cstr(com1()," PASS");serial-nl(com1());
+}
+fn lvm-finish()->void {
+ lvm-check(8,vfs-stream-read(lvm-witness-reader,lvm-witness-buffer,8));
+ let i=0;while i<8{lvm-check(load8("VM-OWNER"+i),load8(lvm-witness-buffer+i));i=i+1;}
+ lvm-check(0,vfs-close(lvm-witness-reader));lvm-check(0,vfs-close(lvm-witness-writer));
+ serial-write-cstr(com1(),"linux-vm: owned resource cleanup PASS");serial-nl(com1());
+}
+
+// Deprecated process-local projections cannot become a second VM owner.
+fn lvm-metadata-check()->void {
+ linux-process-state-reset();let row=linux-process-states;
+ lvm-check(0,linux-process-state-use-cache(row));
+ let vm=linux-process-vm-create(lvm-authority);if vm<=0{panic("VM companion fixture create");}
+ lvm-check(0,linux-process-vm-use(vm,0));
+ lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));
+ store64(linux-process-vm-buffer,0x002ABF0000003CB8);store64(linux-process-vm-buffer+8,0x0B0F050F0000);
+ lvm-check(0,linux-process-vm-populate(0x20001000,linux-process-vm-buffer,16));
+ let binding=linux-process-vm-attach(load64(row+LPS-USER-CONTEXT),0x20001000,0x20000FF0);
+ if binding<=0{panic("VM companion fixture binding");}
+ linux-process-active=1;linux-process-stdout-open=1;linux-process-stderr-open=1;
+ linux-process-clear-tid=0;lvm-check(0,linux-process-files-init(-1));linux-process-pipes-init();
+ let pid=linux-process-state-register(row,0,linux-process-domain,0);
+ if pid<=0{panic("VM companion fixture registration");}
+ linux-process-current-record=row;linux-process-current-pid=pid;
+ lvm-check(LINUX-PROCESS-BRK-BASE+8192,linux-process-brk-call(LINUX-PROCESS-BRK-BASE+8192));
+ let domain=user-space-domain(vm,lvm-authority);let pages=user-space-pages(vm,lvm-authority);
+ linux-process-brk=LINUX-PROCESS-BRK-BASE+9;linux-process-brk-mapped=LINUX-PROCESS-BRK-BASE;
+ linux-process-pages=99;linux-process-domain=MAX-DOMAINS;linux-process-ledger=123456;
+ lvm-check(0,linux-process-state-save(row));
+ lvm-check(LINUX-PROCESS-BRK-BASE+8192,linux-process-brk);
+ lvm-check(LINUX-PROCESS-BRK-BASE+8192,linux-process-brk-mapped);
+ lvm-check(pages,linux-process-pages);lvm-check(domain,linux-process-domain);lvm-check(0,linux-process-ledger);
+ store64(row+LPS-BRK,LINUX-PROCESS-BRK-BASE+17);store64(row+LPS-BRK-MAPPED,LINUX-PROCESS-BRK-BASE);
+ store64(row+LPS-PAGES,88);store64(row+LPS-DOMAIN,MAX-DOMAINS);store64(row+LPS-LEDGER,654321);
+ lvm-check(0,linux-process-state-load(row));
+ lvm-check(LINUX-PROCESS-BRK-BASE+8192,linux-process-brk);
+ lvm-check(LINUX-PROCESS-BRK-BASE+8192,linux-process-brk-mapped);
+ lvm-check(pages,linux-process-pages);lvm-check(domain,linux-process-domain);lvm-check(0,linux-process-ledger);
+ let second=linux-process-vm-create(lvm-authority);if second<=0{panic("VM association second object");}
+ lvm-check(0,linux-process-vm-use(second,0));
+ lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));
+ lvm-check(0,linux-process-vm-populate(0x20001000,linux-process-vm-buffer,16));
+ let second-binding=linux-process-vm-attach(load64(row+LPS-SPARE-CONTEXT),0x20001000,0x20000FF0);
+ if second-binding<=0{panic("VM association second binding");}
+ let second-domain=linux-process-domain;
+ lvm-check(vm,user-space-binding-space(binding,lvm-authority));
+ lvm-check(second,user-space-binding-space(second-binding,lvm-authority));
+ lvm-check(-2,user-space-binding-space(binding,lvm-foreign));
+ lvm-check(-5,linux-process-vm-use(vm,second-binding));
+ lvm-check(-5,linux-process-vm-drop(vm,second-binding));
+ lvm-check(second,linux-process-vm);lvm-check(second-binding,linux-process-binding);
+ lvm-check(second-domain,linux-process-domain);lvm-check(2,linux-process-pages);
+ lvm-check(2,user-space-refs(vm,lvm-authority));lvm-check(2,user-space-refs(second,lvm-authority));
+ lvm-check(1,user-space-constructor-owned(vm,lvm-authority));lvm-check(1,user-space-constructor-owned(second,lvm-authority));
+ let caprow=cap-table-base+lvm-authority*16;let target=load64(caprow);let rights=load64(caprow+8);
+ lvm-check(0,cap-revoke(lvm-authority));
+ lvm-check(vm,user-space-binding-space(binding,lvm-authority));
+ lvm-check(-2,user-space-binding-space(binding,lvm-foreign));
+ store64(caprow,target);store64(caprow+8,rights);
+ lvm-check(0,linux-process-vm-use(vm,binding));
+ linux-process-binding=second-binding;
+ lvm-check(-5,linux-process-state-save(row));lvm-check(binding,load64(row+LPS-VM-BINDING));
+ linux-process-binding=binding;
+ store64(row+LPS-VM-BINDING,second-binding);
+ lvm-check(-5,linux-process-state-load(row));
+ lvm-check(vm,linux-process-vm);lvm-check(binding,linux-process-binding);lvm-check(domain,linux-process-domain);
+ let oldhook=domain-user-syscall-hook;lvm-refused-entries=0;domain-user-syscall-hook=lvm-refused-hook;
+ let oldflags=invoke1(load64(0x4198),0);
+ sti();lvm-check(-5,linux-process-family-resume(row));lvm-check(512,invoke1(load64(0x4198),0)&512);
+ cli();lvm-check(-5,linux-process-family-resume(row));lvm-check(0,invoke1(load64(0x4198),0)&512);
+ if (oldflags&512)!=0{sti();}domain-user-syscall-hook=oldhook;
+ lvm-check(0,lvm-refused-entries);lvm-check(1,linux-process-cleanup-failed);
+ lvm-check(1,load64(load64(row+LPS-USER-CONTEXT)+728));lvm-check(1,load64(load64(row+LPS-SPARE-CONTEXT)+728));
+ lvm-check(vm,linux-process-vm);lvm-check(binding,linux-process-binding);lvm-check(domain,linux-process-domain);
+ lvm-check(2,user-space-refs(vm,lvm-authority));lvm-check(2,user-space-refs(second,lvm-authority));
+ lvm-check(1,user-space-binding-phase(binding,lvm-authority));lvm-check(1,user-space-binding-phase(second-binding,lvm-authority));
+ // Explicit adapter-row repair precedes destructive recovery of both identities.
+ store64(row+LPS-VM-BINDING,binding);store64(row+LPS-SPARE-VM,second);store64(row+LPS-SPARE-BINDING,second-binding);
+ store64(row+LPS-SPARE-DOMAIN,second-domain);store64(row+LPS-SPARE-PAGES,2);
+ lvm-check(0,linux-process-cleanup-recover());lvm-check(0,linux-process-cleanup-failed);
+ lvm-check(-6,user-space-binding-space(second-binding,lvm-authority));
+ lvm-check(-6,user-space-phase(second,lvm-authority));lvm-check(-6,user-space-phase(vm,lvm-authority));
+ serial-write-cstr(com1(),"linux-vm: cross paired process row refuses save load and native entry PASS");serial-nl(com1());
+ lvm-check(-6,user-space-binding-space(binding,lvm-authority));
+ serial-write-cstr(com1(),"linux-vm: exact binding association wrong owner revoked query and retired token PASS");serial-nl(com1());
+ serial-write-cstr(com1(),"linux-vm: sole companion state rejects stale process projections PASS");serial-nl(com1());
+}

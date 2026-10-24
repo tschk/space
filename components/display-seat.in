@@ -136,15 +136,17 @@ fn comp-handle-click(mx: Int, my: Int) -> Int {
     return 1
   }
   comp-win-focus(idx)
-  if comp-win-in-titlebar(idx, mx, my) != 0 {
+  let wh = load32(base + 16)
+  // The resize grip is in the content corner, outside the title bar.
+  if mx >= wx + ww - 8 && my >= wy + wh + COMP-TITLE-BAR-H - 8 {
+    comp-drag-off-x = wx + ww - mx
+    comp-drag-off-y = wy + wh + COMP-TITLE-BAR-H - my
+    comp-drag-mode = 2
+    comp-dragging = idx
+  } else if comp-win-in-titlebar(idx, mx, my) != 0 {
     comp-drag-off-x = mx - wx
     comp-drag-off-y = my - wy
-    let wh = load32(base + 16)
-    if mx >= wx + ww - 8 && my >= wy + wh + COMP-TITLE-BAR-H - 8 {
-      comp-drag-mode = 2
-    } else {
-      comp-drag-mode = 1
-    }
+    comp-drag-mode = 1
     comp-dragging = idx
   }
   return 1
@@ -174,8 +176,8 @@ fn comp-handle-drag(mx: Int, my: Int) -> void {
       store32(base + 8, new-y)
     }
   } else {
-    let new-w = mx - wx
-    let new-h = my - wy - COMP-TITLE-BAR-H
+    let new-w = mx - wx + comp-drag-off-x
+    let new-h = my - wy - COMP-TITLE-BAR-H + comp-drag-off-y
     if new-w < COMP-MIN-WIN-W {
       new-w = COMP-MIN-WIN-W
     }

@@ -1,0 +1,28 @@
+package space.kernel
+
+// Native synchronous inline-file resize. The filesystem owns bytes, zero fill,
+// identity, extent and metadata; foreign errno/descriptor policy stays outside.
+// No block-file resizing or asynchronous Volume RPC is accepted by this slice.
+// 0 success, -1 object/argument, -2 unsupported extent/backend, -3 I/O/clock.
+fn fs-resize-inline(path: Int, inode: Int, mount: Int, size: Int) -> Int {
+  if size < 0 || inode <= 0 || mount <= 0 { return -1 }
+  if volume-ready != 0 { return -2 }
+  if sf-disk-ready != 1 || sf-mount-id != mount { return -1 }
+  let ino = sf-lookup-path(path)
+  if ino < 0 || ino + 1 != inode { return -1 }
+  let record = sf-inode-addr(ino)
+  if load32(record + SF-IN-TYPE) != SF-TYPE-FILE { return -1 }
+  let old = load64(record + SF-IN-SIZE)
+  if load32(record + SF-IN-INLINE) != 1 || old < 0 || old > SF-INLINE-MAX || size > SF-INLINE-MAX { return -2 }
+  let timestamp = fs-metadata-time()
+  if timestamp < 0 { return -3 }
+  // Zero both a new extension and any retired tail so later growth cannot
+  // reveal bytes removed by shrink. The public open-file offset is untouched.
+  let at = size
+  if old < at { at = old }
+  while at < SF-INLINE-MAX { store8(record + SF-IN-DIRECT + at,0); at += 1 }
+  store64(record + SF-IN-SIZE,size)
+  store64(record + SF-IN-MTIME,timestamp)
+  if sf-write-inode(ino) != 0 { return -3 }
+  return 0
+}

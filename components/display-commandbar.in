@@ -15,7 +15,10 @@ const COMP-BAR-CLOSE = 17
 const COMP-BAR-MINIMIZE = 18
 const COMP-BAR-TERM1 = 19
 const COMP-BAR-TERM2 = 20
-const COMP-BAR-END = 21
+const COMP-BAR-GUI = 21
+const COMP-BAR-GUI-ERROR = 22
+const COMP-BAR-END = 23
+var comp-bar-gui-failed: Int = 0
 
 // Resolve terminal identity from its role/content slot, never a shifting index.
 fn comp-bar-terminal(slot: Int) -> Int {
@@ -39,12 +42,14 @@ fn comp-bar-set-title(index: Int, title: Int) -> void {
 // Initialize once per display instance; labels are immutable image data.
 fn comp-bar-init() -> void {
   if comp-bar-titles != 0 { return }
-  comp-bar-titles = alloc(40)
+  comp-bar-titles = alloc(56)
   comp-bar-set-title(0, "TILE WINDOWS")
   comp-bar-set-title(1, "CLOSE FOCUSED")
   comp-bar-set-title(2, "MINIMIZE FOCUSED")
   comp-bar-set-title(3, "FOCUS TERMINAL 1")
   comp-bar-set-title(4, "FOCUS TERMINAL 2")
+  comp-bar-set-title(5, "OPEN CALCULATOR AND NOTES")
+  comp-bar-set-title(6, "GUI LAUNCH FAILED")
   return
 }
 
@@ -61,6 +66,8 @@ fn comp-bar-enabled(candidate: Int) -> Int {
     if load64(comp-win-base(candidate) + 24) != 0 { return 1 }
     return 0
   }
+  if candidate == COMP-BAR-GUI-ERROR { return comp-bar-gui-failed }
+  if candidate == COMP-BAR-GUI { return gui-desktop-available() }
   if candidate == COMP-BAR-TILE { return comp-tile-ready(comp-tile-count()) }
   if candidate == COMP-BAR-CLOSE || candidate == COMP-BAR-MINIMIZE {
     if comp-focused >= 0 && comp-focused < comp-count {
@@ -77,6 +84,23 @@ fn comp-bar-execute(port: Int, candidate: Int) -> void {
   if comp-bar-enabled(candidate) == 0 { return }
   if candidate < COMP-MAX-WINDOWS {
     comp-launcher-focus(port, candidate)
+    return
+  }
+  if candidate == COMP-BAR-GUI-ERROR {
+    comp-bar-gui-failed = 0
+    comp-launcher-hide(port)
+    return
+  }
+  if candidate == COMP-BAR-GUI {
+    comp-launcher-hide(port)
+    comp-bar-gui-failed = 0
+    if gui-desktop-command(port) != 1 {
+      comp-bar-gui-failed = 1
+      comp-launcher-show(port)
+      store8(comp-launcher-query, 103); store8(comp-launcher-query + 1, 117)
+      store8(comp-launcher-query + 2, 105); store8(comp-launcher-query + 3, 0)
+      comp-launcher-len = 3
+    }
     return
   }
   if candidate == COMP-BAR-TILE { if comp-tile-windows() == 0 { return } }

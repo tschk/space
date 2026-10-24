@@ -77,6 +77,23 @@ entry:
     test eax, eax
     jnz fail
     mov qword [rsp + 32], 0
+    ; A bad output-count pointer must not consume file bytes or touch memory.
+    mov dword [rel buffer], 0x12345678
+    mov rcx, rbx
+    lea rdx, [rel buffer]
+    mov r8d, 27
+    mov r9d, image + 4095
+    call [rel iat + 24]
+    test eax, eax
+    jnz fail
+    cmp dword [rel buffer], 0x12345678
+    jne fail
+    ; Zero-byte success leaves the current file position unchanged.
+    read_file buffer, 0
+    cmp eax, 1
+    jne fail
+    cmp dword [rel written], 0
+    jne fail
     read_file buffer, 27
     cmp eax, 1
     jne fail

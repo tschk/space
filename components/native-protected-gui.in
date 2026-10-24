@@ -1,0 +1,169 @@
+package space.kernel
+import "native-protected-heap.in"
+import "../protocol/gui-canvas.in"
+
+// Supervisor-installed fixed-file adapter. No guest address or path crosses it.
+// Signature: (request)->Int, request={operation15read/16write,
+// owned8-bytebuffer, length0..8}. The descriptor is supervisor-owned too.
+var native-protected-note-backend: Int = 0
+
+fn native-protected-gui-record(handle: Int, retiring: Int) -> Int {
+  let record = runtime-instance-record(handle,1)
+  if record == 0 && retiring != 0 { record = runtime-instance-record(handle,2) }
+  if record == 0 { return 0 }
+  let state = load64(record)
+  if load64(state + 120) != NATIVE-PROTECTED-KIND { return 0 }
+  let extra = load64(state + 112)
+  if extra == 0 || load64(extra + 840) != NATIVE-PROTECTED-EXTRA-MAGIC || load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED { return 0 }
+  return state
+}
+
+fn native-protected-ring(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(load64(state + 112) + 1000)
+}
+fn native-protected-pixels(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(state + 40)
+}
+fn native-protected-pixel-bytes(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return runtime-instance-pixel-bytes(state)
+}
+fn native-protected-entry(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(state + 288)
+}
+fn native-protected-profile(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(load64(state + 112) + 800)
+}
+fn native-protected-domain(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(state)
+}
+fn native-protected-grants(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(cap-table-base + load64(state + 16) * 16 + 8) & load64(load64(state + 8) + 24)
+}
+fn native-protected-epoch(handle: Int) -> Int {
+  let state = native-protected-gui-record(handle,1)
+  if state == 0 { return 0 }
+  return load64(load64(state + 112) + 2320)
+}
+
+fn native-protected-set-arguments(handle: Int, source: Int, bytes: Int) -> Int {
+  let state = native-protected-gui-record(handle,0)
+  if state == 0 || load64(state + 296) != 0 || bytes < 0 || bytes > 1023 || (bytes != 0 && source == 0) { return -1 }
+  let extra = load64(state + 112)
+  let i = 0
+  while i < bytes { store8(extra + 1024 + i,load8(source + i)); i = i + 1 }
+  store64(extra + 976,bytes)
+  store64(state + 192,0)
+  if bytes != 0 { store64(state + 192,NATIVE-PROTECTED-INFO + 256) }
+  return 0
+}
+
+// A queued COMMIT is only a request. The trusted GUI supervisor calls this
+// after validating the complete reply batch for this exact invocation epoch.
+// The compositor sees only this immutable front; subsequent guest writes touch
+// staging and cannot alter an already accepted frame.
+fn native-protected-present(handle: Int, epoch: Int) -> Int {
+  let state = native-protected-gui-record(handle,0)
+  if state == 0 || load64(state + 296) != 0 || cap-check(load64(state + 16),cap-display()) == 0 { return -1 }
+  let extra = load64(state + 112)
+  if epoch <= 0 || epoch != load64(extra + 2320) || epoch <= load64(extra + 2328) || load64(extra + 808) != USER-CONTEXT-EXIT || load64(extra + 816) != 0 { return -1 }
+  let front = load64(extra + 1008)
+  let staging = load64(extra + 1016)
+  if front == 0 || staging == 0 || runtime-instance-pixel-bytes(state) != SCI-CANVAS-BYTES { return -1 }
+  let page = 0
+  while page < RUNTIME-INSTANCE-PIXEL-PAGES {
+    let source = load64(staging + page * 8)
+    let target = load64(front + page * 8)
+    let offset = 0
+    while offset < 4096 { store64(target + offset,load64(source + offset)); offset = offset + 8 }
+    page = page + 1
+  }
+  store64(extra + 2328,epoch)
+  return 0
+}
+
+fn native-protected-gui-pointer(state: Int, address: Int, write: Int) -> Int {
+  let found = native-protected-pointer(state,address,write)
+  if found != 0 { return found }
+  let extra = load64(state + 112)
+  if address < 0 || load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED { return 0 }
+  if write != 0 && (domain-page-flags(load64(state),address) & 7) != 7 { return 0 }
+  if address >= NATIVE-PROTECTED-STACK && address - NATIVE-PROTECTED-STACK < NATIVE-PROTECTED-STACK-PAGES * 4096 {
+    let offset = address - NATIVE-PROTECTED-STACK
+    return load64(extra + 848 + (offset / 4096) * 8) + (offset & 4095)
+  }
+  if address >= NATIVE-PROTECTED-INFO && address - NATIVE-PROTECTED-INFO < 4096 { return load64(state + 32) + address - NATIVE-PROTECTED-INFO }
+  if address >= NATIVE-PROTECTED-IMAGE && address - NATIVE-PROTECTED-IMAGE < load64(state + 104) {
+    let offset = address - NATIVE-PROTECTED-IMAGE
+    return load64(load64(state + 88) + (offset / 4096) * 8) + (offset & 4095)
+  }
+  if address >= COMP-PIXEL-VIRT && address - COMP-PIXEL-VIRT < SCI-CANVAS-BYTES {
+    let offset = address - COMP-PIXEL-VIRT
+    return load64(load64(extra + 1016) + (offset / 4096) * 8) + (offset & 4095)
+  }
+  return 0
+}
+
+fn native-protected-gui-range(state: Int, pointer: Int, bytes: Int, write: Int) -> Int {
+  if pointer < 0 || bytes < 0 || bytes > 32 || pointer > 0x7fffffffffffffff - bytes { return 0 }
+  let i = 0
+  while i < bytes {
+    if native-protected-gui-pointer(state,pointer + i,write) == 0 { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn native-protected-gui-frame(state: Int, id: Int, frame: Int) -> Int {
+  let extra = load64(state + 112)
+  if load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED || load64(frame + 72) != COMP-SHARED-VIRT { return -1 }
+  let ring = load64(extra + 1000)
+  if ring == 0 || chan-page-frame-valid(ring) == 0 { return -1 }
+  if id == 13 { return chan-page-send-frame(ring,load64(frame + 80),load64(frame + 88),load64(frame + 40),load64(frame + 56)) }
+  let destination = load64(frame + 80)
+  if native-protected-gui-range(state,destination,32,1) == 0 { return -14 }
+  let result = chan-page-recv-frame(ring,extra + 2176)
+  if result != 1 { return result }
+  let i = 0
+  while i < 32 { store8(native-protected-gui-pointer(state,destination + i,1),load8(extra + 2176 + i)); i = i + 1 }
+  return 1
+}
+
+fn native-protected-gui-note(state: Int, id: Int, pointer: Int, bytes: Int) -> Int {
+  let extra = load64(state + 112)
+  if load64(extra + 800) != NATIVE-PROTECTED-GUI-PAGED { return -1 }
+  if cap-check(load64(state + 16),cap-storage()) == 0 { return -13 }
+  if bytes < 0 || bytes > 8 { return -22 }
+  let write = 0
+  if id == 15 { write = 1 }
+  if native-protected-gui-range(state,pointer,bytes,write) == 0 { return -22 }
+  if native-protected-note-backend == 0 { return -19 }
+  let bounce = extra + 2048
+  store64(bounce,0)
+  let i = 0
+  if id == 16 {
+    while i < bytes { store8(bounce + i,load8(native-protected-gui-pointer(state,pointer + i,0))); i = i + 1 }
+  }
+  let request = extra + 2080
+  store64(request,id); store64(request + 8,bounce); store64(request + 16,bytes)
+  let result = invoke1(native-protected-note-backend,request)
+  if id == 15 && result > 0 {
+    if result > bytes { return -22 }
+    i = 0
+    while i < result { store8(native-protected-gui-pointer(state,pointer + i,1),load8(bounce + i)); i = i + 1 }
+  }
+  return result
+}

@@ -1,0 +1,167 @@
+package space.kernel
+// Test-only ownership/capacity/capability checks supplement actual CPL3 ELFs.
+var pipe-check-authority: Int = 0
+var pipe-check-revocable: Int = 0
+var pipe-check-witness: Int = 0
+var pipe-check-witness-result: Int = 0
+var pipe-check-witness-reader: Int = 0
+var pipe-check-witness-writer: Int = 0
+var pipe-check-heap: Int = 0
+var pipe-check-free: Int = 0
+var pipe-check-domains: Int = 0
+var pipe-check-owned: Int = 0
+var pipe-check-native: Int = 0
+var pipe-check-count: Int = 0
+
+fn pipe-check-native-count()->Int {
+ let count=0;let i=3;
+ while i<VFS-MAX-FDS{if vfs-fd-valid(i)!=0{count=count+1;}i=i+1;}
+ return count;
+}
+fn pipe-check-init()->void {
+ pipe-check-authority=cap-mint(root-realm,cap-memory()|cap-serial());
+ pipe-check-revocable=cap-mint(root-realm,cap-memory());
+ // A cached process record can supply fdflags before shared owner setup.
+ let supplied=alloc(VFS-MAX-FDS*8);let f=0;
+ while f<VFS-MAX-FDS{store64(supplied+f*8,0);f=f+1;}
+ store64(supplied+15*8,1);linux-process-pipe-fdflags=supplied;
+ linux-process-pipe-state();
+ linux-check(supplied,linux-process-pipe-fdflags);linux-check(1,load64(supplied+15*8));
+ pipe-check-witness-result=alloc(8);
+ linux-check(0,vfs-stream-pair(1,1,0,pipe-check-witness-result));
+ pipe-check-witness-reader=load32(pipe-check-witness-result);
+ pipe-check-witness-writer=load32(pipe-check-witness-result+4);
+ pipe-check-witness=load64(vfs-fd-table+pipe-check-witness-reader*32)-1;
+ linux-check(3,vfs-stream-write(pipe-check-witness-writer,"OWN",3));
+ linux-process-trace=1;linux-process-budget-ticks=10;
+}
+fn pipe-check-witness-valid()->void {
+ linux-check(1,vfs-stream-pairs[pipe-check-witness].refs0);
+ linux-check(1,vfs-stream-pairs[pipe-check-witness].refs1);
+ linux-check(3,vfs-stream-pairs[pipe-check-witness].count0);
+ linux-check(0,vfs-stream-pairs[pipe-check-witness].count1);
+ linux-check(0,load64(linux-process-pipe-owners+pipe-check-witness*16));
+}
+fn pipe-check-baseline()->void {
+ pipe-check-heap=heap-next;pipe-check-free=linux-check-free-count();
+ pipe-check-domains=domain-count;pipe-check-owned=domain-user-owned;
+ pipe-check-native=pipe-check-native-count();
+}
+fn pipe-check-released(measured:Int)->void {
+ linux-check(0,domain-current);linux-check(0,domain-user-syscall-hook);
+ linux-check(0,user-budget-active);linux-check(0,linux-process-active);
+ linux-check(0,linux-process-pages);linux-check(0,linux-process-pipe-family);pipe-check-witness-valid();
+ let i=0;while i<VFS-STREAM-MAX{linux-check(0,load64(linux-process-pipe-owners+i*16));i=i+1;}
+ i=0;while i<VFS-MAX-FDS{linux-check(0,load64(linux-process-pipe-fdflags+i*8));i=i+1;}
+ linux-check(0,linux-process-pipe-action);linux-check(0,linux-process-pipe-signal);
+ if measured!=0{
+  linux-check(pipe-check-heap,heap-next);linux-check(pipe-check-free,linux-check-free-count());
+  linux-check(pipe-check-domains,domain-count);linux-check(pipe-check-owned,domain-user-owned);
+  linux-check(pipe-check-native,pipe-check-native-count());
+ }
+}
+fn pipe-check-case(port:Int,id:Int,image:Int,size:Int,expected:Int,signal:Int,measured:Int)->void {
+ serial-write-cstr(port,"pipe-corpus: begin ");serial-write-dec-wide(port,pipe-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);serial-nl(port);
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
+ let status=linux-process-run(image,size,"/pipe-corpus","","",pipe-check-authority);
+ linux-check(expected,status);linux-check(signal,linux-process-pipe-last-signal);
+ if expected==125{linux-check(LINUX-PROCESS-STOP-DEADLOCK,load64(linux-process-states+LPS-STOP-KIND));}
+ linux-check(fs,rdmsr(0xC0000100));linux-check(gs,rdmsr(0xC0000101));linux-check(cap,current-cap);
+ pipe-check-released(measured);
+ serial-write-cstr(port,"pipe-corpus: end ");serial-write-dec-wide(port,pipe-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);
+ serial-write-cstr(port," status ");serial-write-dec-wide(port,status);
+ serial-write-cstr(port," signal ");serial-write-dec-wide(port,linux-process-pipe-last-signal);serial-nl(port);
+ pipe-check-count=pipe-check-count+1;
+}
+fn pipe-check-negatives()->void {
+ linux-fixture-begin(pipe-check-revocable);
+ linux-process-store64(0x20000000,0x12345678ABCDEF01);
+ let heap=heap-next;let native=pipe-check-native-count();
+ linux-check(-14,linux-process-pipe-create(0x20000FFC,0));
+ linux-check(-14,linux-process-pipe-create(0x1000,0));
+ linux-check(-22,linux-process-pipe-create(0x20000000,16));
+ linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000000));
+ linux-check(heap,heap-next);linux-check(native,pipe-check-native-count());
+ // No storage grant is needed: private streams are memory-owned resources.
+ linux-process-authority=pipe-check-revocable;
+ linux-check(0,linux-process-pipe-create(0x20000000,0x800));
+ let reader=linux-process-read32(0x20000000);let writer=linux-process-read32(0x20000004);
+ // A retained native alias outside the active guest table models a suspended
+ // relative. Shared OFB flags must update it without touching another pair.
+ let oldhost=linux-process-pipe-host(writer);let external=vfs-stream-dup(oldhost);
+ if external<3{panic("pipe suspended alias");}
+ store64(vfs-fd-table+external*32+16,load64(vfs-fd-table+oldhost*32+16));
+ linux-check(0,linux-process-pipe-fcntl(writer,4,1));
+ linux-check(1,load64(vfs-fd-table+external*32+16));
+ linux-check(VFS-O-RDWR,load64(vfs-fd-table+pipe-check-witness-writer*32+16));
+ linux-check(0,linux-process-pipe-fcntl(writer,4,0x800));
+ linux-check(0x801,load64(vfs-fd-table+external*32+16));linux-check(0,vfs-close(external));
+ linux-check(-9,linux-process-pipe-host(15));
+ let caprow=cap-table-base+pipe-check-revocable*16;let target=load64(caprow);
+ linux-check(0,cap-revoke(pipe-check-revocable));
+ linux-check(-13,linux-process-pipe-read(reader,0x20000200,1));
+ linux-check(-13,linux-process-pipe-write(writer,0x20000200,1));
+ linux-check(-13,linux-process-pipe-create(0x20000010,0x800));
+ linux-check(-13,linux-process-pipe-dup(reader,-1,0,0));
+ linux-check(0,linux-process-pipe-close(reader));linux-check(0,linux-process-pipe-close(writer));
+ store64(caprow,target);store64(caprow+8,cap-memory());
+ linux-process-authority=pipe-check-revocable;
+ // The unrelated native pair consumes one of four slots. Capacity failure
+ // must preserve the caller's output and every existing endpoint reference.
+ let i=0;
+ while i<3{linux-check(0,linux-process-pipe-create(0x20000000+i*8,0x800));i=i+1;}
+ linux-process-store64(0x20000020,0x12345678ABCDEF01);
+ linux-check(-23,linux-process-pipe-create(0x20000020,0x800));
+ linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000020));
+ i=0;while i<VFS-MAX-FDS{if linux-process-pipe-is(i)!=0{linux-check(0,linux-process-pipe-close(i));}i=i+1;}
+ // Native fd exhaustion cannot make dup2 destroy its existing target first.
+ linux-check(0,linux-process-pipe-create(0x20000000,0x800));
+ reader=linux-process-read32(0x20000000);writer=linux-process-read32(0x20000004);
+ let alias=linux-process-pipe-dup(writer,-1,0,0);if alias<0{panic("pipe initial alias");}
+ let result=0;let attempts=0;
+ while result>=0 && attempts<32{result=linux-process-pipe-dup(writer,-1,0,0);attempts=attempts+1;}
+ linux-check(-24,result);linux-check(VFS-MAX-FDS - 3,pipe-check-native-count());
+ linux-check(alias,linux-process-pipe-dup(reader,alias,0,0));
+ linux-check(0,linux-process-pipe-flags(alias)&3);
+ i=0;while i<VFS-MAX-FDS{if linux-process-pipe-is(i)!=0{linux-check(0,linux-process-pipe-close(i));}i=i+1;}
+ // The no-scheduler limitation is an error, never false EOF or fake blocking.
+ linux-check(0,linux-process-pipe-create(0x20000000,0));
+ reader=linux-process-read32(0x20000000);
+ linux-check(-38,linux-process-pipe-read(reader,0x20000200,1));
+ linux-check(-38,linux-process-pipe-sigaction(2,0,0,8));
+ linux-check(-22,linux-process-pipe-sigaction(13,0,0,0));
+ linux-check(-14,linux-process-pipe-sigaction(13,0x1000,0,8));
+ linux-process-store64(0x20000200,0x401000);
+ linux-check(-38,linux-process-pipe-sigaction(13,0x20000200,0,8));
+ // Leave both endpoints open; process release must own their final closure.
+ linux-check(0,linux-process-release());pipe-check-released(0);
+}
+fn pipe-check-finish(port:Int)->void {
+ linux-check(3,vfs-stream-read(pipe-check-witness-reader,pipe-check-witness-result,3));
+ linux-check(79,load8(pipe-check-witness-result));
+ linux-check(87,load8(pipe-check-witness-result+1));linux-check(78,load8(pipe-check-witness-result+2));
+ linux-check(0,vfs-close(pipe-check-witness-reader));linux-check(0,vfs-close(pipe-check-witness-writer));
+ serial-write-cstr(port,"pipe-corpus: passed activations ");serial-write-dec-wide(port,pipe-check-count);serial-nl(port);
+}
+
+fn pipe-check-busybox(port:Int,image:Int,size:Int,measured:Int)->void {
+ serial-write-cstr(port,"pipe-corpus: BusyBox pipeline begins");serial-nl(port);
+ let previous-budget=linux-process-budget-ticks;
+ linux-process-budget-ticks=100;
+ let status=linux-process-run(image,size,"/ash","-c","printf \"hello\\n\" | wc -c",pipe-check-authority);
+ linux-process-budget-ticks=previous-budget;
+ pipe-check-released(measured);
+ let i=0;while i<LINUX-STATE-MAX{
+  let row=linux-process-states+i*LINUX-STATE-BYTES;
+  if load64(row+LPS-STATUS)!=LINUX-STATE-FREE{
+   serial-write-cstr(port,"pipe-corpus: BusyBox stop ");serial-write-dec-wide(port,load64(row+LPS-PID));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-STOP-KIND));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-STOP-DETAIL));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-WAIT-STATUS));
+   serial-write-cstr(port," ");serial-write-dec-wide(port,load64(row+LPS-BUDGET));serial-nl(port);
+  }i=i+1;
+ }
+ serial-write-cstr(port,"pipe-corpus: BusyBox pipeline status ");serial-write-dec-wide(port,status);serial-nl(port);
+}

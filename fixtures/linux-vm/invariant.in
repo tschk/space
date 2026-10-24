@@ -1,0 +1,53 @@
+package space.fixture
+
+fn lvm-invariant-slot(domain:Int,address:Int)->Int {
+ let table=load64(domain-table+domain*24);let shift=39;
+ while shift>=21{table=load64(table+((address>>shift)&511)*8)&PAGE-ADDRESS-MASK;shift=shift - 9;}
+ return table+((address>>12)&511)*8;
+}
+fn lvm-invariant-check()->void {
+ let code=alloc(4096);cpu-mem-copy64(code,0x12000000,512);
+ let iteration=0;
+ while iteration<2{
+  let baseline-heap=heap-next;let baseline-free=lvm-free-count();let baseline-owned=domain-user-owned;let baseline-domains=domain-count;
+  linux-process-state-reset();let row=linux-process-states;lvm-check(0,linux-process-state-use-cache(row));
+  let vm=linux-process-vm-create(lvm-authority);if vm<=0{panic("copy invariant owned VM");}
+  lvm-check(0,linux-process-vm-use(vm,0));
+  lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));lvm-check(0,linux-process-vm-map(0x20002000,6));
+  lvm-check(0,linux-process-vm-populate(0x20001000,code,4096));
+  let context=load64(row+LPS-USER-CONTEXT);
+  let binding=linux-process-vm-attach(context,0x20001000,0x20002FF0);if binding<=0{panic("copy invariant actual binding");}
+  store64(linux-process-vm-buffer,0x2121444942524F46);
+  lvm-check(0,linux-process-copy-out(0x20000000,linux-process-vm-buffer,8));
+  lvm-check(0,linux-process-copy-out(0x20002000,linux-process-vm-buffer,8));
+  linux-process-active=1;linux-process-stdout-open=1;linux-process-stderr-open=1;linux-process-clear-tid=0;
+  lvm-check(0,linux-process-files-init(-1));linux-process-pipes-init();
+  let pid=linux-process-state-register(row,0,linux-process-domain,0);if pid<=0{panic("copy invariant record");}
+  linux-process-current-record=row;linux-process-current-pid=pid;store64(row+LPS-BUDGET,100);
+  lvm-check(0,linux-process-state-save(row));
+  let domain=linux-process-domain;let slot=lvm-invariant-slot(domain,0x20000000);let original=load64(slot);
+  // Public metadata is used only to introduce/diagnose actual PTE corruption.
+  let original-frame=user-space-frame(vm,lvm-authority,0x20000000);
+  let alias=user-space-frame(vm,lvm-authority,0x20002000);
+  let heap=heap-next;let free=lvm-free-count();let owned=domain-user-owned;
+  store64(slot,(original&(-1^PAGE-ADDRESS-MASK))|alias);
+  let hook=domain-user-syscall-hook;domain-user-syscall-hook=linux-process-dispatch;
+  lvm-check(-5,linux-process-family-resume(row));domain-user-syscall-hook=hook;
+  lvm-check(1,linux-process-memory-failed);lvm-check(7,load64(row+LPS-PENDING));
+  lvm-check(-5,load64(row+LPS-STOP-KIND));lvm-check(USER-CONTEXT-SUSPEND,load64(context+688));
+  lvm-check(0,load64(context+696));lvm-check(0,load64(context+704));
+  lvm-check(0,linux-process-output-bytes);lvm-check(0,load64(alias+16));
+  lvm-check(0x2121444942524F46,load64(original-frame));
+  lvm-check(USER-SPACE-QUARANTINED,user-space-phase(vm,lvm-authority));
+  lvm-check(2,user-space-binding-phase(binding,lvm-authority));lvm-check(0,load64(context+736));
+  lvm-check(-5,linux-process-state-drop-pages(row));lvm-check(1,linux-process-cleanup-failed);
+  lvm-check(-5,linux-process-run(0,0,"/refused","","",lvm-authority));
+  lvm-check(heap,heap-next);lvm-check(free,lvm-free-count());lvm-check(owned,domain-user-owned);
+  store64(slot,original);linux-process-active=0;lvm-check(0,linux-process-cleanup-recover());
+  lvm-check(-6,user-space-phase(vm,lvm-authority));lvm-check(0,linux-process-cleanup-failed);
+  lvm-check(baseline-owned,domain-user-owned);
+  if iteration!=0{lvm-check(baseline-heap,heap-next);lvm-check(baseline-free,lvm-free-count());lvm-check(baseline-domains,domain-count);}
+  iteration=iteration+1;
+ }
+ serial-write-cstr(com1(),"linux-vm: actual alias copy stops before bytes and postcall marker retained recovery PASS");serial-nl(com1());
+}

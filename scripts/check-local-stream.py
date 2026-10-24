@@ -19,8 +19,11 @@ s = Path(__file__).resolve().parents[1]
 def extract(file, name):
     t = (s / "components" / file).read_text()
     i = t.index("fn " + name + "(")
-    j = t.find("\nfn ", i + 3)
-    return t[i:j] if j >= 0 else t[i:]
+    # Outer function braces are column-zero in these sources. Stop at the
+    # function's own close, rather than copying constants between functions
+    # a second time after the separately collected top-level declarations.
+    j = t.index("\n}", i) + 2
+    return t[i:j]
 
 
 v = (s / "components/vfs.in").read_text()
@@ -44,6 +47,8 @@ for name in [
     "vfs-fd-valid",
     "vfs-fd-open-file",
     "vfs-fd-offset",
+    "vfs-discard-tagged",
+    "vfs-discard-valid",
     "vfs-close",
 ] + [x.split("(")[0][3:] for x in v.splitlines() if x.startswith("fn vfs-stream-")]:
     source += extract("vfs.in", name) + "\n"

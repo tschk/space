@@ -1,0 +1,65 @@
+package space.spdp.proof
+
+import "../../protocol/display.in"
+
+interface PixelMemory { fn map() -> void }
+interface PixelDisplay { fn present() -> void }
+component PixelProof {
+  target "x86_64-unknown-none"
+  capability memory: PixelMemory(map)
+  capability display: PixelDisplay(present)
+}
+interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {}
+interrupt fn chan-page-recv-frame(page: Int, message: Int) -> Int {}
+
+// One fixed client: consume the server's seat frame before publishing any reply.
+fn client-entry(info: Int) -> Int {
+  if load64(info) != 20 || load64(info + 8) != 0 { return 1 }
+  let page = load64(info + 32)
+  let pixels = load64(info + 72)
+  let heap = load64(info + 16)
+  let args = load64(info + 64)
+  if page != 0x70000000 || heap != 0x80000000 || pixels != 0x70001000 || load64(info + 80) != 4096 || load64(info + 88) != 0 { return 2 }
+  let phase = 0
+  if args != 0 && load8(args) == 105 {
+    // Explicit initialization, never assume freshly allocated heap contents.
+    store64(heap, 0)
+    if chan-page-send-frame(page, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0) != 1 { return 3 }
+  } else {
+    let message = heap + 8
+    if chan-page-recv-frame(page, message) != 1 { return 4 }
+    if load64(message) != SPDP-OBJ-SEAT || (load64(message + 8) != SPDP-SEAT-KEYBOARD-KEY && load64(message + 8) != SPDP-SEAT-POINTER-BUTTON) || load64(message + 16) < 0 { return 5 }
+    let packed = load64(message + 24)
+    let code = packed & 0xFFFFFFFF
+    if (packed >> 32) != 1 { return 6 }
+    // No second event can be silently consumed or interpreted as a response.
+    if load64(page) != load64(page + 8) { return 8 }
+    if code == 27 {
+      if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DESTROY, 0, 0) != 1 { return 12 }
+      if chan-page-send-frame(page, SPDP-OBJ-SHM, SPDP-SHM-POOL-DESTROY, 0, 0) != 1 { return 13 }
+      return 42
+    }
+    if code != 97 && code != 98 && code != 1 { return 7 }
+    phase = (load64(heap) % 2) + 1
+    store64(heap, phase)
+  }
+  let y = 0
+  while y < 16 {
+    let x = 0
+    while x < 64 {
+      let color = 0xFF808080
+      if phase == 1 { color = 0xFF00FF00; if x < 20 { color = 0xFFFF0000 } }
+      if phase == 2 { color = 0xFFFFFF00; if x < 20 { color = 0xFF0000FF } }
+      store32(pixels + (y * 64 + x) * 4, color)
+      x += 1
+    }
+    y += 1
+  }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-ATTACH, 0, 0) != 1 { return 9 }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-DAMAGE, 0, (64 << 16) | 16) != 1 { return 10 }
+  if chan-page-send-frame(page, SPDP-OBJ-SURFACE, SPDP-SURFACE-COMMIT, 0, 0) != 1 { return 11 }
+  // The next entry must rebuild every writable descriptor word from provenance.
+  let i = 0
+  while i < 96 { store64(info + i, -1); i += 8 }
+  return 42
+}

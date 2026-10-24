@@ -1,0 +1,124 @@
+package space.fixture
+
+var retained-contract-free: Int = -1
+var retained-contract-heap: Int = 0
+var retained-contract-domains: Int = 0
+var retained-contract-caps: Int = 0
+var retained-contract-objects: Int = 0
+var retained-contract-exports: Int = 0
+var retained-contract-clones: Int = 0
+
+fn retained-contract-free-count() -> Int {
+  let count = 0
+  let cursor = free-list
+  while cursor != 0 {
+    if (cursor & 4095) != 0 || cursor < 0x100000 || cursor >= heap-end || count > 65536 { panic("retained invalid free list") }
+    count = count + 1
+    cursor = load64(cursor)
+  }
+  return count
+}
+
+fn retained-contract-snapshot() -> void {
+  let frames = retained-contract-free-count()
+  if retained-contract-free == -1 {
+    retained-contract-free = frames
+    retained-contract-heap = heap-next
+    retained-contract-domains = domain-count
+    retained-contract-caps = cap-count
+    retained-contract-objects = obj-arena-next
+    retained-contract-exports = dyn-count
+    retained-contract-clones = domain-clone-owned
+    return
+  }
+  if frames != retained-contract-free || heap-next != retained-contract-heap || domain-count != retained-contract-domains || cap-count != retained-contract-caps || obj-arena-next != retained-contract-objects || dyn-count != retained-contract-exports || domain-clone-owned != retained-contract-clones { panic("retained resource drift") }
+  if runtime-instance-live != 0 || domain-current != 0 || cr3-read() != load64(domain-table) { panic("retained live state drift") }
+}
+
+fn retained-contract-run(port: Int) -> void {
+  let image = boot-image-find(254)
+  let allocation-image = boot-image-find(255)
+  let image-bytes = load64(image + 24)
+  let allocation-bytes = load64(allocation-image + 24)
+  let pristine = alloc(image-bytes)
+  let pristine-allocation = alloc(allocation-bytes)
+  let byte = 0
+  while byte < image-bytes { store8(pristine + byte,load8(image + byte)); byte = byte + 1 }
+  byte = 0
+  while byte < allocation-bytes { store8(pristine-allocation + byte,load8(allocation-image + byte)); byte = byte + 1 }
+  let pristine-caps = alloc(cap-table-cap * 16)
+  let pristine-domains = alloc(MAX-DOMAINS * 24)
+  let cycle = 0
+  let seen = 0
+  while cycle < 70 {
+    if runtime-instance-can-admit(2) != 1 { panic("retained admission") }
+    if sci-load-retained-component(port,image,"counter-left",1,0) != 1 { panic("retained initial left global") }
+    let left = runtime-instance-last-handle
+    let left-info = sci-sync-info
+    let left-entry = sci-sync-entry
+    if left <= seen || runtime-instance-record(left,1) == 0 { panic("retained left generation") }
+    if sci-load-retained-component(port,image,"counter-right",1,0) != 1 { panic("retained initial right global") }
+    let right = runtime-instance-last-handle
+    let right-info = sci-sync-info
+    let right-entry = sci-sync-entry
+    if right <= left || runtime-instance-record(right,1) == 0 { panic("retained right generation") }
+    if runtime-instance-release(left) != -1 { panic("retained live release accepted") }
+    if runtime-instance-resume(left,left-entry + 1,left-info) != -1 || runtime-instance-resume(left,left-entry,right-info) != -1 { panic("retained foreign context accepted") }
+    if runtime-instance-resume(left,left-entry,left-info) != 2 || runtime-instance-resume(right,right-entry,right-info) != 2 { panic("retained independent resumed globals") }
+    if cycle % 2 == 1 {
+      let token = left;left = right;right = token
+      let info = left-info;left-info = right-info;right-info = info
+      let entry = left-entry;left-entry = right-entry;right-entry = entry
+    }
+    if runtime-instance-retire(left) != 0 || runtime-instance-retire(left) != 0 { panic("retained exact retire") }
+    if runtime-instance-resume(left,left-entry,left-info) != -1 { panic("retained retired resume accepted") }
+    if runtime-instance-release(left) != 0 { panic("retained release first") }
+    let before-free = retained-contract-free-count()
+    let before-heap = heap-next
+    let before-domains = domain-count
+    let before-caps = cap-count
+    let before-objects = obj-arena-next
+    let before-clones = domain-clone-owned
+    let before-exports = dyn-count
+    let before-live = runtime-instance-live
+    let before-root-edge = load64(root-realm + 24)
+    byte = 0
+    while byte < cap-table-cap * 16 { store8(pristine-caps + byte,load8(cap-table-base + byte)); byte = byte + 1 }
+    byte = 0
+    while byte < MAX-DOMAINS * 24 { store8(pristine-domains + byte,load8(domain-table + byte)); byte = byte + 1 }
+    if sci-load-retained-component(port,allocation-image,"retained-initial-failure",1,"abort-initial") != 134 { panic("retained initial emitted abort") }
+    if runtime-instance-last-handle != 0 || sci-sync-handle != 0 || sci-sync-entry != 0 || sci-sync-info != 0 || sci-sync-page != 0 || sci-sync-domain != 0 { panic("retained initial abort published handle") }
+    if retained-contract-free-count() != before-free || heap-next != before-heap || domain-count != before-domains || cap-count != before-caps || obj-arena-next != before-objects || domain-clone-owned != before-clones || dyn-count != before-exports || runtime-instance-live != before-live || load64(root-realm + 24) != before-root-edge { panic("retained initial abort resource drift") }
+    byte = 0
+    while byte < cap-table-cap * 16 { if load8(pristine-caps + byte) != load8(cap-table-base + byte) { panic("retained initial abort changed capability") }; byte = byte + 1 }
+    byte = 0
+    while byte < MAX-DOMAINS * 24 { if load8(pristine-domains + byte) != load8(domain-table + byte) { panic("retained initial abort changed domain") }; byte = byte + 1 }
+    byte = 0
+    while byte < allocation-bytes { if load8(pristine-allocation + byte) != load8(allocation-image + byte) { panic("retained initial abort changed source bytes") }; byte = byte + 1 }
+    if runtime-instance-resume(right,right-entry,right-info) != 3 { panic("retained surviving peer") }
+    if sci-load-retained-component(port,image,"counter-reused",1,0) != 1 { panic("retained reused initialized globals") }
+    let fresh = runtime-instance-last-handle
+    let fresh-info = sci-sync-info
+    let fresh-entry = sci-sync-entry
+    if fresh <= right || fresh == left { panic("retained reused generation") }
+    if runtime-instance-resume(left,left-entry,left-info) != -1 || runtime-instance-retire(left) != -1 || runtime-instance-release(left) != -1 { panic("retained stale token regained authority") }
+    if runtime-instance-resume(right,right-entry,right-info) != 4 || runtime-instance-resume(fresh,fresh-entry,fresh-info) != 2 { panic("retained reuse affected peer") }
+    if runtime-instance-retire(right) != 0 || runtime-instance-release(right) != 0 || runtime-instance-retire(fresh) != 0 || runtime-instance-release(fresh) != 0 { panic("retained final release") }
+    if sci-load-retained-component(port,boot-image-find(255),"retained-allocation",1,0) != 1 { panic("retained allocator initial") }
+    let allocator = runtime-instance-last-handle
+    let allocator-info = sci-sync-info
+    let allocator-entry = sci-sync-entry
+    if runtime-instance-resume(allocator,allocator-entry,allocator-info) != 42 { panic("retained resumed allocator context") }
+    if runtime-instance-resume(allocator,allocator-entry,allocator-info) != 134 { panic("retained emitted allocation abort") }
+    if runtime-instance-resume(allocator,allocator-entry,allocator-info) != -1 || runtime-instance-retire(allocator) != 0 || runtime-instance-release(allocator) != 0 { panic("retained aborted instance lifetime") }
+    byte = 0
+    while byte < image-bytes { if load8(pristine + byte) != load8(image + byte) { panic("retained source globals modified") }; byte = byte + 1 }
+    byte = 0
+    while byte < allocation-bytes { if load8(pristine-allocation + byte) != load8(allocation-image + byte) { panic("retained source import patch modified") }; byte = byte + 1 }
+    seen = allocator
+    retained-contract-snapshot()
+    serial-write-cstr(port,"retained-contract: cycle ");serial-write-dec-wide(port,cycle + 1);serial-nl(port)
+    cycle = cycle + 1
+  }
+  serial-write-cstr(port,"retained-contract: private globals generation stale denial varied close order and stable resources PASS");serial-nl(port)
+}

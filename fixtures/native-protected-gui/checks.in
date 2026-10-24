@@ -1,0 +1,168 @@
+package space.fixture
+import "../native-protected/checks.in"
+var native-gui-arguments:Int=0
+var native-gui-note-calls:Int=0
+fn native-gui-open(port:Int,kind:Int)->Int{
+ let image=boot-image-find(kind);let bytes=runtime-instance-image-boot-size(image);let rights=20;
+ if kind==271{rights=52;}
+ return native-protected-open(port,image,bytes,"protected-gui-fixture",rights,native-gui-arguments);
+}
+fn native-gui-note(request:Int)->Int{
+ let state=native-protected-active;
+ if state==0 || domain-current!=load64(state) || current-cap!=load64(state+16) || cap-check(current-cap,cap-storage())==0{panic("protected GUI backend owner");}
+ let extra=load64(state+112);
+ if request!=extra+2080 || load64(request+8)!=extra+2048 || load64(request+16)!=8{panic("protected GUI backend descriptor");}
+ native-gui-note-calls=native-gui-note-calls+1;
+ if load64(request)==15{store64(load64(request+8),0x3837363534333231);return 8;}
+ if load64(request)==16 && load64(load64(request+8))==0x3837363534333231{return 8;}
+ return -22;
+}
+fn native-gui-front-hash(view:Int)->Int{
+ let hash=17;let offset=0;
+ while offset<SCI-CANVAS-BYTES{hash=((hash*33)^load64(view+offset))&0x7fffffff;offset=offset+8;}
+ return hash;
+}
+fn native-gui-refusals(port:Int)->void{
+ let image=boot-image-find(270);let bytes=runtime-instance-image-boot-size(image);let tail=image+bytes - 64;let canvas=tail - 64;
+ let heap=heap-next;let frames=native-test-free-count();let caps=cap-count;let domains=domain-count;let objects=obj-arena-next;let live=runtime-instance-live;let last=runtime-instance-last-handle;
+ let field=0;
+ while field<8{
+  let cell=canvas+field*8;let saved=load64(cell);store64(cell,saved^1);
+  if native-gui-open(port,270)!=-1{panic("protected GUI malformed canvas admitted");}
+  store64(cell,saved);field=field+1;
+ }
+ field=0;
+ while field<8{
+  let cell=tail+field*8;let saved=load64(cell);store64(cell,-1);
+  if native-gui-open(port,270)!=-1{panic("protected GUI malformed execution admitted");}
+  store64(cell,saved);field=field+1;
+ }
+ let required=load64(image+8);store64(image+8,5);
+ if native-gui-open(port,270)!=-1{panic("protected GUI foreign declaration admitted");}store64(image+8,required);
+ let editor=boot-image-find(271);let editor-bytes=runtime-instance-image-boot-size(editor);
+ if native-protected-open(port,editor,editor-bytes,"bad-gui-grants",20,native-gui-arguments)!=-1{panic("protected GUI editor grant widening");}
+ store64(native-gui-arguments+8,47);if native-gui-open(port,270)!=-1{panic("protected GUI short startup");}store64(native-gui-arguments+8,48);
+ let owner=load64(cap-table-base+current-cap*16+8);store64(cap-table-base+current-cap*16+8,4);
+ if native-gui-open(port,270)!=-1{panic("protected GUI caller missing launch grant");}store64(cap-table-base+current-cap*16+8,owner);
+ let table=image+load64(image+56);let name=image+load64(table);let first=load8(name);store8(name,33);
+ if native-gui-open(port,270)!=-1{panic("protected GUI unknown native import");}store8(name,first);
+ if heap-next!=heap || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || runtime-instance-live!=live || runtime-instance-last-handle!=last{panic("protected GUI malformed refusal resources");}
+}
+
+fn native-gui-check(port:Int)->void{
+ let caller=current-cap;let launch=cap-mint(root-realm,52);current-cap=launch;
+ native-gui-arguments=frame-alloc();store64(native-gui-arguments,native-gui-arguments+16);store64(native-gui-arguments+8,48);
+ let i=0;while i<6{store64(native-gui-arguments+16+i*8,0x77110000+i);i=i+1;}
+ native-gui-refusals(port);
+ let first=native-gui-open(port,270);let second=native-gui-open(port,270);let third=native-gui-open(port,271);
+ if first<=0 || second<=0 || third<=0{panic("protected GUI warmup admission");}
+ native-test-close(first);native-test-close(second);native-test-close(third);
+ let heap=heap-next;let frames=native-test-free-count();let caps=cap-count;let domains=domain-count;let objects=obj-arena-next;let live=runtime-instance-live;
+ let left=native-gui-open(port,270);let right=native-gui-open(port,270);
+ if left<=0 || right<=0 || native-protected-profile(left)!=3 || native-protected-ring(left)==native-protected-ring(right){panic("protected GUI exact projections");}
+ let lstate=native-test-state(left);let rstate=native-test-state(right);let lextra=load64(lstate+112);
+ let lring=native-protected-ring(left);let rring=native-protected-ring(right);let front=native-protected-pixels(left);let peer=native-protected-pixels(right);
+ if front<=0x100000000 || front==peer || native-protected-pixel-bytes(left)!=SCI-CANVAS-BYTES || native-protected-entry(left)!=0x60000040 || native-protected-grants(left)!=20{panic("protected GUI highview descriptor");}
+ if (domain-page-flags(load64(lstate),COMP-SHARED-VIRT)&7)!=5 || (domain-page-flags(load64(lstate),COMP-SHARED-VIRT)&PAGE-NX)==0 || (domain-page-flags(load64(lstate),COMP-PIXEL-VIRT)&7)!=7 || (domain-page-flags(load64(lstate),COMP-PIXEL-VIRT)&PAGE-NX)==0 || domain-page-flags(load64(lstate),front)!=0{panic("protected GUI page permissions");}
+ if load64(load64(lstate+32)+64)!=NATIVE-PROTECTED-INFO+256 || load64(load64(lstate+32)+256)!=0x77110000{panic("protected GUI copied startup");}
+ if native-test-run(left,100)!=11 || native-test-run(right,100)!=11 || native-protected-epoch(left)!=1{panic("protected GUI actual private globals");}
+ if load64(front)!=0 || load64(peer)!=0{panic("protected GUI queued frame published before acceptance");}
+ if native-protected-present(left,1)!=0 || load64(front)!=11 || load64(front+SCI-CANVAS-BYTES - 8)!=12 || load64(peer)!=0{panic("protected GUI accepted snapshot");}
+ if native-protected-present(right,1)!=0 || load64(peer)!=11{panic("protected GUI independent peer snapshot");}
+ let left-hash=native-gui-front-hash(front);let peer-hash=native-gui-front-hash(peer);
+ if native-protected-present(left,1)!=-1 || native-protected-present(left,2)!=-1{panic("protected GUI stale future epoch");}
+ native-test-mode(left,4,999);
+ if native-test-run(left,100)!=42 || load64(front)!=11 || load64(front+SCI-CANVAS-BYTES - 8)!=12 || load64(peer)!=11 || native-gui-front-hash(front)!=left-hash || native-gui-front-hash(peer)!=peer-hash{panic("protected GUI hostile staging changed accepted front");}
+ if native-protected-present(left,1)!=-1 || native-protected-present(left,2)!=0 || load64(front)!=999 || load64(front+SCI-CANVAS-BYTES - 8)!=1000{panic("protected GUI next accepted snapshot");}
+ left-hash=native-gui-front-hash(front);
+ let rights=load64(cap-table-base+load64(lstate+16)*16+8);store64(cap-table-base+load64(lstate+16)*16+8,4);
+ native-test-mode(left,4,777);if native-test-run(left,100)!=42 || native-protected-present(left,3)!=-1 || load64(front)!=999 || native-gui-front-hash(front)!=left-hash{panic("protected GUI revoked presentation");}
+ store64(cap-table-base+load64(lstate+16)*16+8,rights);
+ if native-protected-set-arguments(left,0,0)!=0{panic("protected GUI clear arguments");}
+ native-test-mode(left,4,666);if native-test-run(left,100)!=42 || load64(load64(lstate+32)+64)!=0 || load64(front)!=999{panic("protected GUI later arguments snapshot");}
+ // Empty queue first, then test invalid destinations before dequeue and all32
+ // bytes copied across a physical page boundary for a valid destination.
+ let scratch=lextra+2240;
+ while chan-page-recv-frame(lring,scratch)==1{}
+ chan-page-send-frame(lring,1,2,3,4);
+ let head=load64(lring);let tail=load64(lring+8);
+ let end=load64(load64(lstate+24)+511*8)+4080;store64(end,0x7711);store64(end+8,0x8822);
+ native-test-mode(left,2,0);if native-test-run(left,100)!=-14 || load64(lring)!=head || load64(lring+8)!=tail || load64(end)!=0x7711 || load64(end+8)!=0x8822{panic("protected GUI cross-end receive consumed");}
+ native-test-mode(left,10,0x100000);if native-test-run(left,100)!=-14 || load64(lring)!=head{panic("protected GUI kernel receive consumed");}
+ native-test-mode(left,10,load64(load64(rstate+24)));if native-test-run(left,100)!=-14 || load64(lring)!=head{panic("protected GUI peer receive consumed");}
+ native-test-mode(left,1,0);if native-test-run(left,100)!=10 || load64(lring)==head{panic("protected GUI cross-page receive");}
+ let rhead=load64(rring);let rtail=load64(rring+8);
+ native-test-mode(left,3,rring);if native-test-run(left,100)!=-1 || load64(rring)!=rhead || load64(rring+8)!=rtail{panic("protected GUI forged endpoint");}
+ native-test-mode(left,11,0);if native-test-run(left,100)!=-38 || native-gui-note-calls!=0{panic("protected GUI unimported note trap");}
+ // Real owned note bridge: absent backend, grant before pointers, invalid
+ // ranges before backend effects, then both directions through owned bounce.
+ let editor=native-gui-open(port,271);let estate=native-test-state(editor);let eheap=load64(load64(estate+24));
+ native-test-mode(editor,12,NATIVE-PROTECTED-HEAP+256);if native-test-run(editor,100)!=-19{panic("protected GUI missing note backend");}
+ native-protected-note-backend=native-gui-note;
+ native-test-mode(editor,12,0x100000);if native-test-run(editor,100)!=-22 || native-gui-note-calls!=0{panic("protected GUI note kernel pointer");}
+ native-test-mode(editor,12,NATIVE-PROTECTED-HEAP+0x200000 - 4);if native-test-run(editor,100)!=-22 || native-gui-note-calls!=0{panic("protected GUI note cross-end pointer");}
+ let erights=load64(cap-table-base+load64(estate+16)*16+8);store64(cap-table-base+load64(estate+16)*16+8,20);
+ native-test-mode(editor,12,0x100000);if native-test-run(editor,100)!=-13 || native-gui-note-calls!=0{panic("protected GUI note grant precedence");}
+ store64(cap-table-base+load64(estate+16)*16+8,erights);
+ native-test-mode(editor,12,NATIVE-PROTECTED-HEAP+256);if native-test-run(editor,100)!=8 || load64(eheap+256)!=0x3837363534333231 || native-gui-note-calls!=1{panic("protected GUI note read bounce");}
+ native-test-mode(editor,13,NATIVE-PROTECTED-HEAP+256);if native-test-run(editor,100)!=8 || native-gui-note-calls!=2{panic("protected GUI note write bounce");}
+ native-protected-note-backend=0;native-test-close(editor);
+ let mode=5;
+ while mode<=9{
+  let bad=native-gui-open(port,270);let badstate=native-test-state(bad);let pointer=front;
+  if mode==5{pointer=front;}
+  native-test-mode(bad,mode,pointer);let expected=142;
+  if mode==8{expected=124;}if mode==9{expected=134;}
+  if native-test-run(bad,3)!=expected || native-protected-present(bad,native-protected-epoch(bad))!=-1 || native-protected-ring(bad)==0 || native-protected-pixel-bytes(bad)!=SCI-CANVAS-BYTES || load64(front)!=999 || load64(peer)!=11 || native-gui-front-hash(front)!=left-hash || native-gui-front-hash(peer)!=peer-hash{panic("protected GUI fault snapshot fence");}
+  native-test-close(bad);native-test-mode(right,4,11);if native-test-run(right,100)!=42{panic("protected GUI peer after failure");}
+  mode=mode+1;
+ }
+ let parent=runtime-instance-view-parent(front);let old=left;
+ native-test-close(left);
+ if load64(parent)!=0 || native-protected-ring(old)!=0 || native-protected-pixels(old)!=0 || native-protected-present(old,1)!=-1 || native-protected-set-arguments(old,0,0)!=-1{panic("protected GUI stale withdrawal");}
+ native-test-close(right);
+ let cycle=0;
+ while cycle<70{
+  left=native-gui-open(port,270);right=native-gui-open(port,270);
+  if left<=0 || right<=0 || left==old || native-test-run(left,100)!=11 || native-test-run(right,100)!=11{panic("protected GUI lifecycle admission");}
+  let leftview=native-protected-pixels(left);let rightview=native-protected-pixels(right);
+  let leftparent=runtime-instance-view-parent(leftview);let rightparent=runtime-instance-view-parent(rightview);
+  if native-protected-present(left,1)!=0 || native-protected-present(right,1)!=0 || load64(leftview)!=11 || load64(rightview)!=11 || native-protected-present(old,1)!=-1{panic("protected GUI lifecycle snapshot generation");}
+  if (cycle&1)==0{native-test-close(left);native-test-mode(right,4,123);if native-test-run(right,100)!=42 || load64(rightview)!=11{panic("protected GUI right survivor");}native-test-close(right);}else{native-test-close(right);native-test-mode(left,4,123);if native-test-run(left,100)!=42 || load64(leftview)!=11{panic("protected GUI left survivor");}native-test-close(left);}
+  if load64(leftparent)!=0 || load64(rightparent)!=0 || heap-next!=heap || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || runtime-instance-live!=live{panic("protected GUI lifecycle resource leak");}
+  cycle=cycle+1;
+ }
+ current-cap=caller;cap-revoke(launch);
+ serial-write-cstr(port,"native: actual protected GUI ring snapshots notes faults deadline 140-instance lifetime PASS");serial-nl(port);
+}
+
+fn native-gui-oom-check(port:Int)->void{
+ let caller=current-cap;let launch=cap-mint(root-realm,52);current-cap=launch;
+ native-gui-arguments=frame-alloc();store64(native-gui-arguments,native-gui-arguments+16);store64(native-gui-arguments+8,48);
+ let flags=invoke1(load64(0x4198),0);let image=boot-image-find(270);let bytes=runtime-instance-image-boot-size(image);
+ let held=alloc((heap-end/4096)*8);let saved-caps=alloc(cap-table-cap*16);let saved-domains=alloc(MAX-DOMAINS*24);
+ sti();let peer=native-protected-open(port,image,bytes,"protected-oom-peer",20,native-gui-arguments);
+ if peer<=0 || native-test-run(peer,100)!=11{panic("protected GUI OOM peer");}
+ let budget=native-protected-frame-budget(bytes)+581;let capacity=runtime-instance-frame-capacity();let hold=capacity - budget+1;
+ if hold<=0{panic("protected GUI OOM fixture capacity");}
+ let page=0;while page<hold{let frame=frame-alloc();store64(held+page*8,frame);store64(frame+8,0x77110000+page);page=page+1;}
+ if runtime-instance-frame-capacity()!=budget - 1{panic("protected GUI OOM fixture pressure");}
+ let heap=heap-next;let free=free-list;let frames=native-test-free-count();let caps=cap-count;let domains=domain-count;let objects=obj-arena-next;let object-id=obj-counter;let live=runtime-instance-live;let last=runtime-instance-last-handle;
+ let byte=0;while byte<cap-table-cap*16{store8(saved-caps+byte,load8(cap-table-base+byte));byte=byte+1;}
+ byte=0;while byte<MAX-DOMAINS*24{store8(saved-domains+byte,load8(domain-table+byte));byte=byte+1;}
+ if native-protected-open(port,image,bytes,"protected-oom-refuse-if1",20,native-gui-arguments)!=-1 || (invoke1(load64(0x4198),0)&512)!=512{panic("protected GUI OOM IF1 refusal");}
+ if native-test-run(peer,100)!=12{panic("protected GUI OOM peer survives");}
+ cli();if native-protected-open(port,image,bytes,"protected-oom-refuse-if0",20,native-gui-arguments)!=-1 || (invoke1(load64(0x4198),0)&512)!=0{panic("protected GUI OOM IF0 refusal");}
+ if heap-next!=heap || free-list!=free || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || obj-counter!=object-id || runtime-instance-live!=live || runtime-instance-last-handle!=last{panic("protected GUI OOM refusal resources");}
+ byte=0;while byte<cap-table-cap*16{if load8(saved-caps+byte)!=load8(cap-table-base+byte){panic("protected GUI OOM capability bytes");}byte=byte+1;}
+ byte=0;while byte<MAX-DOMAINS*24{if load8(saved-domains+byte)!=load8(domain-table+byte){panic("protected GUI OOM domain bytes");}byte=byte+1;}
+ page=0;while page<hold{let frame=load64(held+page*8);if load64(frame+8)!=0x77110000+page{panic("protected GUI OOM held frame canary");}frame-free(frame);page=page+1;}
+ sti();let fresh=native-protected-open(port,image,bytes,"protected-oom-recovery",20,native-gui-arguments);
+ if fresh<=0 || native-test-run(fresh,100)!=11 || native-test-run(peer,100)!=13{panic("protected GUI OOM recovery");}
+ native-test-close(fresh);native-test-close(peer);
+ if runtime-instance-live!=0{panic("protected GUI OOM live leak");}
+ if (flags&512)==0{cli();}
+ current-cap=caller;cap-revoke(launch);
+ serial-write-cstr(port,"native: constrained memory budget ");serial-write-dec-wide(port,budget);serial-write-cstr(port," available ");serial-write-dec-wide(port,budget - 1);serial-nl(port);
+ serial-write-cstr(port,"native: actual protected GUI constrained memory exact refusal IF restoration peer recovery PASS");serial-nl(port);
+}

@@ -1,0 +1,30 @@
+package space.app.gui
+import "gui-widget.in"
+import "gui-window-state.in"
+import "gui-window-paint.in"
+
+fn window-info-valid(info: Int) -> Int {
+  if load64(info) != 20 && load64(info) != 52 { return 0 }
+  if load64(info + 8) != 0 || load64(info + 16) != 0x80000000 || load64(info + 24) != 0x200000 || load64(info + 32) != 0x70000000 { return 0 }
+  if load64(info + 72) != 0x70001000 || load64(info + 80) != SCI-CANVAS-BYTES || load64(info + 88) != 0 { return 0 }
+  return 1
+}
+
+fn window-start(info: Int) -> Int {
+  if window-info-valid(info) != 1 { return 0 }
+  let config = load64(info + 64)
+  // Current CPL0 startup borrows a supervisor-owned visual configuration.
+  // Copy its scalar fields now; retain no pointer for later event processing.
+  if config == 0 || load64(config) != GUI-WINDOW-CONFIG-MAGIC { return 0 }
+  if window-configure(load64(config + 8), load64(config + 16), load64(config + 24), load64(config + 32)) != 1 { return 0 }
+  window-focused = load64(config + 40)
+  if window-focused < 0 || window-focused > 1 { return 0 }
+  return widget-start(info)
+}
+
+fn window-event() -> Int {
+  return window-event-at(0x80000000)
+}
+fn window-draw(kind: Int) -> Int {
+  return window-draw-at(kind, 0x80000000)
+}

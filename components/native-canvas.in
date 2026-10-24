@@ -1,0 +1,202 @@
+package space.kernel
+import "user-address-space.in"
+import "display-spdp.in"
+import "display-output.in"
+
+// Private trusted provider. Generation-bearing canvas objects own kernel
+// staging/accepted buffers and existing compositor leases. No guest pointers,
+// physical frames or renderer policy escape this interface. Not an SCI service.
+const NATIVE-CANVAS-WIDTH = 256
+const NATIVE-CANVAS-HEIGHT = 128
+const NATIVE-CANVAS-STRIDE = 1024
+const NATIVE-CANVAS-BYTES = 131072
+const NATIVE-CANVAS-RECORD = 160
+var native-canvas-table: Int = 0
+var native-canvas-generation: Int = 0
+
+fn native-canvas-host-span(pointer:Int,bytes:Int)->Int{
+ if pointer<65536 || bytes<0 || pointer>heap-next || bytes>heap-next - pointer{return 0;}return 1;
+}
+fn native-canvas-row(handle:Int,owner:Int)->Int{
+ if user-space-kernel()==0{return -4;}
+ if cap-check(owner,cap-memory()|cap-display())==0{return -2;}
+ if handle<=0 || native-canvas-table==0{return -6;}
+ let slot=(handle&255) - 1;if slot<0 || slot>=2{return -6;}
+ let row=native-canvas-table+slot*NATIVE-CANVAS-RECORD;
+ if load64(row)!=handle || load64(row+24)==0{return -6;}
+ if load64(row+8)!=owner || load64(row+16)!=load64(cap-table-base+owner*16){return -2;}
+ return row;
+}
+
+// A quiescent/exclusively owned scene is required. This does not acquire other
+// providers' surfaces or silently reset a running desktop's compositor state.
+fn native-canvas-scene()->Int{
+ if fb-ready==0 || out-generation<=0 || out-format!=1 || fb-width<NATIVE-CANVAS-WIDTH || fb-height<NATIVE-CANVAS-HEIGHT || dsp-running!=0{return -4;}
+ if dsp-surfaces==0{
+  if dsp-pools!=0 || dsp-pool-sizes!=0 || dsp-strides!=0 || dsp-msg!=0{return -5;}
+  return 0;
+ }
+ if dsp-surface-count<0 || dsp-surface-count>DSP-MAX-SURFACES{return -5;}
+ if native-canvas-host-span(dsp-surfaces,DSP-MAX-SURFACES*48)==0 || native-canvas-host-span(dsp-pools,DSP-MAX-POOLS*8)==0 || native-canvas-host-span(dsp-pool-sizes,DSP-MAX-POOLS*8)==0 || native-canvas-host-span(dsp-strides,DSP-MAX-SURFACES*8)==0{return -5;}
+ let sid=0;
+ while sid<dsp-surface-count{
+  if dsp-surface-valid(sid)!=0{
+   let owned=0;let slot=0;
+   while slot<2 && native-canvas-table!=0{
+    let row=native-canvas-table+slot*NATIVE-CANVAS-RECORD;
+    if load64(row)>0{
+     if load64(row+24)!=1{return -4;}
+     if load64(row+64)==sid{owned=1;}
+    }
+    slot+=1;
+   }
+   if owned==0{return -4;}
+  }
+  sid+=1;
+ }
+ let pool=0;
+ while pool<DSP-MAX-POOLS{
+  let pointer=load64(dsp-pools+pool*8);let size=load64(dsp-pool-sizes+pool*8);
+  if pointer==0{if size!=0{return -5;}}
+  else{
+   if pool>=2 || native-canvas-table==0{return -4;}
+   let row=native-canvas-table+pool*NATIVE-CANVAS-RECORD;
+   if load64(row)==0{return -4;}
+   if load64(row+24)!=1 || pointer!=load64(row+56) || size!=NATIVE-CANVAS-BYTES{return -5;}
+  }
+  pool+=1;
+ }
+ return 0;
+}
+fn native-canvas-output(row:Int)->Int{
+ if fb-ready==0 || fb-width!=load64(row+96) || fb-height!=load64(row+104) || fb-pitch!=load64(row+112) || fb-addr!=load64(row+120) || out-generation!=load64(row+144){return 0;}return 1;
+}
+fn native-canvas-surface(row:Int)->Int{
+ let sid=load64(row+64);let slot=(row - native-canvas-table)/NATIVE-CANVAS-RECORD;
+ if dsp-surface-valid(sid)==0{return 0;}
+ let surface=dsp-surfaces+sid*48;
+ if load64(surface+8)!=slot || load64(surface+16)!=0 || load64(surface+24)!=((NATIVE-CANVAS-WIDTH<<16)|NATIVE-CANVAS-HEIGHT) || load64(surface+32)!=((load64(row+128)<<16)|load64(row+136)) || (load64(surface+40)&-2)!=0 || load64(dsp-strides+sid*8)!=NATIVE-CANVAS-STRIDE{return 0;}return 1;
+}
+
+fn native-canvas-new(owner:Int,width:Int,height:Int,x:Int,y:Int)->Int{
+ if user-space-kernel()==0{return -4;}
+ if cap-check(owner,cap-memory()|cap-display())==0{return -2;}
+ if width!=NATIVE-CANVAS-WIDTH || height!=NATIVE-CANVAS-HEIGHT || x<0 || y<0 || x>65535 || y>65535{return -1;}
+ if native-canvas-generation>=0x7FFFFFFFFFFFFF{return -3;}
+ let scene=native-canvas-scene();if scene!=0{return scene;}
+ if x>fb-width - width || y>fb-height - height{return -1;}
+ let slot=0;let active=0;
+ if native-canvas-table!=0{
+  let i=0;while i<2{if load64(native-canvas-table+i*NATIVE-CANVAS-RECORD)>0{active+=1;}i+=1;}
+  while slot<2 && load64(native-canvas-table+slot*NATIVE-CANVAS-RECORD)>0{slot+=1;}
+ }
+ if slot>=2{return -3;}
+ if active>0 && dsp-surface-count>=DSP-MAX-SURFACES{return -3;}
+ let need=128;
+ if native-canvas-table==0{need+=2*NATIVE-CANVAS-RECORD+2*NATIVE-CANVAS-BYTES;}
+ else{
+  let row=native-canvas-table+slot*NATIVE-CANVAS-RECORD;
+  let stage=load64(row+48);let front=load64(row+56);
+  if stage==0 && front==0{need+=2*NATIVE-CANVAS-BYTES;}
+  else if stage==0 || front==0 || (stage<front+NATIVE-CANVAS-BYTES && front<stage+NATIVE-CANVAS-BYTES) || native-canvas-host-span(stage,NATIVE-CANVAS-BYTES)==0 || native-canvas-host-span(front,NATIVE-CANVAS-BYTES)==0{return -5;}
+ }
+ if dsp-surfaces==0{need+=DSP-MAX-SURFACES*48+DSP-MAX-POOLS*16+DSP-MAX-SURFACES*8+SPDP-MSG-SIZE;}
+ if heap-next<65536 || heap-next>heap-end || need>heap-end - heap-next{return -3;}
+ if native-canvas-table==0{
+  native-canvas-table=alloc(2*NATIVE-CANVAS-RECORD);cpu-mem-fill64(native-canvas-table,0,2*NATIVE-CANVAS-RECORD/8);
+  store64(native-canvas-table+64,-1);store64(native-canvas-table+NATIVE-CANVAS-RECORD+64,-1);
+ }
+ if dsp-surfaces==0{dsp-init();}
+ if active==0{dsp-surface-count=0;}
+ let row=native-canvas-table+slot*NATIVE-CANVAS-RECORD;
+ if load64(row+48)==0{store64(row+48,alloc(NATIVE-CANVAS-BYTES));store64(row+56,alloc(NATIVE-CANVAS-BYTES));}
+ let sid=dsp-create-surface();if sid<0{return -3;}
+ dsp-surface-attach(sid,slot<<32);
+ if dsp-surface-stride(sid,NATIVE-CANVAS-STRIDE)!=1{dsp-surface-destroy(sid);return -5;}
+ dsp-surface-geometry(sid,(x<<48)|(y<<32)|(width<<16)|height);
+ let offset=0;
+ while offset<NATIVE-CANVAS-BYTES{store32(load64(row+48)+offset,0xFF000000);store32(load64(row+56)+offset,0xFF000000);offset+=4;}
+ native-canvas-generation+=1;let handle=(native-canvas-generation<<8)|(slot+1);
+ store64(row,handle);store64(row+8,owner);store64(row+16,load64(cap-table-base+owner*16));store64(row+24,1);
+ store64(row+32,0);store64(row+40,0);store64(row+64,sid);store64(row+72,slot);store64(row+80,0);store64(row+88,0);
+ store64(row+96,fb-width);store64(row+104,fb-height);store64(row+112,fb-pitch);store64(row+120,fb-addr);store64(row+128,x);store64(row+136,y);store64(row+144,out-generation);
+ return handle;
+}
+
+// Bind a weak generation-bearing source identity. The VM remains owned by its
+// existing constructor/binding references; canvas close never drops those refs.
+fn native-canvas-bind(handle:Int,owner:Int,vm:Int,memory:Int)->Int{
+ let row=native-canvas-row(handle,owner);if row<0{return row;}
+ if load64(row+24)!=1 || load64(row+88)!=0{return -4;}
+ if load64(row+32)!=0{return -1;}
+ if cap-check(memory,cap-memory())==0{return -2;}
+ let phase=user-space-phase(vm,memory);if phase<0{return phase;}if phase!=USER-SPACE-LIVE{return -5;}
+ store64(row+32,vm);store64(row+40,memory);return 0;
+}
+
+// Scalar projections only; never expose provider/private accepted pointers.
+// which0..5: width,height,stride,RGBX format1,accepted epoch,lifecycle phase.
+fn native-canvas-query(handle:Int,owner:Int,which:Int)->Int{
+ if which<0 || which>5{return -1;}
+ let row=native-canvas-row(handle,owner);if row<0{return row;}
+ if which==5{return load64(row+24);}
+ if load64(row+24)!=1{return -4;}
+ if which==0{return NATIVE-CANVAS-WIDTH;}
+ if which==1{return NATIVE-CANVAS-HEIGHT;}
+ if which==2{return NATIVE-CANVAS-STRIDE;}
+ if which==3{return 1;}
+ return load64(row+80);
+}
+
+fn native-canvas-upload(handle:Int,owner:Int,binding:Int,address:Int)->Int{
+ let row=native-canvas-row(handle,owner);if row<0{return row;}
+ if load64(row+24)!=1 || load64(row+88)!=0{return -4;}
+ if address<65536 || address>0x7FFFFFFFFFFF - NATIVE-CANVAS-BYTES{return -1;}
+ let memory=load64(row+40);let vm=load64(row+32);
+ if vm<=0{return -1;}
+ if cap-check(memory,cap-memory())==0{return -2;}
+ if user-space-binding-space(binding,memory)!=vm{return -6;}
+ if native-canvas-output(row)==0{return -5;}
+ let scene=native-canvas-scene();if scene!=0{return scene;}
+ if native-canvas-surface(row)==0{return -5;}
+ if load64(row+80)==0x7FFFFFFFFFFFFFFF{return -3;}
+ store64(row+88,1);
+ let stage=load64(row+48);let offset=0;let result=0;
+ while offset<NATIVE-CANVAS-BYTES && result==0{
+  if cap-check(owner,cap-memory()|cap-display())==0 || load64(row+16)!=load64(cap-table-base+owner*16) || cap-check(memory,cap-memory())==0{result=-2;}
+  else{result=user-space-copy-in(binding,memory,address+offset,stage+offset,4096);}
+  if result==0{
+   let byte=0;while byte<4096{store32(stage+offset+byte,(load32(stage+offset+byte)&0xFFFFFF)|0xFF000000);byte+=4;}
+   offset+=4096;
+  }
+ }
+ store64(row+88,0);
+ if result!=0{return result;}
+ let checked=native-canvas-row(handle,owner);if checked<0{return checked;}if checked!=row{return -5;}
+ if cap-check(memory,cap-memory())==0{return -2;}
+ if user-space-phase(vm,memory)!=USER-SPACE-LIVE || native-canvas-output(row)==0 || native-canvas-surface(row)==0{return -5;}
+ scene=native-canvas-scene();if scene!=0{return scene;}
+ let front=load64(row+56);store64(row+56,stage);store64(row+48,front);
+ let pool=load64(row+72);store64(dsp-pools+pool*8,stage);store64(dsp-pool-sizes+pool*8,NATIVE-CANVAS-BYTES);
+ store64(row+80,load64(row+80)+1);dsp-surface-commit(load64(row+64));dsp-composite();return 0;
+}
+
+fn native-canvas-close(handle:Int,owner:Int)->Int{
+ let row=native-canvas-row(handle,owner);if row<0{return row;}
+ if load64(row+88)!=0{return -4;}
+ store64(row+24,2);
+ let sid=load64(row+64);let pool=load64(row+72);
+ // Fence first; retain ownership if renderer associations are uncertain.
+ if sid<0 || sid>=dsp-surface-count || sid>=DSP-MAX-SURFACES || pool!=(row - native-canvas-table)/NATIVE-CANVAS-RECORD{return -5;}
+ if native-canvas-host-span(dsp-surfaces,DSP-MAX-SURFACES*48)==0 || native-canvas-host-span(dsp-strides,DSP-MAX-SURFACES*8)==0 || native-canvas-host-span(dsp-pools,DSP-MAX-POOLS*8)==0 || native-canvas-host-span(dsp-pool-sizes,DSP-MAX-POOLS*8)==0 || dsp-surface-count<0 || dsp-surface-count>DSP-MAX-SURFACES{return -5;}
+ if dsp-surface-valid(sid)!=0 && native-canvas-surface(row)==0{return -5;}
+ let pointer=load64(dsp-pools+pool*8);let size=load64(dsp-pool-sizes+pool*8);
+ if pointer==0{if size!=0{return -5;}}else if pointer!=load64(row+56) || size!=NATIVE-CANVAS-BYTES{return -5;}
+ // A pool withdrawal also edits attached surfaces: validate every association.
+ let other=0;while other<dsp-surface-count{if other!=sid && dsp-surface-valid(other)!=0 && load64(dsp-surfaces+other*48+8)==pool{return -5;}other+=1;}
+ dsp-surface-destroy(sid);dsp-shm-destroy-pool(pool);
+ if dsp-surface-valid(sid)!=0 || load64(dsp-pools+pool*8)!=0 || load64(dsp-pool-sizes+pool*8)!=0{return -5;}
+ dsp-composite();
+ let stage=load64(row+48);let front=load64(row+56);cpu-mem-fill64(row,0,NATIVE-CANVAS-RECORD/8);
+ store64(row+48,stage);store64(row+56,front);store64(row+64,-1);return 0;
+}

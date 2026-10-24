@@ -13,20 +13,23 @@ fn sf-inode-is-inline(ino: Int) -> Int {
   return load32(addr + SF-IN-INLINE)
 }
 
-fn sf-read-inode(ino: Int) -> void {
+fn sf-read-inode(ino: Int) -> Int {
   let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
   let ino-bytes = ino * SF-INODE-SIZE
   let block = table-start + (ino-bytes >> 12)
   let offset = ino-bytes & 4095
-  sf-read-block(block, sf-block-buf)
+  if sf-read-block(block,sf-block-buf)!=0 {
+    return -1
+  }
   let i = 0
   let addr = sf-inode-addr(ino)
   while i < SF-INODE-SIZE {
     store8(addr + i, load8(sf-block-buf + offset + i))
     i = i + 1
   }
-  return
+  return 0
 }
+
 
 fn sf-write-inode(ino: Int) -> Int {
   let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
@@ -49,28 +52,44 @@ fn sf-write-inode(ino: Int) -> Int {
 
 // Return the data block number for file block `fbn`, or -1 if unallocated.
 fn sf-inode-block(ino: Int, fbn: Int) -> Int {
+  if fbn < 0 || fbn >= SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT {
+    return -1
+  }
   let addr = sf-inode-addr(ino)
   if load32(addr + SF-IN-INLINE) != 0 {
     return -1
   }
   if fbn < SF-INODE-DIRECT {
     let b = load64(addr + SF-IN-DIRECT + fbn * 8)
+    // Zero is an unallocated slot, never the superblock's physical block.
+    if b <= 0 {
+      return -1
+    }
     return b
   }
   let indirect = load64(addr + SF-IN-INDIRECT)
   if indirect == 0 {
     return -1
   }
-  sf-read-block(indirect, sf-block-buf)
+  if sf-read-block(indirect, sf-block-buf) != 0 {
+    return -1
+  }
   let idx = fbn - SF-INODE-DIRECT
   if idx >= SF-INODE-INDIRECT-COUNT {
     return -1
   }
-  return load64(sf-block-buf + idx * 8)
+  let block = load64(sf-block-buf + idx * 8)
+  if block <= 0 {
+    return -1
+  }
+  return block
 }
 
 // Set the data block number for file block `fbn`. Allocates indirect block if needed.
 fn sf-set-inode-block(ino: Int, fbn: Int, bno: Int) -> Int {
+  if fbn < 0 || fbn >= SF-INODE-DIRECT + SF-INODE-INDIRECT-COUNT || bno <= 0 {
+    return -1
+  }
   let addr = sf-inode-addr(ino)
   if fbn < SF-INODE-DIRECT {
     store64(addr + SF-IN-DIRECT + fbn * 8, bno)
@@ -84,7 +103,9 @@ fn sf-set-inode-block(ino: Int, fbn: Int, bno: Int) -> Int {
     }
     store64(addr + SF-IN-INDIRECT, indirect)
   }
-  sf-read-block(indirect, sf-block-buf)
+  if sf-read-block(indirect, sf-block-buf) != 0 {
+    return -1
+  }
   let idx = fbn - SF-INODE-DIRECT
   if idx >= SF-INODE-INDIRECT-COUNT {
     return -1

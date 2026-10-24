@@ -1,0 +1,59 @@
+package space.kernel
+import "vfs-readiness.in"
+
+// Finite immediate poll profile: execution-owned regular files only, <=16 rows.
+// No timeout is fabricated: a request needing an actual wait refuses -95.
+// Revents are staged until all authority, pointer, identity and profile checks
+// pass. Negative fds are ignored; invalid fds report POLLNVAL independently of
+// requested events. A regular file remains readable at EOF, as on Linux.
+fn linux-process-poll(address: Int, count: Int, timeout: Int) -> Int {
+  if count < 0 || count > VFS-MAX-FDS { return -22 }
+  if count == 0 { if timeout == 0 { return 0 } return -95 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if linux-process-range(address,count * 8,0) == 0 || linux-process-range(address,count * 8,1) == 0 { return -14 }
+  // files-init always owns this 4096-byte scratch before guest entry. The
+  // synchronous provider uses its first stat record, results use bytes2048..2175.
+  if linux-process-file-buffer == 0 { return -5 }
+  let results = linux-process-file-buffer + 2048
+  let i = 0
+  let ready = 0
+  let storage = 0
+  while i < count {
+    let row = address + i * 8
+    let fd = linux-process-int32(linux-process-read32(row))
+    let events = linux-process-read8(row + 4) | (linux-process-read8(row + 5) << 8)
+    let result = 0
+    if fd >= 0 {
+      if linux-process-device-is(fd) != 0 || linux-process-pipe-is(fd) != 0 { return -95 }
+      let host = linux-process-file-host(fd)
+      if host < 3 {
+        if (fd == 1 && linux-process-stdout-open != 0) || (fd == 2 && linux-process-stderr-open != 0) { return -95 }
+        result = 32
+      } else {
+        let access = linux-process-files-ready()
+        if access < 0 { return access }
+        storage = 1
+        let identity = linux-process-file-identities + fd * 16
+        let native = vfs-regular-readiness(host,load64(identity),load64(identity + 8),linux-process-file-buffer)
+        if native == -38 { return -95 }
+        if native < 0 { return native }
+        if (native & VFS-READY-READ) != 0 { result = events & 65 }
+        if (native & VFS-READY-WRITE) != 0 { result = result | (events & 260) }
+      }
+    }
+    store64(results + i * 8,result)
+    if result != 0 { ready += 1 }
+    i += 1
+  }
+  if ready == 0 && timeout != 0 { return -95 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if storage != 0 { let access = linux-process-files-ready(); if access < 0 { return access } }
+  i = 0
+  while i < count {
+    let result = load64(results + i * 8)
+    linux-process-store8(address + i * 8 + 6,result & 255)
+    linux-process-store8(address + i * 8 + 7,(result >> 8) & 255)
+    i += 1
+  }
+  return ready
+}

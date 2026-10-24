@@ -1,0 +1,167 @@
+package space.kernel
+
+// Caller-owned aligned supervisor context. The first 160 bytes match the real
+// 15-GP + IRET frame, followed by a 512-byte FXSAVE image. No native ABI policy
+// or syscall-number handling belongs here.
+const USER-CONTEXT-BYTES = 768
+const USER-CONTEXT-MAGIC = 0x5350435543545831
+const USER-CONTEXT-EXIT = 1
+const USER-CONTEXT-FAULT = 2
+const USER-CONTEXT-DEADLINE = 3
+const USER-CONTEXT-SUSPEND = 4
+// RF is architectural user resume state, observed in real suspended Windows
+// frames. Restoring it cannot grant privilege; TF/IOPL/NT/AC remain excluded.
+const USER-CONTEXT-RFLAGS-MASK = 0x10ed7
+var user-context-active: Int = 0
+
+// Actual guest IRQ0 ticks left after the last admitted run. This deliberately
+// excludes kernel service time and is not a wall-clock deadline.
+fn user-context-remaining(context: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) || context <= 0 || (context & 15) != 0 { return -1 }
+  if load64(context + 736) != USER-CONTEXT-MAGIC { return -1 }
+  return load64(context + 760)
+}
+
+fn user-context-domain-valid(domain: Int) -> Int {
+  if domain <= 0 || domain >= domain-count || domain >= MAX-DOMAINS { return 0 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
+  return 1
+}
+
+fn user-context-valid(context: Int) -> Int {
+  if context <= 0 || (context & 15) != 0 || load64(context + 736) != USER-CONTEXT-MAGIC { return 0 }
+  let domain = load64(context + 712)
+  if user-context-domain-valid(domain) == 0 { return 0 }
+  if load64(context + 128) != 0x1b || load64(context + 152) != 0x23 { return 0 }
+  let flags = load64(context + 136)
+  if (flags & 0x202) != 0x202 || (flags & (-1 ^ USER-CONTEXT-RFLAGS-MASK)) != 0 { return 0 }
+  let rip = load64(context + 120)
+  let rsp = load64(context + 144)
+  if rip < 0 || rip >= 0x800000000000 || rsp < 0 || rsp >= 0x800000000000 { return 0 }
+  let code = domain-page-flags(domain,load64(context + 120))
+  let stack = domain-page-flags(domain,load64(context + 144))
+  if (code & 5) != 5 || (code & PAGE-NX) != 0 || (stack & 7) != 7 || (stack & PAGE-NX) == 0 { return 0 }
+  let i = 672
+  while i <= 680 {
+    let base = load64(context + i)
+    if base < 0 || base >= 0x800000000000 { return 0 }
+    if base != 0 && (domain-page-flags(domain,base) & 5) != 5 { return 0 }
+    i = i + 8
+  }
+  let mask = load32(0x421c) & 0xffff
+  if mask == 0 { mask = 0xffbf }
+  if (load32(context + 184) & (-1 ^ mask)) != 0 { return 0 }
+  return 1
+}
+
+fn user-context-init(context: Int, bytes: Int, domain: Int, entry: Int, arg: Int, stack: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) || user-context-active != 0 { return -1 }
+  if context <= 0 || (context & 15) != 0 || bytes < USER-CONTEXT-BYTES || user-context-domain-valid(domain) == 0 { return -1 }
+  let i = 0
+  while i < USER-CONTEXT-BYTES { store64(context + i,0); i = i + 8 }
+  store64(context + 72,arg)
+  store64(context + 120,entry)
+  store64(context + 128,0x1b)
+  store64(context + 136,0x202)
+  store64(context + 144,stack)
+  store64(context + 152,0x23)
+  store64(context + 160,0x37f)
+  store64(context + 184,0x1f80)
+  store64(context + 712,domain)
+  store64(context + 728,1)
+  store64(context + 736,USER-CONTEXT-MAGIC)
+  if user-context-valid(context) == 0 { store64(context + 736,0); return -1 }
+  return 0
+}
+
+fn user-context-set-tls(context: Int, fs: Int, gs: Int) -> Int {
+  if domain-current != 0 || user-context-active != 0 || user-context-valid(context) == 0 { return -1 }
+  let old-fs = load64(context + 672)
+  let old-gs = load64(context + 680)
+  store64(context + 672,fs); store64(context + 680,gs)
+  if user-context-valid(context) == 0 { store64(context + 672,old-fs); store64(context + 680,old-gs); return -1 }
+  return 0
+}
+
+// Called only by the CPU capsule after saving guest GP/FX and restoring the
+// kernel CR3/FX state. Fault frames insert vector/error between GP and IRET.
+fn user-context-capture(frame: Int, fx: Int, kind: Int, vector: Int, error: Int, status: Int) -> void {
+  let context = user-context-active
+  if context == 0 { return }
+  let i = 0
+  while i < 160 {
+    let source = frame + i
+    if kind == USER-CONTEXT-FAULT && i >= 120 { source = source + 16 }
+    store64(context + i,load64(source)); i = i + 8
+  }
+  i = 0
+  while i < 512 { store64(context + 160 + i,load64(fx + i)); i = i + 8 }
+  store64(context + 672,rdmsr(0xC0000100))
+  store64(context + 680,rdmsr(0xC0000101))
+  store64(context + 688,kind)
+  store64(context + 696,vector)
+  store64(context + 704,error)
+  store64(context + 720,status)
+  store64(context + 728,3)
+  if kind == USER-CONTEXT-SUSPEND { store64(context + 728,2) }
+  return
+}
+
+// Clone only a stopped, suspended image; the caller separately clones pages and
+// capability/FD ownership, then patches the explicit parent/child return slots.
+fn user-context-clone(target: Int, bytes: Int, source: Int, domain: Int) -> Int {
+  if domain-current != 0 || user-context-active != 0 || user-context-valid(source) == 0 || load64(source + 728) != 2 { return -1 }
+  if target <= 0 || (target & 15) != 0 || bytes < USER-CONTEXT-BYTES || user-context-domain-valid(domain) == 0 { return -1 }
+  if target < source + USER-CONTEXT-BYTES && source < target + USER-CONTEXT-BYTES { return -1 }
+  let i = 0
+  while i < USER-CONTEXT-BYTES { store64(target + i,load64(source + i)); i = i + 8 }
+  store64(target + 712,domain)
+  store64(target + 112,0)
+  if user-context-valid(target) == 0 { store64(target + 736,0); return -1 }
+  return 0
+}
+
+// Returns the typed stop kind, with status/vector/error recorded in context.
+// All mutable process ownership remains in the caller; this scopes one CPU run.
+fn user-context-resume(context: Int, budget: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) || user-context-active != 0 || user-budget-active != 0 { return -16 }
+  if budget <= 0 || budget > 10000 || load64(0x4028) != 0 || user-context-valid(context) == 0 { return -1 }
+  let phase = load64(context + 728)
+  if phase != 1 && phase != 2 { return -1 }
+  let enter = load64(0x41a8)
+  if enter == 0 || load64(0x4198) == 0 || load64(0x41a0) == 0 { return -1 }
+  let flags = invoke1(load64(0x4198),0)
+  cli()
+  let domain = load64(context + 712)
+  domain-map-idt(domain); domain-map-kernel-stack(domain); domain-map-trampoline(domain)
+  let pic = inb(0x21)
+  let cap = current-cap
+  let hook = domain-user-syscall-hook
+  let observer = load64(0x41b8)
+  let old-domain = user-budget-domain
+  let old-remaining = user-budget-remaining
+  let fs = rdmsr(0xC0000100)
+  let gs = rdmsr(0xC0000101)
+  store64(context + 688,0); store64(context + 696,0); store64(context + 704,0); store64(context + 720,0)
+  store64(context + 744,context)
+  store64(context + 752,load64(domain-table + domain * 24))
+  store64(0x41b8,user-context-capture)
+  user-context-active = context
+  user-budget-domain = domain; user-budget-remaining = budget; user-budget-active = 1
+  domain-current = domain; current-cap = load64(domain-table + domain * 24 + 16)
+  outb(0x21,pic & 254)
+  wrmsr64(0xC0000100,load64(context + 672)); wrmsr64(0xC0000101,load64(context + 680))
+  let result = invoke1(enter,context + 744)
+  let remaining = user-budget-remaining
+  if remaining < 0 { remaining = 0 }
+  store64(context + 760,remaining)
+  wrmsr64(0xC0000100,fs); wrmsr64(0xC0000101,gs)
+  user-budget-active = 0; user-budget-domain = old-domain; user-budget-remaining = old-remaining
+  user-context-active = 0
+  store64(0x41b8,observer)
+  domain-current = 0; current-cap = cap; domain-user-syscall-hook = hook
+  outb(0x21,pic)
+  if (flags & 512) != 0 { sti() }
+  if load64(context + 688) == 0 { return result }
+  return load64(context + 688)
+}

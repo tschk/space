@@ -1,0 +1,161 @@
+package space.kernel
+
+var gui-window-generation: Int = 0
+var gui-window-candidate: Int = 0
+
+fn gui-window-input-poll() -> Int {
+  if domain-get-current() != 0 || sci-proof-restore(1) != 1 { return -1 }
+  let output = input-output-argument(fb-width, fb-height)
+  if output == 0 { return -1 }
+  return sci-resume-sync-unit(sci-sync-domain, output, 1)
+}
+
+fn gui-window-report(port: Int) -> void {
+  serial-write-cstr(port, "gui-window: mode ")
+  serial-write-dec-wide(port, fb-width); serial-write-cstr(port, "x"); serial-write-dec-wide(port, fb-height)
+  serial-write-cstr(port, " pitch "); serial-write-dec-wide(port, fb-pitch)
+  serial-write-cstr(port, " extent "); serial-write-dec-wide(port, load64(gui-window-layout + 16))
+  serial-write-cstr(port, "x"); serial-write-dec-wide(port, load64(gui-window-layout + 24))
+  serial-write-cstr(port, " scale "); serial-write-dec-wide(port, load64(gui-window-layout + 32))
+  serial-write-cstr(port, " generation "); serial-write-dec-wide(port, gui-window-generation)
+  serial-write-cstr(port, " slots "); serial-write-dec-wide(port, load64(gui-window-layout + 40))
+  serial-write-cstr(port, " "); serial-write-dec-wide(port, load64(gui-window-layout + 48))
+  serial-write-cstr(port, " "); serial-write-dec-wide(port, load64(gui-window-layout + 56)); serial-nl(port)
+}
+
+fn gui-window-reconfigure(port: Int, width: Int, height: Int, scale: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if gui-window-candidate == 0 { gui-window-candidate = alloc(GUI-WINDOW-LAYOUT-BYTES) }
+  if gui-window-layout-fill(gui-window-candidate, width, height, scale, gui-window-generation + 1) != 1 { return 0 }
+  let numerator = 100
+  if scale == 3 { numerator = 150 }
+  if out-set-bga-mode(port, width, height, numerator, 100) <= 0 { return 0 }
+  if dsp-mouse-x >= fb-width { dsp-mouse-x = fb-width - 1 }
+  if dsp-mouse-y >= fb-height { dsp-mouse-y = fb-height - 1 }
+  gui-window-generation += 1
+  if gui-window-layout-fill(gui-window-layout, fb-width, fb-height, fb-font-scale, gui-window-generation) != 1 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let record = gui-records + slot * GUI-RECORD-SIZE
+    if load64(record + GUI-ACTIVE) == 1 {
+      let config = gui-window-config(record)
+      if config == 0 { return 0 }
+      let i = 0
+      while i < 40 { store64(config + i, load64(gui-window-layout + i)); i += 8 }
+      let word = gui-window-config-word(load64(config + 16), load64(config + 24), load64(config + 32))
+      if gui-window-event(load64(record + GUI-TOKEN), SPDP-OBJ-SURFACE, SPDP-SURFACE-CONFIGURE-V1, gui-window-generation, word) != 1 { return 0 }
+    }
+    slot += 1
+  }
+  gui-window-report(port)
+  return 1
+}
+
+fn gui-window-session-owned(port: Int, input-image: Int, calc-image: Int, editor-image: Int) -> Int {
+  if domain-get-current() != 0 || runtime-instance-can-admit(3) != 1 { return 0 }
+  gui-window-generation += 1
+  if gui-window-prepare(gui-window-generation) != 1 { return 0 }
+  if gui-window-candidate == 0 { gui-window-candidate = alloc(GUI-WINDOW-LAYOUT-BYTES) }
+  if gui-session-message == 0 { gui-session-message = alloc(8) }
+  let input-result = sci-load-retained-component(port, input-image, "gui-seat", SCI-INPUT-GRANTS, 0)
+  gui-session-input-handle = runtime-instance-last-handle
+  gui-session-input-page = sci-sync-page
+  if input-result != 0 || gui-session-input-handle == 0 { return 0 }
+  if sci-admit-input-sync(sci-sync-domain) != 1 || sci-proof-capture-input() != 1 { return 0 }
+  let calc-result = sci-load-retained-component(port, calc-image, "gui-window-calc", 20, gui-window-configs)
+  gui-session-pending-handle = runtime-instance-last-handle
+  if calc-result != 42 { return 0 }
+  let calc = gui-window-admit(0)
+  if calc == 0 { return 0 }
+  gui-session-pending-handle = 0
+  let editor-result = sci-load-retained-component(port, editor-image, "gui-window-editor", 52, gui-window-configs + 48)
+  gui-session-pending-handle = runtime-instance-last-handle
+  if editor-result != 42 { return 0 }
+  let editor = gui-window-admit(1)
+  if editor == 0 { return 0 }
+  gui-session-pending-handle = 0
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  gui-window-report(port)
+  serial-write-cstr(port, "gui: calculator left, text editor right; click or Tab to focus, Escape closes focused app"); serial-nl(port)
+  serial-write-cstr(port, "gui-window: Ctrl+G changes text scale; Ctrl+O changes output mode"); serial-nl(port)
+  while gui-record(calc) != 0 || gui-record(editor) != 0 {
+    if gui-window-input-poll() != 0 { return 0 }
+    let pointer-moved = 0
+    let received = input-page-recv(gui-session-input-page, gui-session-message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(gui-session-message)
+      let type = event & 255
+      if type == INPUT-EVT-MOUSE-MOVE || type == INPUT-EVT-MOUSE-BUTTON {
+        dsp-mouse-x = (event >> 32) & 65535
+        dsp-mouse-y = (event >> 48) & 65535
+        if dsp-mouse-x >= fb-width { dsp-mouse-x = fb-width - 1 }
+        if dsp-mouse-y >= fb-height { dsp-mouse-y = fb-height - 1 }
+        pointer-moved = 1
+      }
+      if type == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        if code == 9 {
+          let recipient = calc
+          if gui-focused == calc && gui-record(editor) != 0 { recipient = editor }
+          if gui-record(recipient) == 0 { recipient = editor }
+          if gui-window-focus(recipient) != 1 { return 0 }
+          serial-write-cstr(port, "gui: focus "); serial-write-dec-wide(port, recipient); serial-nl(port)
+        } else if code == 7 || code == 15 {
+          let width = fb-width
+          let height = fb-height
+          let scale = fb-font-scale
+          if code == 7 { scale = 5 - scale }
+          if code == 15 {
+            if width == 1024 { width = 1280; height = 720 }
+            else if width == 1280 { width = 1920; height = 1080 }
+            else { width = 1024; height = 768 }
+          }
+          if gui-window-reconfigure(port, width, height, scale) != 1 { return 0 }
+        } else {
+          let recipient = gui-focused
+          let epoch = gui-note-store-epoch
+          let lifetime = gui-lifetime-epoch
+          if gui-window-event(recipient, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, ticks, spdp-seat-key(code, 1)) != 1 { return 0 }
+          if gui-lifetime-epoch != lifetime {
+            if code != 27 || gui-lifetime-epoch != lifetime + 1 { return 0 }
+            free = free-list
+          }
+          if gui-note-store-epoch != epoch {
+            if code != 19 || recipient != editor || gui-note-store-epoch != epoch + 1 { return 0 }
+            heap = heap-next; free = free-list
+          }
+          if code == 27 {
+            if gui-record(recipient) != 0 || gui-window-event(recipient, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, ticks, spdp-seat-key(97, 1)) != 0 { return 0 }
+            let survivor = calc
+            if gui-record(survivor) == 0 { survivor = editor }
+            if gui-record(survivor) != 0 && gui-window-focus(survivor) != 1 { return 0 }
+            serial-write-cstr(port, "gui: focused app closed, retired token refused")
+          } else { serial-write-cstr(port, "gui: app rendered key "); serial-write-dec-wide(port, code) }
+          serial-nl(port)
+        }
+      }
+      if type == INPUT-EVT-MOUSE-BUTTON && ((event >> 8) & 1) == 1 {
+        let slot = gui-window-layout-hit(gui-window-layout, (event >> 32) & 65535, (event >> 48) & 65535)
+        if slot >= 0 {
+          let record = gui-records + slot * GUI-RECORD-SIZE
+          if load64(record + GUI-ACTIVE) == 1 {
+            let token = load64(record + GUI-TOKEN)
+            if gui-window-focus(token) != 1 || gui-window-event(token, SPDP-OBJ-SEAT, SPDP-SEAT-POINTER-BUTTON, ticks, spdp-seat-key(1, 1)) != 1 { return 0 }
+            serial-write-cstr(port, "gui: pointer focused app "); serial-write-dec-wide(port, token); serial-nl(port)
+          }
+        }
+      }
+      if gui-record(calc) == 0 && gui-record(editor) == 0 { break }
+      received = input-page-recv(gui-session-input-page, gui-session-message)
+      if received < 0 { return 0 }
+    }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    if pointer-moved == 1 { dsp-composite() }
+    pause()
+  }
+  return 1
+}

@@ -1,0 +1,10 @@
+// Synthetic compiler corpus: UTF-8 payload relocations and mutable string slots.
+var word:String="λ雪";
+var words:[String]=["",word,"🙂"];
+fn main()->Int {
+ if word!="λ雪" || words[0]!="" || words[1]!=word || words[2]!="🙂"{return 1;}
+ word="changed";
+ if words[1]!="λ雪" || word!="changed"{return 2;}
+ if str-len(words[1])!=5 || str-len(words[2])!=4{return 3;}
+ return 41;
+}

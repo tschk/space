@@ -1,0 +1,55 @@
+package space.kernel
+import "time.in"
+
+// Private native storage-provider TimeSource lease. No caller receives a raw
+// RTC register, privileged pointer or fabricated wall-clock fallback.
+const FS-METADATA-UTC-VERSION = 2
+var fs-metadata-clock-authority: Int = -1
+var fs-metadata-clock-target: Int = 0
+var fs-metadata-clock-mount: Int = 0
+fn fs-metadata-kernel()->Int{
+ if domain-current!=0 || user-context-active!=0 || cr3-read()!=load64(domain-table){return 0;}return 1;
+}
+fn fs-metadata-sample-utc()->Int{
+ let authority=fs-metadata-clock-authority;
+ if cap-check(authority,cap-timer())==0{return -1;}
+ if load64(cap-table-base+authority*16)!=fs-metadata-clock-target{return -1;}
+ let seconds=time-component-wallclock();if seconds<0 || seconds>253402300799{return -1;}return seconds;
+}
+fn fs-metadata-time()->Int{
+ if sf-super==0 || sf-disk-ready!=1{return -1;}
+ let version=load32(sf-super+SF-SB-VERSION);
+ if version==SF-VERSION{return ticks;}
+ if version!=FS-METADATA-UTC-VERSION || fs-metadata-clock-mount!=sf-mount-id || sf-mount-id<=0{return -1;}
+ return fs-metadata-sample-utc();
+}
+fn fs-metadata-bind-clock(storage:Int,timer:Int)->Int{
+ if fs-metadata-kernel()==0{return -1;}
+ if cap-check(storage,cap-storage())==0 || cap-check(timer,cap-timer())==0{return -2;}
+ if volume-ready!=0 || sf-disk-ready!=1 || sf-mount-id<=0 || load32(sf-super+SF-SB-VERSION)!=FS-METADATA-UTC-VERSION{return -3;}
+ let seconds=time-component-wallclock();if seconds<0 || seconds>253402300799{return -4;}
+ fs-metadata-clock-authority=timer;fs-metadata-clock-target=load64(cap-table-base+timer*16);fs-metadata-clock-mount=sf-mount-id;return 0;
+}
+fn fs-metadata-format-utc(total:Int,count:Int,storage:Int,timer:Int)->Int{
+ if fs-metadata-kernel()==0{return -1;}
+ if cap-check(storage,cap-storage())==0 || cap-check(timer,cap-timer())==0{return -2;}
+ if volume-ready!=0{return -3;}
+ if total<2 || total>SF-MAX-TOTAL-BLOCKS || count<1 || count>SF-MAX-INODE-COUNT{return -1;}
+ let bitmapblocks=((total+7)/8+SF-BLOCK-SIZE - 1)/SF-BLOCK-SIZE;
+ let inodeblocks=(count*SF-INODE-SIZE+SF-BLOCK-SIZE - 1)/SF-BLOCK-SIZE;
+ if 1+bitmapblocks+SF-DEFAULT-JOURNAL-BLOCKS+inodeblocks>=total{return -1;}
+ if sf-mem-disk!=0{if total>SF-MEM-DISK-BLOCKS{return -1;}}else if nvme-ready!=1{return -3;}
+
+ if sf-super==0 || sf-block-buf==0{return -3;}
+ let needed=((total+7)/8+15)&-16;needed+=count*SF-INODE-SIZE+32;
+ if heap-next<65536 || heap-next>heap-end || needed>heap-end - heap-next{return -1;}
+ // Validate advertised extent through real backend I/O before format writes.
+ if sf-mem-disk!=0{if sf-read-block(total - 1,sf-block-buf)!=0{return -1;}}
+ else{if sf-nvme-buf==0{return -3;}if nvme-read((total - 1)*SF-SECTORS-PER-BLOCK,SF-SECTORS-PER-BLOCK,sf-nvme-buf)!=0{return -1;}}
+ let seconds=time-component-wallclock();if seconds<0 || seconds>253402300799{return -4;}
+ let previous=fs-metadata-clock-authority;let target=fs-metadata-clock-target;let mount=fs-metadata-clock-mount;
+ fs-metadata-clock-authority=timer;fs-metadata-clock-target=load64(cap-table-base+timer*16);
+ let result=fs-metadata-format(total,count,FS-METADATA-UTC-VERSION,seconds);
+ if result==0{fs-metadata-clock-mount=sf-mount-id;return 0;}
+ fs-metadata-clock-authority=previous;fs-metadata-clock-target=target;fs-metadata-clock-mount=mount;return result;
+}

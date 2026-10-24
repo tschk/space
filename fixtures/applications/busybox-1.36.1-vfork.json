@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "upstream": "https://busybox.net/",
+  "version": "1.36.1",
+  "license": "GPL-2.0-only",
+  "source": {
+    "url": "https://busybox.net/downloads/busybox-1.36.1.tar.bz2",
+    "sha256": "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314",
+    "checksum_reference": "https://busybox.net/downloads/busybox-1.36.1.tar.bz2.sha256",
+    "modified": false
+  },
+  "build": {
+    "profile": "upstream static x86_64 Linux ELF with separate xargs/shared-VM planning profile",
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "configuration": "Only upstream Kconfig selections; no source patches or Space-specific libc/syscall wrappers. Ash builtins are upstream shell behavior; external process creation/pipelines require real Linux personality support.",
+    "kconfig": {
+      "CONFIG_STATIC": "y",
+      "CONFIG_ECHO": "y",
+      "CONFIG_CAT": "y",
+      "CONFIG_WC": "y",
+      "CONFIG_PRINTF": "y",
+      "CONFIG_ASH": "y",
+      "CONFIG_SH_IS_ASH": "y",
+      "CONFIG_ASH_ECHO": "y",
+      "CONFIG_ASH_PRINTF": "y",
+      "CONFIG_ASH_TEST": "y",
+      "CONFIG_ASH_ALIAS": "y",
+      "CONFIG_FEATURE_SH_STANDALONE": "y",
+      "CONFIG_FEATURE_SH_NOFORK": "y",
+      "CONFIG_FEATURE_SH_MATH": "y",
+      "CONFIG_FEATURE_SH_MATH_64": "y",
+      "CONFIG_XARGS": "y",
+      "CONFIG_FEATURE_PREFER_APPLETS": "y"
+    },
+    "environment": {
+      "SOURCE_DATE_EPOCH": "0",
+      "KCONFIG_NOTIMESTAMP": "1",
+      "LC_ALL": "C",
+      "TZ": "UTC"
+    },
+    "resolved_config_sha256": "f77147bac0c405bac26c70fa6cd884065009f0190dc91b258ccc28d8f3457bcc",
+    "license_file_sha256": "bbfc9843646d483c334664f651c208b9839626891d8f17604db2146962f43548",
+    "linker": "GNU ld (GNU Binutils for Debian) 2.44",
+    "make": "GNU Make 4.4.1",
+    "commands": [
+      [
+        "make",
+        "allnoconfig"
+      ],
+      [
+        "make",
+        "oldconfig"
+      ],
+      [
+        "make",
+        "-j4",
+        "V=1"
+      ]
+    ],
+    "resolved_config_receipt": "Builder writes complete resolved.config and SHA256, verbose build.log, exact host case oracles and readelf headers into the external output directory.",
+    "configuration_step": "Between allnoconfig and oldconfig, builder writes only the explicit upstream kconfig values below into .config and requires oldconfig retain every requested value."
+  },
+  "apps": [
+    {
+      "id": "busybox-1.36.1-linux-x86_64-xargs-static",
+      "name": "busybox",
+      "version": "1.36.1",
+      "personality": "linux",
+      "filename": "busybox",
+      "sha256": "b1c758ba922f7c06a741f3d5e77a2d6ef6baba226bda04c56385244f457ab727",
+      "size_bytes": 1172176,
+      "scenario": {
+        "args": [
+          "echo",
+          "hello"
+        ],
+        "exit_code": 0,
+        "stdout": "hello\n"
+      }
+    }
+  ],
+  "coverage_goal": {
+    "status": "bounded syscall58 shared-VM vfork/self-exec/failed-exec acceptance passed on both roots; overall goal OPEN",
+    "runtime_goal": "Preserve counted shared VM bindings, blocked parent until committed exec or typed termination, failed-exec continuation, peer survival and quarantine/recovery; broader clone/thread and arbitrary executable profiles remain open.",
+    "historical_refusal": "/workspace/linux-busybox-vfork-before2/report.json",
+    "documentation": "docs/linux-vfork.md",
+    "proofs": {
+      "standard": "/workspace/vfork4-upstream-standard/report.json",
+      "minimal": "/workspace/vfork4-upstream-minimal/report.json"
+    },
+    "ownership_proofs": {
+      "standard": "/workspace/vfork4-shared-standard/report.json",
+      "minimal": "/workspace/vfork4-shared-minimal/report.json"
+    },
+    "deadline_proofs": {
+      "standard": "/workspace/vfork4-deadline-standard/report.json",
+      "minimal": "/workspace/vfork4-deadline-minimal/report.json"
+    },
+    "measured_application_launches_per_root": 47,
+    "accepted_case_count": 3,
+    "acceptance_manifest_sha256_before_status_update": "429e3c5bab985f84d2c4be8c2e2df6b54b65f3d63f09c17dc1fbc5ddc73fbb06"
+  }
+}

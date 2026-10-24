@@ -103,25 +103,19 @@ Branch for translator work: `feat/personalities`.
 - [x] DHCP client (DISCOVER/OFFER/REQUEST/ACK + lease)
 - [x] DNS resolver (A query TX+RX parse; store dns-last-ip)
 
-## Known Issue: minimal image app-console output loss (2026-09-20)
+## Minimal image app-console output restored (2026-10-24)
 
-- [ ] In the minimal image, an app's kernel-mediated `serial-write-cstr` /
-      `serial-write-hex` calls can produce no UART output, while the same
-      calls from kernel code and the app's libspace (direct `outb`) writes
-      work. Repro: `check-image-variants.sh` minimal `runapp calc` — the
-      banner prints, the `calc> ` prompt and result strings do not, the app
-      continues normally. gdb (breakpoint at the kernel export) shows the
-      call arrives with correct `rsi` and an intact string; the branch into
-      `serial-put`'s redirect-capture path is taken instead of the
-      `serial-wait-tx`/`outb` path, so chars are "captured" and dropped.
-      The redirect branch is selected by a stack slot (`-0x830(%rbp)`)
-      that should mirror the global `redir-buf` (which is 0) — a stale
-      temp under app context. Same ABI fragility class as the earlier
-      "`interrupt fn` import drops literal args" bug fixed for
-      user-hello/user-echo. Standard (full kernel) is unaffected; minimal
-      apps mostly work (notes/hd/sum/man/files/clock/bench/sysinfo print),
-      calc's REPL prompt/result strings are the visible casualty.
-      Fix direction: harden the `interrupt fn` import ABI (initialize the
-      shadow slot from the real global, or stop shadowing globals through
-      stack temps at the kernel/user boundary), then restore the full
-      minimal marker set in check-image-variants.sh.
+- [x] The core-only root now imports the actual CPU/domain/channel/scheduler
+      contracts, owns the same explicit redirect globals as the standard root,
+      and selects a core-only shell over the shared input/file/app dispatcher.
+      The old image had omitted the globals consumed by `serial-put`; historical
+      output-loss notes attributed the symptom to a stale temporary. The current
+      source contract no longer depends on an undeclared redirect variable.
+- [x] Standard and minimal images build with the source-built compiler and both
+      pass the full application marker set in `check-image-variants.sh`.
+      Calculator results, notes save/reopen, hex output, checksum and every shipped
+      app's output are now required on minimal too; the reduced marker allowance
+      has been removed. Actual native workflow runner passes 11/11 on minimal.
+- [x] Minimal source closure excludes desktop/network/foreign personalities and
+      real NVMe drivers. RAM SparkFS is the functional backend; unavailable device
+      reads/writes return ENODEV instead of reporting successful I/O.

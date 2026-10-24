@@ -1,6 +1,6 @@
 ; Trusted fixed-address x86_64 Mach-O fixture. Entry follows Space's function ABI.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
     dd 0xfeedfacf, 0x01000007, 3, 2
     dd 2, 96, 1, 0

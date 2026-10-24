@@ -1,0 +1,26 @@
+package space.fixture
+
+component AllocationFailure {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+  capability serial: DebugConsole(write)
+  export entry: FailureEntry
+}
+interface DebugConsole { fn write(msg: String) -> void }
+interface FailureEntry { fn failure-entry(info: Int) -> Int }
+interrupt fn serial-write-cstr(port: Int, text: Int) -> void {}
+interrupt fn serial-nl(port: Int) -> void {}
+
+// A deliberate allocator failure exercises the compiler's emitted abort path.
+// This does not replace the application/runtime allocator outside this fixture.
+fn malloc(bytes: Int) -> Int { return 0 }
+fn values() -> [Int] { return [1, 2, 3] }
+fn failure-entry(info: Int) -> Int {
+  serial-write-cstr(0x3F8, "runtime-failure: before allocation")
+  serial-nl(0x3F8)
+  let items = values()
+  serial-write-cstr(0x3F8, "runtime-failure: INVALID resumed failed allocation")
+  serial-nl(0x3F8)
+  return items[0]
+}

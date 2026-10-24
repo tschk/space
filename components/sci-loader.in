@@ -1,5 +1,11 @@
 package space.kernel
 
+import "runtime-failure.in"
+import "runtime-instance.in"
+import "runtime-retained.in"
+import "runtime-pixels.in"
+import "runtime-image-view.in"
+
 var volume-ready: Int = 0
 var volume-domain: Int = 0
 var volume-entry-addr: Int = 0
@@ -35,7 +41,7 @@ const VOLUME-NVME-LBA = 65536
 // (kind 0 provider), registered shared-library SCIs, and successfully loaded
 // modules. Each entry has a provider record so bind can map provider text
 // into the importing domain. Kernel entries carry zero provider fields.
-const DYN-MAX-EXPORTS = 1024
+const DYN-MAX-EXPORTS = 4096
 const LIB-VIRT-BASE = 0x3F000000
 const KERNEL-CODE-BASE = 0x101100
 const KERNEL-HEADER = 0x101000
@@ -74,6 +80,8 @@ var sci-sync-ring-unit: Int = 4
 var sci-sync-page: Int = 0
 var sci-sync-domain: Int = 0
 var sci-sync-grants: Int = 0
+// Legacy profiles store a physical page; canvas profiles store the kernel-only
+// contiguous server view over their separately owned physical frames.
 var sci-sync-pixel-phys: Int = 0
 var sci-sync-pixel-size: Int = 0
 var sci-sync-pixel-pool: Int = 0
@@ -83,6 +91,7 @@ var sci-sync-code-end: Int = 0
 var sci-sync-info: Int = 0
 var sci-sync-cap: Int = -1
 var sci-sync-object: Int = 0
+var sci-sync-handle: Int = 0
 
 // Rebuild every writable descriptor word; never reuse client-provided pointers.
 fn sci-sync-restore-info(args: Int) -> void {
@@ -96,6 +105,7 @@ fn sci-sync-restore-info(args: Int) -> void {
   store64(sci-sync-info + 56, 600)
   store64(sci-sync-info + 64, args)
   sci-display-cap-info(sci-sync-info, sci-sync-pixel-phys)
+  if sci-sync-pixel-phys != 0 { store64(sci-sync-info + 80,sci-sync-pixel-size) }
   return
 }
 
@@ -130,6 +140,10 @@ fn sci-resume-input-sync(domain: Int) -> Int {
 // Shared provenance only; callers separately enforce their exact ring handoff.
 fn sci-sync-provenance-valid(domain: Int, unit: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
+  let retained = runtime-instance-record(sci-sync-handle,1)
+  if retained == 0 { return 0 }
+  let state = load64(retained)
+  if load64(state) != domain || load64(state + 8) != sci-sync-object || load64(state + 16) != sci-sync-cap || load64(state + 32) != sci-sync-page || load64(state + 40) != sci-sync-pixel-phys || state + 128 != sci-sync-info || load64(state + 288) != sci-sync-entry { return 0 }
   if unit != 1 && unit != 4 { return 0 }
   if unit != sci-sync-ring-unit { return 0 }
   if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
@@ -153,16 +167,10 @@ fn sci-sync-provenance-valid(domain: Int, unit: Int) -> Int {
 
 fn sci-sync-enter(domain: Int, args: Int) -> Int {
   if domain-get-current() != 0 { return -1 }
-  let previous = domain-get-current()
-  if previous < 0 || previous >= domain-count { return -1 }
-  if load64(domain-table + previous * 24 + 8) != DOMAIN-ACTIVE || load64(domain-table + previous * 24) == 0 { return -1 }
   sci-sync-restore-info(args)
-  domain-switch(domain)
-  if domain-get-current() != domain { domain-switch(previous); return -1 }
-  let result = invoke1(sci-sync-entry, sci-sync-info)
-  domain-switch(previous)
-  if domain-get-current() != previous { return -1 }
-  return result
+  let record = runtime-instance-record(sci-sync-handle,1)
+  if record == 0 || load64(record + 40) != domain { return -1 }
+  return runtime-instance-resume(sci-sync-handle,sci-sync-entry,sci-sync-info)
 }
 
 fn sci-resume-sync-unit(domain: Int, args: Int, unit: Int) -> Int {
@@ -198,9 +206,10 @@ struct SciProofSnapshot {
   Int info
   Int cap
   Int object
+  Int handle
 }
-var sci-proof-input: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
-var sci-proof-app: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0}
+var sci-proof-input: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0, handle: 0}
+var sci-proof-app: SciProofSnapshot = SciProofSnapshot {unit: 0, page: 0, domain: 0, grants: 0, pixel_phys: 0, pixel_size: 0, pixel_pool: 0, entry: 0, code_start: 0, code_end: 0, info: 0, cap: 0, object: 0, handle: 0}
 
 fn sci-proof-capture(role: Int) -> Int {
   if domain-get-current() != 0 { return 0 }
@@ -231,6 +240,7 @@ fn sci-proof-capture(role: Int) -> Int {
     sci-proof-input.info = sci-sync-info
     sci-proof-input.cap = sci-sync-cap
     sci-proof-input.object = sci-sync-object
+    sci-proof-input.handle = sci-sync-handle
     sci-proof-input.unit = role
   } else {
     sci-proof-app.page = sci-sync-page
@@ -245,6 +255,7 @@ fn sci-proof-capture(role: Int) -> Int {
     sci-proof-app.info = sci-sync-info
     sci-proof-app.cap = sci-sync-cap
     sci-proof-app.object = sci-sync-object
+    sci-proof-app.handle = sci-sync-handle
     sci-proof-app.unit = role
   }
   return 1
@@ -268,6 +279,7 @@ fn sci-proof-restore(role: Int) -> Int {
     sci-sync-info = sci-proof-input.info
     sci-sync-cap = sci-proof-input.cap
     sci-sync-object = sci-proof-input.object
+    sci-sync-handle = sci-proof-input.handle
   } else {
     if sci-proof-app.unit != role { return 0 }
     sci-sync-ring-unit = sci-proof-app.unit
@@ -283,6 +295,7 @@ fn sci-proof-restore(role: Int) -> Int {
     sci-sync-info = sci-proof-app.info
     sci-sync-cap = sci-proof-app.cap
     sci-sync-object = sci-proof-app.object
+    sci-sync-handle = sci-proof-app.handle
   }
   if sci-sync-provenance-valid(sci-sync-domain, role) == 0 {
     if role == 1 { sci-proof-input.unit = 0 } else { sci-proof-app.unit = 0 }
@@ -363,8 +376,13 @@ fn sci-sync-pixels(domain: Int, pool: Int) -> Int {
   if domain <= 0 || domain >= domain-count || domain != sci-sync-domain { return 0 }
   if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
   if (sci-sync-grants & (cap-memory() | cap-display())) != (cap-memory() | cap-display()) { return 0 }
-  if pool != 0 || sci-sync-pixel-pool != pool || sci-sync-pixel-size != 4096 { return 0 }
-  if sci-sync-pixel-phys <= 0 || sci-sync-pixel-phys >= 0x100000000 || (sci-sync-pixel-phys & 4095) != 0 { return 0 }
+  if pool != 0 || sci-sync-pixel-pool != pool { return 0 }
+  let owner = runtime-instance-record(sci-sync-handle,1)
+  if owner == 0 { return 0 }
+  let state = load64(owner)
+  if load64(state + 40) != sci-sync-pixel-phys || runtime-instance-pixel-bytes(state) != sci-sync-pixel-size { return 0 }
+  if sci-sync-pixel-phys <= 0 || (sci-sync-pixel-phys & 4095) != 0 { return 0 }
+  if sci-sync-pixel-size == 4096 && sci-sync-pixel-phys >= 0x100000000 { return 0 }
   return sci-sync-pixel-phys
 }
 
@@ -408,6 +426,7 @@ fn boot-image-find(kind: Int) -> Int {
       let phys = load64(entry + 8)
       let size = load64(entry + 16)
       if phys >= 0x100000 && phys < 0x300000 && size >= 32 && size <= 0x200000 && phys + size >= phys && phys + size <= 0x300000 {
+        if runtime-instance-image-valid(phys,size) == 0 { return 0 }
         return phys
       }
       return 0
@@ -468,17 +487,63 @@ fn dyn-ensure-tables() -> void {
 }
 
 // Add one registry entry. Kernel-provider entries pass provider 0/0/0.
-fn dyn-add(name: Int, fn-addr: Int, prov-phys: Int, prov-base: Int, prov-size: Int) -> void {
-  if dyn-count >= DYN-MAX-EXPORTS {
-    return
-  }
+fn dyn-add(name: Int, fn-addr: Int, prov-phys: Int, prov-base: Int, prov-size: Int) -> Int {
+  if dyn-count >= DYN-MAX-EXPORTS { return -1 }
   store64(dyn-name-tab + dyn-count * 8, name)
   store64(dyn-fn-tab + dyn-count * 8, fn-addr)
   store64(dyn-prov-phys + dyn-count * 8, prov-phys)
   store64(dyn-prov-base + dyn-count * 8, prov-base)
   store64(dyn-prov-size + dyn-count * 8, prov-size)
   dyn-count = dyn-count + 1
-  return
+  return 0
+}
+
+fn dyn-registration-room(port: Int, count: Int) -> Int {
+  if count < 0 || dyn-count < 0 || dyn-count > DYN-MAX-EXPORTS || count > DYN-MAX-EXPORTS - dyn-count {
+    serial-write-cstr(port,"  SCI: DENIED export registry capacity")
+    serial-nl(port)
+    return 0
+  }
+  return 1
+}
+
+// Raw supervisor image, ledger and lifecycle helpers are never guest imports.
+fn dyn-name-prefix(name: Int, prefix: Int) -> Int {
+  let i = 0
+  while load8(prefix + i) != 0 {
+    if load8(name + i) != load8(prefix + i) { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn dyn-kernel-exportable(name: Int) -> Int {
+  if runtime-instance-exportable(name) == 0 { return 0 }
+  if dyn-name-prefix(name,"native-protected-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-startup-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-eager-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-heap-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-image-") != 0 { return 0 }
+  if dyn-name-prefix(name,"darwin-mapped-") != 0 { return 0 }
+  if dyn-name-prefix(name,"user-context-") != 0 { return 0 }
+  if dyn-name-prefix(name,"user-space-") != 0 || dyn-name-prefix(name,"domain-user-object-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-path-") != 0 { return 0 }
+  if dyn-name-prefix(name,"nvme-private-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-metadata-") != 0 { return 0 }
+  if dyn-name-prefix(name,"file-observation-") != 0 { return 0 }
+  if dyn-name-prefix(name,"windows-find-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-directory-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-resize-") != 0 || dyn-name-prefix(name,"vfs-regular-") != 0 { return 0 }
+  if dyn-name-prefix(name,"desktop-font") != 0 { return 0 }
+  if dyn-name-prefix(name,"linux-framebuffer-") != 0 { return 0 }
+  if dyn-name-prefix(name,"native-canvas-") != 0 { return 0 }
+  if dyn-name-prefix(name,"counter-") != 0 && dyn-str-eq(name,"counter-service-read") == 0 && dyn-str-eq(name,"counter-service-frequency") == 0 { return 0 }
+  if dyn-name-prefix(name,"vfs-discard-") != 0 || dyn-str-eq(name,"vfs-dup-file-into") != 0 { return 0 }
+  if dyn-name-prefix(name,"linux-process-") != 0 || dyn-name-prefix(name,"darwin-protected-") != 0 || dyn-name-prefix(name,"darwin-file-") != 0 || dyn-name-prefix(name,"windows-protected-") != 0 || dyn-name-prefix(name,"windows-application-") != 0 || dyn-name-prefix(name,"windows-startup-") != 0 || dyn-name-prefix(name,"windows-parameters-") != 0 || dyn-name-prefix(name,"windows-command-") != 0 || dyn-name-prefix(name,"fs-range-") != 0 { return 0 }
+  if dyn-name-prefix(name,"gui-") != 0 && dyn-str-eq(name,"gui-note-read") == 0 && dyn-str-eq(name,"gui-note-write") == 0 { return 0 }
+  if dyn-str-eq(name,"dsp-surface-stride") != 0 { return 0 }
+  if dyn-str-eq(name,"sci-load-retained-component") != 0 || dyn-str-eq(name,"domain-destroy-clone-owned") != 0 || dyn-str-eq(name,"domain-restore-service-context") != 0 { return 0 }
+  return 1
 }
 
 // Register the nanokernel's own export table (boot-image header field
@@ -493,14 +558,19 @@ fn dyn-register-kernel-exports(port: Int) -> Int {
   }
   dyn-ensure-tables()
   let count = load64(table + 0)
+  if dyn-registration-room(port,count) == 0 { return -1 }
+  let before = dyn-count
   let i = 0
-  while i < count && dyn-count < DYN-MAX-EXPORTS {
+  while i < count {
     let rec = table + 8 + i * 16
-    dyn-add(table + load64(rec + 0), KERNEL-CODE-BASE + load64(rec + 8), 0, 0, 0)
+    let name = table + load64(rec + 0)
+    if dyn-kernel-exportable(name) != 0 {
+      if dyn-add(name,KERNEL-CODE-BASE + load64(rec + 8),0,0,0) != 0 { dyn-count = before; return -1 }
+    }
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: kernel exports registered: ")
-  serial-write-dec-wide(port, count)
+  serial-write-dec-wide(port, dyn-count - before)
   serial-nl(port)
   return 0
 }
@@ -508,6 +578,7 @@ fn dyn-register-kernel-exports(port: Int) -> Int {
 // Register the export table of a loaded SCI v2 image as a provider record so
 // later modules can import from it (chained dynamic modules).
 fn dyn-register-image-exports(port: Int, load-addr: Int, entry: Int, image-size: Int) -> Int {
+  if load64(load-addr) == SCI-MAGIC { return 0 }
   if load64(load-addr) != SCI-MAGIC-V2 {
     return -1
   }
@@ -516,11 +587,13 @@ fn dyn-register-image-exports(port: Int, load-addr: Int, entry: Int, image-size:
     return 0
   }
   dyn-ensure-tables()
+  if dyn-registration-room(port,export-count) == 0 { return -1 }
+  let before = dyn-count
   let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
   let i = 0
-  while i < export-count && dyn-count < DYN-MAX-EXPORTS {
+  while i < export-count {
     let rec = export-table + i * 16
-    dyn-add(load-addr + load64(rec + 0), entry + load64(rec + 8), load-addr, entry - SCI-V2-HEADER, image-size)
+    if dyn-add(load-addr + load64(rec + 0),entry + load64(rec + 8),load-addr,entry - SCI-V2-HEADER,image-size) != 0 { dyn-count = before; return -1 }
     i = i + 1
   }
   return 0
@@ -536,6 +609,8 @@ fn sci-register-library(port: Int, load-addr: Int) -> Int {
   if load-addr == 0 {
     return -1
   }
+  let available = runtime-instance-image-boot-size(load-addr)
+  if available > 0 && runtime-instance-image-valid(load-addr,available) == 0 { return -1 }
   let magic = load64(load-addr + 0)
   if magic != SCI-MAGIC-V2 {
     serial-write-cstr(port, "  SCI: library manifest is not SCI v2")
@@ -552,13 +627,18 @@ fn sci-register-library(port: Int, load-addr: Int) -> Int {
   }
   let img-entry = load64(load-addr + 16)
   let img-size = load64(load-addr + 24)
+  // Shared providers are self-contained. Registering exports does not resolve
+  // their imports or establish an initialization/dependency lifetime.
+  if load64(load-addr + SCI-V2-IMPORT-COUNT) != 0 { return -1 }
   dyn-ensure-tables()
   let export-count = load64(load-addr + SCI-V2-EXPORT-COUNT)
+  if dyn-registration-room(port,export-count) == 0 { return -1 }
+  let before = dyn-count
   let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
   let i = 0
-  while i < export-count && dyn-count < DYN-MAX-EXPORTS {
+  while i < export-count {
     let rec = export-table + i * 16
-    dyn-add(load-addr + load64(rec + 0), img-entry + load64(rec + 8), load-addr, img-entry - SCI-V2-HEADER, img-size)
+    if dyn-add(load-addr + load64(rec + 0),img-entry + load64(rec + 8),load-addr,img-entry - SCI-V2-HEADER,img-size) != 0 { dyn-count = before; return -1 }
     i = i + 1
   }
   lib-phys = load-addr
@@ -602,6 +682,12 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
   if load64(load-addr) != SCI-MAGIC-V2 {
     return 0
   }
+  let owned = 0
+  if runtime-instance-binding != 0 { owned = 1 }
+  if runtime-instance-image-bindings(load-addr,entry,owned) == 0 {
+    runtime-instance-image-report-import(port,load-addr)
+    return -1
+  }
   let count = load64(load-addr + SCI-V2-IMPORT-COUNT)
   if count == 0 {
     return 0
@@ -631,7 +717,10 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
     // entry + site is the call's virtual address — the same byte the store
     // below patches through the kernel's identity map of `load-addr`.
     let site-virt = entry + site
-    store32(load-addr + SCI-V2-HEADER + site + 1, load64(dyn-fn-tab + idx * 8) - site-virt - 5)
+    let target = runtime-instance-image-target(name,idx,owned)
+    if runtime-instance-binding != 0 {
+      if runtime-instance-patch32(runtime-instance-binding,SCI-V2-HEADER + site + 1,target - site-virt - 5) != 0 { return -1 }
+    } else { store32(load-addr + SCI-V2-HEADER + site + 1,target - site-virt - 5) }
     i = i + 1
   }
   serial-write-cstr(port, "  SCI: bound ")
@@ -641,7 +730,26 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
   return 0
 }
 
+// Kernel supervisor-only retained activation. Native SCI imports do not
+// receive this symbol through the dynamic registry.
+fn sci-load-retained-component(port: Int, load-addr: Int, name: Int, grants: Int, args: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) || runtime-instance-launch-guard != 0 { return -1 }
+  let flags-stub = load64(0x4198)
+  if flags-stub == 0 { return -1 }
+  let flags = invoke1(flags-stub,0)
+  cli()
+  runtime-instance-launch-guard = 1
+  runtime-instance-launch-flags = flags
+  let result = sci-load-runtime-component(port,load-addr,name,grants,2,args)
+  cli()
+  runtime-instance-launch-guard = 0
+  runtime-instance-launch-flags = 0
+  if (flags & 512) != 0 { sti() }
+  return result
+}
+
 fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int, sync: Int, args: Int) -> Int {
+  if sync == 1 && (domain-current != 0 || cr3-read() != load64(domain-table)) { return -1 }
   sci-sync-ring-unit = 4
   sci-sync-page = 0
   sci-sync-domain = 0
@@ -655,6 +763,8 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   sci-sync-info = 0
   sci-sync-cap = -1
   sci-sync-object = 0
+  sci-sync-handle = 0
+  runtime-instance-last-handle = 0
   serial-write-cstr(port, "  SCI: loading ")
   serial-write-cstr(port, name)
   serial-nl(port)
@@ -662,6 +772,20 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     serial-write-cstr(port, "  SCI: null load address")
     serial-nl(port)
     return -1
+  }
+  let available = runtime-instance-image-boot-size(load-addr)
+  if available > 0 {
+    let owned = 0
+    if sync != 0 { owned = 1 }
+    if runtime-instance-image-valid(load-addr,available) == 0 {
+      serial-write-cstr(port,"  SCI: DENIED bounded image admission")
+      serial-nl(port)
+      return -1
+    }
+    if runtime-instance-image-bindings(load-addr,load64(load-addr + 16),owned) == 0 {
+      runtime-instance-image-report-import(port,load-addr)
+      return -1
+    }
   }
   let magic = load64(load-addr + 0)
   if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
@@ -693,22 +817,40 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     serial-nl(port)
     return -1
   }
-  let component = component-register(name, entry, required)
-  let cap-idx = cap-mint(component, required)
+  let canvas = runtime-instance-canvas-profile(load-addr,header,image-size,required,sync)
+  if canvas < 0 {
+    serial-write-cstr(port,"  SCI: DENIED invalid canvas profile"); serial-nl(port); return -1
+  }
+  if canvas == 1 && runtime-instance-canvas-admit(port,image-size) == 0 { return -1 }
+  let lifecycle = 0
+  let component = 0
+  let cap-idx = -1
+  if sync != 0 {
+    lifecycle = runtime-instance-new()
+    if canvas == 1 && runtime-instance-catalog == 0 { store64(lifecycle + 232,frame-alloc()) }
+    store64(lifecycle + 80,load64(root-realm + 24))
+    component = runtime-instance-component(name,entry,required)
+    store64(lifecycle + 8,component)
+    cap-idx = runtime-instance-cap(component,required)
+    store64(lifecycle + 16,cap-idx)
+  } else {
+    component = component-register(name,entry,required)
+    cap-idx = cap-mint(component,required)
+  }
   if cap-idx < 0 {
     serial-write-cstr(port, "  SCI: cap_mint failed")
     serial-nl(port)
-    component-unregister(component)
+    if lifecycle != 0 { runtime-instance-dispose(lifecycle) } else { component-unregister(component) }
     return -1
   }
   let domain = domain-create()
   if domain <= 0 {
     serial-write-cstr(port, "  SCI: domain_create failed")
     serial-nl(port)
-    cap-revoke(cap-idx)
-    component-unregister(component)
+    if lifecycle != 0 { runtime-instance-dispose(lifecycle) } else { cap-revoke(cap-idx); component-unregister(component) }
     return -1
   }
+  if lifecycle != 0 { store64(lifecycle,domain) }
   domain-set-cap(domain, cap-idx)
   serial-write-cstr(port, "  SCI: domain created")
   serial-nl(port)
@@ -716,24 +858,40 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   let image-pages = (image-size + 4096 - 1) / 4096
   let i = 0
   while i < image-pages {
-    domain-map-user-code(domain, virt-load + i * 4096, load-addr + i * 4096)
+    let physical = load-addr + i * 4096
+    if lifecycle != 0 {
+      physical = frame-alloc()
+      store64(load64(lifecycle + 88) + i * 8,physical)
+      store64(lifecycle + 96,i + 1)
+      let bytes = image-size - i * 4096
+      if bytes > 4096 { bytes = 4096 }
+      let byte = 0
+      while byte < bytes { store8(physical + byte,load8(load-addr + i * 4096 + byte)); byte = byte + 1 }
+    }
+    domain-map-user-code(domain, virt-load + i * 4096, physical)
     i = i + 1
   }
+  if lifecycle != 0 { store64(lifecycle + 104,image-size) }
   serial-write-cstr(port, "  SCI: image mapped")
   serial-nl(port)
 
   // Bind imports before the component ever runs (SCI v2 dynamic linking).
-  if sci-bind-imports(port, load-addr, domain, entry) != 0 {
+  runtime-instance-binding = lifecycle
+  let bind-status = sci-bind-imports(port, load-addr, domain, entry)
+  runtime-instance-binding = 0
+  if bind-status != 0 {
+    if lifecycle != 0 { runtime-instance-dispose(lifecycle) }
     return -1
   }
   // Chained dynamic modules: this component's exports become importable.
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if sync == 0 && dyn-register-image-exports(port,load-addr,entry,image-size) != 0 { cap-revoke(cap-idx); store64(component + 16,0); return -1 }
 
   // Allocate and map a 2 MiB heap for the component.
   let heap-pages = COMP-HEAP-SIZE / 4096
   let j = 0
   while j < heap-pages {
     let p = frame-alloc()
+    if lifecycle != 0 { store64(load64(lifecycle + 24) + j * 8,p) }
     domain-map-user-data(domain, COMP-HEAP-VIRT + j * 4096, p)
     j = j + 1
   }
@@ -741,7 +899,9 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   serial-nl(port)
 
   // Create a cross-domain shared page and initialize it as a ring channel.
+  if lifecycle != 0 { runtime-instance-alias(lifecycle,COMP-SHARED-VIRT,48,56) }
   let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
+  if lifecycle != 0 { store64(lifecycle + 32,shared) }
   store64(shared + 0, 0)   // head
   store64(shared + 8, 0)   // tail
   store64(shared + 16, 508)  // capacity
@@ -759,15 +919,22 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
 
   let pixel = 0
   if (required & (cap-memory() | cap-display())) == (cap-memory() | cap-display()) {
-    pixel = domain-create-shared-page(0, domain, COMP-PIXEL-VIRT, COMP-PIXEL-VIRT)
-    if pixel == 0 { return -1 }
+    if canvas == 1 {
+      pixel = runtime-instance-canvas-new(lifecycle)
+    } else {
+      if lifecycle != 0 { runtime-instance-alias(lifecycle,COMP-PIXEL-VIRT,64,72) }
+      pixel = domain-create-shared-page(0,domain,COMP-PIXEL-VIRT,COMP-PIXEL-VIRT)
+      if lifecycle != 0 { store64(lifecycle + 40,pixel); store64(lifecycle + 304,1) }
+    }
+    if pixel == 0 { if lifecycle != 0 { runtime-instance-dispose(lifecycle) }; return -1 }
   }
 
   // cap-info is the app ABI page (APP-API v1): grants@0, heap@16/24,
   // shared page@32, domain@40, console size@48/56, args string@64. The
   // args pointer targets memory owned by the caller (empty string when
   // the launcher passes none).
-  let cap-info = alloc(96)
+  let cap-info = 0
+  if lifecycle != 0 { cap-info = lifecycle + 128 } else { cap-info = alloc(96) }
   store64(cap-info + 0, required)
   store64(cap-info + 8, 0)
   store64(cap-info + 16, COMP-HEAP-VIRT)
@@ -778,6 +945,7 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
   store64(cap-info + 56, 600)
   store64(cap-info + 64, args)
   sci-display-cap-info(cap-info, pixel)
+  if canvas == 1 { store64(cap-info + 80,SCI-CANVAS-BYTES) }
 
   serial-write-cstr(port, "  SCI: starting ")
   serial-write-cstr(port, name)
@@ -788,13 +956,49 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     // apps work after preempt-stop, when the shell owns the CPU.
     let prev = domain-get-current()
     domain-switch(domain)
-    let rc = invoke1(entry, cap-info)
+    runtime-instance-active = lifecycle
+    if sync == 2 && runtime-instance-launch-guard == 1 {
+      runtime-instance-launch-guard = 2
+      if (runtime-instance-launch-flags & 512) != 0 { sti() }
+    }
+    let rc = runtime-invoke-entry(entry, cap-info)
+    if sync == 2 && runtime-instance-launch-guard == 2 { cli(); runtime-instance-launch-guard = 1 }
+    runtime-instance-active = 0
     domain-switch(prev)
+    if lifecycle != 0 { runtime-instance-detach-aliases(lifecycle) }
+    if lifecycle != 0 && (sync == 1 || runtime-aborted != 0) {
+      if runtime-instance-dispose(lifecycle) != 0 {
+        serial-write-cstr(port,"  SCI: ephemeral teardown refused"); serial-nl(port); return -1
+      }
+      serial-write-cstr(port,"  SCI: "); serial-write-cstr(port,name)
+      if runtime-aborted != 0 { serial-write-cstr(port," aborted 0x") } else { serial-write-cstr(port," exited 0x") }
+      serial-write-hex(port,rc); serial-nl(port)
+      return rc
+    }
+    if runtime-aborted != 0 {
+      // Abort is terminal for this instance: do not publish resumable state or
+      // exports. Heap/domain backing remains subject to the existing allocator.
+      cap-revoke(cap-idx)
+      store64(component + 16, 0)
+      store64(component + 48, rc)
+      serial-write-cstr(port, "  SCI: ")
+      serial-write-cstr(port, name)
+      serial-write-cstr(port, " aborted 0x")
+      serial-write-hex(port, rc)
+      serial-nl(port)
+      return rc
+    }
+    // Standalone retained clients expose only their typed supervisor record.
+    // Shared libraries and asynchronous service providers keep their own path.
+    let handle = runtime-instance-retain(lifecycle,entry)
+    if handle == 0 { runtime-instance-dispose(lifecycle); return -1 }
+    runtime-instance-last-handle = handle
+    sci-sync-handle = handle
     sci-sync-page = shared
     sci-sync-domain = domain
     sci-sync-grants = required
     sci-sync-pixel-phys = pixel
-    if pixel != 0 { sci-sync-pixel-size = 4096 }
+    if pixel != 0 { sci-sync-pixel-size = runtime-instance-pixel-bytes(lifecycle) }
     sci-sync-pixel-pool = 0
     if magic == SCI-MAGIC-V2 {
       sci-sync-entry = entry
@@ -875,8 +1079,38 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   if (required & (-1 ^ SCI-VOLUME-GRANTS)) != 0 {
     return -1
   }
+  // The standalone Volume provider implements version1 boot-tick metadata.
+  // Refuse unsupported backing before creating a domain or retained heap.
+  if nvme-ready!=0 {
+    let magic=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-MAGIC)
+    let version=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-VERSION)
+    let blocksize=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-BLOCK-SIZE)
+    let supported=0
+    let total = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-TOTAL-BLOCKS)
+    let total-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-TOTAL-BLOCKS + 4)
+    let count = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-COUNT)
+    let bitmap = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-BITMAP-START)
+    let bitmap-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-BITMAP-START + 4)
+    let journal = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-JOURNAL-START)
+    let journal-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-JOURNAL-START + 4)
+    let table = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-TABLE-START)
+    let table-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-TABLE-START + 4)
+    let data = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-DATA-START)
+    let data-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-DATA-START + 4)
+    let root = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-ROOT-INODE)
+    if magic==SF-MAGIC && version==SF-VERSION && blocksize==SF-BLOCK-SIZE && total==SF-MEM-DISK-BLOCKS && total-high==0 && count==SF-DEFAULT-INODE-COUNT && bitmap==1 && bitmap-high==0 && journal==2 && journal-high==0 && table==4 && table-high==0 && data==20 && data-high==0 && root==0 {
+      supported=1
+    }
+    if supported==0 {
+      serial-write-cstr(port,"volume: unsupported backing refused before activation")
+      serial-nl(port)
+      return -1
+    }
+  }
   let domain = domain-create()
-  if domain <= 0 { return -1 }
+  if domain <= 0 {
+    return -1
+  }
   let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
@@ -896,7 +1130,9 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     j = j + 1
   }
   let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
-  if shared == 0 { return -1 }
+  if shared == 0 {
+    return -1
+  }
   let cap-info = alloc(64)
   store64(cap-info + 16, heap)
   store64(cap-info + 24, COMP-HEAP-SIZE)
@@ -919,19 +1155,19 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     }
   }
   store64(cap-info + 40, mounted)
-
   store64(COMP-SHARED-VIRT + 0, 1)
   store64(COMP-SHARED-VIRT + 8, 0)
   store64(COMP-SHARED-VIRT + 16, 1)
   domain-switch(domain)
   let init-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if init-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 { return -1 }
+  if init-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 {
+    return -1
+  }
   if mounted != 0 {
     serial-write-cstr(port, "volume: persistent mount passed")
     serial-nl(port)
   }
-
   store8(COMP-SHARED-VIRT + 256, 47)
   store8(COMP-SHARED-VIRT + 257, 118)
   store8(COMP-SHARED-VIRT + 258, 111)
@@ -947,8 +1183,9 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let open-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if open-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 || load64(COMP-SHARED-VIRT + 56) < 0 { return -1 }
-
+  if open-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 || load64(COMP-SHARED-VIRT + 56) < 0 {
+    return -1
+  }
   store8(COMP-SHARED-VIRT + 768, 118)
   store8(COMP-SHARED-VIRT + 769, 111)
   store8(COMP-SHARED-VIRT + 770, 108)
@@ -963,13 +1200,16 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let write-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if write-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 { return -1 }
+  if write-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 {
+    return -1
+  }
   if nvme-ready != 0 {
-    if sci-volume-nvme-flush(heap-frames) != 0 { return -1 }
+    if sci-volume-nvme-flush(heap-frames) != 0 {
+      return -1
+    }
     serial-write-cstr(port, "volume: NVMe backing flushed")
     serial-nl(port)
   }
-
   store8(COMP-SHARED-VIRT + 768, 0)
   store64(COMP-SHARED-VIRT + 40, 6)
   store64(COMP-SHARED-VIRT + 0, 1)
@@ -978,10 +1218,11 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let read-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if read-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 || load8(COMP-SHARED-VIRT + 768) != 118 || load8(COMP-SHARED-VIRT + 773) != 101 { return -1 }
+  if read-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 || load8(COMP-SHARED-VIRT + 768) != 118 || load8(COMP-SHARED-VIRT + 773) != 101 {
+    return -1
+  }
   serial-write-cstr(port, "volume: component init/write/read passed")
   serial-nl(port)
-
   volume-ready = 1
   volume-domain = domain
   volume-entry-addr = entry
@@ -993,6 +1234,7 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   serial-nl(port)
   return 0
 }
+
 
 fn volume-copy-path(dst: Int, src: Int) -> void {
   let i = 0
@@ -1014,9 +1256,11 @@ fn volume-rpc-call(op: Int, flush: Int) -> Int {
   store64(volume-shared + 24, 0)
   store64(volume-shared + 56, 0)
   let prev = domain-get-current()
+  let caller-root = cr3-read()
+  let caller-cap = current-cap
   domain-switch(volume-domain)
   let rc = invoke1(volume-entry-addr, volume-cap-info)
-  domain-switch(prev)
+  if domain-restore-service-context(prev,caller-cap,caller-root) != 0 { panic("Volume RPC caller context restore failed") }
   if rc != 0 {
     return -1
   }
@@ -1274,7 +1518,7 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   if sci-bind-imports(port, load-addr, domain, entry) != 0 {
     return -1
   }
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if dyn-register-image-exports(port,load-addr,entry,image-size) != 0 { cap-revoke(cap-idx); store64(component + 16,0); return -1 }
   store64(component + 40, domain)
   obj-link(root-realm, component)
   serial-write-cstr(port, "  SCI: registered component object id 0x")

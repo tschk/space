@@ -23,11 +23,14 @@ NASM="${NASM:-nasm}"
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
   --out "$BUILD_DIR/kernel.bin"
 
-python3 - "$BUILD_DIR" <<'PY'
+python3 - "$BUILD_DIR" "$SCRIPT_DIR" <<'PY'
 from pathlib import Path
 import struct
-build = Path(__import__("sys").argv[1])
-base = 0x280000
+import sys
+sys.path.insert(0, sys.argv[2])
+from boot_fixture_layout import stage_fixture
+build = Path(sys.argv[1])
+base = 0x2f0000
 load_off = base - 0x100000
 code = bytes([0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3])
 entry = base + 64 + 56
@@ -37,8 +40,7 @@ elf += struct.pack("<HHIQQQIHHHHHH", 2, 0x3E, 1, entry, 64, 0, 0, 64, 56, 1, 0, 
 elf += struct.pack("<IIQQQQQQ", 1, 5, 0, base, base, 64 + 56 + len(code), 64 + 56 + len(code), 0x1000)
 elf += code
 kernel = bytearray((build / "kernel.bin").read_bytes())
-kernel += b"\0" * (load_off - len(kernel))
-kernel += elf
+kernel = stage_fixture(kernel,elf,base)
 (build / "combined.bin").write_bytes(kernel)
 PY
 

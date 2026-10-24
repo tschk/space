@@ -1,0 +1,24 @@
+package space.app.gui
+import "gui-protected-widget.in"
+import "gui-editor-model.in"
+
+component GuiProtectedWindowEditor {
+  target "x86_64-unknown-none"
+  capability memory: GuiMemory(map)
+  capability display: GuiDisplay(present, window)
+  capability storage: GuiNoteFile(read, write)
+}
+
+fn client-entry(info: Int) -> Int {
+  if protected-window-info-valid(info) != 1 { return 1 }
+  if load64(info + 64) != 0 {
+    if protected-window-start(info) != 1 { return 2 }
+    gui-editor-load-at(NATIVE-PROTECTED-HEAP)
+  } else {
+    let code = window-event-at(NATIVE-PROTECTED-HEAP)
+    if code == -1 { return 3 }
+    if code == 27 { return protected-widget-close() }
+    if code >= 0 { gui-editor-key-at(NATIVE-PROTECTED-HEAP, code) }
+  }
+  return window-draw-at(1, NATIVE-PROTECTED-HEAP)
+}

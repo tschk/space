@@ -1,0 +1,118 @@
+package space.kernel
+
+import "fs-path-normalize.in"
+
+// One declared C: namespace backed by the live synchronous native Storage.
+// Two private workspace frames and four stable per-handle path frames. No
+// guest page, ambient cwd mutation or per-operation allocation is introduced.
+var windows-parameters-path-data:Int=0
+var windows-parameters-path-scratch:Int=0
+fn windows-parameters-path-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-unicode-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"SetCurrentDirectoryW")!=0{return 49;}
+ if windows-protected-name(image,size,name+2,"GetCurrentDirectoryW")!=0{return 50;}
+ if windows-protected-name(image,size,name+2,"CreateFileW")!=0{return 51;}
+ if windows-protected-name(image,size,name+2,"GetFileType")!=0{return 52;}
+ return -1;
+}
+fn windows-parameters-path-prepare()->void{
+ windows-parameters-path-data=frame-alloc();windows-parameters-path-scratch=frame-alloc();store8(windows-parameters-path-data,47);
+ let i=0;while i<4{store64(windows-parameters-path-scratch+2048+i*8,frame-alloc());i=i+1;}
+}
+fn windows-parameters-path-release()->void{
+ if windows-parameters-path-scratch!=0{let i=0;while i<4{frame-free(load64(windows-parameters-path-scratch+2048+i*8));i=i+1;}frame-free(windows-parameters-path-scratch);windows-parameters-path-scratch=0;}
+ if windows-parameters-path-data!=0{frame-free(windows-parameters-path-data);windows-parameters-path-data=0;}
+}
+fn windows-parameters-path-slot(slot:Int)->Int{if slot<0 || slot>=16 || windows-parameters-path-scratch==0{return 0;}return load64(windows-parameters-path-scratch+2048+(slot/4)*8)+(slot%4)*1024;}
+fn windows-parameters-path-fail(error:Int)->Int{windows-protected-error=error;return 0;}
+fn windows-parameters-path-fold(c:Int)->Int{if c>=97 && c<=122{return c - 32;}return c;}
+fn windows-parameters-path-device(path:Int,start:Int,bytes:Int)->Int{
+ let n=0;while n<bytes && load8(path+start+n)!=46{n=n+1;}
+ if n!=3 && n!=4{return 0;}let a=windows-parameters-path-fold(load8(path+start));let b=windows-parameters-path-fold(load8(path+start+1));let c=windows-parameters-path-fold(load8(path+start+2));
+ if n==3 && ((a==67 && b==79 && c==78) || (a==80 && b==82 && c==78) || (a==65 && b==85 && c==88) || (a==78 && b==85 && c==76)){return 1;}
+ if n==4{let d=load8(path+start+3);if d>=49 && d<=57 && ((a==67 && b==79 && c==77) || (a==76 && b==80 && c==84)){return 1;}}return 0;
+}
+fn windows-parameters-path-native-step(path:Int,index:Int,bytes:Int)->Int{
+ let remaining=bytes - index;let a=load8(path+index);let b=0;let c=0;let d=0;if remaining>1{b=load8(path+index+1);}if remaining>2{c=load8(path+index+2);}if remaining>3{d=load8(path+index+3);}return unicode-utf8-decode(a,b,c,d,remaining);
+}
+fn windows-parameters-path-decode(guest:Int,wide:Int)->Int{
+ if guest==0{return windows-parameters-path-fail(87);}
+ let output=windows-parameters-path-data+2048;let i=0;let bytes=0;let done=0;
+ while i<1024 && done==0{
+  if wide==0{
+   if windows-protected-span(guest+i,1,0)==0{return windows-parameters-path-fail(998);}let c=windows-parameters-unicode-load8(guest+i);
+   if c==0{done=1;}else{if bytes>=1023{return windows-parameters-path-fail(206);}store8(output+bytes,c);bytes=bytes+1;}i=i+1;
+  }else{
+   if windows-protected-span(guest+i*2,2,0)==0{return windows-parameters-path-fail(998);}let first=windows-parameters-unicode-load16(guest+i*2);
+   if first==0{done=1;i=i+1;}else{
+    let second=0;if first>=0xd800 && first<=0xdbff{if i>=1023{return windows-parameters-path-fail(1113);}if windows-protected-span(guest+(i+1)*2,2,0)==0{return windows-parameters-path-fail(998);}second=windows-parameters-unicode-load16(guest+(i+1)*2);}
+    let step=unicode-utf16-decode(first,second,1024 - i);if step<0{return windows-parameters-path-fail(1113);}let scalar=step&0xffffffff;let count=unicode-utf8-width(scalar);if count>1023 - bytes{return windows-parameters-path-fail(206);}
+    let j=0;while j<count{store8(output+bytes,unicode-utf8-byte(scalar,j));bytes=bytes+1;j=j+1;}i=i+(step>>32);
+   }
+  }
+ }
+ if done==0{return windows-parameters-path-fail(206);}store8(output+bytes,0);
+ if wide==0{let at=0;while at<bytes{let step=windows-parameters-path-native-step(output,at,bytes);if step<0{return windows-parameters-path-fail(1113);}at=at+(step>>32);}}
+ return bytes+1;
+}
+fn windows-parameters-path-resolve(guest:Int,wide:Int,empty-error:Int)->Int{
+ let decoded=windows-parameters-path-decode(guest,wide);if decoded==0{return 0;}return windows-parameters-path-resolve-native(decoded,empty-error);
+}
+// The decoder owns path-data+2048; stopped adapters may normalize that same
+// bounded private UTF8 copy without treating a kernel pointer as a guest pointer.
+fn windows-parameters-path-resolve-native(decoded:Int,empty-error:Int)->Int{
+ let bytes=decoded - 1;if bytes==0{return windows-parameters-path-fail(empty-error);}
+ let path=windows-parameters-path-data+2048;let i=0;while i<bytes{if load8(path+i)==92{store8(path+i,47);}i=i+1;}
+ if bytes>=2 && load8(path)==47 && load8(path+1)==47{return windows-parameters-path-fail(50);}
+ if bytes>=2 && load8(path+1)==58{
+  if windows-parameters-path-fold(load8(path))!=67{return windows-parameters-path-fail(15);}i=2;while i<bytes{store8(path+i - 2,load8(path+i));i=i+1;}bytes=bytes - 2;if bytes==0{store8(path,46);bytes=1;}store8(path+bytes,0);
+ }
+ i=0;while i<bytes{
+  while i<bytes && load8(path+i)==47{i=i+1;}let start=i;
+  while i<bytes && load8(path+i)!=47{let c=load8(path+i);if c<32 || c==34 || c==42 || c==58 || c==60 || c==62 || c==63 || c==124{return windows-parameters-path-fail(123);}i=i+1;}
+  let n=i - start;if n>24{return windows-parameters-path-fail(206);}
+  if n>0{
+   let dot=0;if n==1 && load8(path+start)==46{dot=1;}if n==2 && load8(path+start)==46 && load8(path+start+1)==46{dot=1;}
+   if dot==0{let last=load8(path+i - 1);if last==46 || last==32 || windows-parameters-path-device(path,start,n)!=0{return windows-parameters-path-fail(123);}}
+  }
+ }
+ let cwd=windows-parameters-path-data;let output=cwd+1024;let result=fs-path-normalize-into(cwd,strlen(cwd),path,bytes,output,1024,windows-parameters-path-scratch,2048);
+ if result<0{if result==-36{return windows-parameters-path-fail(206);}return windows-parameters-path-fail(123);}
+ if sf-path-name-valid(output)==0{return windows-parameters-path-fail(206);}return output;
+}
+fn windows-parameters-path-current(frame:Int)->Int{
+ if cap-check(windows-protected-storage,cap-storage())==0{return windows-parameters-path-fail(5);}
+ let capacity=load64(frame+96)&0xffffffff;let output=load64(frame+88);let cwd=windows-parameters-path-data;let bytes=strlen(cwd);let i=0;let units=2;
+ while i<bytes{let step=windows-parameters-path-native-step(cwd,i,bytes);let scalar=step&0xffffffff;units=units+1;if scalar>65535{units=units+1;}i=i+(step>>32);}
+ if capacity==0 || capacity<units+1{return units+1;}if output==0{return windows-parameters-path-fail(87);}if capacity>8192{return windows-parameters-path-fail(8);}
+ if windows-parameters-unicode-span(output,capacity*2,1)==0{return windows-parameters-path-fail(998);}
+ windows-parameters-unicode-store16(output,67);windows-parameters-unicode-store16(output+2,58);let at=2;i=0;
+ while i<bytes{let step=windows-parameters-path-native-step(cwd,i,bytes);let scalar=step&0xffffffff;i=i+(step>>32);if scalar==47{scalar=92;}
+  if scalar>65535{scalar=scalar - 0x10000;windows-parameters-unicode-store16(output+at*2,0xd800|(scalar>>10));at=at+1;windows-parameters-unicode-store16(output+at*2,0xdc00|(scalar&1023));at=at+1;}
+  else{windows-parameters-unicode-store16(output+at*2,scalar);at=at+1;}
+ }windows-parameters-unicode-store16(output+at*2,0);return units;
+}
+fn windows-parameters-path-set(frame:Int)->Int{
+ if windows-protected-files-ready()==0{return 0;}let path=windows-parameters-path-resolve(load64(frame+96),1,3);if path==0{return 0;}
+ if fs-stat(path,windows-protected-buffer)!=0{return windows-parameters-path-fail(3);}if load32(windows-protected-buffer+SF-ST-TYPE)!=SF-TYPE-DIR{return windows-parameters-path-fail(267);}
+ let i=0;while i<1024{let c=load8(path+i);store8(windows-parameters-path-data+i,c);if c==0{return 1;}i=i+1;}return windows-parameters-path-fail(206);
+}
+fn windows-parameters-path-create(frame:Int,wide:Int)->Int{
+ if windows-protected-files-ready()==0{return -1;}if windows-protected-createfile-arguments(frame)==0{return -1;}
+ let slot=3;while slot<VFS-MAX-FDS && windows-protected-file-host(slot)>=3{slot=slot+1;}if slot>=VFS-MAX-FDS || vfs-fd-alloc()<0{windows-protected-error=4;return -1;}
+ let path=windows-parameters-path-resolve(load64(frame+96),wide,2);if path==0{return -1;}
+ // Regular-file opens do not erase a caller's trailing directory separator
+ // and accidentally open its file prefix. Directory intent is unsupported.
+ let input=windows-parameters-path-data+2048;let length=strlen(input);if length>0 && load8(input+length - 1)==47{windows-protected-error=123;return -1;}
+ let copy=windows-parameters-path-slot(slot);let i=0;while i<1024{let c=load8(path+i);store8(copy+i,c);if c==0{return windows-protected-createfile-owned(frame,slot,copy);}i=i+1;}
+ windows-protected-error=206;return -1;
+}
+fn windows-parameters-path-type(frame:Int)->Int{
+ let handle=load64(frame+96);if handle==1 || handle==2{if cap-check(windows-protected-authority,cap-serial())==0{return windows-parameters-path-fail(5);}return 2;}
+ let host=windows-protected-file-host(handle);if host<3{return windows-parameters-path-fail(6);}if windows-protected-files-ready()==0{return 0;}return 1;
+}
+fn windows-parameters-path-dispatch(frame:Int,num:Int)->Int{
+ if num==0x100031{return windows-parameters-path-set(frame);}if num==0x100032{return windows-parameters-path-current(frame);}if num==0x100033{return windows-parameters-path-create(frame,1);}return windows-parameters-path-type(frame);
+}
+fn windows-command-filesystem-run(image:Int,size:Int,config:Int)->Int{return windows-command-composed-run-profile(image,size,config,12);}

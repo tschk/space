@@ -1,0 +1,174 @@
+package space.kernel
+
+// Trusted native FS regression: real NVMe blocks, not a model or foreign app.
+fn large-file-check(port: Int, value: Int, expected: Int, label: Int) -> void {
+  if value != expected {
+    serial-write-cstr(port, "large-file: failed ")
+    serial-write-cstr(port, label)
+    serial-write-cstr(port, " got ")
+    serial-write-dec-wide(port, value)
+    serial-write-cstr(port, " expected ")
+    serial-write-dec-wide(port, expected)
+    serial-nl(port)
+    panic("large file persistence assertion")
+  }
+}
+
+fn large-file-bytes(port: Int, actual: Int, expected: Int, size: Int) -> void {
+  let i = 0
+  while i < size {
+    if load8(actual + i) != load8(expected + i) {
+      large-file-check(port, i, -1, "byte comparison")
+    }
+    i = i + 1
+  }
+}
+
+fn large-file-superblock(port: Int, probe: Int) -> void {
+  large-file-check(port, nvme-read(0, 8, probe), 0, "raw superblock read")
+  large-file-check(port, load32(probe), SF-MAGIC, "raw superblock preserved")
+}
+
+fn large-file-free-blocks() -> Int {
+  let total = load64(sf-super + SF-SB-TOTAL-BLOCKS)
+  let block = load64(sf-super + SF-SB-DATA-START)
+  let free = 0
+  while block < total {
+    if sf-block-used(block) == 0 { free = free + 1 }
+    block = block + 1
+  }
+  return free
+}
+
+fn large-file-truncate(port: Int, input: Int, output: Int, size: Int) -> void {
+  // Create once before measuring: this checks block reclamation, not inode/name allocation.
+  large-file-check(port, fs-write-file("trunc.bin", input, 0), 0, "create empty truncate target")
+  let free = large-file-free-blocks()
+  large-file-check(port, fs-write-file("trunc.bin", input, size), 0, "truncate seed indirect")
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, 32, 0), 32, "small prefix overwrite preserves suffix")
+  large-file-check(port, fs-read-file("trunc.bin", output, size + 4096), size, "prefix overwrite retains exact size")
+  large-file-bytes(port, output, input, size)
+  let free-before-zero = large-file-free-blocks()
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, 0, size + 4096), 0, "zero write past EOF")
+  large-file-check(port, fs-read-file("trunc.bin", output, size + 4096), size, "zero write does not grow")
+  large-file-bytes(port, output, input, size)
+  large-file-check(port, large-file-free-blocks(), free-before-zero, "zero write no block allocation")
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, -1, 0), -1, "negative count rejected")
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, 1, -1), -1, "negative offset rejected")
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, 1, 2146304), -1, "maximum file boundary rejected")
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input, 9223372036854775807, 1), -1, "count overflow rejected")
+  let partial = 13 * 4096 + 7
+  large-file-check(port, fs-write-file("trunc.bin", input, partial), 0, "shrink retains indirect")
+  large-file-check(port, fs-read-file("trunc.bin", output, size), partial, "partial indirect exact size")
+  large-file-bytes(port, output, input, partial)
+  large-file-check(port, fs-write-file("trunc.bin", input, 8193), 0, "shrink drops indirect")
+  large-file-check(port, fs-read-file("trunc.bin", output, size), 8193, "direct shrink exact size")
+  large-file-bytes(port, output, input, 8193)
+  large-file-check(port, sparkfs-pwrite("trunc.bin", input + 8193, size - 8193, 8193), size - 8193, "reextend truncated indirect")
+  large-file-check(port, fs-read-file("trunc.bin", output, size), size, "reextended exact size")
+  large-file-bytes(port, output, input, size)
+  large-file-check(port, fs-write-file("trunc.bin", input, 0), 0, "truncate indirect to zero")
+  large-file-check(port, fs-read-file("trunc.bin", output, size), 0, "zero truncate exact EOF")
+  large-file-check(port, large-file-free-blocks(), free, "all tail blocks reclaimed")
+  // Warm one create/delete pair, then require owner scratch to remain bounded.
+  large-file-check(port, fs-write-file("/cycle.bin", input, 32), 0, "create delete warm write")
+  large-file-check(port, sparkfs-delete("/cycle.bin"), 0, "create delete warm remove")
+  let create-heap = heap-next
+  let iteration = 0
+  while iteration < 3 {
+    large-file-check(port, fs-write-file("/cycle.bin", input, 32), 0, "repeated create write")
+    large-file-check(port, fs-read-file("/cycle.bin", output, size), 32, "repeated created read")
+    large-file-bytes(port, output, input, 32)
+    large-file-check(port, sparkfs-delete("/cycle.bin"), 0, "repeated delete")
+    large-file-check(port, fs-read-file("/cycle.bin", output, size), -1, "deleted path absent")
+    large-file-check(port, heap-next, create-heap, "bounded create delete workspace")
+    large-file-check(port, large-file-free-blocks(), free, "create delete free block stability")
+    iteration = iteration + 1
+  }
+  let heap = heap-next
+  let cycle = 0
+  while cycle < 3 {
+    large-file-check(port, fs-write-file("trunc.bin", input, size), 0, "repeated large replacement")
+    large-file-check(port, fs-write-file("trunc.bin", input, 0), 0, "repeated zero replacement")
+    large-file-check(port, large-file-free-blocks(), free, "stable free blocks after replacement")
+    large-file-check(port, heap-next, heap, "retained replacement scratch")
+    cycle = cycle + 1
+  }
+  large-file-check(port, fs-write-file("trunc.bin", input, size), 0, "large before inline shrink")
+  large-file-check(port, fs-write-file("trunc.bin", input, 32), 0, "shrink indirect to inline")
+  large-file-check(port, fs-read-file("trunc.bin", output, size), 32, "inline shrink exact size")
+  large-file-bytes(port, output, input, 32)
+  large-file-check(port, large-file-free-blocks(), free, "inline replacement frees data and table")
+}
+
+fn large-file-proof(port: Int, writing: Int, input: Int, size: Int) -> void {
+  large-file-check(port, nvme-ready, 1, "actual NVMe required")
+  large-file-check(port, sf-mem-disk, 0, "no RAM fallback")
+  let output = alloc(size + 16384)
+  let holes-size = size + 2 * (4096 + 23)
+  let probe = frame-alloc()
+  if writing == 1 {
+    large-file-check(port, fs-format(), 0, "explicit owned disk format")
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-write-file("large.bin", input, size), 0, "whole multi-block write")
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-read-file("large.bin", output, size + 4096), size, "whole read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, sparkfs-pwrite("large.bin", input + 1000, 37, 4090), 37, "cross-block partial write")
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-read-file("large.bin", output, size + 4096), size, "patched read")
+    large-file-bytes(port, output, input + size, size)
+    large-file-check(port, sparkfs-pread("large.bin", output, 256, 4080), 256, "cross-block partial read")
+    large-file-bytes(port, output, input + size + 4080, 256)
+    large-file-check(port, fs-write-file("grow.bin", input, 48), 0, "inline prefix")
+    large-file-check(port, sparkfs-pwrite("grow.bin", input + 48, size - 48, 48), size - 48, "inline to indirect append")
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-read-file("grow.bin", output, size + 4096), size, "grown read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-write-file("replace.bin", input, 48), 0, "inline overwrite prefix")
+    large-file-check(port, fs-write-file("replace.bin", input, size), 0, "inline to indirect overwrite")
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-read-file("replace.bin", output, size + 4096), size, "overwritten read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-write-file("holes.bin", input, 48), 0, "sparse prefix")
+    large-file-check(port, sparkfs-pwrite("holes.bin", input + 1000, 23, size - 23), 23, "sparse zero gap")
+    let heap = heap-next
+    let cycle = 0
+    while cycle < 2 {
+      large-file-check(port, sparkfs-pwrite("holes.bin", input + 1000, 23, size + cycle * 4119 + 4096), 23, "repeated sparse extension")
+      large-file-check(port, heap-next, heap, "retained sparse scratch")
+      cycle = cycle + 1
+    }
+    large-file-check(port, fs-read-file("holes.bin", output, size + 16384), holes-size, "sparse read")
+    large-file-bytes(port, output, input + size * 2, holes-size)
+    large-file-truncate(port, input, output, size)
+  } else {
+    large-file-check(port, fs-read-file("trunc.bin", output, size), 32, "persisted inline truncation")
+    large-file-bytes(port, output, input, 32)
+    large-file-superblock(port, probe)
+    large-file-check(port, fs-read-file("large.bin", output, size + 4096), size, "persisted patched read")
+    large-file-bytes(port, output, input + size, size)
+    large-file-check(port, fs-read-file("grow.bin", output, size + 4096), size, "persisted grown read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-read-file("replace.bin", output, size + 4096), size, "persisted overwritten read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, sparkfs-pread("large.bin", output, 80, size - 43), 43, "EOF bounded read")
+    large-file-bytes(port, output, input + size + size - 43, 43)
+    if writing == 0 {
+      large-file-check(port, fs-write-file("after.bin", input, size), 0, "new allocation after remount")
+    }
+    large-file-check(port, fs-read-file("after.bin", output, size + 4096), size, "new remount file read")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-read-file("large.bin", output, size + 4096), size, "prior file survives new remount allocation")
+    large-file-bytes(port, output, input + size, size)
+    large-file-check(port, fs-read-file("grow.bin", output, size + 4096), size, "grown file survives new remount allocation")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-read-file("replace.bin", output, size + 4096), size, "overwrite survives new remount allocation")
+    large-file-bytes(port, output, input, size)
+    large-file-check(port, fs-read-file("holes.bin", output, size + 16384), holes-size, "persisted sparse read")
+    large-file-bytes(port, output, input + size * 2, holes-size)
+  }
+  large-file-superblock(port, probe)
+  serial-write-cstr(port, "large-file: proof passed")
+  serial-nl(port)
+}

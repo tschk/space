@@ -1,0 +1,25 @@
+{
+  "source_commit": "c40874677336f08b1508a4a06956ef7c53da5f25",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "encoding": "Lossless PNG encoding of actual QEMU captures; identical RGB pixels, no compositing or generated imagery.",
+  "captures": [
+    {
+      "file": "desktop.png",
+      "source_capture": "/workspace/lab152/desktop-launcher/terminal-2-fetch.ppm",
+      "source_sha256": "e45015d254a16a693efd0eb4fcc1337c154214d8a96a44d5629743203e262131",
+      "png_sha256": "608b80ef2ffda4bf8c8ac5cbfeab6fb05209fd58553ba2047f67451cdf07a011",
+      "width": 1920,
+      "height": 1080,
+      "scope": "Native desktop, measured DejaVu typography, two shell sessions and real fetch input/output; not foreign TUI execution."
+    },
+    {
+      "file": "protected-clients.png",
+      "source_capture": "/workspace/lab152/gui-default/edited-save-no-disk.ppm",
+      "source_sha256": "e290487e4b3c541b4bf3a26739e906c1e77d882b5b395dac20e4b8735c3def22",
+      "png_sha256": "cac8be9fde4bf68148145f7735107edfe700118aeb1bdc5eb71f46822514e84d",
+      "width": 1920,
+      "height": 1080,
+      "scope": "Default native protected SCI calculator/editor after input; eight-ASCII-byte editor, not foreign GUI applications."
+    }
+  ]
+}

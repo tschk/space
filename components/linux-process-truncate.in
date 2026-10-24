@@ -1,0 +1,20 @@
+package space.kernel
+
+// Descriptor adapter for the native inline resize profile; no guest pointer,
+// copied file payload, or foreign backing-block ledger is introduced.
+fn linux-process-file-truncate(fd: Int, size: Int) -> Int {
+  if size < 0 { return -22 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if linux-process-device-is(fd) != 0 || linux-process-pipe-is(fd) != 0 { return -22 }
+  let host = linux-process-file-host(fd)
+  if host < 3 || vfs-fd-valid(host) == 0 { return -9 }
+  if vfs-discard-tagged(host) != 0 { return -22 }
+  if (load64(vfs-fd-table + host * 32 + 16) & 3) == VFS-O-RDONLY { return -22 }
+  let access = linux-process-files-ready()
+  if access < 0 { return access }
+  let identity = linux-process-file-identities + fd * 16
+  let status = fs-resize-inline(load64(vfs-fd-table + host * 32),load64(identity),load64(identity + 8),size)
+  if status == -2 { return -95 }
+  if status < 0 { return -5 }
+  return 0
+}

@@ -1,0 +1,40 @@
+package space.display
+
+// Desktop-only atlas adapter. Coverage and pixel addressing stay inside the
+// existing trusted display library; no font file parser or foreign API here.
+fn desktop-font-draw24(table: Int, x: Int, y: Int, cp: Int, color: Int) -> void {
+  if table == 0 || fb-ready == 0 || cp < 32 || cp > 126 { return }
+  let rx = x + comp-render-dx
+  let ry = y + comp-render-dy
+  let cr = (color >> 16) & 255
+  let cg = (color >> 8) & 255
+  let cb = color & 255
+  let row = 0
+  while row < 24 {
+    let py = ry + row
+    if py >= 0 && py < fb-height {
+      let column = 0
+      while column < 24 {
+        let px = rx + column
+        if px >= 0 && px < fb-width && comp-clip-test(px, py) != 0 {
+          let coverage = load8(table + cp * 576 + row * 24 + column)
+          if coverage != 0 {
+            let p = fb-addr + py * fb-pitch + px * 4
+            if coverage == 255 { store32(p, color) }
+            else {
+              let dst = load32(p)
+              let inverse = 255 - coverage
+              let r = (cr * coverage + ((dst >> 16) & 255) * inverse + 255) >> 8
+              let g = (cg * coverage + ((dst >> 8) & 255) * inverse + 255) >> 8
+              let b = (cb * coverage + (dst & 255) * inverse + 255) >> 8
+              store32(p, (r << 16) | (g << 8) | b)
+            }
+          }
+        }
+        column += 1
+      }
+    }
+    row += 1
+  }
+  return
+}
