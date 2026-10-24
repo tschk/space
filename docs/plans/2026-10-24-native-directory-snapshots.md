@@ -102,3 +102,12 @@ passes21 RAM snapshots and63 snapshots over three NVMe boots at
 matches the live provider exactly after reversing only its declared test read
 wrapper. Previously captured bytes in caller-owned scratch are not erased by
 revocation; output remains unchanged on the refused operation.
+
+
+A later [native UTC metadata revision](2026-10-24-native-utc-file-metadata.md)
+adds a separate96-byte details observation on explicitly formatted schema2
+volumes. It reuses this exact traversal/publication contract and leaves the
+original64-byte observation intact. Creation/access/modification values are
+real persisted UTC seconds from an independently granted native clock; old
+boot ticks are explicitly unsupported for that revision. It does not add
+foreign wildcard/Find handles or original Windows execution.

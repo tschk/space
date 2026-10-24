@@ -297,7 +297,7 @@ fn fb-fill-rect(x: Int, y: Int, w: Int, h: Int, color: Int) -> void {
   while py < y-end {
     let ptr = fb-addr + py * fb-pitch + x-start * 4
     if qwords > 0 {
-      mem-fill64(ptr, color64, qwords)
+      cpu-mem-fill64(ptr, color64, qwords)
     }
     if odd != 0 {
       store32(ptr + odd-off, color)
@@ -1676,7 +1676,7 @@ fn comp-blit-region(dst: Int, x0: Int, y0: Int, x1: Int, y1: Int) -> void {
     let sptr = src + row-off
     let dptr = dst + row-off
     if qwords > 0 {
-      mem-copy64(dptr, sptr, qwords)
+      cpu-mem-copy64(dptr, sptr, qwords)
     }
     let send = sptr + n
     sptr = sptr + bytes8

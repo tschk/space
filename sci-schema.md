@@ -252,3 +252,10 @@ Future SCI versions may add:
 - `graph`: dependency and execution graph edges
 - `compat`: compatibility personality requirements
 - `gpu`: GPU/compute requirements and limits
+
+The optional Space boot-image kind25 (`BOOT-IMAGE-RUNTIME-SELFTEST`) carries an
+explicit native SCI diagnostic in runtime-component test images. The diagnostic
+hub runs it through owned transient admission and checks status42, preserving
+the loader regression without creating/overwriting a persistent `test.sci`.
+This trusted native SCI check is distinct from protected CPL3 application proof;
+ordinary distributable images do not gain that asset or a new application action.

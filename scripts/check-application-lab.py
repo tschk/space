@@ -328,6 +328,10 @@ def main():
           '--out', args.out / 'windows-paths')
     check('windows-paths-nvme', 'check-windows-path-persistence.py', '--in', args.compiler,
           '--out', args.out / 'windows-paths-nvme')
+    check('native-utc-metadata', 'check-native-utc-metadata.py', '--in', args.compiler,
+          '--out', args.out / 'native-utc-metadata')
+    check('native-utc-persistence', 'check-native-utc-persistence.py', '--in', args.compiler,
+          '--out', args.out / 'native-utc-persistence')
     check('native-directory', 'check-native-directory.py', '--in', args.compiler,
           '--out', args.out / 'native-directory')
     check('native-directory-nvme', 'check-native-directory.py', '--in', args.compiler,

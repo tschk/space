@@ -33,3 +33,6 @@ const BOOT-IMAGE-GUI-SEAT = 22
 // explicit trusted legacy/window profiles; no admission fallback between them.
 const BOOT-IMAGE-GUI-PROTECTED-CALC = 23
 const BOOT-IMAGE-GUI-PROTECTED-EDITOR = 24
+
+// Optional read-only native SCI boot diagnostic, independent of user files.
+const BOOT-IMAGE-RUNTIME-SELFTEST = 25

@@ -157,3 +157,12 @@ fn nvme-shell-read(port: Int, lba: Int) -> void {
   serial-nl(port)
   return
 }
+
+// Private synchronous scalar projection for native admission checks. The driver
+// owns its existing DMA page; no pointer, allocation or new channel escapes.
+// Reads one512-byte sector; returns unsigned LE32 or-1 on actual I/O failure.
+fn nvme-private-read-u32(lba:Int,offset:Int)->Int{
+ if lba<0 || offset<0 || offset>508 || (offset&3)!=0 || nvme-ready!=1 || storage-ready!=1{return -1;}
+ if nvme-read(lba,1,storage-data-page)!=0{return -1;}
+ return load32(storage-data-page+offset);
+}

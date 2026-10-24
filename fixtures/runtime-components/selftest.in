@@ -1,0 +1,6 @@
+package space.fixture
+
+// Explicit native SCI diagnostic artifact. No persistent filesystem writes.
+fn runtime-selftest-entry(info: Int) -> Int {
+  return 42
+}

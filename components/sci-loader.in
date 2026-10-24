@@ -528,6 +528,8 @@ fn dyn-kernel-exportable(name: Int) -> Int {
   if dyn-name-prefix(name,"user-context-") != 0 { return 0 }
   if dyn-name-prefix(name,"user-space-") != 0 || dyn-name-prefix(name,"domain-user-object-") != 0 { return 0 }
   if dyn-name-prefix(name,"fs-path-") != 0 { return 0 }
+  if dyn-name-prefix(name,"nvme-private-") != 0 { return 0 }
+  if dyn-name-prefix(name,"fs-metadata-") != 0 { return 0 }
   if dyn-name-prefix(name,"fs-directory-") != 0 { return 0 }
   if dyn-name-prefix(name,"linux-framebuffer-") != 0 { return 0 }
   if dyn-name-prefix(name,"native-canvas-") != 0 { return 0 }
@@ -1073,8 +1075,38 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   if (required & (-1 ^ SCI-VOLUME-GRANTS)) != 0 {
     return -1
   }
+  // The standalone Volume provider implements version1 boot-tick metadata.
+  // Refuse unsupported backing before creating a domain or retained heap.
+  if nvme-ready!=0 {
+    let magic=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-MAGIC)
+    let version=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-VERSION)
+    let blocksize=nvme-private-read-u32(VOLUME-NVME-LBA,SF-SB-BLOCK-SIZE)
+    let supported=0
+    let total = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-TOTAL-BLOCKS)
+    let total-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-TOTAL-BLOCKS + 4)
+    let count = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-COUNT)
+    let bitmap = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-BITMAP-START)
+    let bitmap-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-BITMAP-START + 4)
+    let journal = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-JOURNAL-START)
+    let journal-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-JOURNAL-START + 4)
+    let table = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-TABLE-START)
+    let table-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-INODE-TABLE-START + 4)
+    let data = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-DATA-START)
+    let data-high = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-DATA-START + 4)
+    let root = nvme-private-read-u32(VOLUME-NVME-LBA, SF-SB-ROOT-INODE)
+    if magic==SF-MAGIC && version==SF-VERSION && blocksize==SF-BLOCK-SIZE && total==SF-MEM-DISK-BLOCKS && total-high==0 && count==SF-DEFAULT-INODE-COUNT && bitmap==1 && bitmap-high==0 && journal==2 && journal-high==0 && table==4 && table-high==0 && data==20 && data-high==0 && root==0 {
+      supported=1
+    }
+    if supported==0 {
+      serial-write-cstr(port,"volume: unsupported backing refused before activation")
+      serial-nl(port)
+      return -1
+    }
+  }
   let domain = domain-create()
-  if domain <= 0 { return -1 }
+  if domain <= 0 {
+    return -1
+  }
   let pages = (image-size + 4095) / 4096
   let i = 0
   while i < pages {
@@ -1094,7 +1126,9 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     j = j + 1
   }
   let shared = domain-create-shared-page(0, domain, COMP-SHARED-VIRT, COMP-SHARED-VIRT)
-  if shared == 0 { return -1 }
+  if shared == 0 {
+    return -1
+  }
   let cap-info = alloc(64)
   store64(cap-info + 16, heap)
   store64(cap-info + 24, COMP-HEAP-SIZE)
@@ -1117,19 +1151,19 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
     }
   }
   store64(cap-info + 40, mounted)
-
   store64(COMP-SHARED-VIRT + 0, 1)
   store64(COMP-SHARED-VIRT + 8, 0)
   store64(COMP-SHARED-VIRT + 16, 1)
   domain-switch(domain)
   let init-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if init-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 { return -1 }
+  if init-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 {
+    return -1
+  }
   if mounted != 0 {
     serial-write-cstr(port, "volume: persistent mount passed")
     serial-nl(port)
   }
-
   store8(COMP-SHARED-VIRT + 256, 47)
   store8(COMP-SHARED-VIRT + 257, 118)
   store8(COMP-SHARED-VIRT + 258, 111)
@@ -1145,8 +1179,9 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let open-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if open-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 || load64(COMP-SHARED-VIRT + 56) < 0 { return -1 }
-
+  if open-rc != 0 || load64(COMP-SHARED-VIRT + 24) != 0 || load64(COMP-SHARED-VIRT + 56) < 0 {
+    return -1
+  }
   store8(COMP-SHARED-VIRT + 768, 118)
   store8(COMP-SHARED-VIRT + 769, 111)
   store8(COMP-SHARED-VIRT + 770, 108)
@@ -1161,13 +1196,16 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let write-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if write-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 { return -1 }
+  if write-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 {
+    return -1
+  }
   if nvme-ready != 0 {
-    if sci-volume-nvme-flush(heap-frames) != 0 { return -1 }
+    if sci-volume-nvme-flush(heap-frames) != 0 {
+      return -1
+    }
     serial-write-cstr(port, "volume: NVMe backing flushed")
     serial-nl(port)
   }
-
   store8(COMP-SHARED-VIRT + 768, 0)
   store64(COMP-SHARED-VIRT + 40, 6)
   store64(COMP-SHARED-VIRT + 0, 1)
@@ -1176,10 +1214,11 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   domain-switch(domain)
   let read-rc = invoke1(entry, cap-info)
   domain-switch(0)
-  if read-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 || load8(COMP-SHARED-VIRT + 768) != 118 || load8(COMP-SHARED-VIRT + 773) != 101 { return -1 }
+  if read-rc != 0 || load64(COMP-SHARED-VIRT + 56) != 6 || load8(COMP-SHARED-VIRT + 768) != 118 || load8(COMP-SHARED-VIRT + 773) != 101 {
+    return -1
+  }
   serial-write-cstr(port, "volume: component init/write/read passed")
   serial-nl(port)
-
   volume-ready = 1
   volume-domain = domain
   volume-entry-addr = entry
@@ -1191,6 +1230,7 @@ fn sci-volume-rpc(port: Int, load-addr: Int) -> Int {
   serial-nl(port)
   return 0
 }
+
 
 fn volume-copy-path(dst: Int, src: Int) -> void {
   let i = 0

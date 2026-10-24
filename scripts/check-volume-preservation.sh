@@ -30,6 +30,13 @@ fixture += r'''
 static unsigned char shared[4096], stage[4096], image[64];
 #define COMP_SHARED_VIRT ((int64_t)(intptr_t)shared)
 static int64_t storage_data_page = (intptr_t)stage;
+/* Scalar native-provider model; real DMA/status/ownership has QEMU gates. */
+static int64_t nvme_private_read_u32(int64_t lba, int64_t offset) {
+  reads++;
+  if (read_error || lba < 0 || offset < 0 || offset > 508 || (offset & 3) || (lba + 1) * 512 > sizeof(disk)) return -1;
+  return load32((intptr_t)disk + lba * 512 + offset);
+}
+
 static int invocations;
 static int64_t domain_create(void) { return 1; }
 static void domain_map_user_code(int64_t a, int64_t b, int64_t c) { }
@@ -89,7 +96,23 @@ int main(int argc, char **argv) {
   sf_cache_buf = sf_cache_meta = sf_nvme_buf = 0; heap_next = 0; sparkfs_init();
   memset(disk, 0, sizeof(disk)); memcpy(disk + 65536 * 512, (void *)(intptr_t)sf_mem_disk, SF_MEM_DISK_SIZE);
   if (argc == 2) { FILE *out = fopen(argv[1], "r+b"); if (!out || fseek(out, 65536 * 512, SEEK_SET) || fwrite(disk + 65536 * 512, 1, SF_MEM_DISK_SIZE, out) != SF_MEM_DISK_SIZE || fclose(out)) return 1; }
-  reset_volume(1); CHECK(sci_volume_rpc(0, (intptr_t)image) == 0); CHECK(volume_ready == 1); CHECK(invocations == 4); CHECK(reads == 256); CHECK(writes == 256);
+  /* Unsupported schemas/layouts must never activate or rewrite backing. */
+  for (int control = 0; control < 3; control++) {
+    memcpy(before, disk, sizeof(disk));
+    int64_t header = (intptr_t)disk + 65536 * 512;
+    if (control == 0) store32(header + SF_SB_VERSION, 2);
+    if (control == 1) store64(header + SF_SB_INODE_TABLE_START, 1);
+    if (control == 2) store32(header + SF_SB_BLOCK_SIZE, 512);
+    unsigned char saved[4096]; memcpy(saved, (void *)(intptr_t)header, sizeof(saved));
+    reset_volume(1); size_t allocated = heap_next;
+    CHECK(sci_volume_rpc(0, (intptr_t)image) == -1);
+    CHECK(writes == 0); CHECK(invocations == 0); CHECK(volume_ready == 0); CHECK(heap_next == allocated);
+    CHECK(memcmp(saved, (void *)(intptr_t)header, sizeof(saved)) == 0);
+    CHECK(memcmp(disk, before, 65536 * 512) == 0);
+    CHECK(memcmp(disk + 65536 * 512 + 4096, before + 65536 * 512 + 4096, sizeof(disk) - 65536 * 512 - 4096) == 0);
+    memcpy(disk, before, sizeof(disk));
+  }
+  reset_volume(1); CHECK(sci_volume_rpc(0, (intptr_t)image) == 0); CHECK(volume_ready == 1); CHECK(invocations == 4); CHECK(reads == 271); CHECK(writes == 256);
   CHECK(volume_rpc_call(5, 1) == 6); CHECK(writes == 512);
   /* A protected syscall keeps guest logical identity under the kernel root. */
   model_domain = 7; model_root = 4096; current_cap = 99;

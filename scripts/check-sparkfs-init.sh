@@ -78,8 +78,9 @@ selected = [function(block, name) for name in (
     "sf-bno-in-range", "sf-read-block", "sf-write-block", "sf-zero-block", "sf-mark-used")]
 selected += [function(inode, name) for name in ("sf-inode-addr", "sf-read-inode", "sf-write-inode")]
 selected += [function(file, name) for name in (
-    "sparkfs-init", "sf-do-format", "sparkfs-format", "sparkfs-format-mem-disk")]
-declarations = "\n".join(line for line in (layout + block).splitlines()
+    "sparkfs-init", "fs-metadata-utc-layout-valid", "fs-metadata-format", "sf-do-format", "sparkfs-format", "sparkfs-format-mem-disk")]
+clock = (ROOT / "components/fs-metadata-clock.in").read_text()
+declarations = "\n".join(line for line in (layout + block + clock).splitlines()
                          if line.startswith(("const ", "var ")))
 translated = [translate(part) for part in selected]
 prototypes = "\n".join(part.split("{", 1)[0].strip() + ";" for part in translated)
@@ -105,6 +106,7 @@ static void store64(int64_t p, int64_t v) { memcpy((void *)(intptr_t)p, &v, 8); 
 static int64_t nvme_read(int64_t lba, int64_t count, int64_t buf) { reads++; if (read_error) return -1; if (lba < 0 || count != 8 || (lba + count) * 512 > sizeof(disk)) abort(); memcpy((void *)(intptr_t)buf, disk + lba * 512, count * 512); return 0; }
 static int64_t nvme_write(int64_t lba, int64_t count, int64_t buf) { if (lba < 0 || count != 8 || (lba + count) * 512 > sizeof(disk)) abort(); writes++; memcpy(disk + lba * 512, (void *)(intptr_t)buf, count * 512); return 0; }
 '''
+fixture += 'static int64_t nvme_flush(void) { return 0; }\n'
 fixture += translate(declarations) + "\n" + prototypes + "\n" + "\n".join(translated)
 fixture += r'''
 static void reset(int present, int dirty_heap) {

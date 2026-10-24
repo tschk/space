@@ -478,3 +478,13 @@ required. `check-gui-persistence.py` drives Ctrl-S with actual PS/2 events and
 verifies save/reopen, VM reboot/remount, shortening, empty save, independent
 calculator survival and missing-storage-grant refusal without target inode/byte
 mutation. See [native GUI usage](native-gui-session.md) for limits and commands.
+
+The standalone display SCI's fill/copy calls now import the existing native CPU
+memory contracts explicitly, matching the kernel compositor's wrappers. Its
+GUI application action remains unavailable because that artifact has no GUI
+supervisor binding; it never imports private kernel launch authority. This
+repairs the standalone build closure without changing the ordinary protected
+desktop launch policy or creating another renderer. Runtime-component and
+legacy Volume checks use an explicit read-only SCI selftest artifact rather
+than relying on automatic persistent diagnostic-file writes. See the
+[UTC metadata/runtime regression evidence](plans/2026-10-24-native-utc-file-metadata.md).

@@ -11,3 +11,17 @@ import "diagnostics.in"
 import "determinism.in"
 import "selftest.in"
 import "shell.in"
+
+// An explicitly packaged selftest needs no overwrite of persistent test.sci.
+// Ordinary images retain the existing diagnostic on their new RAM disk only.
+fn diagnostics-hub-sci-selftest(port: Int) -> void {
+  if domain-current != 0 || user-context-active != 0 { return }
+  let image = boot-image-find(BOOT-IMAGE-RUNTIME-SELFTEST)
+  if image != 0 {
+    let result = sci-load-runtime-component(port, image, "boot-selftest", 1, 1, 0)
+    if result == 42 { serial-write-cstr(port,"test_sci_loader: PASS"); serial-nl(port) }
+    else { serial-write-cstr(port,"test_sci_loader: FAIL"); serial-nl(port) }
+    return
+  }
+  if sf-mem-disk != 0 && volume-ready == 0 { test-sci-loader(port) }
+}

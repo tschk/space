@@ -159,3 +159,14 @@ jq still do not execute.
 Next establish a real bounded native directory iterator before implementing
 FindFirstFileW/FindNextFileW/FindClose. Wide deletion/directory creation, timestamp,
 flush, mapping/module/locale and validated PE metadata remain separate contracts.
+
+
+The separate [native UTC filesystem prototype](plans/2026-10-24-native-utc-file-metadata.md)
+now supplies real persisted creation/access/modification seconds through a
+96-byte directory-details snapshot on explicit schema2 volumes. Legacy boot-tick
+volumes refuse that metadata request. This is the prerequisite for correct
+FILETIME conversion in a future Find adapter, not a claim that profile12 now
+implements enumeration. Windows Find handles/wildcards and original applications
+remain open. The existing native resumed CPU context used by profile12/FLS can
+capture a genuine Suspend before invoking the native directory provider; never
+clear CPU/domain flags to bypass its stopped-supervisor contract.

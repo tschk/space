@@ -17,3 +17,5 @@ fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
 fn nvme-flush() -> Int {
   return -19
 }
+
+fn nvme-private-read-u32(lba:Int,offset:Int)->Int{return -1;}

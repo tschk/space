@@ -13,20 +13,23 @@ fn sf-inode-is-inline(ino: Int) -> Int {
   return load32(addr + SF-IN-INLINE)
 }
 
-fn sf-read-inode(ino: Int) -> void {
+fn sf-read-inode(ino: Int) -> Int {
   let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
   let ino-bytes = ino * SF-INODE-SIZE
   let block = table-start + (ino-bytes >> 12)
   let offset = ino-bytes & 4095
-  sf-read-block(block, sf-block-buf)
+  if sf-read-block(block,sf-block-buf)!=0 {
+    return -1
+  }
   let i = 0
   let addr = sf-inode-addr(ino)
   while i < SF-INODE-SIZE {
     store8(addr + i, load8(sf-block-buf + offset + i))
     i = i + 1
   }
-  return
+  return 0
 }
+
 
 fn sf-write-inode(ino: Int) -> Int {
   let table-start = load64(sf-super + SF-SB-INODE-TABLE-START)
