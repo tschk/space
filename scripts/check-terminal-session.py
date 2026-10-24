@@ -76,15 +76,16 @@ try:
             subprocess.run([str(compiler),'compile','--path',str(source),'--entry','private-entry',
                 '--emit','sci','--base','0x7a000000','--target','native','--target-triple','x86_64-unknown-none',
                 '--out',str(binary)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
-        assert 0 < binary.stat().st_size <= 0x10000
+        assert 0 < binary.stat().st_size <= 0x2000
         private.append({'name': name, 'path': str(binary), 'size': binary.stat().st_size, 'sha256': sha(binary)})
     checks = '''let private-table=alloc(48);let prior-boot=load64(0x40d0);
 store64(private-table,BOOT-IMAGE-TABLE-MAGIC);store64(private-table+8,1);store64(private-table+16,254);store64(private-table+40,0);
 '''
     for index, item in enumerate(private):
-        address = 0x2e0000 + index * 0x10000
+        address = 0x2e0000 + index * 0x2000
         checks += '''{
 if dyn-kernel-exportable(NAME)!=0 || dyn-resolve-idx(NAME)!=-1{panic("terminal private export");}
+if load64(ADDRESS)!=SCI-MAGIC-V2 || load64(ADDRESS+24)!=SIZE{panic("terminal private image staging");}
 store64(0x13000000,0);store64(private-table+24,ADDRESS);store64(private-table+32,SIZE);store64(0x40d0,private-table);
 let heap=heap-next;let free=free-list;let caps=cap-count;let domains=domain-count;let live=runtime-instance-live;
 if sci-load-runtime-component(port,ADDRESS,"private-terminal",1,1,0)!=-1{panic("terminal SCI import admitted");}
@@ -109,11 +110,12 @@ store64(0x40d0,prior-boot);
             '--trampoline',str(out / 'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none',
             '--linkage','static-lib','--out',str(out / 'kernel.bin')],check=True,stdout=log,stderr=subprocess.STDOUT,timeout=180)
     assert (out / 'kernel.bin').stat().st_size + 0x100000 <= 0x2e0000
+    assert 0x2e0000 + len(private)*0x2000 <= 0x300000
     command = ['qemu-system-x86_64','-cpu','max','-kernel',str(out / 'kernel.bin'),'-m','512M',
         '-display','none','-no-reboot','-serial',f'unix:{out}/serial.sock,server=on,wait=on',
         '-monitor',f'unix:{out}/monitor.sock,server=on,wait=off']
     for index, item in enumerate(private):
-        command += ['-device', f'loader,file={item["path"]},addr={0x2e0000 + index * 0x10000:#x},force-raw=on']
+        command += ['-device', f'loader,file={item["path"]},addr={0x2e0000 + index * 0x2000:#x},force-raw=on']
     if a.retained:
         command += ['-device', f'loader,file={elf},addr=0x12000000,force-raw=on']
     report.update(qemu_command=command,kernel_sha256=sha(out / 'kernel.bin'),private_sci=private)
@@ -127,6 +129,8 @@ store64(0x40d0,prior-boot);
         wait(final)
         wait(b'space> ')
     assert b'terminal: five SCI imports refused before entry PASS\n' in received
+    for item in private:
+        assert ('SCI: DENIED unresolved import '+item['name']).encode() in received
     if a.retained:
         assert b'terminal: 22 actual CPL3 echo waits, 440 idle probes and restored TLS PASS\n' in received
         assert b'terminal: actual termios roundtrip/drain/flush geometry nonblock and timed poll PASS\n' in received

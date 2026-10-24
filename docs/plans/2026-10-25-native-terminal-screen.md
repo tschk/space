@@ -53,8 +53,10 @@ surface/pool references and owned SCI resources using the existing lifecycle.
 - `/workspace/terminal-view-package1/report.json`:9 emitted SCI policy artifacts
   and222 refusal controls pass; packaging evidence does not claim execution.
 - `/workspace/terminal-view-denial-retained1/report.json`:27 own protected Linux
-  control activations and3 real forbidden SCI imports pass, including the new
-  private renderer-supervisor prefix. These are not upstream application entries.
+  control activations and2 actual forbidden SCI imports pass. Its third image
+  was incorrectly staged at the loader's exclusive0x300000 upper bound, so that
+  rejection proves only manifest refusal. It is not renderer-import evidence.
+  These are not upstream application entries.
 
 The frozen keyboard commit `2b6c796` separately passes hosted CI and desktop
 launcher/input/pointer/resize, both boot-image builds and263fps damage (minimum30).
@@ -83,6 +85,14 @@ vi processes and38 real PS/2 events each. Left, Backspace and Delete correct
 the expected file. Both exact saved-file oracles and all294912 pixels in each
 visible capture pass. This extends the interactive slice, not general input
 methods, Unicode, mouse reporting or multi-session acceptance.
+
+The expanded five-import gate exposed that older staging mistake: later images
+could also land in live allocator memory. The failed
+`/workspace/terminal-navigation-final-controls/report.json` is retained. The
+corrected harness packs the five bounded SCI images in8 KiB slots wholly inside
+the existing reserved boot window, verifies each manifest before invoking the
+loader and requires the exact unresolved-import diagnostic for every symbol.
+No allocator/boot reservation, authority or refusal assertion was widened.
 
 Use the MIT-licensed VTE 0.13.1 transition rules as reproducible native data,
 checked against all 4,096 bytes evaluated by the original upstream Rust macro.
