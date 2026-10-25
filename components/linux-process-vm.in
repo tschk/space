@@ -43,7 +43,7 @@ fn linux-process-vm-create(authority: Int) -> Int {
   let i = 0
   while i < USER-SPACE-MAX && load64(linux-process-vms + i * LINUX-VM-BYTES) != 0 { i = i + 1 }
   if i == USER-SPACE-MAX { return -12 }
-  let handle = user-space-create(authority,LINUX-PROCESS-MAX-PAGES)
+  let handle = user-space-create-addressed(authority,LINUX-PROCESS-MAX-PAGES,65536)
   let failure = 0
   if handle == -5 { failure = -5;handle = user-space-quarantined(authority) }
   if handle <= 0 { if failure != 0 { return failure } return linux-process-vm-error(handle) }

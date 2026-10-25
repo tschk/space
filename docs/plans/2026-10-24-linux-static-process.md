@@ -47,7 +47,8 @@ runs with nonzero caller FS/GS canaries; the added probes make seven actual
 hardware fault executions per negative cycle.
 
 The profile has three arguments, `LC_ALL=C`, `HOME=/`, a 1 MiB private stack, an 8 MiB
-maximum brk region, 4096 total owned-page slots, and owned serial stdout/stderr.
+maximum brk region, originally4096 total owned-page slots (now8192 through
+the explicit native addressed owner), and owned serial stdout/stderr.
 Private anonymous mmap/munmap uses a separate 16 MiB virtual region and the
 same total page budget. It creates real zeroed NX pages, supports read-only or
 read/write protection, revokes mappings before freeing frames, reuses holes

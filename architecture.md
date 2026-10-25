@@ -15,7 +15,10 @@ low images without holes or payload rewriting; existing constructors keep their
 bounds. Mach-O startup, FILE and libSystem-shaped policy stays in separately
 imported private personality libraries. Its original assembler output is
 verified independently of native VM/provider controls. General desktop launch
-and foreign GUI frameworks remain unfinished.
+and foreign GUI frameworks remain unfinished. The Linux edge also requests the
+explicit8192-page policy with its existing64-KiB minimum, admits bounded larger
+BSS and copies only file-backed bytes into native zeroed pages. Linux time(2)
+requires a native timer grant.
 
 ```
          ┌─────────────────────────────────────┐

@@ -1,6 +1,7 @@
 package space.kernel
 import "linux-process-source.in"
 import "linux-process-vm.in"
+import "linux-process-clock.in"
 import "linux-process-devices.in"
 import "linux-process-files.in"
 import "linux-process-mmap.in"
@@ -17,7 +18,7 @@ import "linux-process-terminal-dispatch.in"
 // Bounded static ELF process family with cooperative, single-CPU execution.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
 // remain native mechanisms with counted object/binding ownership.
-const LINUX-PROCESS-MAX-PAGES = 4096
+const LINUX-PROCESS-MAX-PAGES = 8192
 const LINUX-PROCESS-STACK-BASE = 0x4F000000
 const LINUX-PROCESS-STACK-SIZE = 0x100000
 const LINUX-PROCESS-BRK-BASE = 0x10000000
@@ -148,13 +149,13 @@ fn linux-process-elf-entry(image: Int, size: Int) -> Int {
       let file = load64(p + 32)
       let memory = load64(p + 40)
       if flags != 4 && flags != 5 && flags != 6 { return -8 }
-      if memory <= 0 || memory > 0x800000 || va < 0x400000 || va > 0x10000000 - memory { return -8 }
+      if memory <= 0 || memory > 0x1800000 || va < 0x400000 || va > 0x10000000 - memory { return -8 }
       if off < 0 || file < 0 || file > memory || off > size || file > size - off { return -8 }
       if (va & 4095) != (off & 4095) { return -8 }
       let lo = va & -4096
       let hi = (va + memory + 4095) & -4096
       total = total + (hi - lo) / 4096
-      if total > 2048 { return -8 }
+      if total > 6144 { return -8 }
       let j = 0
       while j < i {
         let other = image + phoff + j * 56
@@ -189,17 +190,15 @@ fn linux-process-map-elf(image: Int) -> Int {
       while page < end {
         let mapped = linux-process-map-page(page,load32(p + 4))
         if mapped <= 0 { return mapped }
-        cpu-mem-fill64(linux-process-vm-buffer,0,512)
-        let j = 0
-        while j < 4096 {
-          let current = page + j
-          if current >= va && current - va < file {
-            store8(linux-process-vm-buffer + j,load8(image + off + current - va))
-          }
-          j = j + 1
+        // Native map-zero owns the complete zeroed page, including BSS and
+        // segment-edge padding. Copy only the immutable file intersection.
+        let start=page;if start<va{start=va;}
+        let stop=page+4096;if stop>va+file{stop=va+file;}
+        if stop>start{
+          let j=0;while j<stop - start{store8(linux-process-vm-buffer+j,load8(image+off+start - va+j));j+=1;}
+          let populated=linux-process-vm-populate(start,linux-process-vm-buffer,stop - start)
+          if populated!=0{return populated;}
         }
-        let populated = linux-process-vm-populate(page,linux-process-vm-buffer,4096)
-        if populated != 0 { return populated }
         page = page + 4096
       }
     }
@@ -533,6 +532,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
     if third != 0 && third != 1 { result = -22 }
     else { result = linux-process-random(first, second) }
   } else if number == 334 { result = -38 }
+  else if number == 201 { result = linux-process-time(first) }
   else if number == 228 { result = -38 }
   else if number == 10 { result = linux-process-mprotect(first, second, third) }
   else if number == 16 { if linux-process-device-is(first)!=0{result=linux-process-device-ioctl(first,second,third);}else if first == 1 || first == 2 || linux-process-pipe-is(first) != 0 { result = -25 } else { result = -9 } }

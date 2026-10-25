@@ -1,0 +1,11 @@
+package space.kernel
+import "time.in"
+// Foreign time_t policy at the edge. Native clock is explicitly granted and
+// sampled coherently; no host timestamp, epoch constant or fabricated success.
+fn linux-process-time(pointer:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if pointer!=0 && linux-process-range(pointer,8,1)==0{return -14;}
+ let seconds=time-component-wallclock();if seconds<0{return -5;}
+ if pointer!=0{linux-process-store64(pointer,seconds);if linux-process-memory-failed!=0{return -14;}}
+ return seconds;
+}

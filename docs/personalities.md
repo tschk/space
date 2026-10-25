@@ -22,6 +22,13 @@ bounded libSystem imports translate into native file/clock/VM services after
 CPU suspension. This does not execute Apple's dyld/libSystem or provide GUI
 frameworks. Normal installed-app/desktop launch remains open.
 
+The original Linux x86_64 assembler also runs unchanged with larger bounded
+BSS support. Its65-entry suite includes exact generated macro bytes,42 actual
+compiler errors,21 ownership cycles and an original `%t` output checked against
+the actual native RTC. Linux `time(2)` requires the timer grant; image limits
+are8192 total pages,6144 image pages and24 MiB per segment, with the existing
+64-KiB minimum and reserved low supervisor addresses.
+
 The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
 Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
 edit/save/reopen profile executes original vi; focused interactive TUI support

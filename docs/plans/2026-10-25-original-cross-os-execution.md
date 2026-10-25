@@ -86,3 +86,13 @@ Implementation and test receipts will record exact source/compiler/application
 hashes, actual CPL3 entry, output bytes, file bytes, exit/fault/budget behavior
 and cleanup. Fixture control executions remain separately counted from original
 application executions. Private native helpers gain no raw SCI export.
+
+The Linux continuation now admits bounded larger BSS segments using the explicit native
+8192-page owner policy while retaining the64-KiB minimum/reserved low windows.
+Keep total image pages capped below that limit, leaving room for stack and
+runtime allocation; reject W+X, overlap and interpreters as before. Linux
+`time(2)` is implemented only through the explicit timer grant and coherent native RTC. The unchanged upstream Linux assembler passes65 success/error/file
+activations. One original assembly emits `%t`; its generated64-bit value
+matches the native RTC interval around entry. Native grant/pointer refusals
+and six malformed-image controls remain separately counted;
+no per-application image exceptions or timestamp constants are permitted.

@@ -14,7 +14,9 @@ The first expanded run passes 65 original activations and 21 resource cycles.
 The original macOS x86_64 assembler now also passes65 entries,42 compiler-error
 exits and21 ownership cycles through its classic Mach-O profile. Broader macOS
 applications, Windows PE32+ and foreign GUI application goals remain open.
-This bounded integration is not ordinary installed-app/desktop launch.
+The original Linux build now also passes65 original activations, including a
+real `%t` assembly output checked against the native clock. This bounded
+integration is not ordinary installed-app/desktop launch.
 
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
