@@ -22,16 +22,26 @@ The repeatable original cross-OS cohort is part of `check-application-lab.py`:
 `--cohort cross-os` verifies pinned acquisition/license bytes, the three original
 assemblers on two explicit CPU profiles each, and native32/low-address ownership
 controls. At that cross-OS checkpoint, default `all` retained the existing gates and
-brought definitions to176. The later CLI additions below bring it to182.
+brought definitions to176. The later CLI/REPL additions below bring it to184.
 This is not a new complete176-gate receipt. Linux's second profile explicitly
 adds RDRAND; plain qemu64 still lacks the required startup entropy source.
 
 The broader CLI cohort (`--cohort cli`) adds original QuickJS and GNU sed,
 owned1..16 argument vectors, native clock controls, real stopped-CPU timer waits
 and compiled-private SCI import refusals. Both tools retain unchanged upstream
-source and repeatable static builds. With cached artifacts, `all` now defines182
-gates; absent CLI artifacts can add two source-build gates. A new complete182-gate
-run is not claimed. The full foreign GUI and product-launch targets remain open.
+source and repeatable static builds. The real QuickJS REPL additionally exercises
+PS2 line editing, evaluation, file save/reopen and client-owned ANSI16 terminal
+pixels, with separate select/cancel/deadline/CRLF ownership controls. With cached
+artifacts, `all` now defines184 gates; absent CLI artifacts can add two source-build
+gates. A new complete184-gate run is not claimed. The full foreign GUI and
+product-launch targets remain open.
+
+The [fresh CLI/REPL checkpoint](plans/2026-10-25-quickjs-repl-execution.md)
+passes all eight cohort gates at frozen47037aa:367 original application entries,
+including four actual interactive QuickJS entries across both roots, plus11
+affected QEMU regressions and three source/metadata contracts. Exact actual
+captures, keyboard effects, file bytes and receipt hashes are retained. The
+full goal remains active; finite terminal pixels do not establish GUI frameworks.
 
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)

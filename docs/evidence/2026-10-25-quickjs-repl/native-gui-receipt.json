@@ -1,0 +1,61 @@
+{
+  "source_commit": "47037aa",
+  "group": "native-gui",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "user-space-standard",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/user-space-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 5.989
+    },
+    {
+      "name": "user-space-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/user-space-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 1.472
+    },
+    {
+      "name": "desktop-launcher",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-desktop-launcher.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--build-dir",
+        "/workspace/quickjs-repl-regressions/desktop-launcher"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 86.192
+    },
+    {
+      "name": "desktop-damage",
+      "command": [
+        "bash",
+        "/workspace/space-quickjs-repl-source/scripts/check-desktop-damage.sh"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 5.733
+    }
+  ]
+}

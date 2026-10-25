@@ -1,0 +1,120 @@
+{
+  "source_commit": "47037aa",
+  "group": "pipes",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "blocking-standard",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/blocking-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 23.055
+    },
+    {
+      "name": "blocking-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/blocking-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 17.214
+    },
+    {
+      "name": "vm",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/vm"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.147
+    },
+    {
+      "name": "vfork",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/vfork",
+        "--vfork"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.694
+    },
+    {
+      "name": "terminal-retained",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-terminal-session.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/terminal-retained",
+        "--retained"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.447
+    },
+    {
+      "name": "vi-view",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/vi-view",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--view",
+        "--navigation",
+        "--oracle-python",
+        "/workspace/terminal-oracle-venv/bin/python"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 14.917
+    },
+    {
+      "name": "vi-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-quickjs-repl-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/quickjs-repl-regressions/vi-minimal",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--root",
+        "minimal",
+        "--navigation"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 6.292
+    }
+  ]
+}
