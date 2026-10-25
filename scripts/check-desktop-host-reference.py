@@ -162,7 +162,13 @@ def main():
                             key('ctrl+a'); type_lines(text)
                         else:
                             exact_file(document, text)
-                            key('ctrl+End'); type_lines('Fresh process confirmed.')
+                            key('ctrl+End')
+                            # Lite XL synthesizes the final file newline; its
+                            # end cursor is on the final content line. Insert a
+                            # real new line before typing the appended record.
+                            if name == 'lite-xl':
+                                key('Return')
+                            type_lines('Fresh process confirmed.')
                             text += 'Fresh process confirmed.\n'
                         key('ctrl+s'); exact_file(document, text)
                         row['saved_sha256'] = sha(document); row['saved_bytes'] = document.stat().st_size
