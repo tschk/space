@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "scope": "Pinned original Linux editors, terminals and browsers; acquisition and host reference do not establish Space execution",
+  "apps": [
+    {
+      "id": "lite-xl",
+      "name": "Lite XL",
+      "repo": "lite-xl/lite-xl",
+      "version": "v2.1.8",
+      "archive": {
+        "name": "lite-xl-v2.1.8-linux-x86_64-portable.tar.gz",
+        "browser_download_url": "https://github.com/lite-xl/lite-xl/releases/download/v2.1.8/lite-xl-v2.1.8-linux-x86_64-portable.tar.gz",
+        "sha256": "38fed20cd27057049f598dd80671d8aa04c1f74684d99bd246ed2676b758bfec",
+        "size": 2147135
+      },
+      "checksum_provenance": "GitHub published asset digest",
+      "sha256": "f35f35fa958343c9821db968ff1f6989f7d1e79149f1829910027a350d9dba6a",
+      "size_bytes": 4191992,
+      "executable": "lite-xl/lite-xl",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "zed",
+      "name": "Zed",
+      "repo": "zed-industries/zed",
+      "version": "v1.25.3",
+      "archive": {
+        "name": "zed-linux-x86_64.tar.gz",
+        "browser_download_url": "https://github.com/zed-industries/zed/releases/download/v1.25.3/zed-linux-x86_64.tar.gz",
+        "sha256": "35f9115acd8b4c3bea6ed20f7c9b6ec8f1d2c2dd5a1cc438d552167b5ed4b342",
+        "size": 89793425
+      },
+      "checksum_provenance": "GitHub published asset digest",
+      "sha256": "ffd8066dca400a9cac0b1983044cd23668ee0c8026f294f21b19ab09ab910412",
+      "size_bytes": 228207144,
+      "executable": "zed.app/libexec/zed-editor",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "wezterm",
+      "name": "WezTerm",
+      "repo": "wezterm/wezterm",
+      "version": "20240203-110809-5046fc22",
+      "archive": {
+        "name": "wezterm-20240203-110809-5046fc22.Ubuntu22.04.tar.xz",
+        "browser_download_url": "https://github.com/wezterm/wezterm/releases/download/20240203-110809-5046fc22/wezterm-20240203-110809-5046fc22.Ubuntu22.04.tar.xz",
+        "sha256": "142cb46de648200b852cc4b1d932e6b8f2a9d3c55f6dc5af44b6d4eeb9385f5c",
+        "size": 30508792
+      },
+      "checksum_provenance": "published upstream sidecar; not independent authenticity",
+      "sha256": "047f8dfea95b43108cfb85981ff3c4009c6746d921399327c0724cc3b3d327d1",
+      "size_bytes": 73901152,
+      "executable": "wezterm/usr/bin/wezterm-gui",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "helium",
+      "name": "Helium",
+      "repo": "imputnet/helium-linux",
+      "version": "0.20.1.1",
+      "archive": {
+        "name": "helium-0.20.1.1-x86_64_linux.tar.xz",
+        "browser_download_url": "https://github.com/imputnet/helium-linux/releases/download/0.20.1.1/helium-0.20.1.1-x86_64_linux.tar.xz",
+        "sha256": "2023fa44cefa0fbd3e19071c87e90d61275f08ba8f5b48d58c235215565e9b53",
+        "size": 120819468
+      },
+      "checksum_provenance": "GitHub published asset digest",
+      "sha256": "7ea3fa71ff0d14cb8d802575ebcb438274a41fd0afb24617b770fd7e51884646",
+      "size_bytes": 294059232,
+      "executable": "helium-0.20.1.1-x86_64_linux/helium",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "pulsar",
+      "name": "Pulsar",
+      "repo": "pulsar-edit/pulsar",
+      "version": "1.132.1",
+      "archive": {
+        "name": "pulsar.deb",
+        "browser_download_url": "https://github.com/pulsar-edit/pulsar/releases/download/v1.132.1/Linux.pulsar_1.132.1_amd64.deb",
+        "sha256": "cf5bd102a53019db91c3a7d3c7d7a803fd60ce84faf33ac2df2fb06fa3ab1a0d",
+        "size": 168765522
+      },
+      "checksum_provenance": "GitHub published asset digest",
+      "sha256": "6830b2d545e1584c2b651a0c94a50e428204552353dd4a110c616bb3c60d485b",
+      "size_bytes": 178896344,
+      "executable": "opt/Pulsar/pulsar",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "warp",
+      "name": "Warp",
+      "repo": "warpdotdev/warp",
+      "version": "0.2026.06.03.09.49.stable.00",
+      "archive": {
+        "name": "warp-pin.deb",
+        "browser_download_url": "https://releases.warp.dev/stable/v0.2026.06.03.09.49.stable_00/warp-terminal_0.2026.06.03.09.49.stable.00_amd64.deb",
+        "sha256": "f6e0ab835f3bef3f3202aaa476ed76a73608b0dda1013031fb9523b82491050d",
+        "size": 123970660
+      },
+      "checksum_provenance": "measured official CDN download; not independently authenticated",
+      "sha256": "a6e998f73934508d716b47fd6ea4d04cc411a5a2450bea9b68ea339ab748ba0e",
+      "size_bytes": 350467704,
+      "executable": "opt/warpdotdev/warp-terminal/warp",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    },
+    {
+      "id": "firefox",
+      "name": "Firefox",
+      "repo": "mozilla-firefox/firefox",
+      "version": "158.0.1",
+      "archive": {
+        "name": "firefox.tar.xz",
+        "browser_download_url": "https://download-installer.cdn.mozilla.net/pub/firefox/releases/158.0.1/linux-x86_64/en-US/firefox-158.0.1.tar.xz",
+        "sha256": "dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a",
+        "size": 90546260
+      },
+      "checksum_provenance": "measured official Mozilla download; not independently authenticated",
+      "sha256": "46e2c204ab769f1cb49fea4918e134c84829d2ab38278fb087a072f77b6e7294",
+      "size_bytes": 659992,
+      "executable": "firefox/firefox-bin",
+      "application_status": "not-executed-on-Space",
+      "acceptance": [
+        "actual protected application entry",
+        "client-owned visible GUI with focused keyboard and pointer",
+        "open or create a real project/page/session",
+        "save and cold reopen application state",
+        "resize and two independent instances",
+        "close/fault cleanup"
+      ]
+    }
+  ]
+}
