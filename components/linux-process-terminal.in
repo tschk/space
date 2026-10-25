@@ -2,6 +2,7 @@ package space.kernel
 import "terminal-session.in"
 import "linux-process.in"
 import "linux-process-terminal-controls.in"
+import "linux-process-terminal-select.in"
 
 // One retained Linux family over a borrowed native terminal. The personality
 // owns CPU/FD policy; the native object owns bytes, geometry and lifetime.
@@ -35,6 +36,10 @@ fn linux-process-terminal-valid(token: Int, authority: Int) -> Int {
 }
 
 fn linux-process-terminal-start(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, session: Int, owner: Int) -> Int {
+  return linux-process-terminal-start-profile(image,size,arg0,arg1,arg2,authority,session,owner,0)
+}
+fn linux-process-terminal-start-profile(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, session: Int, owner: Int, output:Int) -> Int {
+  if output!=0 && output!=1 && output!=5{return -22;}
   if user-space-kernel() == 0 || linux-process-active != 0 || linux-process-terminal-token != 0 || linux-process-terminal-entry != 0 || linux-process-terminal-busy != 0 || linux-process-device-entry != 0 { return -16 }
   if cap-check(authority,cap-memory() | cap-serial()) == 0 { return -13 }
   if terminal-session-query(session,owner,0) < 0 { return -13 }
@@ -45,6 +50,7 @@ fn linux-process-terminal-start(image: Int, size: Int, arg0: Int, arg1: Int, arg
   }
   let initialized = linux-process-terminal-controls-init()
   if initialized != 0 { return initialized }
+  store32(linux-process-terminal-settings+4,output)
   linux-process-terminal-entry = linux-process-terminal-native-entry
   linux-process-terminal-generation += 1
   let token = (linux-process-terminal-generation << 8) | 1
@@ -119,6 +125,9 @@ fn linux-process-terminal-close(token: Int, authority: Int) -> Int {
 
 fn linux-process-terminal-capture(frame: Int, number: Int) -> Int {
   if linux-process-terminal-token == 0 { return 0 }
+  if number==23 || number==270{
+    linux-process-terminal-deadline=0;linux-process-terminal-frequency=0;linux-process-block-io(14,number,0,0,0);return 1;
+  }
   if number == 7 {
     linux-process-terminal-deadline = 0
     linux-process-terminal-frequency = 0
@@ -168,11 +177,17 @@ fn linux-process-terminal-transfer(operation: Int, fd: Int, buffer: Int, count: 
     if linux-process-copy-out(buffer,linux-process-file-buffer,done) != 0 { return -14 }
   } else {
     if linux-process-copy-in(buffer,linux-process-file-buffer,piece) != 0 { return -14 }
+    let post=load32(linux-process-terminal-settings+4)==5
     while done < piece {
-      let result = terminal-session-write(linux-process-terminal-session,linux-process-terminal-owner,load8(linux-process-file-buffer + done))
-      if result != 0 { if done == 0 { return -5 } piece = done }
-      else { done += 1 }
+      let byte=load8(linux-process-file-buffer+done);let needed=1;if post && byte==10{needed=2;}
+      if available<needed{piece=done;}
+      else{
+        if needed==2{if terminal-session-write(linux-process-terminal-session,linux-process-terminal-owner,13)!=0{return -5;}}
+        let result=terminal-session-write(linux-process-terminal-session,linux-process-terminal-owner,byte)
+        if result!=0{if done==0{return -5;}piece=done;}else{done+=1;available-=needed;}
+      }
     }
+    if done==0{linux-process-block-io(operation,fd,buffer,count,0);return 0;}
     linux-process-output-bytes += done
   }
   return done
@@ -192,6 +207,11 @@ fn linux-process-terminal-native-entry(request: Int) -> Int {
       linux-process-terminal-deadline = 0
       linux-process-terminal-frequency = 0
     }
+    return result
+  }
+  if operation==4{
+    let result=linux-process-terminal-select-owned(load64(request+8),load64(request+16))
+    if linux-process-current-record==0 || load64(linux-process-current-record+LPS-PENDING)!=14{linux-process-terminal-deadline=0;linux-process-terminal-frequency=0;}
     return result
   }
   return -95

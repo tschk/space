@@ -77,3 +77,41 @@ terminal input and a client-owned SCI screen. Its descriptor select/readiness an
 termios requests must be implemented through owned queues, not replaced by
 synthetic prompt/output. Capture actual keyboard effects and original engine
 results; a terminal screenshot alone does not establish a graphical framework.
+
+The first real QuickJS REPL probe fails on repeated unsupported descriptor
+pselect6 and never reaches an owned input wait. Implement its finite stdin
+fd-set profile in the optional terminal edge: one readable terminal descriptor,
+validated fd-set/timeout pointers, actual queue readiness, finite counter deadline
+or indefinite owned input wait, and full refusal of unsupported descriptors or
+signal masks. Reuse pending operation14 and the existing private terminal request
+bridge. The scheduler must retain the original CPU/VM and return to the terminal
+supervisor while input is absent. Native queues remain raw. Accepting OPOST with
+all transformation flags clear preserves identity bytes; no canonical mode or
+unimplemented output transformation is accepted.
+
+Actual QuickJS keyboard sessions now evaluate code, create a file and reopen it
+in a fresh process with owned select waits. Two harness failures remain retained:
+QEMU's bracket key name needs an underscore, then the report writer still used
+the old vi key-list field after the actual runtime checks passed. Correct both.
+
+For readable terminal output, add an explicit optional Linux terminal launch
+profile with OPOST|ONLCR. Native queues stay raw. Convert LF to CRLF only at the
+Linux output edge; count consumed input bytes in syscall results, preserve
+partial writes, and reserve room for the entire CRLF pair before publishing it.
+The legacy default/raw launch profile remains unchanged. QuickJS's unmodified
+termios requests must roundtrip this implemented mode; no source/output rewrite
+outside the declared Linux line discipline is permitted.
+
+The real REPL now passes134 actual PS2 events over two original engine entries,
+including Left/Right/Home/End/Backspace/Delete editing, exact evaluation, file
+save and fresh-process reopen. Both rendered captures independently match all
+294912 terminal pixels using pyte/Pillow, including ANSI16 colors. Separate own
+CPU controls exercise fd-set preflight, readiness, actual deadlines, missing
+timer grants, cancellation during select and CRLF partial writes:15 controls
+and60 stopped-CPU idle probes per root. These controls are not foreign app
+execution credit. The complete destination remains OPEN.
+
+The CLI cohort now includes the original REPL on minimal root and its protected
+SCI terminal view on standard root: eight cached-artifact gates. Complete `all`
+definitions rise from182 to184; no complete184-gate run is claimed. Fixed
+ASCII80x24 terminal rendering is not a GUI framework or general desktop launch.

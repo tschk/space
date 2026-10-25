@@ -5,6 +5,8 @@ import "counter.in"
 // This first profile implements raw bytes, VMIN1/VTIME0, exact mode roundtrip,
 // native geometry and real counter-backed poll deadlines. Other disciplines
 // refuse rather than accepting unimplemented canonical/echo/signal behavior.
+// OPOST without transformation bits is identity; OPOST|ONLCR converts complete
+// LF input bytes to atomic CRLF output pairs in the Linux edge.
 var linux-process-terminal-settings: Int = 0
 var linux-process-terminal-stdin-open: Int = 0
 var linux-process-terminal-nonblock: Int = 0
@@ -96,7 +98,7 @@ fn linux-process-terminal-control-owned(number: Int, fd: Int, command: Int, argu
   if linux-process-range(argument,36,0) == 0 { return -14 }
   if linux-process-copy-in(argument,linux-process-file-buffer,36) != 0 { return -14 }
   let buffer = linux-process-file-buffer
-  if load32(buffer) != 0 || load32(buffer + 4) != 0 || load32(buffer + 8) != 0xb0 || load32(buffer + 12) != 0 || load8(buffer + 16) != 0 || load8(buffer + 22) != 0 || load8(buffer + 23) != 1 { return -95 }
+  if load32(buffer) != 0 || (load32(buffer + 4)!=0 && load32(buffer + 4)!=1 && load32(buffer + 4)!=5) || load32(buffer + 8) != 0xb0 || load32(buffer + 12) != 0 || load8(buffer + 16) != 0 || load8(buffer + 22) != 0 || load8(buffer + 23) != 1 { return -95 }
   if command != 0x5402 && terminal-session-query(session,owner,3) > 0 {
     linux-process-block-io(12,number,fd,command,argument)
     return 0

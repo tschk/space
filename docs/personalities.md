@@ -34,10 +34,20 @@ also runs unmodified-source static QuickJS2024-01-13 and GNU sed4.9. QuickJS
 language, BigInt, Unicode/regex, promises, files and real clocks pass; GNU sed
 regex/hold-space/file transformations pass. Owned launch vectors accept up to16
 strings. Finite zero-descriptor select/pselect6 waits retain the real CPU/VM,
-wait for an actual native IRQ and resume after a counter deadline; descriptor
-selects, temporary signal masks and infinite waits still refuse. Timer services
-require explicit native authority. These are private kernel-linked integrations,
-not broader dynamic loading or graphical app support.
+wait for an actual native IRQ and resume after a counter deadline. The optional
+retained-terminal edge additionally supports exactly stdin in one readable
+fd-set word, with actual queue readiness, indefinite input waits or finite
+counter deadlines. Other descriptors and temporary signal masks still refuse.
+Timer services require explicit native authority. These are private kernel-linked
+integrations, not broader dynamic loading or foreign graphical frameworks.
+
+Original QuickJS also runs its unchanged REPL through actual PS2 input and the
+existing protected SCI terminal view. Two processes evaluate code, edit a line,
+save and reopen exact file bytes. The optional Linux output profile implements
+OPOST|ONLCR with atomic CRLF pairs and logical input-byte return counts; native
+queues remain raw and the existing raw launch default is unchanged. Finite
+ASCII80x24 ANSI16 pixels are checked independently. This is an interactive
+terminal application, not an AppKit/Win32/browser implementation.
 
 The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
 Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX

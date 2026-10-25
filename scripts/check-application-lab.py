@@ -76,7 +76,7 @@ def main():
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
     if args.cohort=='cross-os':report['scope']='Pinned original Linux/macOS/Windows assembler builds across six CPU profiles, acquisition and four separate native ownership/CPU gates; no new graphical application claim.'
-    if args.cohort=='cli':report['scope']='Original unchanged-source QuickJS and GNU sed on standard/minimal roots, explicit no-HPET wall-clock profile and separate compiled-private SCI refusals; no graphical application claim.'
+    if args.cohort=='cli':report['scope']='Original unchanged-source QuickJS and GNU sed on standard/minimal roots, explicit no-HPET wall-clock profile, actual QuickJS PS2 REPL and protected ANSI terminal pixels, and separate compiled-private SCI refusals; no foreign GUI framework claim.'
     # Retain explicit trusted baseline gates; dedicated default GUI gates clear
     # this choice and build the shipped protected image independently.
     environment = dict(os.environ, IN=str(args.compiler), BUILD_DIR=str(args.out / 'images'),
@@ -213,6 +213,12 @@ def main():
                   '--timer-grant','--no-hpet','--out',args.out/gate],timeout=900)
         run('private-execution-imports',[sys.executable,ROOT/'scripts/check-private-execution-imports.py',
                                        '--in',args.compiler,'--out',args.out/'private-execution-imports'])
+        for variant in ['minimal','standard']:
+            gate='original-quickjs-repl-'+('view' if variant=='standard' else 'minimal')
+            extra=['--view','--oracle-python',args.terminal_oracle_python] if variant=='standard' else []
+            run(gate,[sys.executable,ROOT/'scripts/check-linux-terminal-quickjs.py',
+                      '--in',args.compiler,'--app',cli_apps['quickjs'],'--root',variant,
+                      *extra,'--out',args.out/gate],timeout=900)
     if args.cohort=='cli':return finish()
     applications = {}
     try:
