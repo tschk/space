@@ -120,7 +120,7 @@ fn fasmg-windows-check(port:Int)->void{
  assert 'original-win: completed original application entries 65' in text,text
  assert 'space interactive shell' in text,text
  assert sha(a.app)==pin['sha256'] and sha(a.compiler)==report['compiler_sha256'] and all(sha(ROOT/name)==value for name,value in hashes.items())
- mask=int(re.search(r'original-win: observed import mask 0x([0-9a-f]+)',text)[1],16)
+ mask=int(re.search(r'original-win: observed import mask (?:0x)?([0-9a-f]+)',text)[1],16)
  report.update(status='passed',original_application_entries=65,generated_bytes=14,observed_import_ids=[id for id in range(1,20) if mask&(1<<id)],malformed_controls=6,lifetime_cycles=21,original_error_exits=42,kernel_sha256=sha(a.out/'kernel.bin'))
 except Exception as error:report.update(status='failed',error=str(error))
 finally:
