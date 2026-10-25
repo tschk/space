@@ -96,3 +96,10 @@ activations. One original assembly emits `%t`; its generated64-bit value
 matches the native RTC interval around entry. Native grant/pointer refusals
 and six malformed-image controls remain separately counted;
 no per-application image exceptions or timestamp constants are permitted.
+
+The default `max` CPU supplies actual RDRAND entropy and passes the frozen Linux
+suite. Plain `qemu64` returns-38 during Linux AT_RANDOM startup because it lacks
+RDRAND; that failed receipt is preserved. The explicitly selected
+`qemu64-rdrand` test profile means QEMU `qemu64,+rdrand`, not a silently widened
+CPU or fabricated seed. Native32/64 and macOS/Windows suites still use plain
+qemu64. An alternative native entropy provider remains future work.

@@ -14,14 +14,15 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--in',dest='compiler',type=Path,required=True)
 p.add_argument('--app',type=Path,required=True)
 p.add_argument('--out',type=Path,required=True)
-p.add_argument('--cpu',choices=['qemu64','max'],default='max')
+p.add_argument('--cpu',choices=['qemu64','qemu64-rdrand','max'],default='max')
 a=p.parse_args();a.out=a.out.resolve();a.out.mkdir(parents=True,exist_ok=False);a.app=a.app.resolve()
 sha=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
 pin=next(x for x in json.loads((ROOT/'fixtures/applications/fasmg.json').read_text())['apps'] if x['personality']=='linux')
 assert sha(a.app)==pin['sha256'] and a.app.stat().st_size==pin['size_bytes']
 inputs=[ROOT/'boot/multiboot.asm',ROOT/'components/user-context.in',ROOT/'components/domain.in',ROOT/'components/interrupts.in',ROOT/'components/user-address-space.in',ROOT/'components/supervisor-window.in',ROOT/'fixtures/applications/fasmg-linux.in',*sorted((ROOT/'components').glob('linux-process*.in')),Path(__file__).resolve(),ROOT/'fixtures/applications/fasmg.json']
 hashes={str(path.relative_to(ROOT)):sha(path) for path in inputs}
-report=dict(status='running',scope=__doc__,compiler_sha256=sha(a.compiler),application_sha256=sha(a.app),source_sha256=hashes,original_application_entries=0)
+qemu_cpu='qemu64,+rdrand' if a.cpu=='qemu64-rdrand' else a.cpu
+report=dict(status='running',scope=__doc__,cpu_profile=a.cpu,qemu_cpu=qemu_cpu,compiler_sha256=sha(a.compiler),application_sha256=sha(a.app),source_sha256=hashes,original_application_entries=0)
 received=bytearray();channel=None;qemu=None
 try:
  source=(ROOT/'kernel/kernel-root.in').read_text()
@@ -34,7 +35,7 @@ try:
  commands=[['nasm','-f','bin',str(ROOT/'boot/multiboot.asm'),'-o',str(a.out/'trampoline.bin')],[str(a.compiler.resolve()),'compile','--path',str(a.out/'kernel.in'),'--entry','kernel-entry','--emit','boot','--trampoline',str(a.out/'trampoline.bin'),'--target','native','--target-triple','x86_64-unknown-none','--linkage','static-lib','--out',str(a.out/'kernel.bin')]];report['commands']=commands
  with (a.out/'compile.log').open('w') as log:
   for command in commands:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
- path=a.out/'serial.sock';command=['qemu-system-x86_64','-kernel',str(a.out/'kernel.bin'),'-m','512M','-cpu',a.cpu,'-display','none','-no-reboot','-serial','unix:'+str(path)+',server=on,wait=on','-device','loader,file='+str(a.app)+',addr=0x10000000,force-raw=on'];report['qemu_command']=command
+ path=a.out/'serial.sock';command=['qemu-system-x86_64','-kernel',str(a.out/'kernel.bin'),'-m','512M','-cpu',qemu_cpu,'-display','none','-no-reboot','-serial','unix:'+str(path)+',server=on,wait=on','-device','loader,file='+str(a.app)+',addr=0x10000000,force-raw=on'];report['qemu_command']=command
  with (a.out/'qemu.log').open('w') as log:qemu=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
  deadline=time.monotonic()+10
  while not path.exists() and time.monotonic()<deadline and qemu.poll() is None:time.sleep(.02)
