@@ -40,12 +40,47 @@ private kernel-linked integration library, with a four-MiB process arena,
 explicit empty environment, preferred-base loading and no TLS/SEH/other DLLs.
 It is not a general Windows installation or desktop launch service.
 
-The upstream macOS binary uses classic indirect symbol pointers and UNIXTHREAD
-startup, with thirteen libSystem imports. Its low preferred image/BSS range
-overlaps the current supervisor trampoline windows. This needs a real address
-space/entry solution or another original app profile; never skip pages, rewrite
-the payload or claim entry after a loader refusal. Keep macOS jq's existing
-modern-image/dependency boundary as separate ongoing work.
+The original macOS x86_64 binary now executes through the separate classic
+Mach-O profile: validated UNIXTHREAD startup, indirect symbol pointers and
+thirteen closed libSystem imports. It performs the same real assembly and
+compiler-error workloads: the initial expanded max-CPU run passes65 original
+entries,42 compiler errors and21 ownership cycles. Source bytes remain
+unchanged; the original image occupies its full preferred low address/BSS range.
+The profile translates these imports into checked native services; it does not
+execute Apple's libSystem or dyld. The modern macOS jq image/dependency work
+remains separate and incomplete.
+
+`darwin-classic-image.in` validates the bounded fixed-address plan before
+allocation. `darwin-classic-io.in` owns FILE-shaped pointers over native VFS
+objects; `darwin-classic-services.in` translates file/item/seek, actual UTC RTC,
+empty-environment and bounded anonymous-memory operations. The process library
+owns synchronous native VM/CPU references and stopped import dispatch. Neither
+library is added to the normal kernel root or exported as a raw SCI service.
+Native provider controls separately verify mmap backing, zeroing, RO pages,
+hint placement, invalid flags/unmaps, real file bytes/items/EOF and the clock;
+they receive no original application credit. General dyld/framework/GUI and
+ordinary installed/desktop launch remain open.
+
+Native entry, GDT/TSS, interrupt-table and privilege-stack aliases now occupy a
+supervisor-only high window. Hardware entry reads alias-relative state before
+restoring kernel CR3. Existing address-space constructors retain their64-KiB
+minimum and4096-page ceiling, with the old low reservations. An explicit native
+addressed constructor accepts a4-KiB or64-KiB minimum and at most8192 pages.
+Its bounded per-slot ledger extension persists across retirement. Foreign
+formats and syscall numbers do not enter this native policy. The null page
+remains inaccessible; low guest pages have distinct owned backing. CPL0 clones
+borrow only the exact kernel supervisor graph; user trees own sparse page tables.
+The low-view control passes80 native activations per CPU profile and a4103-page
+owned mapping, including former trampoline/IDT/stack addresses, faults, IRQ
+budgets, repeated cleanup and supervisor high-window denial. These are native
+controls, not additional apps.
+
+Initial low-view failures are preserved locally: unresolved fixture helper,
+then absolute low interrupt-state reads before kernel-root restoration. The
+expanded macOS receipt made during a subsequent source edit fails its source-
+integrity assertion despite completing runtime checks; it is not a passing
+receipt. A stable-source run with all provider controls passes at
+`/workspace/fasmg-mac-contracts/report.json`. Frozen-source regressions follow.
 
 Implementation and test receipts will record exact source/compiler/application
 hashes, actual CPL3 entry, output bytes, file bytes, exit/fault/budget behavior

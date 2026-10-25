@@ -1,0 +1,68 @@
+package space.kernel
+import "darwin-classic-services.in"
+fn dc-digest(image:Int,size:Int)->Int{let h=-3750763034362895579;let i=0;while i<size{h=(h^load8(image+i))*1099511628211;i+=1;}return h;}
+fn dc-populate(s:Int,address:Int,source:Int,n:Int)->Int{let done=0;while done<n{let part=n - done;if part>4096{part=4096;}let i=0;while i<part{store8(s+20480+i,load8(source+done+i));i+=1;}let result=user-space-populate(load64(s+64),load64(s+32),address+done,s+20480,part);if result!=0{return result;}done+=part;}return 0;}
+fn dc-map(s:Int,image:Int)->Int{
+ let space=load64(s+64);let memory=load64(s+32);let p=image+32;let end=p+load32(image+20);
+ while p<end{if load32(p)==25 && load32(p+60)!=0{let permission=USER-SPACE-READ;if load32(p+60)==3{permission=USER-SPACE-WRITE;}if load32(p+60)==5{permission=USER-SPACE-EXECUTE;}
+  let off=0;while off<load64(p+32){let status=user-space-map-zero(space,memory,load64(p+24)+off,permission);if status!=0{return status;}off+=4096;}
+  let status=dc-populate(s,load64(p+24),image+load64(p+40),load64(p+48));if status!=0{return status;}
+ }p+=load32(p+4);}
+ let i=0;while i<16{let status=user-space-map-zero(space,memory,DC-STACK+i*4096,USER-SPACE-WRITE);if status!=0{return status;}i+=1;}
+ if user-space-map-zero(space,memory,DC-STUB,USER-SPACE-EXECUTE)!=0 || user-space-map-zero(space,memory,DC-FILES,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,DC-ARGS,USER-SPACE-READ)!=0{return -3;}
+ cpu-mem-fill64(s+20480,0,512);i=1;while i<=13{let stub=s+20480+(i - 1)*32;store8(stub,0xb8);store32(stub+1,0x640000+i);store8(stub+5,0xcd);store8(stub+6,0x80);store8(stub+7,0xc3);i+=1;}
+ return user-space-populate(space,memory,DC-STUB,s+20480,4096);
+}
+fn dc-bind(s:Int,image:Int)->Int{
+ let dys=dc-command(image,11);let p=image+32;let end=p+load32(image+20);
+ while p<end{if load32(p)==25{let j=0;while j<load32(p+64){let section=p+72+j*80;if (load32(section+64)&255)==6{let i=0;while i<load64(section+40)/8{let index=load32(image+load32(dys+56)+(load32(section+68)+i)*4);let id=dc-import(image,index);store64(s+20480,DC-STUB+(id - 1)*32);let status=user-space-populate(load64(s+64),load64(s+32),load64(section+32)+i*8,s+20480,8);if status!=0{return status;}i+=1;}}j+=1;}}p+=load32(p+4);}
+ return 0;
+}
+fn dc-arguments-check(line:Int,bytes:Int)->Int{
+ if bytes<2 || bytes>2048 || load8(line+bytes - 1)!=0 || load8(line)==0{return -22;}
+ let argc=0;let i=0;while i<bytes{if load8(line+i)==0{argc+=1;}else if load8(line+i)>127{return -22;}i+=1;}if argc>32{return -22;}return argc;
+}
+fn dc-startup(s:Int,line:Int,bytes:Int)->Int{
+ // Explicit ASCII argv, empty environment and Apple vector. No inherited host
+ // variables. Arguments are NUL-separated, including the executable name.
+ let argc=dc-arguments-check(line,bytes);if argc<0{return argc;}let i=0;
+ let status=dc-populate(s,DC-ARGS,line,bytes);if status!=0{return status;}
+ let frame=s+20480;cpu-mem-fill64(frame,0,64);store64(frame,argc);let index=0;i=0;while i<bytes{store64(frame+8+index*8,DC-ARGS+i);index+=1;while i<bytes && load8(line+i)!=0{i+=1;}i+=1;}
+ // argc + argv + NULL + env NULL + apple NULL, 16-byte aligned initial SP.
+ let stack=(DC-STACK+65536 - (argc+4)*8)&(-16);store64(s+184,stack);
+ return user-space-populate(load64(s+64),load64(s+32),stack,frame,(argc+4)*8);
+}
+fn dc-trap(frame:Int)->Int{let s=dc-active;if s==0 || load64(s)!=DC-MAGIC || load64(s+8)!=2 || domain-current!=load64(s+80) || load64(frame+128)!=0x1b{store64(frame+112,134);return 0;}return 2;}
+fn dc-recover(s:Int)->Int{
+ if dc-active!=0{return -16;}if dc-files-release(s)!=0{store64(s+8,4);return -5;}
+ let memory=load64(s+32);if load64(s+72)!=0{if user-space-release-binding(load64(s+72),memory)!=0{store64(s+8,4);return -5;}store64(s+72,0);}
+ if load64(s+152)!=0{if user-space-release(load64(s+64),memory)!=0{store64(s+8,4);return -5;}store64(s+152,0);}
+ store64(s+64,0);store64(s+8,3);return 0;
+}
+fn dc-process-run(s:Int,image:Int,size:Int,line:Int,bytes:Int,serial:Int,storage:Int,memory:Int,timer:Int,budget:Int)->Int{
+ if dc-active!=0 || domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0{return -16;}
+ if s<65536 || (s&15)!=0 || s>heap-next || DC-STATE-BYTES>heap-next - s{return -14;}
+ if load64(s)==DC-MAGIC && (load64(s+8)==2 || load64(s+8)==4){return -16;}
+ let entry=dc-image-check(image,size);if entry<0{return entry;}
+ if s<image+size && image<s+DC-STATE-BYTES{return -14;}
+ if line<65536 || bytes<2 || bytes>2048 || line>0x100000000 - bytes || (line<s+DC-STATE-BYTES && s<line+bytes){return -22;}
+ if dc-arguments-check(line,bytes)<0{return -22;}
+ if budget<=0 || budget>10000 || cap-check(memory,cap-memory())==0{return -13;}
+ if serial < -1 || storage < -1 || timer < -1{return -22;}
+ if serial>=0 && cap-check(serial,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}if timer>=0 && cap-check(timer,cap-timer())==0{return -13;}
+ if user-space-quarantined(memory)>0{return -16;}
+ cpu-mem-fill64(s,0,DC-STATE-BYTES/8);store64(s,DC-MAGIC);store64(s+8,2);store64(s+16,image);store64(s+24,size);store64(s+32,memory);store64(s+40,serial);store64(s+48,storage);store64(s+56,timer);store64(s+112,budget);store64(s+160,dc-digest(image,size));
+ let space=user-space-create-addressed(memory,8192,4096);if space<0{store64(s+8,3);return space;}store64(s+64,space);store64(s+152,1);store64(s+80,user-space-domain(space,memory));
+ let status=dc-map(s,image);if status==0{status=dc-bind(s,image);}if status==0{status=dc-startup(s,line,bytes);}
+ if status==0 && dc-digest(image,size)!=load64(s+160){status=-8;}
+ if status==0{status=user-context-init(s+256,768,load64(s+80),entry,0,load64(s+184));}
+ if status==0{let binding=user-space-attach(space,memory,s+256);if binding<0{status=binding;}else{store64(s+72,binding);status=user-space-release(space,memory);if status==0{store64(s+152,0);}}}
+ if status==0{dc-active=s;domain-user-syscall-hook=dc-trap;let done=0;let calls=0;
+  while done==0{let kind=user-space-resume(load64(s+72),memory,load64(s+112));store64(s+104,kind);
+   if kind==USER-CONTEXT-SUSPEND{store64(s+112,user-context-remaining(s+256));calls+=1;store64(s+168,calls);
+    if calls>50000{status=-7;done=1;}else if cap-check(memory,cap-memory())==0{status=-13;done=1;}else if dc-service(s)==0{status=load64(s+96);done=1;}else if load64(s+112)<=0{status=124;done=1;}
+   }else{done=1;if kind==USER-CONTEXT-FAULT{status=128+load64(s+256+696);}else if kind==USER-CONTEXT-DEADLINE{status=124;}else if kind==USER-CONTEXT-EXIT{status=load64(s+256+720);}else{status=-5;}}
+  }domain-user-syscall-hook=0;dc-active=0;
+ }
+ store64(s+96,status);if dc-recover(s)!=0{return -5;}if dc-digest(image,size)!=load64(s+160){return -8;}return status;
+}

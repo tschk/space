@@ -110,7 +110,7 @@ fn interrupts-init() -> void {
   idt-set-user(0x80, load64(0x4068))
   let idtr = alloc(16)
   store16(idtr + 0, 256 * 16 - 1)
-  store64(idtr + 2, idt-base)
+  store64(idtr + 2, SUPERVISOR-WINDOW + idt-base)
   lidt(idtr)
   pic-remap()
   pit-init()

@@ -9,6 +9,14 @@ after kernel-root restoration. No alternate mapping ledger or SCI privilege
 bypass is added. Original application output and lifecycle evidence remain
 separate from native CPU control fixtures.
 
+The classic macOS continuation adds an explicit native low-address VM policy
+over the same owned objects. Sparse supervisor hardware aliases permit original
+low images without holes or payload rewriting; existing constructors keep their
+bounds. Mach-O startup, FILE and libSystem-shaped policy stays in separately
+imported private personality libraries. Its original assembler output is
+verified independently of native VM/provider controls. General desktop launch
+and foreign GUI frameworks remain unfinished.
+
 ```
          ┌─────────────────────────────────────┐
          │              Space                   │

@@ -11,7 +11,9 @@ now runs the upstream Windows PE32 `fasmg.exe` compiler in real compatibility
 mode over native owned objects. It prints its own help, compiles source files
 with macros/arithmetic to exact output bytes, and produces real compiler errors.
 The first expanded run passes 65 original activations and 21 resource cycles.
-The macOS original and broader Windows PE32+/GUI application goals remain open.
+The original macOS x86_64 assembler now also passes65 entries,42 compiler-error
+exits and21 ownership cycles through its classic Mach-O profile. Broader macOS
+applications, Windows PE32+ and foreign GUI application goals remain open.
 This bounded integration is not ordinary installed-app/desktop launch.
 
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
@@ -55,8 +57,8 @@ These focused checks do not widen the historical 152-gate receipt below.
 The [execution record](plans/2026-10-25-application-execution.md) includes typed
 Darwin data and client-font changes in this complete frozen run. The later two
 interactive cold-boot gates have separate passing receipts; current165-gate
-definitions have not been run as one complete matrix. No runtime changes were
-made after the frozen163-gate source. The earlier161/161 receipt is preserved.
+definitions have not been run as one complete matrix. Subsequent runtime changes have separately scoped receipts; they do not widen
+that frozen163-gate result. The earlier161/161 receipt is preserved.
 All broader application rows below remain required.
 
 ## Historical local execution checkpoint — 2026-10-24

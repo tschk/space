@@ -13,6 +13,15 @@ bounded private heap/file profile are supported. The existing PE32+ profiles
 remain separate. This is a private kernel-linked integration path; normal
 installed-app launch, broader dependencies and Windows GUI apps remain open.
 
+The original upstream macOS x86_64 `fasmg` also executes its own code and
+produces the same exact source-derived output through a separate classic
+UNIXTHREAD/indirect-symbol profile. The initial expanded run passes65 original
+activations,42 actual compiler-error exits and21 lifetime cycles. A high
+supervisor window allows its complete original low-address image. Thirteen
+bounded libSystem imports translate into native file/clock/VM services after
+CPU suspension. This does not execute Apple's dyld/libSystem or provide GUI
+frameworks. Normal installed-app/desktop launch remains open.
+
 The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
 Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
 edit/save/reopen profile executes original vi; focused interactive TUI support

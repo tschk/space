@@ -1,0 +1,33 @@
+package space.kernel
+
+// Native hardware window, independent of executable formats and foreign ABIs.
+// Ring3 views map only the required supervisor pages, never this whole graph.
+const SUPERVISOR-WINDOW = -140737488355328
+var supervisor-window-ready:Int=0
+
+fn supervisor-window-entry(slot:Int)->void{
+ let address=load64(slot);
+ if address<0x100000 || address>=0x101000{panic("supervisor entry outside bootstrap page");}
+ store64(slot,SUPERVISOR-WINDOW+address);
+}
+fn supervisor-window-init(root:Int,tss:Int,stack:Int)->void{
+ if supervisor-window-ready!=0{panic("supervisor window repeated initialization");}
+ let gdt=load64(0x41c0);let limit=load64(0x41c8);
+ if gdt<0x100000 || gdt>0x101000 - 64 || limit!=63 || tss<0x100000 || tss>0x101000 - 104 || stack<=65536 || stack>=0x100000000{panic("supervisor descriptor geometry");}
+ if load64(root+256*8)!=0{panic("supervisor window occupied");}
+ // Alias only the kernel's own root graph with U/S cleared at the top level.
+ // Native user trees receive separate sparse supervisor mappings instead.
+ store64(root+256*8,load64(root)&(-1^4));cr3-write(root);
+ let address=SUPERVISOR-WINDOW+tss;let descriptor=gdt+GDT-TSS-SEL;
+ store16(descriptor+2,address&0xffff);store8(descriptor+4,(address>>16)&255);store8(descriptor+5,0x89);
+ store8(descriptor+7,(address>>24)&255);store32(descriptor+8,(address>>32)&0xffffffff);
+ store64(tss+4,SUPERVISOR-WINDOW+stack);
+ let gdtr=alloc(16);store64(gdtr,0);store64(gdtr+8,0);store16(gdtr,limit);store64(gdtr+2,SUPERVISOR-WINDOW+gdt);lgdt(gdtr);
+ cpu-load-tr(GDT-TSS-SEL);
+ supervisor-window-entry(0x4008);supervisor-window-entry(0x4010);supervisor-window-entry(0x4020);
+ supervisor-window-entry(0x4030);supervisor-window-entry(0x4038);supervisor-window-entry(0x4040);supervisor-window-entry(0x4048);
+ supervisor-window-entry(0x4068);supervisor-window-entry(0x40e0);supervisor-window-entry(0x40e8);
+ supervisor-window-entry(0x4110);supervisor-window-entry(0x4160);supervisor-window-entry(0x4178);
+ supervisor-window-entry(0x4180);supervisor-window-entry(0x4188);supervisor-window-entry(0x4190);supervisor-window-entry(0x41a8);
+ supervisor-window-ready=1;
+}

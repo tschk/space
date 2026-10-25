@@ -159,6 +159,8 @@ long_mode:
     mov qword [0x4198], runtime_rflags
     mov qword [0x41A8], enter_user_context
     mov qword [0x41B8], 0             ; scoped kernel user-context observer
+    mov qword [0x41C0], gdt          ; native descriptor relocation inputs
+    mov qword [0x41C8], gdt_end - gdt - 1
 
     ; Publish the ISR stub addresses so the `.in` kernel can install them in
     ; its IDT. The kernel publishes its dispatcher at [0x4000]; the stubs read
@@ -242,7 +244,7 @@ isr_default:
 ; `.in` dispatcher with aligned parameter scratch and DF clear, then restores
 ; GP/FPU/CR3/flags state. The separate CPL3 path performs scoped cancellation.
 isr_timer:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .kernel
     test byte [rsp + 8], 3          ; CPU-saved CS, before register changes
     jnz isr_user_timer
@@ -263,7 +265,7 @@ isr_timer:
     mov [rsp + 64], rax
     mov [rsp + 72], r11
     fxsave64 [rsp + 80]
-    mov rax, [kernel_cr3]
+    mov rax, [rel kernel_cr3]
     test rax, rax
     jz .dispatch
     mov cr3, rax
@@ -341,7 +343,7 @@ exc_common:
     mov [rsp + 64], rax
     mov [rsp + 72], r11
     fxsave64 [rsp + 80]
-    mov rax, [kernel_cr3]
+    mov rax, [rel kernel_cr3]
     test rax, rax
     jz .handler
     mov cr3, rax
@@ -350,7 +352,7 @@ exc_common:
     mov rsi, [r11 + 128]
     mov rdx, [r11 + 136]
     mov rcx, [r11 + 144]
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .policy
     test cl, 3
     jz .policy
@@ -364,7 +366,7 @@ exc_common:
     and ecx, 3
     cmp ecx, 3
     jne .hang
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .hang
     mov rdi, r11
     lea rsi, [rsp + 80]
@@ -385,7 +387,7 @@ exc_common:
 ; scheduler published at [0x4028], and resumes whatever task the scheduler
 ; selects (possibly a different one) via its returned stack pointer + iretq.
 isr_timer_preempt:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .kernel
     test byte [rsp + 8], 3
     jnz isr_user_timer
@@ -435,7 +437,7 @@ isr_user_timer:
     mov [rsp + 64], rax
     mov [rsp + 72], r11
     fxsave64 [rsp + 80]
-    mov rax, [kernel_cr3]
+    mov rax, [rel kernel_cr3]
     mov cr3, rax
     fxrstor64 [kernel_fx_state]
     mov rdi, [rsp + 72]
@@ -490,13 +492,13 @@ isr_syscall:
     mov [rsp + 64], rax
     mov [rsp + 72], r11
     fxsave64 [rsp + 80]
-    mov qword [user_syscall_continue], 0
-    mov rax, [kernel_cr3]
+    mov qword [rel user_syscall_continue], 0
+    mov rax, [rel kernel_cr3]
     test rax, rax
     jz .dispatch
     mov cr3, rax
 .dispatch:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .policy
     mov rcx, [rsp + 72]
     test byte [rcx + 128], 3
@@ -507,19 +509,19 @@ isr_syscall:
     mov rax, [0x4070]
     cld
     call rax
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     je .restore
     mov rcx, [rsp + 72]
     mov rcx, [rcx + 128]            ; CPU/synthetic saved CS
     and ecx, 3
     cmp ecx, 3
     jne .restore
-    cmp qword [user_syscall_continue], 1
+    cmp qword [rel user_syscall_continue], 1
     je .restore
     mov rdi, [rsp + 72]
     lea rsi, [rsp + 80]
     mov edx, 1
-    cmp qword [user_syscall_continue], 2
+    cmp qword [rel user_syscall_continue], 2
     jne .stop_kind
     mov edx, 4
 .stop_kind:
@@ -618,7 +620,7 @@ foreign_run_busy:
     ret
 
 foreign_syscall_entry:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     jne user_syscall_entry
     cmp qword [foreign_saved_rsp], 0
     je .inactive
@@ -677,10 +679,10 @@ foreign_syscall_entry:
 ; SYSCALL does not switch stacks. Preserve the user RSP before touching its
 ; red zone, then synthesize the CPU frame used by the shared INT80 dispatcher.
 user_syscall_entry:
-    mov [user_syscall_rsp], rsp
-    mov rsp, [tss + 4]
+    mov [rel user_syscall_rsp], rsp
+    mov rsp, [rel tss + 4]
     push qword 0x23
-    push qword [user_syscall_rsp]
+    push qword [rel user_syscall_rsp]
     push r11
     push qword 0x1B
     push rcx
@@ -823,16 +825,16 @@ enter_user_strict:
     jmp enter_user_common
 
 enter_user_context:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     jne enter_user_common.busy
     mov rax, [rdi]
-    mov [user_context_pointer], rax
+    mov [rel user_context_pointer], rax
     mov eax, 0x202
     jmp enter_user_common
 enter_user_interruptible:
     mov eax, 0x202
 enter_user_common:
-    cmp qword [guest_active], 0
+    cmp qword [rel guest_active], 0
     jne .busy
     mov [enter_rflags], rax
     fxsave64 [kernel_fx_state]
@@ -870,15 +872,15 @@ enter_user_common:
     mov [enter_saved_r14], r14
     mov [enter_saved_r15], r15
     mov [enter_saved_rsp], rsp
-    mov qword [guest_active], 1
-    cmp qword [user_context_pointer], 0
+    mov qword [rel guest_active], 1
+    cmp qword [rel user_context_pointer], 0
     jne .context
     mov r8, [rdi]
     mov r9, [rdi + 8]
     mov rdx, [rdi + 16]
     mov rcx, [rdi + 24]
     cli
-    mov rax, [tss + 4]
+    mov rax, [rel tss + 4]
     test rax, rax
     jz .segs
     mov rsp, rax
@@ -918,14 +920,14 @@ enter_user_common:
     iretq
 .context:
     mov r8, [rdi + 8]
-    mov rsi, [user_context_pointer]
-    mov rsp, [tss + 4]
+    mov rsi, [rel user_context_pointer]
+    mov rsp, [rel tss + 4]
     sub rsp, 160
     mov rdi, rsp
     mov ecx, 20
     cld
     rep movsq
-    mov rsi, [user_context_pointer]
+    mov rsi, [rel user_context_pointer]
     fxrstor64 [rsi + 160]
     mov ax, 0x23
     mov ds, ax
@@ -957,7 +959,7 @@ user_pop_frame:
 ; Notify kernel policy only after the guest register/FX image is saved and
 ; kernel CR3/FPU restored. The callback cannot replace the hardware frame.
 user_context_capture:
-    cmp qword [user_context_pointer], 0
+    cmp qword [rel user_context_pointer], 0
     je .done
     sub rsp, 88
     mov [rsp + 64], rax
@@ -974,9 +976,9 @@ user_context_capture:
 leave_user:
     cli
     mov rax, rdi
-    mov qword [guest_active], 0
-    mov qword [user_context_pointer], 0
-    mov rcx, [kernel_cr3]
+    mov qword [rel guest_active], 0
+    mov qword [rel user_context_pointer], 0
+    mov rcx, [rel kernel_cr3]
     test rcx, rcx
     jz .stack
     mov cr3, rcx

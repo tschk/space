@@ -19,7 +19,7 @@ a=p.parse_args();a.out=a.out.resolve();a.out.mkdir(parents=True,exist_ok=False);
 sha=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
 pin=next(x for x in json.loads((ROOT/'fixtures/applications/fasmg.json').read_text())['apps'] if x['personality']=='windows')
 assert sha(a.app)==pin['sha256'] and a.app.stat().st_size==pin['size_bytes']
-inputs=[ROOT/'boot/multiboot.asm',ROOT/'components/user-context.in',*sorted((ROOT/'components').glob('windows-pe32-*.in')),Path(__file__).resolve(),ROOT/'fixtures/applications/fasmg.json']
+inputs=[ROOT/'boot/multiboot.asm',ROOT/'components/user-context.in',ROOT/'components/domain.in',ROOT/'components/interrupts.in',ROOT/'components/user-address-space.in',ROOT/'components/supervisor-window.in',*sorted((ROOT/'components').glob('windows-pe32-*.in')),Path(__file__).resolve(),ROOT/'fixtures/applications/fasmg.json']
 hashes={str(path.relative_to(ROOT)):sha(path) for path in inputs}
 report=dict(status='running',scope=__doc__,compiler_sha256=sha(a.compiler),application_sha256=sha(a.app),source_sha256=hashes,original_application_entries=0)
 received=bytearray();channel=None;qemu=None

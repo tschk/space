@@ -6,6 +6,7 @@ import "user-context.in"
 const USER-SPACE-MAX = 16
 const USER-SPACE-BINDINGS = 32
 const USER-SPACE-MAPPINGS = 4096
+const USER-SPACE-EXTENDED-MAPPINGS = 8192
 // 16 * (4096 * 24 + 128) + 32 * 64; native constant initializers are literals.
 const USER-SPACE-CACHE-BYTES = 1576960
 const USER-SPACE-READ = 1
@@ -27,6 +28,8 @@ const US-SEALED = 80
 const US-LOCK = 88
 const US-BORROW = 96
 const US-PENDING-INVARIANT = 104
+const US-MINIMUM = 112
+const US-LEDGER-CAPACITY = 120
 var user-space-table: Int = 0
 var user-space-bindings: Int = 0
 var user-space-generation: Int = 0
@@ -71,6 +74,7 @@ fn user-space-init() -> Int {
   let i = 0
   while i < USER-SPACE-MAX {
     store64(user-space-table + i * 128 + US-LEDGER,alloc(USER-SPACE-MAPPINGS * 24))
+    store64(user-space-table + i * 128 + US-LEDGER-CAPACITY,USER-SPACE-MAPPINGS)
     i = i + 1
   }
   return 0
@@ -105,12 +109,14 @@ fn user-space-access(handle: Int, authority: Int, live: Int) -> Int {
   return row
 }
 
-fn user-space-create-stopped(authority: Int, limit: Int) -> Int {
+fn user-space-create-stopped-profile(authority: Int, limit: Int, minimum:Int, maximum:Int) -> Int {
   if user-space-kernel() == 0 { return -4 }
   let tss = load64(0x4100)
   if idt-base == 0 || tss == 0 { return -4 }
   if load64(tss + 4) == 0 { return -4 }
-  if limit <= 0 || limit > USER-SPACE-MAPPINGS { return -1 }
+  if limit <= 0 || limit > maximum { return -1 }
+  if minimum!=4096 && minimum!=65536{return -1}
+  if minimum==4096 && supervisor-window-ready==0{return -4}
   if cap-check(authority,cap-memory()) == 0 { return -2 }
   if user-space-generation >= 0x7fffffffffffff { return -3 }
   let candidate = 1
@@ -122,25 +128,39 @@ fn user-space-create-stopped(authority: Int, limit: Int) -> Int {
   let slot = 0
   while slot < USER-SPACE-MAX && load64(user-space-table + slot * 128 + US-PHASE) != 0 { slot = slot + 1 }
   if slot == USER-SPACE-MAX || user-space-available(64) == 0 { return -3 }
+  let row = user-space-table + slot * 128
+  if limit>load64(row+US-LEDGER-CAPACITY){
+    // A single bounded cache extension per slot. Retirement preserves it;
+    // repeated larger activations must not keep growing native metadata.
+    if user-space-room(USER-SPACE-EXTENDED-MAPPINGS*24,64)==0{return -3}
+    store64(row+US-LEDGER,alloc(USER-SPACE-EXTENDED-MAPPINGS*24))
+    store64(row+US-LEDGER-CAPACITY,USER-SPACE-EXTENDED-MAPPINGS)
+  }
   let generation = user-space-next()
   if generation < 0 { return generation }
   let domain = domain-create-user()
   if domain <= 0 { return -3 }
   let handle = generation | (slot + 1)
-  let row = user-space-table + slot * 128
   let ledger = load64(row + US-LEDGER)
+  let capacity=load64(row+US-LEDGER-CAPACITY)
   cpu-mem-fill64(row,0,16)
   store64(row + US-LEDGER,ledger)
+  store64(row+US-LEDGER-CAPACITY,capacity);store64(row+US-MINIMUM,minimum)
   store64(row + US-HANDLE,handle);store64(row + US-DOMAIN,domain)
   store64(row + US-LIMIT,limit);store64(row + US-REFS,1);store64(row + US-CONSTRUCTOR,1)
   store64(row + US-AUTHORITY,authority);store64(row + US-AUTH-OBJECT,load64(cap-table-base + authority * 16))
   store64(row + US-PHASE,USER-SPACE-LIVE)
   if domain-user-object-claim(domain,handle) != 0 { store64(row + US-PHASE,USER-SPACE-QUARANTINED);return -5 }
   domain-set-cap(domain,-1)
+  if minimum==4096{domain-user-relocated=domain-user-relocated|(1<<domain)}
   // Reserve supervisor windows before accepting user mappings. Entry repeats
   // these same mappings; it must never overwrite an owned user ledger page.
   domain-map-idt(domain);domain-map-kernel-stack(domain);domain-map-trampoline(domain)
   return handle
+}
+
+fn user-space-create-stopped(authority:Int,limit:Int)->Int{
+  return user-space-create-stopped-profile(authority,limit,65536,USER-SPACE-MAPPINGS)
 }
 
 fn user-space-create(authority: Int, limit: Int) -> Int {
@@ -152,6 +172,16 @@ fn user-space-create(authority: Int, limit: Int) -> Int {
   let result = user-space-create-stopped(authority,limit)
   if (flags & 512) != 0 { sti() }
   return result
+}
+
+// Explicit native owner policy, never inferred from a foreign filename.
+// Existing create() retains its 64-KiB minimum and 4096-page ceiling.
+fn user-space-create-addressed(authority:Int,limit:Int,minimum:Int)->Int{
+  if user-space-kernel()==0{return -4}
+  let reader=load64(0x4198);if reader==0{return -4}
+  let flags=invoke1(reader,0);cli()
+  let result=user-space-create-stopped-profile(authority,limit,minimum,USER-SPACE-EXTENDED-MAPPINGS)
+  if (flags&512)!=0{sti()}return result
 }
 
 fn user-space-entry(row: Int, address: Int) -> Int {
@@ -220,7 +250,7 @@ fn user-space-lock(row: Int) -> Int {
 
 fn user-space-map-owned(row: Int, address: Int, permission: Int, source: Int) -> Int {
   let flags = user-space-permission(permission)
-  if address < 65536 || address >= 0x800000000000 || (address & 4095) != 0 || flags == 0 { return -1 }
+  if address < load64(row+US-MINIMUM) || address >= 0x800000000000 || (address & 4095) != 0 || flags == 0 { return -1 }
   if user-space-entry(row,address) != 0 || domain-page-flags(load64(row + US-DOMAIN),address) != 0 { return -1 }
   if load64(row + US-PAGES) >= load64(row + US-LIMIT) || user-space-available(5) == 0 { return -3 }
   let physical = frame-alloc()
@@ -246,7 +276,7 @@ fn user-space-map-zero(handle: Int, authority: Int, address: Int, permission: In
 fn user-space-copy-bytes(handle: Int, authority: Int, address: Int, source: Int, count: Int, populate: Int) -> Int {
   let row = user-space-access(handle,authority,1)
   if row < 0 { return row }
-  if count < 0 || count > 65536 || address < 65536 || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
+  if count < 0 || count > 65536 || address < load64(row+US-MINIMUM) || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
   // The private caller supplies a provenance-validated kernel buffer. Arena
   // bounds prevent overflow/unallocated reads; they do not prove ownership.
   if source <= 0 || source > heap-next || count > heap-next - source { return -1 }
@@ -467,7 +497,8 @@ fn user-space-finalize(row: Int) -> Int {
     i = i + 1
   }
   let ledger = load64(row + US-LEDGER)
-  cpu-mem-fill64(row,0,16);store64(row + US-LEDGER,ledger)
+  let capacity=load64(row+US-LEDGER-CAPACITY)
+  cpu-mem-fill64(row,0,16);store64(row + US-LEDGER,ledger);store64(row+US-LEDGER-CAPACITY,capacity)
   return 0
 }
 
@@ -556,7 +587,7 @@ fn user-space-phase(handle: Int, authority: Int) -> Int {
 fn user-space-frame(handle: Int, authority: Int, address: Int) -> Int {
   let row = user-space-access(handle,authority,0)
   if row < 0 { return row }
-  if address < 65536 || address >= 0x800000000000 { return -1 }
+  if address < load64(row+US-MINIMUM) || address >= 0x800000000000 { return -1 }
   let entry = user-space-entry(row,address)
   if entry == 0 { return -1 }
   return load64(entry + 8)
@@ -599,7 +630,7 @@ fn user-space-service-row(handle: Int, authority: Int) -> Int {
 }
 
 fn user-space-span(row: Int, address: Int, count: Int, permission: Int) -> Int {
-  if count < 0 || count > 65536 || address < 65536 || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
+  if count < 0 || count > 65536 || address < load64(row+US-MINIMUM) || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
   if permission != USER-SPACE-READ && permission != USER-SPACE-WRITE { return -1 }
   let cursor = address
   while cursor < address + count {

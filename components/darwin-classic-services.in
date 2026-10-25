@@ -1,0 +1,40 @@
+package space.kernel
+import "darwin-classic-io.in"
+import "time.in"
+
+fn dc-mmap(s:Int,a:Int,n:Int,prot:Int,flags:Int,fd:Int,offset:Int)->Int{
+ if cap-check(load64(s+32),cap-memory())==0 || n<=0 || n>0x1000000 || (prot!=1 && prot!=3) || (flags!=0x1002 && flags!=0x9002) || (fd&0xffffffff)!=0xffffffff || offset!=0{return -1;}
+ n=(n+4095)&(-4096);let slot=0;while slot<32 && load64(s+9216+slot*16)!=0{slot+=1;}if slot==32{return -1;}
+ let address=0x60000000;if a>=address && (a&4095)==0 && a<=0x61000000 - n{address=a;}
+ let attempt=0;while attempt<33{let next=address;let i=0;while i<32{let r=s+9216+i*16;if load64(r)!=0 && address<load64(r)+load64(r+8) && load64(r)<address+n{if load64(r)+load64(r+8)>next{next=load64(r)+load64(r+8);}}i+=1;}
+  if next==address{if address>0x61000000 - n{return -1;}let permission=USER-SPACE-READ;if prot==3{permission=USER-SPACE-WRITE;}
+   let done=0;while done<n{if user-space-map-zero(load64(s+64),load64(s+32),address+done,permission)!=0{let undo=0;while undo<done{if user-space-unmap(load64(s+64),load64(s+32),address+undo)!=0{store64(s+144,1);}undo+=4096;}return -1;}done+=4096;}
+   store64(s+9216+slot*16,address);store64(s+9224+slot*16,n);return address;
+  }address=next;attempt+=1;
+ }return -1;
+}
+fn dc-munmap(s:Int,address:Int,n:Int)->Int{
+ if cap-check(load64(s+32),cap-memory())==0 || n<=0 || n>0x1000000 || (address&4095)!=0{return -1;}n=(n+4095)&(-4096);
+ let i=0;while i<32{let r=s+9216+i*16;if load64(r)==address && load64(r+8)==n{let done=0;while done<n{if user-space-unmap(load64(s+64),load64(s+32),address+done)!=0{store64(s+144,1);return -1;}done+=4096;}store64(r,0);return 0;}i+=1;}return -1;
+}
+fn dc-service(s:Int)->Int{
+ let c=s+256;let id=load64(c+112) - 0x640000;if id<1 || id>13{store64(s+96,134);return 0;}
+ store64(s+176,load64(s+176)|(1<<id));let a=load64(c+72);let b=load64(c+80);let d=load64(c+88);let e=load64(c+96);let result=0;
+ if id==13{store64(s+96,a&255);return 0;}
+ if id==1{result=dc-file-open(s,a,b);}else if id==2{result=dc-file-close(s,a);}
+ else if id==3 || id==4{let write=0;if id==4{write=1;}result=dc-file-io(s,a,b,d,e,write);}
+ else if id==5{result=dc-file-seek(s,a,b,d);}else if id==6{let row=dc-file-row(s,a);result=-1;if row!=0 && dc-file-ready(s)!=0{result=vfs-fd-offset(load64(row+8));}}
+ else if id==7 || id==12{
+  result=-1;if cap-check(load64(s+56),cap-timer())!=0 && (id!=12 || b==0){let now=time-component-wallclock();if now>=0{
+   if id==7{result=now;if a!=0{store64(s+20480,now);if dc-out(s,a,s+20480,8)!=0{result=-1;}}}
+   else{store64(s+20480,now);store64(s+20488,0);if dc-out(s,a,s+20480,16)==0{result=0;}}
+  }}
+ }
+ else if id==8{
+  result=-1;if (a==1 || a==2) && cap-check(load64(s+40),cap-serial())!=0 && dc-span(s,b,d,0)!=0{let done=0;let ok=1;while done<d && ok!=0{let part=d - done;if part>4096{part=4096;}if dc-in(s,b+done,s+20480,part)!=0{ok=0;}else{let i=0;while i<part{serial-put(com1(),load8(s+20480+i));i+=1;}done+=part;}}if ok!=0{result=done;}}
+ }
+ else if id==9{result=dc-mmap(s,a,b,d,e,load64(c+56),load64(c+48));}
+ else if id==10{result=dc-munmap(s,a,b);}
+ else if id==11{result=0;if dc-string(s,a,s+8192,256)<=0{store64(s+96,142);return 0;}}
+ if load64(s+144)!=0{store64(s+96,125);return 0;}store64(c+112,result);return 1;
+}

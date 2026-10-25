@@ -1,0 +1,26 @@
+package space.kernel
+// These native provider controls receive no original-application entry credit.
+fn dc-contracts-check(port:Int)->void{
+ let s=alloc(32768);cpu-mem-fill64(s,0,4096);let memory=cap-mint(root-realm,cap-memory());let storage=cap-mint(root-realm,cap-storage());let timer=cap-mint(root-realm,cap-timer());
+ store64(s+32,memory);store64(s+48,storage);store64(s+56,timer);let space=user-space-create-addressed(memory,128,4096);if space<0{panic("classic controls native VM");}store64(s+64,space);
+ if user-space-map-zero(space,memory,0x1000,USER-SPACE-EXECUTE)!=0 || user-space-map-zero(space,memory,0x4000,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,0x200000,USER-SPACE-WRITE)!=0{panic("classic controls native pages");}
+ if user-context-init(s+256,768,user-space-domain(space,memory),0x1000,0,0x200ff0)!=0{panic("classic controls CPU owner");}let binding=user-space-attach(space,memory,s+256);if binding<0{panic("classic controls CPU binding");}store64(s+72,binding);
+ let before=user-space-pages(space,memory);let a=dc-mmap(s,0,8192,3,0x9002,-1,0);if a!=0x60000000 || user-space-pages(space,memory)!=before+2{panic("classic mmap native ownership");}
+ if dc-in(s,a,s+20480,4096)!=0{panic("classic mmap checked read");}let i=0;while i<4096{if load8(s+20480+i)!=0{panic("classic mmap not zero initialized");}i+=1;}
+ store64(s+20480,0x12345678);if dc-out(s,a+4093,s+20480,8)!=0 || dc-in(s,a+4093,s+20496,8)!=0 || load64(s+20496)!=0x12345678{panic("classic mmap cross-page owned copy");}
+ let b=dc-mmap(s,a,4096,1,0x1002,-1,0);if b!=a+8192 || dc-span(s,b,8,1)!=0 || dc-span(s,b,8,0)==0{panic("classic mmap hint/RO permission");}
+ if dc-mmap(s,0,4096,7,0x9002,-1,0)!= -1 || dc-mmap(s,0,4096,3,0x9012,-1,0)!= -1 || dc-mmap(s,0,4096,3,0x9002,3,0)!= -1 || dc-mmap(s,0,4096,3,0x9002,-1,4096)!= -1{panic("classic mmap unsupported authority/flags");}
+ if dc-munmap(s,a,4096)!= -1 || dc-munmap(s,0x1000,4096)!= -1 || user-space-pages(space,memory)!=before+3{panic("classic munmap native owner denial");}
+ if dc-munmap(s,a,8192)!=0 || dc-munmap(s,a,8192)!= -1 || dc-munmap(s,b,4096)!=0 || user-space-pages(space,memory)!=before{panic("classic munmap native release");}
+ let name="/contract.bin";let mode="wb+";let payload="native FILE bytes";
+ i=0;while i<=strlen(name){store8(s+20480+i,load8(name+i));i+=1;}if dc-out(s,0x4000,s+20480,strlen(name)+1)!=0{panic("classic controls path");}
+ i=0;while i<=strlen(mode){store8(s+20480+i,load8(mode+i));i+=1;}if dc-out(s,0x4100,s+20480,strlen(mode)+1)!=0{panic("classic controls mode");}
+ i=0;while i<strlen(payload){store8(s+20480+i,load8(payload+i));i+=1;}if dc-out(s,0x4200,s+20480,strlen(payload))!=0{panic("classic controls payload");}
+ let file=dc-file-open(s,0x4000,0x4100);if file==0{panic("classic absolute FILE open");}
+ if dc-file-io(s,0x4200,1,strlen(payload),file,1)!=strlen(payload) || dc-file-seek(s,file,0,0)!=0 || dc-file-io(s,0x4300,2,20,file,0)!=strlen(payload)/2{panic("classic FILE item/seek/EOF semantics");}
+ if dc-in(s,0x4300,s+20480,strlen(payload))!=0{panic("classic FILE checked readback");}i=0;while i<strlen(payload){if load8(s+20480+i)!=load8(payload+i){panic("classic FILE actual bytes");}i+=1;}
+ if dc-file-seek(s,file,-1,0)!= -1 || dc-file-close(s,file)!=0 || dc-file-close(s,file)!= -1{panic("classic FILE invalid seek/close");}
+ store64(s+256+112,0x64000c);store64(s+256+72,0x4400);store64(s+256+80,0);if dc-service(s)!=1 || load64(s+256+112)!=0 || dc-in(s,0x4400,s+20480,16)!=0 || load64(s+20480)<1760000000 || load64(s+20488)!=0{panic("classic real RTC timeval");}
+ if dc-files-release(s)!=0 || user-space-release-binding(binding,memory)!=0 || user-space-release(space,memory)!=0{panic("classic controls native cleanup");}
+ cap-revoke(timer);cap-revoke(storage);cap-revoke(memory);serial-write-cstr(port,"classic-contracts: owned mmap, RO/hint/unmap denials, FILE bytes/items/EOF/seek/close and actual RTC PASS");serial-nl(port);
+}

@@ -1,0 +1,57 @@
+package space.kernel
+
+fn low-view-hook(frame:Int)->Int{if load64(frame+112)!=0x550001{panic("low view unexpected operation");}store64(frame+112,73);return 0;}
+fn low-view-free()->Int{let count=0;let p=free-list;while p!=0 && count<32768{count+=1;p=load64(p);}return count;}
+fn low-view-check(port:Int)->void{
+ serial-write-cstr(port,"low-view: start");serial-nl(port);
+ let memory=cap-mint(root-realm,cap-memory());let context=alloc(768);let buffer=alloc(4096);
+ let beforeheap=heap-next;let beforefree=free-list;let beforedomains=domain-count;
+ if user-space-create(memory,4097)!=-1 || user-space-create-addressed(memory,8193,4096)!=-1 || user-space-create-addressed(memory,8,0)!=-1 || user-space-create-addressed(-1,8,4096)!=-2{panic("low view constructor bounds/grant");}
+ if heap-next!=beforeheap || free-list!=beforefree || domain-count!=beforedomains{panic("low view invalid constructor allocated");}
+ if dyn-resolve-idx("user-space-create-addressed")!=-1 || dyn-resolve-idx("user-context-init-compat32")!=-1{panic("low view raw native export");}
+ let nativeentry=load64(0x4110);let boot=load64(0x100000);let idtpage=idt-base&(-4096);let idtword=load64(idtpage);
+ let stackpage=(load64(load64(0x4100)+4) - SUPERVISOR-WINDOW - DOMAIN-KERNEL-STACK-BYTES)&(-4096);
+ let stackword=load64(stackpage);let caps=cap-count;let heap=0;let free=0;let domains=0;
+ let cycle=0;while cycle<16{
+  let mode=0;while mode<5{
+   serial-write-cstr(port,"low-view: cycle/mode ");serial-write-hex(port,cycle);serial-write-hex(port,mode);serial-nl(port);
+   let space=user-space-create-addressed(memory,8192,4096);if space<0{panic("low view native create");}
+   let domain=user-space-domain(space,memory);
+   if user-space-map-zero(space,memory,0,USER-SPACE-WRITE)!=-1 || user-space-map-zero(space,memory,SUPERVISOR-WINDOW+0x100000,USER-SPACE-WRITE)!=-1{panic("low view null/high mutation");}
+   if user-space-map-zero(space,memory,0x1000,USER-SPACE-EXECUTE)!=0 || user-space-map-zero(space,memory,0x4000,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,0x100000,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,0x200000,USER-SPACE-WRITE)!=0{panic("low view base pages");}
+   if user-space-map-zero(space,memory,idtpage,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,stackpage,USER-SPACE-WRITE)!=0{panic("low view formerly reserved pages");}
+   let i=0;while i<4096{store8(buffer+i,load8(0x10000000+i));i+=1;}
+   if user-space-populate(space,memory,0x1000,buffer,4096)!=0{panic("low view code population");}
+   store64(buffer,mode);store64(buffer+8,idtpage);store64(buffer+16,stackpage);
+   if user-space-populate(space,memory,0x4000,buffer,24)!=0{panic("low view argument population");}
+   if cycle==0 && mode==0{
+    i=0;while i<4097{if user-space-map-zero(space,memory,0x2000000+i*4096,USER-SPACE-WRITE)!=0{panic("low view extended ledger capacity");}i+=1;}
+    if user-space-pages(space,memory)!=4103{panic("low view actual extended page count");}
+   }
+   serial-write-cstr(port,"low-view: mapped");serial-nl(port);
+   if user-context-init(context,768,domain,0x1000,0x4000,0x200ff0)!=0{panic("low view CPU initialization");}
+   let binding=user-space-attach(space,memory,context);if binding<0 || user-space-release(space,memory)!=0{panic("low view native binding");}
+   domain-user-syscall-hook=low-view-hook;let kind=user-space-resume(binding,memory,5);domain-user-syscall-hook=0;
+   if mode==0{
+    if kind!=USER-CONTEXT-EXIT || load64(context+720)!=73{panic("low view CPU execution");}
+    if user-space-copy-in(binding,memory,0x4110,buffer,8)!=0 || load64(buffer)!=0x22334455{panic("low view checked low copy");}
+    if user-space-copy-in(binding,memory,0x100000,buffer,8)!=0 || load64(buffer)!=0x11223344{panic("low view trampoline shadow not owned");}
+   }else if mode==4{if kind!=USER-CONTEXT-DEADLINE{panic("low view IRQ budget");}}
+   else{
+    if kind!=USER-CONTEXT-FAULT || load64(context+696)!=14{panic("low view hardware denial");}
+    if mode==1 && (load64(context+704)&5)!=5{panic("low view high supervisor permission fault");}
+   }
+   if load64(0x4110)!=nativeentry || load64(0x100000)!=boot || load64(idtpage)!=idtword || load64(stackpage)!=stackword{panic("low view corrupted supervisor backing");}
+   if user-space-release-binding(binding,memory)!=0 || user-space-resume(binding,memory,5)!=-6{panic("low view teardown/stale binding");}
+   if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || cap-count!=caps{panic("low view supervisor restoration");}
+   mode+=1;
+  }
+  if cycle==0{heap=heap-next;free=low-view-free();domains=domain-count;}
+  else if heap-next!=heap || low-view-free()!=free || domain-count!=domains{panic("low view repeated native ownership leak");}
+  cycle+=1;
+ }
+ let ordinary=user-space-create(memory,4);if ordinary<0{panic("ordinary native VM after low view");}
+ if user-space-map-zero(ordinary,memory,0x1000,USER-SPACE-EXECUTE)!=-1 || user-space-map-zero(ordinary,memory,0x100000,USER-SPACE-WRITE)!=-1{panic("ordinary native low reservations changed");}
+ if user-space-release(ordinary,memory)!=0{panic("ordinary native VM cleanup");}cap-revoke(memory);
+ serial-write-cstr(port,"low-view: 80 native CPU activations, 4103 owned pages, low shadow isolation, high denial, null/RX, deadlines and repeated cleanup PASS");serial-nl(port);
+}
