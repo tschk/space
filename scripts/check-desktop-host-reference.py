@@ -68,12 +68,16 @@ def main():
 
     def key(chord):
         xdo('key', '--clearmodifiers', chord)
+        # SDL processes Return/key-up and text-input state on its next frame.
+        # Keep synthetic typing behind that frame instead of dropping the first
+        # text event. Exact file assertions still detect any lost/reordered key.
+        time.sleep(.08)
 
     def type_lines(text):
         for number, line in enumerate(text.splitlines()):
             if number:
                 key('Return')
-            xdo('type', '--clearmodifiers', '--delay', '2', line)
+            xdo('type', '--clearmodifiers', '--delay', '10', line)
 
     def exact_file(path, expected):
         deadline = time.monotonic() + 10
@@ -158,8 +162,8 @@ def main():
                             key('ctrl+a'); type_lines(text)
                         else:
                             exact_file(document, text)
-                            key('ctrl+End'); type_lines('Cold reopen confirmed.')
-                            text += 'Cold reopen confirmed.\n'
+                            key('ctrl+End'); type_lines('Fresh process confirmed.')
+                            text += 'Fresh process confirmed.\n'
                         key('ctrl+s'); exact_file(document, text)
                         row['saved_sha256'] = sha(document); row['saved_bytes'] = document.stat().st_size
                     elif name == 'wezterm':
