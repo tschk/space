@@ -6,16 +6,6 @@ personalities; keep implementing and locally testing real CLI and GUI applicatio
 until the acceptance matrix below works end to end. This is the full project
 goal. The fixture lab is an early checkpoint, not the completion target.
 
-Reprioritized on 2026-10-25 Australia/Melbourne: vi is an intermediate milestone.
-The goal includes serious upstream editors, terminals and web browsers. The
-new [seven-application corpus](../fixtures/applications/desktop-corpus.json)
-pins Pulsar, Lite XL, Zed, Warp, WezTerm, Helium and Firefox. Their actual
-Space admission trials are blocked; host references and acquired artifacts do
-not complete this goal. The [trial record](plans/2026-10-25-serious-desktop-apps.md)
-tracks measured blockers, host references and the implementation order toward
-actual Space execution. Warp's client source is now open, with AGPLv3 client
-code and MIT UI crates; Raycast binary compatibility is not a target.
-
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
 is historical; its compiler and protected-execution blockers have since advanced.
@@ -389,9 +379,8 @@ a narrowed matrix must never silently redefine the full destination.
 
 ### Real application acceptance matrix
 
-The following are concrete targets, not claims of current support. Each row's
-corpus/reference records whether an artifact is actually acquired and verified.
-Start with native x86_64 for all three foreign
+The following are concrete initial targets, not claims of current support or
+verified downloadable artifacts. Start with native x86_64 for all three foreign
 formats. Pin the exact upstream archive/revision, source/build recipe, target
 triple, binary SHA256 and distribution license in the executable corpus before
 counting a scenario. Source-built applications retain unmodified upstream source;
@@ -411,11 +400,6 @@ must be reported separately from foreign compatibility.
 | Darwin Cocoa GUI | FLTK 1.3.9 `fluid` built as an x86_64 macOS application | Drive the actual Cocoa/AppKit application: launch, edit, resize/scale, save/reopen, second instance, close and crash cleanup. Use actual client pixels and input delivery. |
 | Windows Win32 GUI | FLTK 1.3.9 `fluid` built as an x86_64 Windows application | Drive the actual Win32 message loop and software drawing backend with the same edit/save/reopen/two-instance scenario; verify buffer and handle cleanup. |
 | Expanded desktop/browser milestone | NetSurf 3.11, [upstream](https://www.netsurf-browser.org/downloads/), with a declared port/profile | A real browser action launches a live browser instance, renders a bundled HTML/CSS page, accepts link/input/scroll interaction and retrieves a controlled HTTP page; add HTTPS only with certificate/error tests. This is a later workload with its own dependency gate, not a decorative browser window. |
-| Electron editor | Pulsar 1.132.1, pinned official Linux artifact | Open a source project with multiple files, edit and search, use the command palette, save/reopen after restart, resize and operate two independent windows. Preserve native addon, file-watcher, renderer and process ownership; an Electron window alone is insufficient. |
-| Native GUI editors | Lite XL 2.1.8 and Zed 1.25.3, pinned official Linux artifacts | Edit a real source project with syntax display and search, save and reopen exact files, route focused input, resize and recover from a closed/faulted instance. A new Space backend must be labelled as a port. |
-| GUI terminal applications | Warp 0.2026.06.03.09.49.stable.00 and WezTerm 20240203-110809-5046fc22 | Launch independent shell sessions, run real file/process commands, test selection/scrolling, resize and keep the surviving session responsive after another closes. Warp onboarding alone is insufficient; declare any offline/account requirements. |
-| Chromium-family browser | Helium 0.20.1.1, pinned official Linux artifact | Render an actual local HTML/CSS/JavaScript application, type/click/scroll, verify canvas scanout and storage after restart, then controlled HTTP/HTTPS including failures. Prove renderer/process, shared-memory and focused-surface cleanup; browser chrome alone is insufficient. |
-| Gecko browser | Firefox 158.0.1, pinned official Linux artifact | The same real web application and networking/storage/input scenarios through Gecko, with independently verified application pixels and owned process/window lifetimes. A host screenshot is reference evidence only. |
 
 The acquired Linux FLTK workload now has a [pinned artifact, real host edit/save/
 reopen reference and actual protected-loader refusal](fltk-gui-workload.md). It
