@@ -18,6 +18,13 @@ The original Linux build now also passes65 original activations, including a
 real `%t` assembly output checked against the native clock. This bounded
 integration is not ordinary installed-app/desktop launch.
 
+The repeatable original cross-OS cohort is part of `check-application-lab.py`:
+`--cohort cross-os` verifies pinned acquisition/license bytes, the three original
+assemblers on two explicit CPU profiles each, and native32/low-address ownership
+controls. Default `all` retains the existing gates, bringing definitions to176.
+This is not a new complete176-gate receipt. Linux's second profile explicitly
+adds RDRAND; plain qemu64 still lacks the required startup entropy source.
+
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
 is historical; its compiler and protected-execution blockers have since advanced.

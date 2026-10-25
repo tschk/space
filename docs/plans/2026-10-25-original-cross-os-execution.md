@@ -108,3 +108,22 @@ A later classic C ABI correction normalizes32-bit `int` parameters at the
 service edge (seek origin, descriptor, protection and mmap flags), ignoring
 unspecified upper register bits. An owned-VM provider control deliberately
 supplies nonzero upper halves; original app activations are counted separately.
+
+The application lab now includes a mandatory original cross-OS cohort: one
+pinned archive/license acquisition, six original-app CPU profiles and four
+separately counted native compatibility32/low-view profiles. It can run alone
+with `--cohort cross-os`; the default `all` retains the older gates as well.
+This brings definitions to176, not a new claim that all176 have passed together.
+Example (source-built compiler and an external cache):
+
+```bash
+python3 scripts/check-application-lab.py --cohort cross-os \
+  --in /path/to/in-cli/target/release/in --apps-dir /path/to/app-cache \
+  --download --out /path/to/new-evidence
+```
+
+`--fasmg-archive /path/to/pinned.tar.gz` permits offline acquisition. The helper
+copies only the three exact regular-file members and BSD notice after archive,
+size and member checks. No upstream source or executable is patched. Original
+app hashes remain under the lab's before/after integrity checks. The full goal
+remains open after every finite run.

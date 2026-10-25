@@ -47,6 +47,9 @@ def main():
     parser.add_argument('--busybox-vi', type=Path, help='Separate pinned upstream vi ELF; otherwise cache busybox-vi or --download builds it')
     parser.add_argument('--terminal-oracle-python',type=Path,default=Path(sys.executable),
                         help='Interpreter with fixtures/terminal-session/oracle-requirements.txt for screen/pixel comparisons')
+    parser.add_argument('--cohort',choices=['all','cross-os'],default='all',
+                        help='all gates or the original cross-OS assembler/native ownership cohort')
+    parser.add_argument('--fasmg-archive',type=Path,help='Existing pinned fasmg archive; otherwise cache or --download')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
                         help='external wall limit for repeated BusyBox transfers; guest IRQ budget/assertions stay unchanged')
@@ -67,8 +70,8 @@ def main():
     report = {
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
-        'goal_status': 'OPEN',
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Arbitrary upstream Darwin/Windows applications, interactive foreign TUI/GUI/FLTK/X11 and general fbdev remain open.',
+        'goal_status': 'OPEN', 'cohort':args.cohort,
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Original Linux/macOS/Windows fasmg executes unchanged with exact compiler outputs, errors and cleanup; native32/low-VM controls remain separately counted. Broader dependencies, general foreign GUI/FLTK/X11 and desktop app launch remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
@@ -149,6 +152,33 @@ def main():
         return path
 
     save()
+    # This mandatory cohort preserves original bytes and licenses, and is also
+    # runnable independently while the complete all-gates receipt stays scoped.
+    fasmg_cache=args.apps_dir/'fasmg'
+    command=[sys.executable,ROOT/'scripts/acquire-fasmg.py','--out',fasmg_cache]
+    if args.fasmg_archive:command+=['--archive',args.fasmg_archive.resolve()]
+    if args.download:command+=['--download']
+    acquired=run('fasmg-acquire',command)
+    fasmg_apps={}
+    if acquired:
+        try:
+            for app in json.loads((ROOT/'fixtures/applications/fasmg.json').read_text())['apps']:
+                app=dict(app,id='fasmg-'+app['personality'])
+                fasmg_apps[app['personality']]=require_artifact(app,fasmg_cache/app['id'])
+        except (OSError,RuntimeError,ValueError) as error:
+            report.setdefault('artifact_failure',{'reason':str(error)});return finish()
+    for personality,cpus in [('linux',['max','qemu64-rdrand']),('darwin',['max','qemu64']),('windows',['max','qemu64'])]:
+        for cpu in cpus:
+            name='original-fasmg-'+personality+'-'+cpu
+            run(name,[sys.executable,ROOT/('scripts/check-fasmg-'+personality+'.py'),
+                      '--in',args.compiler,'--app',fasmg_apps.get(personality,fasmg_cache/('fasmg-'+personality)),
+                      '--cpu',cpu,'--out',args.out/name],dependency=acquired)
+    for cpu in ['max','qemu64']:
+        for profile,script in [('compat32','check-user-context-compat32.py'),('low-view','check-user-space-low.py')]:
+            name='native-'+profile+'-'+cpu
+            run(name,[sys.executable,ROOT/'scripts'/script,'--in',args.compiler,
+                      '--cpu',cpu,'--out',args.out/name])
+    if args.cohort=='cross-os':return finish()
     applications = {}
     try:
         for app in json.loads((ROOT / 'fixtures/applications/jq-1.8.1.json').read_text())['apps']:
