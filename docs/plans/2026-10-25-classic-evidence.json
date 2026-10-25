@@ -1,0 +1,347 @@
+{
+  "goal_status": "OPEN",
+  "source_commit": "c76d83032af071a7bc70f3639de15dd0ba56f1ac",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "scope": "Original macOS and Windows assembler execution in Space; native low VM and affected Linux/CPU/desktop regressions. No foreign GUI claim.",
+  "checks": [
+    {
+      "name": "windows-max",
+      "status": "passed",
+      "elapsed_seconds": 12.471,
+      "group": "windows",
+      "group_receipt": "/workspace/classic-regressions/windows.json",
+      "group_sha256": "d7768c809decb723ed7536c38e40e6b31876f5e13cd5b37db5059acee801f82e",
+      "receipt": "/workspace/classic-regressions/windows-max/report.json",
+      "receipt_sha256": "6b8a0acff705a318bf72a371d6f1e3398c2b2ab5e8d3eb83c19dc2148eaab0d5",
+      "result": {
+        "status": "passed",
+        "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+        "kernel_sha256": "cebcceb1c86d24aca374c05249116f55b1fc534afcb4f4073c4573e9b85ef7d4",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      }
+    },
+    {
+      "name": "windows-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 13.708,
+      "group": "windows",
+      "group_receipt": "/workspace/classic-regressions/windows.json",
+      "group_sha256": "d7768c809decb723ed7536c38e40e6b31876f5e13cd5b37db5059acee801f82e",
+      "receipt": "/workspace/classic-regressions/windows-qemu64/report.json",
+      "receipt_sha256": "c85f8e73d2a96eba5a90aa4c145bb2cbfff4116b261582217ec161d245f7e9bd",
+      "result": {
+        "status": "passed",
+        "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+        "kernel_sha256": "cebcceb1c86d24aca374c05249116f55b1fc534afcb4f4073c4573e9b85ef7d4",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      }
+    },
+    {
+      "name": "mac-max",
+      "status": "passed",
+      "elapsed_seconds": 30.556,
+      "group": "mac-low",
+      "group_receipt": "/workspace/classic-regressions/mac-low.json",
+      "group_sha256": "c10e15a2dd95df8e8c2d5d057d1590f3879fa9540a5fd64a083c801185e756ed",
+      "receipt": "/workspace/classic-regressions/mac-max/report.json",
+      "receipt_sha256": "e220cd96ec5ef31694a58cc99b9c2b1357b9775b9b4d8ccfedbc3889e0e1df0b",
+      "result": {
+        "status": "passed",
+        "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+        "kernel_sha256": "d7c69b01279c1d4f397c283f58e406e93076628aa87f2500f4d989bfc5b6929f",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          13
+        ]
+      }
+    },
+    {
+      "name": "mac-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 26.653,
+      "group": "mac-low",
+      "group_receipt": "/workspace/classic-regressions/mac-low.json",
+      "group_sha256": "c10e15a2dd95df8e8c2d5d057d1590f3879fa9540a5fd64a083c801185e756ed",
+      "receipt": "/workspace/classic-regressions/mac-qemu64/report.json",
+      "receipt_sha256": "ad2ce9e4a29697c5147a639e303ac98345ad4a71f98123c0a7a8fe2fb8c583bf",
+      "result": {
+        "status": "passed",
+        "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+        "kernel_sha256": "d7c69b01279c1d4f397c283f58e406e93076628aa87f2500f4d989bfc5b6929f",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          13
+        ]
+      }
+    },
+    {
+      "name": "low-max",
+      "status": "passed",
+      "elapsed_seconds": 6.543,
+      "group": "mac-low",
+      "group_receipt": "/workspace/classic-regressions/mac-low.json",
+      "group_sha256": "c10e15a2dd95df8e8c2d5d057d1590f3879fa9540a5fd64a083c801185e756ed",
+      "receipt": "/workspace/classic-regressions/low-max/report.json",
+      "receipt_sha256": "1ecdc55f5eb51bfa8ba91ba6865ff936aadbb76d88d6e3eb57e78afbf18fd6c1",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "3b78968b449973b55f2cadbd23d4b7567d7414d29d1277df5849538010a229fc",
+        "original_application_entries": 0,
+        "native_control_entries": 80,
+        "owned_page_peak": 4103
+      }
+    },
+    {
+      "name": "low-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 6.457,
+      "group": "mac-low",
+      "group_receipt": "/workspace/classic-regressions/mac-low.json",
+      "group_sha256": "c10e15a2dd95df8e8c2d5d057d1590f3879fa9540a5fd64a083c801185e756ed",
+      "receipt": "/workspace/classic-regressions/low-qemu64/report.json",
+      "receipt_sha256": "eab37c773a893821d6e174c3e63126aee1d8a842cd79e91e6cc95419b693fd29",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "3b78968b449973b55f2cadbd23d4b7567d7414d29d1277df5849538010a229fc",
+        "original_application_entries": 0,
+        "native_control_entries": 80,
+        "owned_page_peak": 4103
+      }
+    },
+    {
+      "name": "compat32-max",
+      "status": "passed",
+      "elapsed_seconds": 8.011,
+      "group": "cpu",
+      "group_receipt": "/workspace/classic-regressions/cpu.json",
+      "group_sha256": "1e0615a211b7697abe3b80411c6a0b1fae5713b4c356532c3b2f9d728ed3cc5e",
+      "receipt": "/workspace/classic-regressions/compat32-max/report.json",
+      "receipt_sha256": "d7f73da43402f500482957f4520d115c1a1a58abb0e5263fcb64da2cc465e142",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "437ab1e6d6870f0399110362a248bee4e25e2ff67dd5af69e50e2e161cccb54f",
+        "original_application_entries": 0,
+        "native_control_entries": 144,
+        "resumed_entries": 48,
+        "cloned_contexts": 24
+      }
+    },
+    {
+      "name": "compat32-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 8.307,
+      "group": "cpu",
+      "group_receipt": "/workspace/classic-regressions/cpu.json",
+      "group_sha256": "1e0615a211b7697abe3b80411c6a0b1fae5713b4c356532c3b2f9d728ed3cc5e",
+      "receipt": "/workspace/classic-regressions/compat32-qemu64/report.json",
+      "receipt_sha256": "7a635fa90d498fbe2fc5de2a7894c5a2346cb0f5902188ee39484eab9fda5d61",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "437ab1e6d6870f0399110362a248bee4e25e2ff67dd5af69e50e2e161cccb54f",
+        "original_application_entries": 0,
+        "native_control_entries": 144,
+        "resumed_entries": 48,
+        "cloned_contexts": 24
+      }
+    },
+    {
+      "name": "native64-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 6.805,
+      "group": "cpu",
+      "group_receipt": "/workspace/classic-regressions/cpu.json",
+      "group_sha256": "1e0615a211b7697abe3b80411c6a0b1fae5713b4c356532c3b2f9d728ed3cc5e",
+      "receipt": "/workspace/classic-regressions/native64-qemu64/report.json",
+      "receipt_sha256": "01d45e8304f6daea42a3cf8680de46bd3e4bb2a5a14653005ea13dcd0e49acab",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "b2534a9e9865b8136f104d1b4c12db41628b75f7ef177eba1a60d7743630a7f6"
+      }
+    },
+    {
+      "name": "native64-max",
+      "status": "passed",
+      "elapsed_seconds": 5.39,
+      "group": "cpu",
+      "group_receipt": "/workspace/classic-regressions/cpu.json",
+      "group_sha256": "1e0615a211b7697abe3b80411c6a0b1fae5713b4c356532c3b2f9d728ed3cc5e",
+      "receipt": "/workspace/classic-regressions/native64-max/report.json",
+      "receipt_sha256": "e0a1570eefb1dbe8dc140df1661802ba3e1447c287db10fb81caaf5c2916c5b1",
+      "result": {
+        "status": "passed",
+        "kernel_sha256": "b2534a9e9865b8136f104d1b4c12db41628b75f7ef177eba1a60d7743630a7f6"
+      }
+    },
+    {
+      "name": "jq",
+      "status": "passed",
+      "elapsed_seconds": 19.775,
+      "group": "linux",
+      "group_receipt": "/workspace/classic-regressions/linux.json",
+      "group_sha256": "56e38b57632f8c8efddebfcfad9ba7f64ad6ed5f36afb013dc4d90acebac6489",
+      "receipt": "/workspace/classic-regressions/jq/report.json",
+      "receipt_sha256": "7479454513af19bbf94c737dd2bfe5ff8561f2e6693c67169ce401421fa9cd17",
+      "result": {
+        "space_status": "passed",
+        "application_sha256": "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+      }
+    },
+    {
+      "name": "lua",
+      "status": "passed",
+      "elapsed_seconds": 17.5,
+      "group": "linux",
+      "group_receipt": "/workspace/classic-regressions/linux.json",
+      "group_sha256": "56e38b57632f8c8efddebfcfad9ba7f64ad6ed5f36afb013dc4d90acebac6489",
+      "receipt": "/workspace/classic-regressions/lua/report.json",
+      "receipt_sha256": "41ac430384899b4b5ad2c486e741cd3b9e85d4ff8d11ff77127016046decd8dd",
+      "result": {
+        "space_status": "passed",
+        "application_sha256": "941f7a886bdc40a4403dd6991390158fcacb1698905f228fc2b78ee486cb382d"
+      }
+    },
+    {
+      "name": "sqlite",
+      "status": "passed",
+      "elapsed_seconds": 20.42,
+      "group": "linux",
+      "group_receipt": "/workspace/classic-regressions/linux.json",
+      "group_sha256": "56e38b57632f8c8efddebfcfad9ba7f64ad6ed5f36afb013dc4d90acebac6489",
+      "receipt": "/workspace/classic-regressions/sqlite/report.json",
+      "receipt_sha256": "3ae1acce9afee4cc91d36ac3cebf2222d2f4d11b9a5dce204b9ba151788e8cb7",
+      "result": {
+        "space_status": "passed",
+        "application_sha256": "36e9f3eb66219d87d79dd62db4df7c04b69d3ee4f15bd00d632587072b50c507"
+      }
+    },
+    {
+      "name": "user-space-standard",
+      "status": "passed",
+      "elapsed_seconds": 8.33,
+      "group": "native-gui",
+      "group_receipt": "/workspace/classic-regressions/native-gui.json",
+      "group_sha256": "7f1dea4ec0eb446d03ba6ef63975050367eb330d2a227d0e5bbb4a5eb4a1bfbb",
+      "receipt": "/workspace/classic-regressions/user-space-standard/report.json",
+      "receipt_sha256": "d9befc4653be492a7ccb652fba632df4688f289c941be29f9ff5a114e945ecc5",
+      "result": {
+        "status": "passed"
+      }
+    },
+    {
+      "name": "user-space-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.791,
+      "group": "native-gui",
+      "group_receipt": "/workspace/classic-regressions/native-gui.json",
+      "group_sha256": "7f1dea4ec0eb446d03ba6ef63975050367eb330d2a227d0e5bbb4a5eb4a1bfbb",
+      "receipt": "/workspace/classic-regressions/user-space-minimal/report.json",
+      "receipt_sha256": "bfd5a10a83fbd41666658be3cb6d8161be33c9d42b8529aaf765a0fa5427f74b",
+      "result": {
+        "status": "passed"
+      }
+    },
+    {
+      "name": "desktop-launcher",
+      "status": "passed",
+      "elapsed_seconds": 88.05,
+      "group": "native-gui",
+      "group_receipt": "/workspace/classic-regressions/native-gui.json",
+      "group_sha256": "7f1dea4ec0eb446d03ba6ef63975050367eb330d2a227d0e5bbb4a5eb4a1bfbb",
+      "log": "/workspace/classic-regressions/desktop-launcher.log",
+      "log_sha256": "c57130566ad11b6f0fdfc117d08a7c9b9e773ad7a4779790c21fef251c5df1cd"
+    },
+    {
+      "name": "desktop-damage",
+      "status": "passed",
+      "elapsed_seconds": 5.933,
+      "group": "native-gui",
+      "group_receipt": "/workspace/classic-regressions/native-gui.json",
+      "group_sha256": "7f1dea4ec0eb446d03ba6ef63975050367eb330d2a227d0e5bbb4a5eb4a1bfbb",
+      "log": "/workspace/classic-regressions/desktop-damage.log",
+      "log_sha256": "aec3a90bba23fe4f411e3b7a0dd365050217d6c2614cb40b1ade17274ebda510"
+    }
+  ],
+  "checks_passed": 17,
+  "original_mac_entries": 130,
+  "original_windows_entries": 130,
+  "generated_hex": "53706163650a0101020203030404",
+  "preserved_failures": [
+    "/workspace/low-view-first/report.json",
+    "/workspace/low-view-second/report.json",
+    "/workspace/low-view-third/report.json",
+    "/workspace/fasmg-mac-first/report.json",
+    "/workspace/fasmg-mac-expanded/report.json"
+  ]
+}
