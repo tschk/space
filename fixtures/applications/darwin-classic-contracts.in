@@ -12,6 +12,10 @@ fn dc-contracts-check(port:Int)->void{
  if dc-mmap(s,0,4096,7,0x9002,-1,0)!= -1 || dc-mmap(s,0,4096,3,0x9012,-1,0)!= -1 || dc-mmap(s,0,4096,3,0x9002,3,0)!= -1 || dc-mmap(s,0,4096,3,0x9002,-1,4096)!= -1{panic("classic mmap unsupported authority/flags");}
  if dc-munmap(s,a,4096)!= -1 || dc-munmap(s,0x1000,4096)!= -1 || user-space-pages(space,memory)!=before+3{panic("classic munmap native owner denial");}
  if dc-munmap(s,a,8192)!=0 || dc-munmap(s,a,8192)!= -1 || dc-munmap(s,b,4096)!=0 || user-space-pages(space,memory)!=before{panic("classic munmap native release");}
+ // SysV C int parameters use their low32 bits even when callers leave high
+ // register halves nonzero. This is an ABI control, not an application entry.
+ store64(s+256+112,0x640009);store64(s+256+72,0);store64(s+256+80,4096);store64(s+256+88,0x123400000003);store64(s+256+96,0x567800009002);store64(s+256+56,0x9abcffffffff);store64(s+256+48,0);
+ if dc-service(s)!=1 || load64(s+256+112)!=0x60000000 || dc-span(s,0x60000000,8,1)==0 || dc-munmap(s,0x60000000,4096)!=0{panic("classic SysV int upper-register width");}
  let name="/contract.bin";let mode="wb+";let payload="native FILE bytes";
  i=0;while i<=strlen(name){store8(s+20480+i,load8(name+i));i+=1;}if dc-out(s,0x4000,s+20480,strlen(name)+1)!=0{panic("classic controls path");}
  i=0;while i<=strlen(mode){store8(s+20480+i,load8(mode+i));i+=1;}if dc-out(s,0x4100,s+20480,strlen(mode)+1)!=0{panic("classic controls mode");}

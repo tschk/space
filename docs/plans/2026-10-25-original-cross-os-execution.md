@@ -103,3 +103,8 @@ RDRAND; that failed receipt is preserved. The explicitly selected
 `qemu64-rdrand` test profile means QEMU `qemu64,+rdrand`, not a silently widened
 CPU or fabricated seed. Native32/64 and macOS/Windows suites still use plain
 qemu64. An alternative native entropy provider remains future work.
+
+A later classic C ABI correction normalizes32-bit `int` parameters at the
+service edge (seek origin, descriptor, protection and mmap flags), ignoring
+unspecified upper register bits. An owned-VM provider control deliberately
+supplies nonzero upper halves; original app activations are counted separately.
