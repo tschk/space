@@ -1,7 +1,7 @@
 # Original macOS and Windows execution checkpoint
 
 The full application/desktop goal remains **OPEN**. Frozen runtime source
-`c76d83032af071a7bc70f3639de15dd0ba56f1ac` passes all17 focused QEMU checks.
+`c76d83032af071a7bc70f3639de15dd0ba56f1ac` passes all21 focused QEMU checks.
 The [machine receipt](2026-10-25-classic-evidence.json) records exact report,
 compiler, image and application hashes. This does not widen the historical
 163-gate full-matrix receipt.
@@ -29,7 +29,8 @@ privilege-stack backing; null/RX/high-window faults, IRQ budgets and repeated
 teardown pass. Existing compatibility32 and native64 context gates pass on both
 CPUs. Old native UserAddressSpace checks pass on standard and minimal roots.
 Actual Linux jq/Lua/SQLite corpus suites pass. Desktop launcher and damage gates
-also pass. Native controls, regression apps and original assembler activations
+also pass. Both older318-entry Darwin high-address mapper roots and the
+existing Windows PE32+/composed suites pass on the same frozen source. Native controls, regression apps and original assembler activations
 remain separately counted in the receipt.
 
 Failures are retained: first fixture compile helper typo, two low-entry hangs

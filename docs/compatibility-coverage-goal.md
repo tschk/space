@@ -400,8 +400,9 @@ a narrowed matrix must never silently redefine the full destination.
 ### Real application acceptance matrix
 
 The following are concrete initial targets, not claims of current support or
-verified downloadable artifacts. Start with native x86_64 for all three foreign
-formats. Pin the exact upstream archive/revision, source/build recipe, target
+verified downloadable artifacts. Continue native x86_64 for all three foreign
+formats; also retain the original shipped i386 PE32 compiler through explicit
+compatibility-mode CPU ownership. Pin the exact upstream archive/revision, source/build recipe, target
 triple, binary SHA256 and distribution license in the executable corpus before
 counting a scenario. Source-built applications retain unmodified upstream source;
 record build/configuration choices. A special Space rewrite is a native port and
@@ -410,6 +411,7 @@ must be reported separately from foreign compatibility.
 | Target/profile | Initial named upstream version | Required scenario and oracle |
 |---|---|---|
 | Native Space | Repository `calc`, `notes`, `files`, terminal and their SCI artifacts, pinned to the tested Space commit | Calculate a known result, edit/save/reopen exact text, list/create/read files, launch two independent terminal sessions, switch focus, close one and keep the other responsive. Reboot and verify saved bytes. |
+| Cross-OS original compiler | flat assembler g `905f6791f6777e35baec182e6843e2ada30cedd0`, three original shipped ELF64/Mach-O64/PE32 builds | Real source/macro/arithmetic compilation, exact generated file bytes, actual errors and repeated ownership cleanup. Each build passes65 activations per declared CPU profile. Linux additionally emits `%t` checked against the native RTC. This is one upstream application family; broader named CLI/GUI targets remain required. |
 | Linux ELF TUI | BusyBox 1.36.1 vi, separate [pinned profile](../fixtures/applications/busybox-vi-1.36.1.json) | Type/edit through real focused terminal input, display actual ANSI output, save/reopen after reboot, resize, two independent clients and close/crash recovery. Fixed-size real keyboard/ANSI/edit/save/cold-reopen now passes both native filesystem schemas; resize, concurrency and ordinary product launch remain open. |
 | Darwin x86_64 Mach-O TUI | Microsoft Edit source commit `cb6de0a8966aecd01d19a3541dab1829d0e679ca`; native artifact acquisition/build still required | The same focused edit/save/reopen/resize/two-client workflow through actual Darwin startup, descriptors and termios. Source review only; zero Space application entries. |
 | Windows x86_64 PE TUI | Microsoft Edit at the same pinned source commit; native artifact acquisition/build still required | The same workflow through real Win32 console records/modes/output and file handles, with focused input, independent sessions and cleanup. Source review only; zero Space application entries. |
@@ -548,9 +550,9 @@ and the [Rosemary review](rosemary-macos-reference.md).
 
 | Area | Present source coverage | Next evidence needed |
 |---|---|---|
-| Linux | BSD/POSIX-shaped service calls; bounded ELF serial/read-only file fixtures; a bounded Unix stream-pair fixture and model checks | Broader descriptor operations through actual ELF calls, real process startup/lifecycle, private guest mappings and Linux structures |
-| Darwin | BSD-shaped translator, errno mapping and Mach stubs; thin fixed-address Mach-O serial/read-only file fixtures | Private process memory and startup, supported mapping/fixups/imports, Objective-C/framework subset, real Mach contracts where required |
-| Windows | Space-local call table, typed bounded handles, paired NTSTATUS/LastError; PE fixture with selected KERNEL32 imports | Additional typed imports with Win32 error/output semantics, process/domain lifecycle, ntdll/Win32 separation and user/window APIs |
+| Linux | Original jq/Lua/BusyBox/SQLite/fbv and assembler in native owned mappings; finite process/file/pipe/exec workflows and real vi input/ANSI/durability | General dynamic dependencies, threads/futexes, richer TUI/GUI apps and ordinary desktop launch |
+| Darwin | Original classic Mach-O assembler with full low image, checked C imports and native owned VM/CPU/VFS; separate modern high-image fixtures | Actual modern dependency execution, dyld/Objective-C/framework support and the required Mach and graphical contracts |
+| Windows | Original PE32 assembler in compatibility mode with checked stdcall/file/heap/clock services; separate PE32+ import and native-context fixtures | Original PE32+ apps, broader DLL/TLS/SEH/thread behavior, console records and real message/window/graphics APIs |
 | Native desktop | Kernel-linked desktop, command/layout/output/text modules and bounded SPDP/SCI pixel/input proofs | Sustained independent client lifecycle, focused multi-client seat routing, buffer release, resize/scale and fault/disconnect recovery |
 
 This table records source inspection, not a fresh all-green test run. Trusted

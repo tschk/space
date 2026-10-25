@@ -1,0 +1,222 @@
+space: kernel root entered (Space 0.1.0)
+space: preemption ended; worker A iters 0x0000000000013bc0 worker B iters 0x000000000001638a
+  SCI: kernel exports registered: 987
+  nvme: no NVMe controller found (class 0x010802)
+  storage: component failed to become ready
+usb: no xHCI controller on PCI
+  SCI debug: magic=0x5343490000000001 req=0x0000000000000001 entry=0x0000000040000020 size=0x0000000000000028
+  SCI: loading test.sci, size 0x0000000000000028
+space: sys_exit(code=0x0000000000000042) from thread 0x0000000000000002
+  SCI: guest test.sci returned status 0x0000000000000042
+test_sci_loader: PASS
+original-mac: entry 00000000000014b0
+original-mac: BEGIN help
+flat assembler  version g.l8vn
+Usage: fasmg source [output]
+Optional settings:
+    -p limit    Set the maximum allowed number of passes (default 100)
+    -e limit    Set the maximum number of displayed errors (default 1)
+    -r limit    Set the maximum depth of the stack (default 10000)
+    -v flag     Enable or disable showing all lines from the stack (default 0)
+    -i command  Insert instruction at the beginning of source
+    -n          Do not show logo nor summary
+original-mac: END help status 1 calls 4
+original-mac: BEGIN assemble
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+original-mac: END assemble status 0 calls 22
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 1.0 seconds, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+flat assembler  version g.l8vn
+1 pass, 14 bytes.
+flat assembler  version g.l8vn
+/bad.asm [1]:
+	this_is_not_an_instruction
+Processed: this_is_not_an_instruction
+Error: illegal instruction.
+flat assembler  version g.l8vn
+Error: source file 'missing.asm' not found.
+original-mac: completed original application entries 65
+original-mac: observed import mask 00000000000039fe
+original-mac: original Mach-O assembler generated exact 14-byte macro/arithmetic file inside Space PASS
+classic-contracts: owned mmap, RO/hint/unmap denials, FILE bytes/items/EOF/seek/close and actual RTC PASS
+
+space interactive shell -- type 'help'

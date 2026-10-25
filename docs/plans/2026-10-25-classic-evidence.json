@@ -331,9 +331,64 @@
       "group_sha256": "7f1dea4ec0eb446d03ba6ef63975050367eb330d2a227d0e5bbb4a5eb4a1bfbb",
       "log": "/workspace/classic-regressions/desktop-damage.log",
       "log_sha256": "aec3a90bba23fe4f411e3b7a0dd365050217d6c2614cb40b1ade17274ebda510"
+    },
+    {
+      "name": "darwin-mapped-standard",
+      "status": "passed",
+      "group": "legacy-personalities",
+      "receipt": "/workspace/classic-regressions/darwin-mapped-standard/report.json",
+      "receipt_sha256": "b3215aab5f674bdbb2b6eb519e9d148e6f9ff1e3994b130ab11d56dc1c43fd42",
+      "result": {
+        "status": "passed",
+        "executions": 318,
+        "cycles": 21,
+        "setup_refusals": 147,
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75"
+      }
+    },
+    {
+      "name": "darwin-mapped-minimal",
+      "status": "passed",
+      "group": "legacy-personalities",
+      "receipt": "/workspace/classic-regressions/darwin-mapped-minimal/report.json",
+      "receipt_sha256": "1029f106acf0570f003ddf2bae584575c50195898b73543292bf67655ca0b491",
+      "result": {
+        "status": "passed",
+        "executions": 318,
+        "cycles": 21,
+        "setup_refusals": 147,
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75"
+      }
+    },
+    {
+      "name": "windows-protected",
+      "status": "passed",
+      "group": "legacy-personalities",
+      "receipt": "/workspace/classic-regressions/windows-protected/report.json",
+      "receipt_sha256": "07f7ee4e412dec408c07cfe5ddf50c77e585e3aa08af234312861e9bf0610f63",
+      "result": {
+        "status": "passed",
+        "executions": 507,
+        "cycles": 21,
+        "kernel_sha256": "dfa54c90f996df878b63720de179d5203eb75b834d903dc6a29a4ac0ef299a72",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75"
+      }
+    },
+    {
+      "name": "windows-composed",
+      "status": "passed",
+      "group": "legacy-personalities",
+      "receipt": "/workspace/classic-regressions/windows-composed/report.json",
+      "receipt_sha256": "3d0e27b5d16d1c09a26d98db61244cf1c5b1434138068bfbd8c5f849cb4e23ba",
+      "result": {
+        "status": "passed",
+        "executions": 773,
+        "kernel_sha256": "76be36b4cd4ae10396f7922b2c4b8ba90554e521d16e8fb9e75d97c471605f0e",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75"
+      }
     }
   ],
-  "checks_passed": 17,
+  "checks_passed": 21,
   "original_mac_entries": 130,
   "original_windows_entries": 130,
   "generated_hex": "53706163650a0101020203030404",
