@@ -175,12 +175,23 @@ def main():
                     row['stages'].append(dict(stage=stage, window_title=xdo('getwindowname', window).stdout.strip(),
                                               screenshot=str(capture), screenshot_sha256=sha(capture)))
                     if name in ['lite-xl', 'pulsar', 'zed']:
-                        key('ctrl+q')
+                        if name == 'lite-xl':
+                            # Upstream Linux Lite XL has no Ctrl+Q binding.
+                            # Invoke the actual registered quit action through
+                            # its real command palette, without a source patch.
+                            key('ctrl+shift+p')
+                            xdo('type', '--clearmodifiers', '--delay', '10', 'core:quit')
+                            palette = folder / (stage + '-command-palette.png')
+                            ImageGrab.grab(xdisplay=env['DISPLAY']).save(palette)
+                            row['stages'][-1]['command_palette_sha256'] = sha(palette)
+                            key('Return')
+                        else:
+                            key('ctrl+q')
                         deadline = time.monotonic() + 5
                         while time.monotonic() < deadline and window in windows():
                             time.sleep(.05)
                         row['stages'][-1]['graceful_close'] = window not in windows()
-                        assert row['stages'][-1]['graceful_close'], 'editor did not close after saved Ctrl+Q'
+                        assert row['stages'][-1]['graceful_close'], 'editor did not close after saved quit action'
                     stop(process); process = None
                 row['status'] = ('passed-edit-save-fresh-process-reopen' if name in ['lite-xl', 'pulsar', 'zed'] else
                                  'passed-real-shell-command' if name == 'wezterm' else 'visible-window-only')
