@@ -1,0 +1,104 @@
+package space.kernel
+import "windows-pe32-services.in"
+
+fn pe32-digest(image:Int,size:Int)->Int{let h=-3750763034362895579;let i=0;while i<size{h=(h^load8(image+i))*1099511628211;i+=1;}return h;}
+fn pe32-state-valid(state:Int)->Int{if state<65536 || (state&15)!=0 || state>heap-next || PE32-STATE-BYTES>heap-next - state{return 0;}return 1;}
+fn pe32-populate(state:Int,address:Int,source:Int,count:Int)->Int{
+ let done=0;while done<count{let part=count - done;if part>4096{part=4096;}let i=0;while i<part{store8(state+20480+i,load8(source+done+i));i+=1;}
+  let status=user-space-populate(load64(state+64),load64(state+32),address+done,state+20480,part);if status!=0{return status;}done+=part;
+ }return 0;
+}
+fn pe32-map(state:Int,image:Int)->Int{
+ let memory=load64(state+32);let space=load64(state+64);let opt=pe32-opt(image);let base=load32(opt+28);
+ let status=user-space-map-zero(space,memory,base,USER-SPACE-READ);if status!=0{return status;}
+ status=pe32-populate(state,base,image,load32(opt+60));if status!=0{return status;}
+ let i=0;while i<pe32-sections(image){let p=pe32-section(image,i);let count=load32(p+8);if load32(p+16)>count{count=load32(p+16);}count=(count+4095)&(-4096);
+  let permission=USER-SPACE-READ;let flags=load32(p+36);if (flags&0x20000000)!=0{permission=USER-SPACE-EXECUTE;}else if (flags&0x80000000)!=0{permission=USER-SPACE-WRITE;}
+  let off=0;while off<count{status=user-space-map-zero(space,memory,base+load32(p+12)+off,permission);if status!=0{return status;}off+=4096;}
+  status=pe32-populate(state,base+load32(p+12),image+load32(p+20),load32(p+16));if status!=0{return status;}i+=1;
+ }
+ i=0;while i<16{status=user-space-map-zero(space,memory,PE32-STACK+i*4096,USER-SPACE-WRITE);if status!=0{return status;}i+=1;}
+ i=0;while i<PE32-HEAP-BYTES/4096{status=user-space-map-zero(space,memory,PE32-HEAP+i*4096,USER-SPACE-WRITE);if status!=0{return status;}i+=1;}
+ status=user-space-map-zero(space,memory,PE32-STUB,USER-SPACE-EXECUTE);if status!=0{return status;}
+ return user-space-map-zero(space,memory,PE32-ARGUMENTS,USER-SPACE-READ);
+}
+fn pe32-bind-imports(state:Int,image:Int,size:Int)->Int{
+ let desc=pe32-import-descriptor(image,size);if desc<=0{return desc;}
+ let lookup=load32(image+desc);let iat=load32(image+desc+16);if lookup==0{lookup=iat;}
+ let i=0;while i<64{let off=pe32-rva(image,size,lookup+i*4,4);if off<0{return -8;}let name=load32(image+off);if name==0{return 0;}
+  let id=pe32-import-id(image,size,name);if id==0{return -38;}store32(state+20480,PE32-STUB+(id - 1)*32);
+  let status=user-space-populate(load64(state+64),load64(state+32),load32(pe32-opt(image)+28)+iat+i*4,state+20480,4);if status!=0{return status;}i+=1;
+ }return -8;
+}
+fn pe32-startup(state:Int,line:Int,bytes:Int)->Int{
+ cpu-mem-fill64(state+20480,0,512);let id=1;
+ while id<=19{let p=state+20480+(id - 1)*32;store8(p,0xb8);store32(p+1,0x320000+id);store8(p+5,0xcd);store8(p+6,0x80);store8(p+7,0xc2);store16(p+8,pe32-import-args(id)*4);id+=1;}
+ let p=state+20480+1024;store8(p,0x50);store8(p+1,0xb8);store32(p+2,0x320003);store8(p+6,0xcd);store8(p+7,0x80);store8(p+8,0x0f);store8(p+9,0x0b);
+ let space=load64(state+64);let memory=load64(state+32);
+ let status=user-space-populate(space,memory,PE32-STUB,state+20480,4096);if status!=0{return status;}
+ status=pe32-populate(state,PE32-ARGUMENTS,line,bytes);if status!=0{return status;}
+ store32(state+20480,PE32-STUB+1024);return user-space-populate(space,memory,PE32-STACK+65532,state+20480,4);
+}
+fn pe32-trap(frame:Int)->Int{
+ let state=pe32-active;
+ if state==0 || load64(state)!=PE32-MAGIC || load64(state+8)!=2 || domain-current!=load64(state+80) || load64(frame+128)!=0x3b{store64(frame+112,134);return 0;}
+ return 2;
+}
+fn pe32-process-recover(state:Int)->Int{
+ if pe32-state-valid(state)==0 || load64(state)!=PE32-MAGIC || pe32-active!=0{return -16;}
+ if pe32-files-release(state)!=0{store64(state+8,4);return -5;}
+ let memory=load64(state+32);let binding=load64(state+72);
+ if binding!=0{let status=user-space-release-binding(binding,memory);if status!=0{store64(state+8,4);return -5;}store64(state+72,0);}
+ if load64(state+152)!=0{let status=user-space-release(load64(state+64),memory);if status!=0{store64(state+8,4);return -5;}store64(state+152,0);}
+ store64(state+64,0);store64(state+8,3);return 0;
+}
+fn pe32-process-run(state:Int,image:Int,size:Int,line:Int,bytes:Int,serial:Int,storage:Int,memory:Int,timer:Int,budget:Int)->Int{
+ if pe32-active!=0 || domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0{return -16;}
+ if pe32-state-valid(state)==0{return -14;}if load64(state)==PE32-MAGIC && (load64(state+8)==2 || load64(state+8)==4){return -16;}
+ let entry=pe32-image-check(image,size);if entry<0{return entry;}
+ if state<image+size && image<state+PE32-STATE-BYTES{return -14;}
+ if line<=0 || bytes<1 || bytes>1024 || line>0x100000000 - bytes || load8(line+bytes - 1)!=0{return -22;}
+ let index=0;while index<bytes - 1{let c=load8(line+index);if c==0 || c>127{return -22;}index+=1;}
+ if line<state+PE32-STATE-BYTES && state<line+bytes{return -14;}
+ if budget<=0 || budget>10000 || cap-check(memory,cap-memory())==0{return -13;}
+ if serial < -1 || storage < -1 || timer < -1{return -22;}
+ if serial>=0 && cap-check(serial,cap-serial())==0{return -13;}if storage>=0 && cap-check(storage,cap-storage())==0{return -13;}if timer>=0 && cap-check(timer,cap-timer())==0{return -13;}
+ if user-space-quarantined(memory)>0 || pe32-generation>=65535{return -16;}
+ cpu-mem-fill64(state,0,PE32-STATE-BYTES/8);store64(state,PE32-MAGIC);store64(state+8,2);
+ store64(state+16,image);store64(state+24,size);store64(state+32,memory);store64(state+40,serial);store64(state+48,storage);store64(state+56,timer);
+ pe32-generation+=1;store64(state+120,pe32-generation);store64(state+136,6);store64(state+112,budget);store64(state+160,pe32-digest(image,size));
+ let pages=1+16+2+PE32-HEAP-BYTES/4096;index=0;while index<pe32-sections(image){let s=pe32-section(image,index);let vm=load32(s+8);if load32(s+16)>vm{vm=load32(s+16);}pages+=(vm+4095)/4096;index+=1;}
+ let space=user-space-create(memory,pages);
+ if space==0{store64(state+8,3);return -5;}
+ if space<0{
+  if space== -5{let retained=user-space-quarantined(memory);if retained>0{store64(state+64,retained);store64(state+152,1);store64(state+8,4);}}
+  else{store64(state+8,3);}return space;
+ }
+ store64(state+64,space);store64(state+152,1);store64(state+80,user-space-domain(space,memory));
+ let status=pe32-map(state,image);
+ if status==0{status=pe32-bind-imports(state,image,size);}if status==0{status=pe32-startup(state,line,bytes);}
+ if status==0 && pe32-digest(image,size)!=load64(state+160){status=-8;}
+ if status==0{status=user-context-init-compat32(state+256,768,load64(state+80),entry,0,PE32-STACK+65532);}
+ if status==0{let binding=user-space-attach(space,memory,state+256);if binding<0{status=binding;}else{store64(state+72,binding);status=user-space-release(space,memory);if status==0{store64(state+152,0);}}}
+ if status==0{
+  pe32-active=state;domain-user-syscall-hook=pe32-trap;let done=0;let calls=0;
+  while done==0{
+   let kind=user-space-resume(load64(state+72),memory,load64(state+112));store64(state+104,kind);
+   if kind==USER-CONTEXT-SUSPEND{
+    store64(state+112,user-context-remaining(state+256));calls+=1;store64(state+168,calls);
+    if calls>50000{status=-7;done=1;}
+    else if cap-check(memory,cap-memory())==0{status=-13;done=1;}
+    else if pe32-service(state)==0{status=load64(state+96);done=1;}
+    else if load64(state+112)<=0{status=124;done=1;}
+   }else{
+    done=1;if kind==USER-CONTEXT-FAULT{status=128+load64(state+256+696);}
+    else if kind==USER-CONTEXT-DEADLINE{status=124;}else if kind==USER-CONTEXT-EXIT{status=load64(state+256+720);}else{status=-5;}
+   }
+  }
+  domain-user-syscall-hook=0;pe32-active=0;
+ }
+ store64(state+96,status);
+ if pe32-process-recover(state)!=0{return -5;}
+ if pe32-digest(image,size)!=load64(state+160){return -8;}
+ return status;
+}

@@ -1,0 +1,63 @@
+package space.kernel
+
+fn compat32-test-hook(frame:Int)->Int{
+ if load64(frame+112)==0x320002{store64(frame+112,42);return 0;}
+ return 2;
+}
+fn compat32-test-free()->Int{let count=0;let p=free-list;while p!=0 && count<32768{count+=1;p=load64(p);}return count;}
+fn compat32-test(port:Int)->void{
+ let memory=cap-mint(root-realm,cap-memory());let context=alloc(768);let cloned=alloc(768);let buffer=alloc(4096);
+ let cycle=0;let heap=0;let free=0;let domains=0;let caps=cap-count;
+ while cycle<24{
+  let mode=0;
+  while mode<6{
+   let space=user-space-create(memory,8);if space<0{panic("compat32 native space creation");}
+   let domain=user-space-domain(space,memory);
+   if user-space-map-zero(space,memory,0x42000000,USER-SPACE-EXECUTE)!=0 || user-space-map-zero(space,memory,0x42002000,USER-SPACE-WRITE)!=0 || user-space-map-zero(space,memory,0x42003000,USER-SPACE-WRITE)!=0{panic("compat32 native map");}
+   let payload=0x10000000;if mode==5{payload+=4096;}
+   let byte=0;while byte<4096{store8(buffer+byte,load8(payload+byte));byte+=1;}
+   if user-space-populate(space,memory,0x42000000,buffer,4096)!=0{panic("compat32 code population");}
+   store64(buffer,mode);if user-space-populate(space,memory,0x42002000,buffer,8)!=0{panic("compat32 input population");}
+   let status=user-context-init-compat32(context,768,domain,0x42000000,0,0x42003ff0);
+   if mode==5{status=user-context-init(context,768,domain,0x42000000,0,0x42003ff0);}
+   if status!=0{panic("compat32 context initialization");}
+   // Distinct tags/selectors must not be interchangeable, and 32-bit entry,
+   // stack and TLS addresses must not silently truncate higher bits.
+   let cs=load64(context+128);store64(context+128,0x1b);if mode==5{store64(context+128,0x3b);}
+   if user-context-valid(context)!=0{panic("compat32 selector/tag confusion");}store64(context+128,cs);
+   if mode!=5{
+    store64(context+120,0x142000000);if user-context-valid(context)!=0{panic("compat32 high instruction accepted");}store64(context+120,0x42000000);
+    store64(context+144,0x142003ff0);if user-context-valid(context)!=0{panic("compat32 high stack accepted");}store64(context+144,0x42003ff0);
+    if user-context-set-tls(context,0x142002000,0)!=-1 || load64(context+672)!=0{panic("compat32 high TLS accepted");}
+   }
+   let binding=user-space-attach(space,memory,context);if binding<0{panic("compat32 native attach");}
+   if user-space-release(space,memory)!=0{panic("compat32 constructor release");}
+   domain-user-syscall-hook=compat32-test-hook;
+   let kind=user-space-resume(binding,memory,5);
+   if mode==0{
+    if kind!=USER-CONTEXT-SUSPEND || load64(context+128)!=0x3b || load64(context+112)!=0x320001 || load64(context+104)!=0x12345678{panic("compat32 actual stopped registers");}
+    if user-context-remaining(context)<=0{panic("compat32 remaining CPU budget");}
+    let child=user-space-clone-binding(binding,memory,cloned,768);if child<0 || load64(cloned+736)!=USER-CONTEXT-MAGIC32 || load64(cloned+128)!=0x3b{panic("compat32 stopped native clone");}
+    store64(context+112,0x89abcdef);kind=user-space-resume(binding,memory,5);
+    store64(cloned+112,0x89abcdef);
+    if user-space-resume(child,memory,5)!=USER-CONTEXT-EXIT || load64(cloned+720)!=42{panic("compat32 cloned GP/FX continuation");}
+    if user-space-release-binding(child,memory)!=0 || user-space-resume(child,memory,5)!=-6{panic("compat32 cloned binding lifetime");}
+   }
+   let expected=USER-CONTEXT-EXIT;if mode==1{expected=USER-CONTEXT-DEADLINE;}if mode>=2 && mode<=4{expected=USER-CONTEXT-FAULT;}
+   if kind!=expected{serial-write-dec-wide(port,mode);serial-write-dec-wide(port,kind);panic("compat32 CPU stop kind");}
+   if (mode==0 || mode==5) && load64(context+720)!=42{panic("compat32 original register continuation");}
+   if mode==2 && load64(context+696)!=14{panic("compat32 readonly fault");}
+   if mode==3 && load64(context+696)!=13{panic("compat32 privileged I/O denial");}
+   if mode==4 && load64(context+696)!=14{panic("compat32 NX fault");}
+   domain-user-syscall-hook=0;
+   if user-space-release-binding(binding,memory)!=0 || user-space-resume(binding,memory,5)!=-6{panic("compat32 native lifetime");}
+   if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || cap-count!=caps{panic("compat32 supervisor restoration");}
+   mode+=1;
+  }
+  if cycle==0{heap=heap-next;free=compat32-test-free();domains=domain-count;}
+  else if heap-next!=heap || compat32-test-free()!=free || domain-count!=domains{panic("compat32 repeated ownership leak");}
+  cycle+=1;
+ }
+ cap-revoke(memory);
+ serial-write-cstr(port,"compat32: 144 initial native activations, 48 resumes, 24 clones, GP FX selector/width budget RX/NX privilege and native64 restoration PASS");serial-nl(port);
+}

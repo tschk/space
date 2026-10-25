@@ -6,6 +6,14 @@ personalities; keep implementing and locally testing real CLI and GUI applicatio
 until the acceptance matrix below works end to end. This is the full project
 goal. The fixture lab is an early checkpoint, not the completion target.
 
+The [original cross-OS execution continuation](plans/2026-10-25-original-cross-os-execution.md)
+now runs the upstream Windows PE32 `fasmg.exe` compiler in real compatibility
+mode over native owned objects. It prints its own help, compiles source files
+with macros/arithmetic to exact output bytes, and produces real compiler errors.
+The first expanded run passes 65 original activations and 21 resource cycles.
+The macOS original and broader Windows PE32+/GUI application goals remain open.
+This bounded integration is not ordinary installed-app/desktop launch.
+
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)
 is historical; its compiler and protected-execution blockers have since advanced.
@@ -109,7 +117,8 @@ refusal while preserving original Linux workloads and desktop behavior.
 Windows Find work proceeds separately: a finite root adapter now passes624
 actual CPL3 fixture activations on RAM and1248 across two actual NVMe boots,
 with complete record oracles, revocation, fault/deadline and lifetime checks.
-Original Windows application entries remain zero. See the
+Original Windows PE32+ application entries remain zero; the later PE32 compiler
+continuation above has separate actual execution evidence. See the
 [Find boundary and evidence](plans/2026-10-24-windows-find.md).
 
 The later686-file sourcead0a0be passes all139 gates at

@@ -5,6 +5,7 @@ package space.kernel
 // or syscall-number handling belongs here.
 const USER-CONTEXT-BYTES = 768
 const USER-CONTEXT-MAGIC = 0x5350435543545831
+const USER-CONTEXT-MAGIC32 = 0x5350435543545832
 const USER-CONTEXT-EXIT = 1
 const USER-CONTEXT-FAULT = 2
 const USER-CONTEXT-DEADLINE = 3
@@ -18,7 +19,8 @@ var user-context-active: Int = 0
 // excludes kernel service time and is not a wall-clock deadline.
 fn user-context-remaining(context: Int) -> Int {
   if domain-current != 0 || cr3-read() != load64(domain-table) || context <= 0 || (context & 15) != 0 { return -1 }
-  if load64(context + 736) != USER-CONTEXT-MAGIC { return -1 }
+  let tag = load64(context + 736)
+  if tag != USER-CONTEXT-MAGIC && tag != USER-CONTEXT-MAGIC32 { return -1 }
   return load64(context + 760)
 }
 
@@ -29,15 +31,20 @@ fn user-context-domain-valid(domain: Int) -> Int {
 }
 
 fn user-context-valid(context: Int) -> Int {
-  if context <= 0 || (context & 15) != 0 || load64(context + 736) != USER-CONTEXT-MAGIC { return 0 }
+  if context <= 0 || (context & 15) != 0 { return 0 }
+  let mode = load64(context + 736)
+  if mode != USER-CONTEXT-MAGIC && mode != USER-CONTEXT-MAGIC32 { return 0 }
   let domain = load64(context + 712)
   if user-context-domain-valid(domain) == 0 { return 0 }
-  if load64(context + 128) != 0x1b || load64(context + 152) != 0x23 { return 0 }
+  let cs = 0x1b
+  if mode == USER-CONTEXT-MAGIC32 { cs = 0x3b }
+  if load64(context + 128) != cs || load64(context + 152) != 0x23 { return 0 }
   let flags = load64(context + 136)
   if (flags & 0x202) != 0x202 || (flags & (-1 ^ USER-CONTEXT-RFLAGS-MASK)) != 0 { return 0 }
   let rip = load64(context + 120)
   let rsp = load64(context + 144)
   if rip < 0 || rip >= 0x800000000000 || rsp < 0 || rsp >= 0x800000000000 { return 0 }
+  if mode == USER-CONTEXT-MAGIC32 && (rip >= 0x100000000 || rsp >= 0x100000000) { return 0 }
   let code = domain-page-flags(domain,load64(context + 120))
   let stack = domain-page-flags(domain,load64(context + 144))
   if (code & 5) != 5 || (code & PAGE-NX) != 0 || (stack & 7) != 7 || (stack & PAGE-NX) == 0 { return 0 }
@@ -45,6 +52,7 @@ fn user-context-valid(context: Int) -> Int {
   while i <= 680 {
     let base = load64(context + i)
     if base < 0 || base >= 0x800000000000 { return 0 }
+    if mode == USER-CONTEXT-MAGIC32 && base >= 0x100000000 { return 0 }
     if base != 0 && (domain-page-flags(domain,base) & 5) != 5 { return 0 }
     i = i + 8
   }
@@ -70,6 +78,17 @@ fn user-context-init(context: Int, bytes: Int, domain: Int, entry: Int, arg: Int
   store64(context + 712,domain)
   store64(context + 728,1)
   store64(context + 736,USER-CONTEXT-MAGIC)
+  if user-context-valid(context) == 0 { store64(context + 736,0); return -1 }
+  return 0
+}
+
+// Explicit compatibility-mode constructor. Existing native64 initialization
+// retains its selector/tag; neither format is inferred from executable bytes.
+fn user-context-init-compat32(context: Int, bytes: Int, domain: Int, entry: Int, arg: Int, stack: Int) -> Int {
+  if entry < 0 || entry >= 0x100000000 || stack < 0 || stack >= 0x100000000 || arg < 0 || arg > 0xffffffff { return -1 }
+  if user-context-init(context,bytes,domain,entry,arg,stack) != 0 { return -1 }
+  store64(context + 128,0x3b)
+  store64(context + 736,USER-CONTEXT-MAGIC32)
   if user-context-valid(context) == 0 { store64(context + 736,0); return -1 }
   return 0
 }

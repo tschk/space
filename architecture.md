@@ -1,5 +1,14 @@
 # Space Architecture
 
+The [original Windows PE32 continuation](docs/plans/2026-10-25-original-cross-os-execution.md)
+adds an explicitly tagged 32-bit compatibility-mode CPU context alongside the
+existing 64-bit context. Its PE/stdcall/heap/file/clock policy stays in private
+personality libraries over the existing native owned address space and CPU
+objects. User-mode import capsules only stop execution; native services run
+after kernel-root restoration. No alternate mapping ledger or SCI privilege
+bypass is added. Original application output and lifecycle evidence remain
+separate from native CPU control fixtures.
+
 ```
          ┌─────────────────────────────────────┐
          │              Space                   │

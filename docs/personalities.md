@@ -1,5 +1,18 @@
 # Compatibility personalities
 
+## Original Windows PE32 compiler continuation
+
+The [cross-OS continuation](plans/2026-10-25-original-cross-os-execution.md)
+adds a distinct hardware compatibility-mode CPU context and a separate PE32
+profile over native owned address spaces. The original upstream Windows
+`fasmg.exe` now executes its own instructions, prints help, reads source files
+and produces exact macro/arithmetic output in Space. The first expanded run has
+65 original activations including real compiler error exits and 21 ownership
+cycles. Nineteen checked KERNEL32 imports, an explicit empty environment and a
+bounded private heap/file profile are supported. The existing PE32+ profiles
+remain separate. This is a private kernel-linked integration path; normal
+installed-app launch, broader dependencies and Windows GUI apps remain open.
+
 The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
 Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
 edit/save/reopen profile executes original vi; focused interactive TUI support

@@ -1,0 +1,89 @@
+package space.kernel
+import "user-address-space.in"
+import "windows-pe32-image.in"
+
+const PE32-STATE-BYTES=32768
+const PE32-MAGIC=0x5045333243545801
+const PE32-STUB=0x4f000000
+const PE32-ARGUMENTS=0x4f001000
+const PE32-STACK=0x4f010000
+const PE32-HEAP=0x48000000
+const PE32-HEAP-BYTES=0x400000
+var pe32-active:Int=0
+var pe32-generation:Int=0
+
+fn pe32-span(state:Int,address:Int,count:Int,write:Int)->Int{
+ if address<65536 || address>=0x100000000 || count<0 || count>65536 || count>0x100000000 - address{return 0;}
+ let row=user-space-service-row(load64(state+72),load64(state+32));if row<0{return 0;}
+ let permission=USER-SPACE-READ;if write!=0{permission=USER-SPACE-WRITE;}
+ return user-space-span(row,address,count,permission)==0;
+}
+fn pe32-in(state:Int,address:Int,target:Int,count:Int)->Int{return user-space-copy-in(load64(state+72),load64(state+32),address,target,count);}
+fn pe32-out(state:Int,address:Int,source:Int,count:Int)->Int{return user-space-copy-out(load64(state+72),load64(state+32),address,source,count);}
+fn pe32-get32(state:Int,address:Int)->Int{if pe32-in(state,address,state+20480,4)!=0{return -1;}return load32(state+20480);}
+fn pe32-put32(state:Int,address:Int,value:Int)->Int{store32(state+20480,value);return pe32-out(state,address,state+20480,4);}
+fn pe32-error(state:Int,error:Int,result:Int)->Int{store64(state+88,error);return result;}
+fn pe32-zero(state:Int,address:Int,count:Int)->Int{
+ cpu-mem-fill64(state+20480,0,512);let done=0;
+ while done<count{let part=count - done;if part>4096{part=4096;}if pe32-out(state,address+done,state+20480,part)!=0{return -1;}done+=part;}return 0;
+}
+fn pe32-copy(state:Int,to:Int,from:Int,count:Int)->Int{
+ let done=0;while done<count{let part=count - done;if part>4096{part=4096;}
+ if pe32-in(state,from+done,state+20480,part)!=0 || pe32-out(state,to+done,state+20480,part)!=0{return -1;}done+=part;}return 0;
+}
+fn pe32-heap-slot(state:Int,handle:Int)->Int{
+ let slot=handle&255;if slot<1 || slot>4 || handle!=(0x48000000|(load64(state+120)<<8)|slot){return 0;}
+ if (load64(state+128)&(1<<(slot - 1)))==0{return 0;}return slot;
+}
+fn pe32-heap-record(state:Int,handle:Int,address:Int)->Int{
+ if pe32-heap-slot(state,handle)==0{return 0;}let i=0;
+ while i<256{let row=state+1024+i*32;if load64(row+24)==handle && load64(row)==address{return row;}i+=1;}return 0;
+}
+fn pe32-heap-room(state:Int,address:Int,count:Int,ignore:Int)->Int{
+ if address<PE32-HEAP || count<0 || count>PE32-HEAP-BYTES || address - PE32-HEAP>PE32-HEAP-BYTES - count{return 0;}
+ let i=0;while i<256{let row=state+1024+i*32;if row!=ignore && load64(row+24)!=0 && address<load64(row)+load64(row+16) && load64(row)<address+count{return 0;}i+=1;}return 1;
+}
+fn pe32-heap-alloc(state:Int,handle:Int,flags:Int,bytes:Int)->Int{
+ if pe32-heap-slot(state,handle)==0{return pe32-error(state,6,0);}if (flags&(0xffffffff^9))!=0{return pe32-error(state,50,0);}
+ if bytes<0 || bytes>PE32-HEAP-BYTES{return pe32-error(state,8,0);}let extent=(bytes+15)&(-16);if extent==0{extent=16;}
+ let empty=0;let used=0;let i=0;while i<256{let row=state+1024+i*32;if load64(row+24)==0 && empty==0{empty=row;}if load64(row+24)==handle{used+=load64(row+16);}i+=1;}if empty==0 || extent>load64(state+18432+(pe32-heap-slot(state,handle) - 1)*8) - used{return pe32-error(state,8,0);}
+ let address=PE32-HEAP;let attempt=0;while attempt<=256{
+  let next=address;i=0;while i<256{let row=state+1024+i*32;if load64(row+24)!=0 && address<load64(row)+load64(row+16) && load64(row)<address+extent{if load64(row)+load64(row+16)>next{next=load64(row)+load64(row+16);}}i+=1;}
+  if next==address{
+   if pe32-heap-room(state,address,extent,0)==0{return pe32-error(state,8,0);}
+   if (flags&8)!=0 && pe32-zero(state,address,bytes)!=0{return pe32-error(state,5,0);}
+   store64(empty,address);store64(empty+8,bytes);store64(empty+16,extent);store64(empty+24,handle);return address;
+  }address=next;attempt+=1;
+ }return pe32-error(state,8,0);
+}
+fn pe32-heap-operation(state:Int,id:Int,args:Int)->Int{
+ let handle=load32(args);let flags=load32(args+4);let address=load32(args+8);
+ if cap-check(load64(state+32),cap-memory())==0{return pe32-error(state,5,0);}
+ if id==10{
+  if (handle&(0xffffffff^1))!=0{return pe32-error(state,50,0);}if flags>PE32-HEAP-BYTES || address>PE32-HEAP-BYTES || (address!=0 && flags>address){return pe32-error(state,8,0);}
+  let slot=0;while slot<4{if (load64(state+128)&(1<<slot))==0{let limit=PE32-HEAP-BYTES;if address!=0{limit=(address+65535)&(-65536);}store64(state+18432+slot*8,limit);store64(state+128,load64(state+128)|(1<<slot));return 0x48000000|(load64(state+120)<<8)|(slot+1);}slot+=1;}return pe32-error(state,8,0);
+ }
+ let slot=pe32-heap-slot(state,handle);if slot==0{return pe32-error(state,6,0);}
+ if id==11{let i=0;while i<256{let row=state+1024+i*32;if load64(row+24)==handle{store64(row+24,0);}i+=1;}store64(state+128,load64(state+128)&(-1^(1<<(slot - 1))));return 1;}
+ if id==9{return pe32-heap-alloc(state,handle,flags,address);}
+ let allowed=1;if id==13{allowed=25;}if (flags&(0xffffffff^allowed))!=0{return pe32-error(state,50,0);}
+ let row=pe32-heap-record(state,handle,address);if row==0{let failure=0;if id==14{failure=0xffffffff;}return pe32-error(state,87,failure);}
+ if id==14{return load64(row+8);}if id==12{store64(row+24,0);return 1;}
+ let bytes=load32(args+12);if bytes>PE32-HEAP-BYTES{return pe32-error(state,8,0);}let extent=(bytes+15)&(-16);if extent==0{extent=16;}
+ let used=0;let index=0;while index<256{let other=state+1024+index*32;if other!=row && load64(other+24)==handle{used+=load64(other+16);}index+=1;}if extent>load64(state+18432+(slot - 1)*8) - used{return pe32-error(state,8,0);}
+ let old=load64(row+8);
+ if pe32-heap-room(state,address,extent,row)!=0{
+  if bytes>old && (flags&8)!=0 && pe32-zero(state,address+old,bytes - old)!=0{return pe32-error(state,5,0);}
+  store64(row+8,bytes);store64(row+16,extent);return address;
+ }
+ if (flags&16)!=0{return pe32-error(state,8,0);}let next=pe32-heap-alloc(state,handle,flags&9,bytes);if next==0{return 0;}
+ let count=old;if bytes<count{count=bytes;}
+ if pe32-copy(state,next,address,count)!=0{let fresh=pe32-heap-record(state,handle,next);if fresh!=0{store64(fresh+24,0);}return pe32-error(state,5,0);}
+ store64(row+24,0);return next;
+}
+fn pe32-heap-service(state:Int,id:Int,args:Int)->Int{
+ let error=load64(state+88);let result=pe32-heap-operation(state,id,args);
+ // HeapAlloc/HeapReAlloc do not publish LastError, including failure. The
+ // other heap APIs retain their documented error reporting.
+ if id==9 || id==13{store64(state+88,error);}return result;
+}

@@ -1084,6 +1084,7 @@ tss_desc:
     db 0
     dd 0
     dd 0
+    dq 0x00CFFA000000FFFF           ; 0x38 user compatibility CS DPL3, 32-bit
 gdt_end:
 gdt_desc:
     dw gdt_end - gdt - 1
