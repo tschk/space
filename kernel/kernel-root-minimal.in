@@ -10,6 +10,7 @@ import "../components/nvme-unavailable.in"
 import "../protocol/display.in"
 import "../components/serial.in"
 import "../components/memory.in"
+import "../components/counter.in"
 import "../components/object.in"
 import "../components/interrupts.in"
 import "../components/domain.in"
@@ -31,7 +32,7 @@ import "../components/shell-minimal.in"
 
 // Minimal nanokernel root: the same dynamic nanokernel as kernel-root.in,
 // but without network, storage drivers, personalities, or display/input.
-// Core services (serial, VM, domains, interrupts, dynamic linking) plus the
+// Core services (serial, VM, domains, interrupts, optional native counter, dynamic linking) plus the
 // filesystem-backed shell. Apps ship in the boot image and load on demand
 // via the shell's `runapp` command (see components/app-*.in).
 
@@ -99,6 +100,7 @@ fn kernel-entry(mb-info: Int) -> Int {
   boot-quiet = 1
 
   discover-memory(mb-info)
+  counter-init(mb-info)
   obj-arena-init(65536)
   cap-table-init(64)
   let cap-table-obj = obj-alloc(2)

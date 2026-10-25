@@ -1,5 +1,7 @@
 package space.kernel
 import "../linux-vm/direct.in"
+import "clock.in"
+import "launch.in"
 var linux-check-file-path: Int = 0
 
 fn linux-check(expect: Int, actual: Int) -> void {
@@ -159,6 +161,7 @@ fn linux-check-file-denials(fixture: Int, revocable: Int) -> void {
   linux-check(0,linux-process-file-seek(guest,0,0))
   let slot = cap-table-base + revocable * 16
   let target = load64(slot)
+  let granted=load64(slot+8)
   linux-process-authority = revocable
   linux-check(0,cap-revoke(revocable))
   linux-check(-13,linux-process-file-read(guest,0x20000200,1))
@@ -180,7 +183,7 @@ fn linux-check-file-denials(fixture: Int, revocable: Int) -> void {
   linux-check(0,linux-process-file-close(guest))
   linux-check(-9,linux-process-file-read(guest,0x20000200,1))
   store64(slot,target)
-  store64(slot+8,cap-memory()|cap-serial()|cap-storage())
+  store64(slot+8,granted)
   linux-process-authority = authority
   linux-process-stack-string(0x20000000,"/absent-json-file")
   linux-check(-2,linux-process-file-open(0x20000000,0))
@@ -236,6 +239,7 @@ fn linux-check-anonymous() -> void {
 }
 
 fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocable: Int, authority: Int) -> void {
+  linux-check-launch(image,size,fixture,authority)
   linux-check(-13, linux-process-run(image,size,"/jq","-nc","0",-1))
   let saved = load64(image)
   store64(image, 0)
@@ -310,6 +314,7 @@ fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocab
   wrmsr64(0xC0000101,saved-gs)
 
   linux-fixture-begin(revocable)
+  linux-check-clock(frame,fixture)
   linux-check-anonymous()
   linux-check-file-denials(fixture,revocable)
   linux-process-stdout-open = 1
@@ -320,12 +325,13 @@ fn linux-check-negative(image: Int, size: Int, fixture: Int, frame: Int, revocab
   linux-check(-13, linux-check-call(frame,1,1,0x20000000,1))
   let cap-slot = cap-table-base + revocable * 16
   let target = load64(cap-slot)
+  let granted=load64(cap-slot+8)
   linux-process-authority = revocable
   linux-check(0, cap-revoke(revocable))
   linux-check(-13, linux-check-call(frame,1,1,0x20000000,1))
   linux-check(-13, linux-process-run(image,size,"/jq","-nc","0",revocable))
   store64(cap-slot, target)
-  store64(cap-slot + 8, cap-memory() | cap-serial() | cap-storage())
+  store64(cap-slot + 8, granted)
   linux-process-authority = revocable
   linux-check(-13, linux-process-mprotect(0x20001000,4096,3))
   linux-check(-22, linux-process-mprotect(0x20000001,4096,1))

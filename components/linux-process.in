@@ -2,6 +2,7 @@ package space.kernel
 import "linux-process-source.in"
 import "linux-process-vm.in"
 import "linux-process-clock.in"
+import "linux-process-launch.in"
 import "linux-process-devices.in"
 import "linux-process-files.in"
 import "linux-process-mmap.in"
@@ -12,6 +13,7 @@ import "linux-process-descriptors.in"
 import "linux-process-blocking.in"
 import "linux-process-schedule.in"
 import "linux-process-poll.in"
+import "linux-process-select.in"
 import "linux-process-truncate.in"
 import "linux-process-terminal-dispatch.in"
 
@@ -407,7 +409,7 @@ fn linux-process-dispatch(frame: Int) -> Int {
   if number == 267 { first = linux-process-int32(first);fourth = linux-process-int32(fourth) }
   if number == 89 { third = linux-process-int32(third) }
   if number == 21 { second = linux-process-int32(second) }
-  if number == 158 { first = linux-process-int32(first) }
+  if number == 158 || number == 228 || number == 229 || number == 23 || number == 270 { first = linux-process-int32(first) }
   if number == 302 { first = linux-process-int32(first);second = second & 0xFFFFFFFF }
   if number == 318 { third = third & 0xFFFFFFFF }
   if number == 202 { second = linux-process-int32(second);third = third & 0xFFFFFFFF }
@@ -533,7 +535,10 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else { result = linux-process-random(first, second) }
   } else if number == 334 { result = -38 }
   else if number == 201 { result = linux-process-time(first) }
-  else if number == 228 { result = -38 }
+  else if number == 23 || number == 270 { let layout=0;if number==270{layout=1;}result=linux-process-select(first,second,third,fourth,load64(frame+56),load64(frame+48),layout) }
+  else if number == 96 { result = linux-process-gettimeofday(first,second) }
+  else if number == 228 { result = linux-process-clock-gettime(first,second) }
+  else if number == 229 { result = linux-process-clock-getres(first,second) }
   else if number == 10 { result = linux-process-mprotect(first, second, third) }
   else if number == 16 { if linux-process-device-is(first)!=0{result=linux-process-device-ioctl(first,second,third);}else if first == 1 || first == 2 || linux-process-pipe-is(first) != 0 { result = -25 } else { result = -9 } }
   else if number == 79 {
@@ -634,12 +639,16 @@ fn linux-process-run-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: In
 // Trusted caller's bounded initial argv profile. Existing three-slot callers
 // keep their exact old stack; one/two arguments use the owned exec vector builder.
 fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int, count: Int) -> Int {
-  if count < 1 || count > 3 { return -22 }
+  return linux-process-run-profile(image,size,arg0,arg1,arg2,authority,input,count,0)
+}
+fn linux-process-run-profile(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, input: Int, count: Int, vector:Int) -> Int {
+  if count < 1 || count > LINUX-STATE-ARGS || (vector==0 && count>3) { return -22 }
   if linux-process-cleanup-failed != 0 { return -5 }
   let entry = linux-process-elf-entry(image, size)
   if entry < 0 { return entry }
   if cap-check(authority, cap-memory() | cap-serial()) == 0 { return -13 }
-  if arg0 == 0 || strlen(arg0) > 255 { return -22 }
+  if vector!=0{let checked=linux-process-launch-vector-check(vector,count);if checked!=0{return checked;}}
+  if arg0 == 0 || (vector==0 && strlen(arg0) > 255) { return -22 }
   if count > 1 { if arg1 == 0 || strlen(arg1) > 255 { return -22 } }
   if count > 2 { if arg2 == 0 || strlen(arg2) > 511 { return -22 } }
   if domain-current != 0 || linux-process-active != 0 || domain-user-syscall-hook != 0 { return -16 }
@@ -700,7 +709,8 @@ fn linux-process-run-counted-input(image: Int, size: Int, arg0: Int, arg1: Int, 
   let stack = 0
   linux-process-staging-context = load64(root-row + LPS-USER-CONTEXT)
   if status == 0 {
-    if count == 3 { stack = linux-process-stack(image,arg0,arg1,arg2) }
+    if vector!=0{linux-process-initial-vector(root-row,vector,count);stack=linux-process-exec-stack(root-row,image)}
+    else if count == 3 { stack = linux-process-stack(image,arg0,arg1,arg2) }
     else {
       linux-process-initial-arguments(root-row,arg0,arg1,arg2,count)
       stack = linux-process-exec-stack(root-row,image)

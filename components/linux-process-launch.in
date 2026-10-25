@@ -1,0 +1,28 @@
+package space.kernel
+
+// Trusted synchronous launch seam, not a raw SCI or guest-pointer export.
+// Caller owns stable native strings through preparation. The process row copies
+// them to its existing owned argv/env storage before the first CPU activation.
+fn linux-process-launch-vector-check(vector:Int,count:Int)->Int{
+ if count<1 || count>LINUX-STATE-ARGS{return -22;}
+ if vector<65536 || (vector&7)!=0 || vector>heap-next || count*8>heap-next - vector{return -14;}
+ let i=0;while i<count{let text=load64(vector+i*8);
+  if text<65536 || text>=heap-next{return -14;}
+  let n=0;let ended=0;while n<512 && n<heap-next - text && ended==0{if load8(text+n)==0{ended=1;}else{n+=1;}}
+  if ended==0{return -7;}if i==0 && n==0{return -22;}
+  i+=1;
+ }return 0;
+}
+fn linux-process-run-vector-input(image:Int,size:Int,vector:Int,count:Int,authority:Int,input:Int)->Int{
+ if domain-current!=0 || linux-process-active!=0 || domain-user-syscall-hook!=0{return -16;}
+ if cap-check(authority,cap-memory()|cap-serial())==0{return -13;}
+ let status=linux-process-launch-vector-check(vector,count);if status!=0{return status;}
+ return linux-process-run-profile(image,size,load64(vector),"","",authority,input,count,vector);
+}
+fn linux-process-initial-vector(row:Int,vector:Int,count:Int)->void{
+ linux-process-initial-arguments(row,"","","",0);
+ let array=load64(row+LPS-ARGV);let buffer=load64(row+LPS-ARG-BUFFER);let i=0;
+ while i<count{let text=load64(vector+i*8);let length=strlen(text);let target=buffer+i*512;store64(array+i*8,target);
+  let n=0;while n<=length{store8(target+n,load8(text+n));n+=1;}i+=1;
+ }store64(row+LPS-ARGC,count);
+}

@@ -40,15 +40,15 @@ def main():
     parser.add_argument('--in', dest='compiler', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True, help='New or empty evidence directory')
     parser.add_argument('--apps-dir', type=Path, required=True, help='Pinned upstream application cache')
-    for name in ['lua', 'busybox', 'sqlite', 'fbv']:
+    for name in ['lua', 'busybox', 'sqlite', 'fbv', 'quickjs', 'sed']:
         parser.add_argument('--' + name, type=Path,
                             help='Pinned source-built ' + name + '; otherwise --download builds an absent artifact')
     parser.add_argument('--busybox-vfork', type=Path, help='Separate pinned upstream xargs ELF; otherwise cache busybox-vfork or --download builds it')
     parser.add_argument('--busybox-vi', type=Path, help='Separate pinned upstream vi ELF; otherwise cache busybox-vi or --download builds it')
     parser.add_argument('--terminal-oracle-python',type=Path,default=Path(sys.executable),
                         help='Interpreter with fixtures/terminal-session/oracle-requirements.txt for screen/pixel comparisons')
-    parser.add_argument('--cohort',choices=['all','cross-os'],default='all',
-                        help='all gates or the original cross-OS assembler/native ownership cohort')
+    parser.add_argument('--cohort',choices=['all','cross-os','cli'],default='all',
+                        help='all gates, original cross-OS assembler cohort, or broader original CLI cohort')
     parser.add_argument('--fasmg-archive',type=Path,help='Existing pinned fasmg archive; otherwise cache or --download')
     parser.add_argument('--download', action='store_true', help='Acquire/build absent pinned applications; every hash remains required')
     parser.add_argument('--pipeline-wall-timeout', type=int, default=1200,
@@ -71,10 +71,12 @@ def main():
         'schema_version': 2, 'started_utc': datetime.now(timezone.utc).isoformat(),
         'compiler': str(args.compiler), 'compiler_sha256': sha(args.compiler),
         'goal_status': 'OPEN', 'cohort':args.cohort,
-        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Original Linux/macOS/Windows fasmg executes unchanged with exact compiler outputs, errors and cleanup; native32/low-VM controls remain separately counted. Broader dependencies, general foreign GUI/FLTK/X11 and desktop app launch remain open.',
+        'scope': 'Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Original QuickJS/GNU sed add language/file/regex work, owned launch vectors and true stopped-CPU clock deadlines. Original Linux/macOS/Windows fasmg executes unchanged with exact compiler outputs, errors and cleanup; native32/low-VM controls remain separately counted. Broader dependencies, general foreign GUI/FLTK/X11 and desktop app launch remain open.',
         'gates': [], 'applications': [],
         'source_sha256': source_inventory(ROOT, [args.out, args.apps_dir]),
     }
+    if args.cohort=='cross-os':report['scope']='Pinned original Linux/macOS/Windows assembler builds across six CPU profiles, acquisition and four separate native ownership/CPU gates; no new graphical application claim.'
+    if args.cohort=='cli':report['scope']='Original unchanged-source QuickJS and GNU sed on standard/minimal roots, explicit no-HPET wall-clock profile and separate compiled-private SCI refusals; no graphical application claim.'
     # Retain explicit trusted baseline gates; dedicated default GUI gates clear
     # this choice and build the shipped protected image independently.
     environment = dict(os.environ, IN=str(args.compiler), BUILD_DIR=str(args.out / 'images'),
@@ -152,33 +154,66 @@ def main():
         return path
 
     save()
-    # This mandatory cohort preserves original bytes and licenses, and is also
-    # runnable independently while the complete all-gates receipt stays scoped.
-    fasmg_cache=args.apps_dir/'fasmg'
-    command=[sys.executable,ROOT/'scripts/acquire-fasmg.py','--out',fasmg_cache]
-    if args.fasmg_archive:command+=['--archive',args.fasmg_archive.resolve()]
-    if args.download:command+=['--download']
-    acquired=run('fasmg-acquire',command)
-    fasmg_apps={}
-    if acquired:
+    if args.cohort in ['all','cross-os']:
+        # This mandatory cohort preserves original bytes and licenses, and is also
+        # runnable independently while the complete all-gates receipt stays scoped.
+        fasmg_cache=args.apps_dir/'fasmg'
+        command=[sys.executable,ROOT/'scripts/acquire-fasmg.py','--out',fasmg_cache]
+        if args.fasmg_archive:command+=['--archive',args.fasmg_archive.resolve()]
+        if args.download:command+=['--download']
+        acquired=run('fasmg-acquire',command)
+        fasmg_apps={}
+        if acquired:
+            try:
+                for app in json.loads((ROOT/'fixtures/applications/fasmg.json').read_text())['apps']:
+                    app=dict(app,id='fasmg-'+app['personality'])
+                    fasmg_apps[app['personality']]=require_artifact(app,fasmg_cache/app['id'])
+            except (OSError,RuntimeError,ValueError) as error:
+                report.setdefault('artifact_failure',{'reason':str(error)});return finish()
+        for personality,cpus in [('linux',['max','qemu64-rdrand']),('darwin',['max','qemu64']),('windows',['max','qemu64'])]:
+            for cpu in cpus:
+                name='original-fasmg-'+personality+'-'+cpu
+                run(name,[sys.executable,ROOT/('scripts/check-fasmg-'+personality+'.py'),
+                          '--in',args.compiler,'--app',fasmg_apps.get(personality,fasmg_cache/('fasmg-'+personality)),
+                          '--cpu',cpu,'--out',args.out/name],dependency=acquired)
+        for cpu in ['max','qemu64']:
+            for profile,script in [('compat32','check-user-context-compat32.py'),('low-view','check-user-space-low.py')]:
+                name='native-'+profile+'-'+cpu
+                run(name,[sys.executable,ROOT/'scripts'/script,'--in',args.compiler,
+                          '--cpu',cpu,'--out',args.out/name])
+    if args.cohort=='cross-os':return finish()
+    if args.cohort in ['all','cli']:
+        cli_apps={}
         try:
-            for app in json.loads((ROOT/'fixtures/applications/fasmg.json').read_text())['apps']:
-                app=dict(app,id='fasmg-'+app['personality'])
-                fasmg_apps[app['personality']]=require_artifact(app,fasmg_cache/app['id'])
+            for name,version,filename in [('quickjs','2024-01-13','qjs'),('sed','4.9','sed')]:
+                explicit=getattr(args,name)
+                path=explicit.resolve() if explicit else args.apps_dir/filename
+                if not path.exists() and args.download and not explicit:
+                    if not run(name+'-source-build',[sys.executable,ROOT/'scripts/build-cli-corpus.py',
+                               '--application',name,'--out',args.out/(name+'-build')],timeout=900):
+                        raise RuntimeError(name+' unchanged source build failed; receipt retained')
+                    path=args.out/(name+'-build')/filename
+                app=json.loads((ROOT/'fixtures/applications'/(name+'-'+version+'.json')).read_text())['apps'][0]
+                cli_apps[name]=require_artifact(app,path)
         except (OSError,RuntimeError,ValueError) as error:
             report.setdefault('artifact_failure',{'reason':str(error)});return finish()
-    for personality,cpus in [('linux',['max','qemu64-rdrand']),('darwin',['max','qemu64']),('windows',['max','qemu64'])]:
-        for cpu in cpus:
-            name='original-fasmg-'+personality+'-'+cpu
-            run(name,[sys.executable,ROOT/('scripts/check-fasmg-'+personality+'.py'),
-                      '--in',args.compiler,'--app',fasmg_apps.get(personality,fasmg_cache/('fasmg-'+personality)),
-                      '--cpu',cpu,'--out',args.out/name],dependency=acquired)
-    for cpu in ['max','qemu64']:
-        for profile,script in [('compat32','check-user-context-compat32.py'),('low-view','check-user-space-low.py')]:
-            name='native-'+profile+'-'+cpu
-            run(name,[sys.executable,ROOT/'scripts'/script,'--in',args.compiler,
-                      '--cpu',cpu,'--out',args.out/name])
-    if args.cohort=='cross-os':return finish()
+        for name in ['quickjs','sed']:
+            for variant in ['standard','minimal']:
+                gate='original-'+name+'-'+variant
+                extra=['--timer-grant','--expect-deadline-wait'] if name=='quickjs' else []
+                version='2024-01-13' if name=='quickjs' else '4.9'
+                run(gate,[sys.executable,ROOT/'scripts/check-linux-corpus.py','--in',args.compiler,
+                          '--application',name,'--app',cli_apps[name],'--suite','--input-suite',
+                          '--case-config',ROOT/'fixtures/applications'/(name+'-'+version+'-cases.json'),
+                          '--root',variant,*extra,'--out',args.out/gate],timeout=900)
+        gate='original-quickjs-no-hpet'
+        run(gate,[sys.executable,ROOT/'scripts/check-linux-corpus.py','--in',args.compiler,
+                  '--application','quickjs','--app',cli_apps['quickjs'],'--suite','--input-suite',
+                  '--case-config',ROOT/'fixtures/applications/quickjs-2024-01-13-nohpet-cases.json',
+                  '--timer-grant','--no-hpet','--out',args.out/gate],timeout=900)
+        run('private-execution-imports',[sys.executable,ROOT/'scripts/check-private-execution-imports.py',
+                                       '--in',args.compiler,'--out',args.out/'private-execution-imports'])
+    if args.cohort=='cli':return finish()
     applications = {}
     try:
         for app in json.loads((ROOT / 'fixtures/applications/jq-1.8.1.json').read_text())['apps']:

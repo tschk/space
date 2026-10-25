@@ -87,6 +87,7 @@ fn linux-process-schedule-wake() -> Int {
       else if operation == 9 || operation == 10 { result = linux-process-terminal-io(operation,fd,buffer,count) }
       else if operation == 11 { result = linux-process-terminal-poll(fd,buffer,count) }
       else if operation == 12 { result = linux-process-terminal-control(fd,buffer,count,before) }
+      else if operation == 13 { result = linux-process-select-retry(fd,buffer,count,before) }
       let signal = linux-process-signal-deliver()
       if linux-process-state-save(row) != 0 { return linux-process-state-refuse(row) }
       if signal != 0 {
@@ -158,6 +159,9 @@ fn linux-process-family-run(root: Int) -> Int {
         done = 1
       }
       else if changed < 0 { status = -5;done = 1 }
+      else if row==0 && linux-process-select-waiting()!=0 {
+        linux-process-select-idle()
+      }
       else if row == 0 {
         if linux-process-terminal-waiting() != 0 {
           if linux-process-state-load(root) != 0 { return linux-process-state-refuse(root) }
@@ -227,7 +231,7 @@ fn linux-process-family-run(root: Int) -> Int {
             if linux-process-state-load(root) != 0 { return linux-process-state-refuse(root) }
             linux-process-schedule-finish(root,-5,-5,0)
             status = -5;done = 1
-          } else if (operation >= 3 && operation <= 5) || (operation >= 9 && operation <= 12) { store64(row + LPS-STATUS,LINUX-STATE-BLOCKED) }
+          } else if (operation >= 3 && operation <= 5) || (operation >= 9 && operation <= 13) { store64(row + LPS-STATUS,LINUX-STATE-BLOCKED) }
           else { store64(context + 112,-38);store64(row + LPS-STATUS,LINUX-STATE-READY) }
         } else {
           let result = load64(context + 720)

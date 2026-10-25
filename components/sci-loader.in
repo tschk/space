@@ -519,6 +519,7 @@ fn dyn-name-prefix(name: Int, prefix: Int) -> Int {
 
 fn dyn-kernel-exportable(name: Int) -> Int {
   if runtime-instance-exportable(name) == 0 { return 0 }
+  if dyn-name-prefix(name,"execution-clock-")!=0 || dyn-name-prefix(name,"supervisor-window-")!=0 || dyn-name-prefix(name,"pe32-")!=0 || dyn-name-prefix(name,"dc-")!=0 { return 0 }
   if dyn-name-prefix(name,"native-protected-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-startup-") != 0 { return 0 }
   if dyn-name-prefix(name,"darwin-eager-") != 0 { return 0 }

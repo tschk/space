@@ -14,13 +14,16 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--in', dest='compiler', required=True)
 parser.add_argument('--app', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
-parser.add_argument('--application', choices=['jq','lua','busybox','sqlite'], default='jq')
+parser.add_argument('--application', choices=['jq','lua','busybox','sqlite','quickjs','sed'], default='jq')
 parser.add_argument('--manifest', type=Path, help='explicit pinned application profile manifest (recorded separately)')
-parser.add_argument('--case-config', type=Path, help='explicit three-argument application corpus JSON')
+parser.add_argument('--case-config', type=Path, help='explicit bounded argument-vector application corpus JSON')
 parser.add_argument('--filter','--expression', dest='filter')
 parser.add_argument('--expected')
 parser.add_argument('--expected-exit', type=int, default=0)
 parser.add_argument('--trace', action='store_true')
+parser.add_argument('--expect-deadline-wait',action='store_true',help='Require actual stopped-CPU native IRQ waits, not a timer busy loop')
+parser.add_argument('--no-hpet',action='store_true',help='Actual PC boot without the HPET monotonic source')
+parser.add_argument('--timer-grant',action='store_true',help='Explicitly grant native clock/counter access to tested processes')
 parser.add_argument('--suite', action='store_true', help='also exercise application arithmetic, text, memory and errors')
 parser.add_argument('--root', choices=['standard','minimal'], default='standard', help='kernel service root under test')
 parser.add_argument('--input-suite', action='store_true', help='also exercise real VFS stdin and file I/O')
@@ -34,7 +37,7 @@ if not 1 <= args.repeat <= 100: parser.error('--repeat must be 1..100')
 if args.wall_timeout is not None and not 1 <= args.wall_timeout <= 3600: parser.error('--wall-timeout must be 1..3600')
 if args.out.exists() and any(args.out.iterdir()):
     parser.error('--out must be new or empty')
-version={'jq':'jq-1.8.1','lua':'lua-5.4.7','busybox':'busybox-1.36.1','sqlite':'sqlite-3.46.1'}[args.application]
+version={'jq':'jq-1.8.1','lua':'lua-5.4.7','busybox':'busybox-1.36.1','sqlite':'sqlite-3.46.1','quickjs':'quickjs-2024-01-13','sed':'sed-4.9'}[args.application]
 config_bytes=args.case_config.read_bytes() if args.case_config else None
 manifest_bytes=args.manifest.read_bytes() if args.manifest else None
 # Compile a recorded source snapshot: simultaneous repository work must not
@@ -144,7 +147,7 @@ if args.application in ['busybox','sqlite'] or config_bytes is not None:
                 assert case.get('create'), 'shared-file follow-up must preserve the existing file'
             bound_file_slots.add(slot)
         if 'stdin' in item: case['input']=item['stdin']
-        assert len(case['argv'])==3 and all(isinstance(word,str) for word in case['argv']), 'corpus requires exactly three argv strings'
+        assert 1<=len(case['argv'])<=16 and all(isinstance(word,str) and len(word.encode())<=511 for word in case['argv']), 'bounded launch vector requires 1..16 strings of at most511 bytes'
         cases.append(case)
     if not args.suite:
         cases=cases[:1]+([case for case in cases[1:] if 'input' in case or 'file' in case] if args.input_suite else [])
@@ -181,7 +184,7 @@ for index, case in enumerate(cases):
         case['space_expected_stdout']=reference.stdout.replace(str(reference_path),guest_file_path(index))
 infinite_argv=config.get('infinite_argv',['/ash','-c','while :; do :; done']) if args.application in ['busybox','sqlite'] or config_bytes is not None else [guest_name,expression_flag,infinite_query]
 try:
-    subprocess.run(infinite_argv,executable=str(args.app),env={'LC_ALL':'C','HOME':'/'},cwd='/',umask=0o22,capture_output=True,timeout=.25,check=True)
+    subprocess.run(infinite_argv,executable=str(args.app),input=config.get('infinite_stdin') if config_bytes is not None else None,text=True,env={'LC_ALL':'C','HOME':'/'},cwd='/',umask=0o22,capture_output=True,timeout=.25,check=True)
 except subprocess.TimeoutExpired:
     infinite_reference='host infinite computation timed out as expected'
 else:
@@ -192,8 +195,10 @@ source = 'import '+json.dumps(str(ROOT/'components/linux-process.in'))+'\nimport
 assert source.count('  shell(port)')==1
 source=source.replace('  shell(port)', '  linux-real-app-test(port)\n  shell(port)')
 source+='''
+fn linux-real-argv-store(vector:Int,index:Int,text:Int)->void{store64(vector+index*8,text);}
 fn linux-real-app-test(port:Int)->void{
  let image=0x10000000;let size=APP_SIZE;
+ let deadline-waits-before=execution-clock-interrupt-waits;
  let fixture=alloc(4096);let frame=alloc(128);
  // Reuse the already owned fixture page for bounded native loader staging;
  // direct adapter negatives must not lazily allocate a new test-only cache.
@@ -226,7 +231,7 @@ fn linux-real-app-test(port:Int)->void{
  let leases=fs-range-count;
  let owned=domain-user-owned;let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);
  let started=ticks;
- linux-check(124,linux-process-run(image,size,INFINITE_ARGV,authority));
+ linux-check(124,INFINITE_CALL);
  if ticks - started<BUDGET{panic("Linux budget did not consume guest IRQ ticks");}
  linux-check(0,user-budget-active);
  linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
@@ -237,7 +242,7 @@ fn linux-real-app-test(port:Int)->void{
  serial-write-cstr(port,"linux-real-app: actual guest IRQ cancellation passed");serial-nl(port);
  let i=0;
  while i<REPEAT{
-  let status=linux-process-run(image,size,PRIMARY_ARGV,authority);
+  let status=PRIMARY_CALL;
   linux-check(EXPECTED_EXIT,status);
   linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
   linux-check(domains,domain-count);linux-check(owned,domain-user-owned);
@@ -268,18 +273,34 @@ fn linux-real-app-test(port:Int)->void{
  linux-check(0,domain-destroy-user(witness-domain));frame-free(witness-frame);
  linux-check(fs,rdmsr(0xC0000100));wrmsr64(0xC0000100,caller-fs);
  linux-check(gs,rdmsr(0xC0000101));wrmsr64(0xC0000101,caller-gs);
+ let waited=execution-clock-interrupt-waits - deadline-waits-before;
+ if EXPECT_DEADLINE_WAIT && waited<=0{panic("Native deadline IRQ wait not observed");}
+ serial-write-cstr(port,"linux-real-app: native deadline waits ");serial-write-dec-wide(port,waited);serial-nl(port);
  serial-write-cstr(port,"linux-real-app: other domain same-VA sentinel passed");serial-nl(port);
  serial-write-cstr(port,"linux-real-app: regression passed ");serial-write-dec-wide(port,i);serial-nl(port);
 }
-'''.replace('PRIMARY_ARGV',','.join(json.dumps(word,ensure_ascii=False) for word in application_argv(cases[0]))).replace('INFINITE_ARGV',','.join(json.dumps(word,ensure_ascii=False) for word in infinite_argv)).replace('APP_SIZE',str(args.app.stat().st_size)).replace('BUDGET',str(args.budget_ticks)).replace('TRACE','1' if args.trace else '0').replace('REPEAT',str(args.repeat)).replace('EXPECTED_EXIT',str(cases[0]['exit'])).replace('FILTER',json.dumps(args.filter))
+'''.replace('EXPECT_DEADLINE_WAIT','true' if args.expect_deadline_wait else 'false').replace('cap-memory()|cap-serial()|cap-storage()','cap-memory()|cap-serial()|cap-storage()|cap-timer()' if args.timer_grant else 'cap-memory()|cap-serial()|cap-storage()').replace('PRIMARY_ARGV',','.join(json.dumps(word,ensure_ascii=False) for word in application_argv(cases[0]))).replace('INFINITE_ARGV',','.join(json.dumps(word,ensure_ascii=False) for word in infinite_argv)).replace('APP_SIZE',str(args.app.stat().st_size)).replace('BUDGET',str(args.budget_ticks)).replace('TRACE','1' if args.trace else '0').replace('REPEAT',str(args.repeat)).replace('EXPECTED_EXIT',str(cases[0]['exit'])).replace('FILTER',json.dumps(args.filter))
+launch_vector_count=0
 def space_call(argv, input_index=None):
+    global launch_vector_count
     words=','.join(json.dumps(word,ensure_ascii=False) for word in argv)
+    if len(argv)!=3:
+        assert 1<=len(argv)<=16
+        name='launchargv'+str(launch_vector_count);launch_vector_count+=1
+        seed_files.append('let '+name+'=alloc('+str(len(argv)*8)+');'+''.join('linux-real-argv-store('+name+','+str(i)+','+json.dumps(word,ensure_ascii=False)+');' for i,word in enumerate(argv)))
+        fd='input'+str(input_index) if input_index is not None else '-1'
+        return f'linux-process-run-vector-input(image,size,{name},{len(argv)},authority,{fd})'
     if input_index is not None: return f'linux-process-run-input(image,size,{words},authority,input{input_index})'
     return f'linux-process-run(image,size,{words},authority)'
 
 case_calls=[]
 seed_files=[]
 input_repeat=[]
+if config_bytes is not None and 'infinite_stdin' in config:
+    content=config['infinite_stdin']
+    assert isinstance(content,str) and 0<len(content.encode())<=65536
+    seed_files.append('linux-check(0,fs-write-file("/linux-infinite-input",'+json.dumps(content)+','+str(len(content.encode()))+'));let input_infinite=vfs-open-borrowed-path("/linux-infinite-input",VFS-O-RDONLY);if input_infinite<3{panic("Infinite input open");}')
+    words=','.join(json.dumps(word,ensure_ascii=False) for word in infinite_argv)
 if any('input' in case or 'file' in case for case in cases):
     witness='{"items":[1,2,3],"message":"from Space VFS"}\n'
     seed_files.append(f'linux-check(0,fs-write-file("/linux-check-data.json",{json.dumps(witness)},45));linux-check-file-path="/linux-check-data.json";')
@@ -302,9 +323,11 @@ for index, case in enumerate(cases):
                 input_repeat.append(f'let available{index}=vfs-fd-alloc();\n linux-check({case["exit"]},{call});\n linux-check(available{index},vfs-fd-alloc());')
     else:
         call=space_call(application_argv(case))
+        if case.get('repeat'):input_repeat.append(f'linux-check({case["exit"]},{call});')
     case_calls.append(f'''serial-write-cstr(port,"linux-real-app: case {index} begins");serial-nl(port);
  let result{index}={call};
  serial-write-cstr(port,"linux-real-app: case {index} exit ");serial-write-dec-wide(port,result{index});serial-nl(port);''')
+source=source.replace('PRIMARY_CALL',space_call(application_argv(cases[0]))).replace('INFINITE_CALL',space_call(infinite_argv,'_infinite' if config_bytes is not None and 'infinite_stdin' in config else None))
 source=source.replace('CASE_CALLS','\n'.join(case_calls)).replace('SEED_FILES','\n'.join(seed_files)).replace('INPUT_CYCLES','\n'.join(input_repeat)).replace('WARM_INPUT','\n'.join(input_repeat))
 (args.out/'kernel.in').write_text(source)
 compiler_sha256=hashlib.sha256(Path(args.compiler).read_bytes()).hexdigest()
@@ -316,6 +339,7 @@ commands=[
 with (args.out/'compile.log').open('w') as log:
     for command in commands:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
 qcommand=['qemu-system-x86_64','-cpu','max','-kernel',str(args.out/'kernel.bin'),'-m','512M','-display','none','-no-reboot','-serial','file:'+str(args.out/'serial.log'),'-device',f'loader,file={args.app},addr=0x10000000,force-raw=on','-device',f'loader,file={args.out / "int-width.elf"},addr=0x18000000,force-raw=on']
+if args.no_hpet:qcommand+=['-machine','pc,hpet=off']
 with (args.out/'qemu.log').open('w') as log:
     qemu=subprocess.Popen(qcommand,stdout=log,stderr=subprocess.STDOUT)
     try:
@@ -346,7 +370,7 @@ with (args.out/'qemu.log').open('w') as log:
         actual_activations=len(cases)+warmup_activations+args.repeat*(1+warmup_activations)+1
         report={'space_status':'passed' if all(case['passed'] for case in results) and regression else 'failed',
                 'environment':{'LC_ALL':'C','HOME':'/'},'working_directory':'/','umask':'022','source_receipt':str(ROOT/'receipt.json'),'source_receipt_sha256':hashlib.sha256((ROOT/'receipt.json').read_bytes()).hexdigest(),
-                'root':args.root,'application':version+' unmodified static Linux ELF','application_sha256':app['sha256'],'application_manifest_sha256':hashlib.sha256(manifest_bytes).hexdigest(),
+                'root':args.root,'timer_granted':args.timer_grant,'hpet_available':not args.no_hpet,'native_deadline_idle_waits':int(re.search(r'linux-real-app: native deadline waits (\d+)',text)[1]) if re.search(r'linux-real-app: native deadline waits (\d+)',text) else None,'native_clock_provider_controls_per_cycle':True,'application':version+' unmodified static Linux ELF','application_sha256':app['sha256'],'application_manifest_sha256':hashlib.sha256(manifest_bytes).hexdigest(),
                 'reference':cases,'infinite_reference':infinite_reference, 'space':{'cases':results,'repeat_cleanup_and_denial_passed':regression,
                 'repeat_count':args.repeat,'external_wall_timeout_seconds':wall_timeout,'external_wall_timeout_hit':wall_timeout_hit,'qemu_elapsed_seconds':qemu_elapsed,'actual_application_activations':actual_activations,'file_transition_warmup_activations':warmup_activations,'guest_budget_ticks':args.budget_ticks,'guest_irq_cancellation_passed':'linux-real-app: actual guest IRQ cancellation passed' in text,'other_domain_same_va_sentinel_passed':'linux-real-app: other domain same-VA sentinel passed' in text,'hardware_faults_per_cycle':7,'caller_fs_canary':4194304,'caller_gs_canary':4194304,'qemu_command':qcommand,'kernel_sha256':hashlib.sha256((args.out/'kernel.bin').read_bytes()).hexdigest()},
                 'personality_sha256':hashlib.sha256((ROOT/'components/linux-process.in').read_bytes()).hexdigest(),

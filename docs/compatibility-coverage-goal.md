@@ -21,9 +21,17 @@ integration is not ordinary installed-app/desktop launch.
 The repeatable original cross-OS cohort is part of `check-application-lab.py`:
 `--cohort cross-os` verifies pinned acquisition/license bytes, the three original
 assemblers on two explicit CPU profiles each, and native32/low-address ownership
-controls. Default `all` retains the existing gates, bringing definitions to176.
+controls. At that cross-OS checkpoint, default `all` retained the existing gates and
+brought definitions to176. The later CLI additions below bring it to182.
 This is not a new complete176-gate receipt. Linux's second profile explicitly
 adds RDRAND; plain qemu64 still lacks the required startup entropy source.
+
+The broader CLI cohort (`--cohort cli`) adds original QuickJS and GNU sed,
+owned1..16 argument vectors, native clock controls, real stopped-CPU timer waits
+and compiled-private SCI import refusals. Both tools retain unchanged upstream
+source and repeatable static builds. With cached artifacts, `all` now defines182
+gates; absent CLI artifacts can add two source-build gates. A new complete182-gate
+run is not claimed. The full foreign GUI and product-launch targets remain open.
 
 Latest actual local results: [execution checkpoint](plans/2026-10-25-application-execution.md).
 The earlier [real-application checkpoint](plans/2026-10-24-real-applications.md)

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "application": "sed",
+  "version": "4.9",
+  "license": "GPL-3.0-or-later",
+  "source": {
+    "url": "https://ftp.gnu.org/gnu/sed/sed-4.9.tar.xz",
+    "sha256": "6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181",
+    "modified": false,
+    "hash_provenance": "Measured upstream release archive; independent signature verification not claimed"
+  },
+  "build": {
+    "profile": "Unmodified upstream static Linux ELF; remove linker build-id and strip debug sections for path-independent artifact",
+    "commands": [
+      [
+        "./configure",
+        "--disable-nls",
+        "--disable-acl",
+        "--without-selinux"
+      ],
+      [
+        "make",
+        "-j2"
+      ],
+      [
+        "strip",
+        "--strip-debug",
+        "<output-binary>"
+      ]
+    ],
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "linker": "GNU ld (GNU Binutils for Debian) 2.44",
+    "environment": {
+      "LC_ALL": "C",
+      "TZ": "UTC",
+      "SOURCE_DATE_EPOCH": "0",
+      "FORCE_UNSAFE_CONFIGURE": "1",
+      "CFLAGS": "-O2",
+      "LDFLAGS": "-static -no-pie -Wl,--build-id=none"
+    },
+    "unchanged_upstream_source_files": 508,
+    "license_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "configuration": "Upstream configure with NLS/ACL/SELinux disabled; no source patches. Filesystem operations outside the declared native profile remain unsupported."
+  },
+  "apps": [
+    {
+      "id": "sed-4.9-linux-x86_64",
+      "personality": "linux",
+      "filename": "sed",
+      "sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "size_bytes": 1021800,
+      "modified": false
+    }
+  ],
+  "diagnostic_artifact": {
+    "sha256": "6c2f213f539c05343dbe4c1d08f6c31b8b1d7579776e3bdc90ba5d0e5beeff5a",
+    "size_bytes": 1029160,
+    "scope": "Initial unstripped diagnostic; receipts retain their own manifest snapshot"
+  }
+}

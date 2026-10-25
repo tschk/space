@@ -18,7 +18,13 @@ verified independently of native VM/provider controls. General desktop launch
 and foreign GUI frameworks remain unfinished. The Linux edge also requests the
 explicit8192-page policy with its existing64-KiB minimum, admits bounded larger
 BSS and copies only file-backed bytes into native zeroed pages. Linux time(2)
-requires a native timer grant.
+requires a native timer grant. The broader CLI continuation adds owned launch
+vectors and Linux clock/select translation over the existing process state.
+A private native execution-clock seam yields for a real IRQ only with the user
+CPU stopped and preserves native IF/context state. It carries no Linux timeout
+layout or foreign process policy. Kernel SCI export discovery excludes this
+seam, supervisor relocation, classic Darwin and PE32 private helpers.
+
 
 ```
          ┌─────────────────────────────────────┐

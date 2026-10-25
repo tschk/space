@@ -1,0 +1,20 @@
+package space.kernel
+import "user-address-space.in"
+import "counter.in"
+
+// Private native execution seam. Foreign time structures and process pending
+// state do not enter this provider. Yield at most one real IRQ with no user CPU
+// or budget active, then restore IF. No polling loop with interrupts disabled.
+var execution-clock-interrupt-waits:Int=0
+fn execution-clock-await-interrupt(timer:Int,frequency:Int,deadline:Int)->Int{
+ if user-space-kernel()==0 || load64(0x4028)!=0{return -16;}
+ if cap-check(timer,cap-timer())==0{return -13;}
+ if frequency<=0 || frequency>1000000000000000 || counter-frequency-authorized(timer)!=frequency{return -95;}
+ let flags-entry=load64(0x4198);if flags-entry==0{return -16;}
+ let flags=invoke1(flags-entry,0);cli();let now=counter-read-authorized(timer);let result=0;
+ if now<0{result=-95;}
+ else if deadline<0 || (deadline>now && deadline - now>frequency*60){result=-22;}
+ else if now<deadline{sti();hlt();cli();execution-clock-interrupt-waits+=1;result=1;}
+ if cap-check(timer,cap-timer())==0{result=-13;}
+ if (flags&512)!=0{sti();}return result;
+}

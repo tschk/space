@@ -29,6 +29,16 @@ the actual native RTC. Linux `time(2)` requires the timer grant; image limits
 are8192 total pages,6144 image pages and24 MiB per segment, with the existing
 64-KiB minimum and reserved low supervisor addresses.
 
+The [broader CLI continuation](plans/2026-10-25-broader-original-apps.md)
+also runs unmodified-source static QuickJS2024-01-13 and GNU sed4.9. QuickJS
+language, BigInt, Unicode/regex, promises, files and real clocks pass; GNU sed
+regex/hold-space/file transformations pass. Owned launch vectors accept up to16
+strings. Finite zero-descriptor select/pselect6 waits retain the real CPU/VM,
+wait for an actual native IRQ and resume after a counter deadline; descriptor
+selects, temporary signal masks and infinite waits still refuse. Timer services
+require explicit native authority. These are private kernel-linked integrations,
+not broader dynamic loading or graphical app support.
+
 The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
 Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
 edit/save/reopen profile executes original vi; focused interactive TUI support

@@ -1,0 +1,19 @@
+package space.fixture
+fn linux-check-argv-store(vector:Int,index:Int,text:Int)->void{store64(vector+index*8,text);}
+fn linux-check-launch(image:Int,size:Int,fixture:Int,authority:Int)->void{
+ let vector=fixture+2048;let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;
+ linux-check(-13,linux-process-run-vector-input(image,size,0,99,-1,-1));
+ linux-check(-22,linux-process-run-vector-input(image,size,vector,0,authority,-1));
+ linux-check(-22,linux-process-run-vector-input(image,size,vector,17,authority,-1));
+ linux-check(-14,linux-process-run-vector-input(image,size,0,1,authority,-1));
+ linux-check(-14,linux-process-run-vector-input(image,size,vector+1,1,authority,-1));
+ linux-check(-14,linux-process-run-vector-input(image,size,heap-next,1,authority,-1));
+ let i=0;while i<16{linux-check-argv-store(vector,i,"x");i+=1;}
+ linux-check-argv-store(vector,0,"");linux-check(-22,linux-process-run-vector-input(image,size,vector,16,authority,-1));
+ linux-check-argv-store(vector,0,"/real-app");store64(vector+15*8,0);
+ linux-check(-14,linux-process-run-vector-input(image,size,vector,16,authority,-1));
+ i=0;while i<512{store8(fixture+3072+i,65);i+=1;}store64(vector+15*8,fixture+3072);
+ linux-check(-7,linux-process-run-vector-input(image,size,vector,16,authority,-1));
+ linux-check(heap,heap-next);linux-check(free,free-list);linux-check(domains,domain-count);linux-check(caps,cap-count);
+ if dyn-resolve-idx("linux-process-run-vector-input")!=-1 || dyn-resolve-idx("linux-process-run-profile")!=-1{panic("Linux launch vector raw native export");}
+}
