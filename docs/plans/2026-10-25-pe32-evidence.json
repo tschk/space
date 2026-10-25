@@ -1,0 +1,300 @@
+{
+  "goal_status": "OPEN",
+  "runtime_source": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+  "final_windows_harness_source": "c8b4e137883f9089c9036745c670687beaf18736",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "scope": "Actual original Windows PE32 execution and existing Linux/native/desktop QEMU regressions; no new GUI/macOS execution claim",
+  "windows": [
+    {
+      "cpu": "max",
+      "source_commit": "c8b4e137883f9089c9036745c670687beaf18736",
+      "receipt": "/workspace/fasmg-win-final-max/report.json",
+      "receipt_sha256": "94ac43dfdabc4723c1d2344051bf014e555fbb5f445ddd3c4a67ecebb0c4c248",
+      "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+      "kernel_sha256": "c2fcf967bf7d478c83c96af3e9788f87835adf9c2bb6ed2318849c25dd8e123a",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "malformed_controls": 6,
+      "observed_import_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "generated_hex": "53706163650a0101020203030404"
+    },
+    {
+      "cpu": "qemu64",
+      "source_commit": "c8b4e137883f9089c9036745c670687beaf18736",
+      "receipt": "/workspace/fasmg-win-final-qemu64/report.json",
+      "receipt_sha256": "e6b9c2301934530af1bc3e70854e3627a6e1a8058448c0e9b3b331c437fe299a",
+      "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+      "kernel_sha256": "c2fcf967bf7d478c83c96af3e9788f87835adf9c2bb6ed2318849c25dd8e123a",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "malformed_controls": 6,
+      "observed_import_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "generated_hex": "53706163650a0101020203030404"
+    }
+  ],
+  "regressions": [
+    {
+      "name": "compat32-max",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/compat32-max/report.json",
+      "receipt_sha256": "98876ad0080e0afb04bba14bc5eb165bbdb0f659e769d50bfc12118182e4080b",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/cpu.json",
+      "group_receipt_sha256": "5333890179b6ed090d5d7a854d4705ea7c2aefe7297b182d59450b3f74a67875",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-context-compat32.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/compat32-max",
+        "--cpu",
+        "max"
+      ]
+    },
+    {
+      "name": "compat32-qemu64",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/compat32-qemu64/report.json",
+      "receipt_sha256": "f4a877f646931368d5ff7211e407e4d2cb4977d58835568d18b3698d41047674",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/cpu.json",
+      "group_receipt_sha256": "5333890179b6ed090d5d7a854d4705ea7c2aefe7297b182d59450b3f74a67875",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-context-compat32.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/compat32-qemu64",
+        "--cpu",
+        "qemu64"
+      ]
+    },
+    {
+      "name": "native64-qemu64",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/native64-qemu64/report.json",
+      "receipt_sha256": "06815301002edae7b9918fb8f3dd5fc2dc553842f4559e5eff61791a458856b9",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/cpu.json",
+      "group_receipt_sha256": "5333890179b6ed090d5d7a854d4705ea7c2aefe7297b182d59450b3f74a67875",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-context.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/native64-qemu64",
+        "--cpu",
+        "qemu64"
+      ]
+    },
+    {
+      "name": "native64-max",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/native64-max/report.json",
+      "receipt_sha256": "f9db91a0da89e7f533f64e56b3a8cb735d6d21ac95e177b9b06fe962c03d79d5",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/cpu.json",
+      "group_receipt_sha256": "5333890179b6ed090d5d7a854d4705ea7c2aefe7297b182d59450b3f74a67875",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-context.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/native64-max",
+        "--cpu",
+        "max"
+      ]
+    },
+    {
+      "name": "jq",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/jq/report.json",
+      "receipt_sha256": "7adc9892cc0331310e52c984e5437b16eb690da798f3625b61345e1e2b60fd35",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/linux.json",
+      "group_receipt_sha256": "a9a8315b76faf4a68f1a8d3b8645415376b898ba68ffe469972e2930ec551ae9",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/jq",
+        "--app",
+        "/workspace/real-apps/jq-1.8.1/jq-linux-amd64",
+        "--application",
+        "jq",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ]
+    },
+    {
+      "name": "lua",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/lua/report.json",
+      "receipt_sha256": "80644afdb83f0383cae866e944b802c32112972525b8f39450d1262dbb7b91ac",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/linux.json",
+      "group_receipt_sha256": "a9a8315b76faf4a68f1a8d3b8645415376b898ba68ffe469972e2930ec551ae9",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/lua",
+        "--app",
+        "/workspace/real-apps/lua-5.4.7/lua-5.4.7/src/lua",
+        "--application",
+        "lua",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ]
+    },
+    {
+      "name": "sqlite",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/sqlite/report.json",
+      "receipt_sha256": "6b99cea15c9dc4e09a321410e738329c3a22ec1a9bf9f60b96f8158ac2fc3f87",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/linux.json",
+      "group_receipt_sha256": "a9a8315b76faf4a68f1a8d3b8645415376b898ba68ffe469972e2930ec551ae9",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/sqlite",
+        "--app",
+        "/tmp/space-sqlite-builder-canonical/sqlite3",
+        "--application",
+        "sqlite",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ]
+    },
+    {
+      "name": "user-space-standard",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/user-space-standard/report.json",
+      "receipt_sha256": "6bb3132baff26ae76a61c63808ce2e0954bc31d760692a9376e7e0db3106adca",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/native-gui.json",
+      "group_receipt_sha256": "b6b9aae9775458ce06574bcc33df6d98b609ac38a6e7b624488d02e0d548f885",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/user-space-standard"
+      ]
+    },
+    {
+      "name": "user-space-minimal",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/user-space-minimal/report.json",
+      "receipt_sha256": "9d92bd33b6f61f3211fa19097048945b20d4cb594a9df144e6d083a01a0cde6e",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/native-gui.json",
+      "group_receipt_sha256": "b6b9aae9775458ce06574bcc33df6d98b609ac38a6e7b624488d02e0d548f885",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/pe32-regressions/user-space-minimal",
+        "--root",
+        "minimal"
+      ]
+    },
+    {
+      "name": "desktop-launcher",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/desktop-launcher.log",
+      "receipt_sha256": "1b6709b06e4e0abe956104ebb14f92630717ecc3f4f36bf68c1e82ead1bf86e7",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/native-gui.json",
+      "group_receipt_sha256": "b6b9aae9775458ce06574bcc33df6d98b609ac38a6e7b624488d02e0d548f885",
+      "command": [
+        "python3",
+        "/workspace/space-pe32-source/scripts/check-desktop-launcher.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--build-dir",
+        "/workspace/pe32-regressions/desktop-launcher"
+      ]
+    },
+    {
+      "name": "desktop-damage",
+      "source_commit": "fd9a48b754473baff75fcf3819fa7a6e3931ca1f",
+      "receipt": "/workspace/pe32-regressions/desktop-damage.log",
+      "receipt_sha256": "1106edce4a527afc13d0c0aff739c2b65247554d99578c8f021c71a29c96fa2d",
+      "status": "passed",
+      "group_receipt": "/workspace/pe32-regressions/native-gui.json",
+      "group_receipt_sha256": "b6b9aae9775458ce06574bcc33df6d98b609ac38a6e7b624488d02e0d548f885",
+      "command": [
+        "bash",
+        "/workspace/space-pe32-source/scripts/check-desktop-damage.sh"
+      ]
+    }
+  ],
+  "failed_candidates": [
+    "/workspace/compat32-first/report.json",
+    "/workspace/compat32-second/report.json",
+    "/workspace/pe32-regressions/windows-max/report.json",
+    "/workspace/pe32-regressions/windows-qemu64/report.json"
+  ]
+}
