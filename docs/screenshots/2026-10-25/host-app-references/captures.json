@@ -1,0 +1,79 @@
+[
+  {
+    "id": "lite-xl",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "7050284f3942db3474a2201afa7614ceb7b54920",
+    "source_path": "/workspace/lite-xl-host-final/lite-xl/reopen.png",
+    "file": "host-lite-xl.png",
+    "sha256": "4540ee7d2a56b544323b45ed626e44046ffc27f8ad3a4514132f920962fe2dc9",
+    "receipt": "/workspace/lite-xl-host-final/report.json",
+    "receipt_sha256": "74ea313e2d5ed5ea4effdd827b6f7cea13fff4c393c98247ca227b9d68bb97b8",
+    "status": "passed-edit-save-fresh-process-reopen"
+  },
+  {
+    "id": "pulsar",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "612e499d7ed77097da2c027a8550604d7810cc38",
+    "source_path": "/workspace/desktop-host-final-complete/pulsar/reopen.png",
+    "file": "host-pulsar.png",
+    "sha256": "149543e75e6e773ab6d3039bf2c1db1fe794fcbaeeca6dab4c6eaba85b570ecd",
+    "receipt": "/workspace/desktop-host-final-complete/report.json",
+    "receipt_sha256": "8ead54234e556139a1ba799f930c2079641f48aa4ee518dae99fdac6ef92f543",
+    "status": "passed-edit-save-fresh-process-reopen"
+  },
+  {
+    "id": "zed",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "612e499d7ed77097da2c027a8550604d7810cc38",
+    "source_path": "/workspace/desktop-host-final-complete/zed/reopen.png",
+    "file": "host-zed.png",
+    "sha256": "66a732bd9587435c965570b377c1f7fb4c1f528f528f8a07e4922ec3c8890ab8",
+    "receipt": "/workspace/desktop-host-final-complete/report.json",
+    "receipt_sha256": "8ead54234e556139a1ba799f930c2079641f48aa4ee518dae99fdac6ef92f543",
+    "status": "passed-edit-save-fresh-process-reopen"
+  },
+  {
+    "id": "wezterm",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "612e499d7ed77097da2c027a8550604d7810cc38",
+    "source_path": "/workspace/desktop-host-final-complete/wezterm/visible.png",
+    "file": "host-wezterm.png",
+    "sha256": "1c8362d24d3c210afbd15cabc7a8284dddd450eac1344e4380326cc10dd503f8",
+    "receipt": "/workspace/desktop-host-final-complete/report.json",
+    "receipt_sha256": "8ead54234e556139a1ba799f930c2079641f48aa4ee518dae99fdac6ef92f543",
+    "status": "passed-real-shell-command"
+  },
+  {
+    "id": "warp",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "612e499d7ed77097da2c027a8550604d7810cc38",
+    "source_path": "/workspace/desktop-host-final-complete/warp/visible.png",
+    "file": "host-warp.png",
+    "sha256": "fd0683a5cd3fe63580efa6ea9139f770ebbd889850da074620145b849ff22294",
+    "receipt": "/workspace/desktop-host-final-complete/report.json",
+    "receipt_sha256": "8ead54234e556139a1ba799f930c2079641f48aa4ee518dae99fdac6ef92f543",
+    "status": "visible-window-only"
+  },
+  {
+    "id": "helium",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "53b384b6726500a9c113ede05c2f42eb4afd9209",
+    "source_path": "/workspace/helium-host-final/reopen.png",
+    "file": "host-helium.png",
+    "sha256": "89600c5e0813aa055f59e4eef2fbaa74bbec513f8deba40a3625b7097bea0fc0",
+    "receipt": "/workspace/helium-host-final/report.json",
+    "receipt_sha256": "97dbb3940cbb1ffbf981620e565c00ee4c26749e48dd5f24b715c2ce0e3fae01",
+    "status": "passed"
+  },
+  {
+    "id": "firefox",
+    "scope": "Actual host Linux screenshot; NOT Space",
+    "source_commit": "53b384b6726500a9c113ede05c2f42eb4afd9209",
+    "source_path": "/workspace/firefox-host-final/render.png",
+    "file": "host-firefox.png",
+    "sha256": "d447981838c18e01730746fea39d63b03ca1031861fa7d34fc3337fd56ca797d",
+    "receipt": "/workspace/firefox-host-final/report.json",
+    "receipt_sha256": "a497f60f5f9f674decbe63fc98043e160b1951d5eb3106fae0dbeb3c6fd1f144",
+    "status": "passed-partial-reference"
+  }
+]
