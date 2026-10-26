@@ -1,0 +1,349 @@
+{
+  "goal_status": "OPEN",
+  "runtime_source": "bf6b16c4e36f6db2faa18335b569f531933efb03",
+  "successful_browser_entries": 0,
+  "scope": "Original browser loader failures and real glibc direct ET_DYN prerequisites; no browser GUI execution",
+  "profiles": [
+    {
+      "root": "standard",
+      "receipt": "/workspace/browser-entry-frozen-standard/report.json",
+      "published_receipt": "../evidence/2026-10-26-browser-prerequisites/standard-receipt.json",
+      "sha256": "49e262f4e648aa0dd0df7a58542d61d9eacbd0d4b5d1bf4d8b9a1b25380c7bc1",
+      "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+      "kernel_sha256": "92050cbf794ef42440a0f812d731030ac7db6b0df26285b484d2fc24e969f390",
+      "source_files": 239,
+      "original_loader_entries": 63,
+      "own_cpu_entries": 42,
+      "malformed_controls": 16,
+      "lifetime_cycles": 21,
+      "browser_status": {
+        "firefox": {
+          "status": "loader-refusal",
+          "execution_started": false,
+          "return": -8
+        },
+        "helium": {
+          "status": "loader-refusal",
+          "execution_started": false,
+          "return": -8
+        }
+      }
+    },
+    {
+      "root": "minimal",
+      "receipt": "/workspace/browser-entry-frozen-minimal/report.json",
+      "published_receipt": "../evidence/2026-10-26-browser-prerequisites/minimal-receipt.json",
+      "sha256": "a72f228ef14d78ed5b709ce19c7ca90a75f61e07d5f791f336aaf9d016283c90",
+      "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+      "kernel_sha256": "c0d7e5475d5bcad267d08006684a52e39ff6919c1061d7e4a763d215ee745dd3",
+      "source_files": 239,
+      "original_loader_entries": 63,
+      "own_cpu_entries": 42,
+      "malformed_controls": 16,
+      "lifetime_cycles": 21,
+      "browser_status": {
+        "firefox": {
+          "status": "loader-refusal",
+          "execution_started": false,
+          "return": -8
+        },
+        "helium": {
+          "status": "loader-refusal",
+          "execution_started": false,
+          "return": -8
+        }
+      }
+    }
+  ],
+  "regressions": [
+    {
+      "name": "blocking-standard",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/blocking-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 29.127
+    },
+    {
+      "name": "blocking-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/blocking-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 20.547
+    },
+    {
+      "name": "vm",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vm"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.296
+    },
+    {
+      "name": "vfork",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vfork",
+        "--vfork"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.432
+    },
+    {
+      "name": "terminal-retained",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-terminal-session.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/terminal-retained",
+        "--retained"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.243
+    },
+    {
+      "name": "vi-view",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vi-view",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--view",
+        "--navigation",
+        "--oracle-python",
+        "/workspace/terminal-oracle-venv/bin/python"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 14.498
+    },
+    {
+      "name": "vi-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vi-minimal",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--root",
+        "minimal",
+        "--navigation"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 6.085
+    },
+    {
+      "name": "user-space-standard",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/user-space-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 8.886
+    },
+    {
+      "name": "user-space-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/user-space-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 1.947
+    },
+    {
+      "name": "desktop-launcher",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-desktop-launcher.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--build-dir",
+        "/workspace/browser-entry-regressions/desktop-launcher"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 87.657
+    },
+    {
+      "name": "desktop-damage",
+      "command": [
+        "bash",
+        "/workspace/space-browser-entry-source/scripts/check-desktop-damage.sh"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 5.846
+    },
+    {
+      "name": "jq",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/jq",
+        "--app",
+        "/workspace/real-apps/jq-1.8.1/jq-linux-amd64",
+        "--application",
+        "jq",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 19.114
+    },
+    {
+      "name": "lua",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/lua",
+        "--app",
+        "/workspace/real-apps/lua-5.4.7/lua-5.4.7/src/lua",
+        "--application",
+        "lua",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 18.041
+    },
+    {
+      "name": "sqlite-restored",
+      "receipt": "/workspace/browser-entry-sqlite-restored/report.json",
+      "sha256": "10592a43701a91ab19571b3658a08cb02d8abe14374789843afa0007d694fb97",
+      "status": "passed",
+      "actual_application_activations": 38
+    }
+  ],
+  "contracts": [
+    {
+      "name": "architecture",
+      "receipt": "/workspace/browser-entry-architecture.log",
+      "sha256": "3a7693bec868ed3e6070c89f328eb509bd153c19e1bce91c192988f18a68e881"
+    },
+    {
+      "name": "sci-contract",
+      "receipt": "/workspace/browser-entry-sci-contract.log",
+      "sha256": "41f6ab82cdf02a323d59e22e4958091c9141579b07b6c37299cad6197d57de39"
+    },
+    {
+      "name": "personality-abi",
+      "receipt": "/workspace/browser-entry-personality-abi.log",
+      "sha256": "62231edc3df4f299f1a62635e430f9f1c71482882f27c2bca829b3d61d7215b9"
+    }
+  ],
+  "archives": [
+    {
+      "application": "helium",
+      "path": "/workspace/real-apps/desktop-corpus/imputnet/helium-0.20.1.1-x86_64_linux.tar.xz",
+      "sha256": "2023fa44cefa0fbd3e19071c87e90d61275f08ba8f5b48d58c235215565e9b53",
+      "size_bytes": 120819468
+    },
+    {
+      "application": "firefox",
+      "path": "/workspace/real-apps/desktop-corpus/mozilla/firefox.tar.xz",
+      "sha256": "dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a",
+      "size_bytes": 90546260
+    },
+    {
+      "application": "glibc",
+      "path": "/workspace/real-apps/glibc-2.41-debian/libc6.deb",
+      "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9",
+      "size_bytes": 2846580
+    }
+  ],
+  "original_loader_entries": 126,
+  "own_cpu_entries": 84,
+  "cli_cohort": {
+    "receipt": "/workspace/browser-entry-cli-cohort/report.json",
+    "sha256": "3f055b20e8d913d233fdd8cf4e7a6ca8ed9e23dc1465c70b44d194ed781ab4f5",
+    "passed": 8,
+    "failed": 0,
+    "source_files": 871,
+    "original_application_entries": 367,
+    "integrity_status": "passed"
+  },
+  "preserved_missing_artifact_failure": {
+    "receipt": "/workspace/browser-entry-regressions/linux.json",
+    "sha256": "1eba12319fd852b4350e26b8bcf8206f6e32141f3782a2eaf8de4cddee2477c6",
+    "reason": "Pinned SQLite binary lived in /tmp and was absent after environment restart; failed before guest test. Canonical unchanged-source build restored independently."
+  },
+  "sqlite_rebuild": {
+    "receipt": "/workspace/browser-entry-sqlite-build/report.json",
+    "sha256": "7e38a781514abb902a0c93e3437ce65a7e8d1e01498f300fbfb62a499e81f9bb"
+  },
+  "affected_qemu_regressions": 14,
+  "original_linux_fasmg": {
+    "receipt": "/workspace/browser-entry-fasmg-linux/report.json",
+    "sha256": "a85eee272a6423618f9b29d21099062210395dde98f6d124af7519918d5ad2a4",
+    "original_application_entries": 65
+  },
+  "firefox_interpreter_diagnostic": {
+    "classification": "runtime failure in original glibc while inspecting Firefox; browser execution has not started",
+    "source": "firefox-interpreter-diagnostic-kernel.in",
+    "kernel_sha256": "1a0bedd02a029c48ac661f509d219db84c88371f781013119c344be563d4c2ac",
+    "serial_sha256": "c6d74dcfc98a9d317b0a370f7b30216a46f4c245ab6a9199e6b6198356d45d2e",
+    "source_sha256": "2c76a6c6ee848ceba8eb8110ffc6e8b4ed6c1284220ddac398f8efc564efbd0f",
+    "observed": "Original glibc opens native /firefox and reads832 bytes; file-backed mmap returns-22; ld --verify returns1. Informal diagnostic, not a passing browser gate."
+  }
+}

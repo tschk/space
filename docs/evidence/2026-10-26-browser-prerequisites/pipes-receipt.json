@@ -1,0 +1,120 @@
+{
+  "source_commit": "bf6b16c",
+  "group": "pipes",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "blocking-standard",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/blocking-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 29.127
+    },
+    {
+      "name": "blocking-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-blocking.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/blocking-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 20.547
+    },
+    {
+      "name": "vm",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vm"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.296
+    },
+    {
+      "name": "vfork",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-vm.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vfork",
+        "--vfork"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.432
+    },
+    {
+      "name": "terminal-retained",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-terminal-session.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/terminal-retained",
+        "--retained"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 7.243
+    },
+    {
+      "name": "vi-view",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vi-view",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--view",
+        "--navigation",
+        "--oracle-python",
+        "/workspace/terminal-oracle-venv/bin/python"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 14.498
+    },
+    {
+      "name": "vi-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-terminal-vi.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/vi-minimal",
+        "--app",
+        "/workspace/busybox-vi-build4/busybox",
+        "--root",
+        "minimal",
+        "--navigation"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 6.085
+    }
+  ]
+}

@@ -64,3 +64,39 @@ Debian libc6 package. No browser or glibc source/binary is patched or copied int
 the native implementation. Original binaries remain outside git. The standalone
 `check-linux-dynamic-entry.py` prerequisite gate is separate from browser success
 and does not inflate the existing complete app-lab receipt or gate counts.
+
+## Frozen verification and next observed failure
+
+At frozen runtime `bf6b16c`, both roots pass63 original runtime-linker entries,
+42 own CPU entries,16 malformed-image controls and21 ownership cycles each.
+The eight-gate CLI/REPL cohort also passes unchanged, with871 source-file hashes
+and compiler/application integrity preserved. Fourteen affected QEMU regressions
+and the original65-entry Linux fasmg workload pass, alongside architecture,
+SCI57 and personality ABI86 contracts. The initial SQLite regression failed
+before execution because its canonical binary had been under `/tmp` before the
+environment restart. Rebuilding the exact pinned unchanged source restored its
+38-entry regression; the failed candidate remains separately recorded.
+[Exact receipts and hashes](2026-10-26-browser-prerequisite-evidence.json).
+
+An additional original-runtime diagnostic installs Firefox's actual file in
+Space's native filesystem and invokes original glibc `ld --verify /firefox`.
+The interpreter opens the file and reads832 bytes, then file-backed mmap returns
+`-22`; verification exits1. This is a runtime failure, not Firefox execution or
+a passing browser scenario. The exact derived source, serial trace and hashes
+are retained in the evidence directory. Native immutable file-backed mapping is
+the next observed dependency; interpreter image pairs, further dependencies,
+threads/events/network and real graphical backends remain required after it.
+
+Reproduce the passing prerequisite profile using the pinned extracted artifacts:
+
+```sh
+python3 scripts/check-linux-dynamic-entry.py \
+  --in /path/to/source-built/in --loader /path/to/ld-linux-x86-64.so.2 \
+  --firefox /path/to/firefox-bin --helium /path/to/helium \
+  --root standard --out /new/evidence-directory
+```
+
+Repeat with `--root minimal`. The command verifies complete original executable
+hashes before/after, records interpreter/DT_NEEDED inventories and runs actual
+protected browser launch attempts. Its success means the prerequisite checks
+pass; the receipt explicitly records both browsers as refused and unexecuted.

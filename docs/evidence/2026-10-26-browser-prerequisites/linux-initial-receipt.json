@@ -1,0 +1,73 @@
+{
+  "source_commit": "bf6b16c",
+  "group": "linux",
+  "status": "failed",
+  "checks": [
+    {
+      "name": "jq",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/jq",
+        "--app",
+        "/workspace/real-apps/jq-1.8.1/jq-linux-amd64",
+        "--application",
+        "jq",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 19.114
+    },
+    {
+      "name": "lua",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/lua",
+        "--app",
+        "/workspace/real-apps/lua-5.4.7/lua-5.4.7/src/lua",
+        "--application",
+        "lua",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 18.041
+    },
+    {
+      "name": "sqlite",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-linux-corpus.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/sqlite",
+        "--app",
+        "/tmp/space-sqlite-builder-canonical/sqlite3",
+        "--application",
+        "sqlite",
+        "--suite",
+        "--input-suite",
+        "--repeat",
+        "3"
+      ],
+      "status": "failed",
+      "returncode": 1,
+      "elapsed_seconds": 0.287
+    }
+  ]
+}

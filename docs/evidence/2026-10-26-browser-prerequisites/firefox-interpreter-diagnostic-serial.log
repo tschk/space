@@ -1,0 +1,28 @@
+space: kernel root entered (Space 0.1.0)
+space: preemption ended; worker A iters 0x0000000000017b06 worker B iters 0x00000000000189a7
+  SCI: kernel exports registered: 955
+  nvme: no NVMe controller found (class 0x010802)
+  storage: component failed to become ready
+usb: no xHCI controller on PCI
+  SCI debug: magic=0x5343490000000001 req=0x0000000000000001 entry=0x0000000040000020 size=0x0000000000000028
+  SCI: loading test.sci, size 0x0000000000000028
+space: sys_exit(code=0x0000000000000042) from thread 0x0000000000000002
+  SCI: guest test.sci returned status 0x0000000000000042
+test_sci_loader: PASS
+firefox-original: filesystem install status 0
+linux-process: syscall 12
+linux-process: result 268435456
+linux-process: syscall 257
+linux-process: result 3
+linux-process: syscall 0
+linux-process: result 832
+linux-process: syscall 9
+linux-process: result -22
+linux-process: syscall 3
+linux-process: result 0
+linux-process: syscall 231
+linux-process: result 1
+firefox-original: interpreter verify status 1
+
+space interactive shell -- type 'help'
+space> 

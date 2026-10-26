@@ -1,0 +1,1254 @@
+space: kernel root entered (Space 0.1.0)
+space: preemption ended; worker A iters 0x0000000000016e35 worker B iters 0x000000000001814c
+  SCI: kernel exports registered: 954
+  nvme: no NVMe controller found (class 0x010802)
+  storage: component failed to become ready
+usb: no xHCI controller on PCI
+  SCI debug: magic=0x5343490000000001 req=0x0000000000000001 entry=0x0000000040000020 size=0x0000000000000028
+  SCI: loading test.sci, size 0x0000000000000028
+space: sys_exit(code=0x0000000000000042) from thread 0x0000000000000002
+  SCI: guest test.sci returned status 0x0000000000000042
+test_sci_loader: PASS
+browser-entry: original Firefox and Helium refused before execution
+ld-entry: begin 0 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 0 0 0
+ld-entry: begin 0 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 0 1 0
+ld-entry: begin 0 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 0 2 1
+ld-entry: begin 1 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 1 0 0
+ld-entry: begin 1 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 1 1 0
+ld-entry: begin 1 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 1 2 1
+ld-entry: begin 2 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 2 0 0
+ld-entry: begin 2 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 2 1 0
+ld-entry: begin 2 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 2 2 1
+ld-entry: begin 3 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 3 0 0
+ld-entry: begin 3 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 3 1 0
+ld-entry: begin 3 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 3 2 1
+ld-entry: begin 4 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 4 0 0
+ld-entry: begin 4 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 4 1 0
+ld-entry: begin 4 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 4 2 1
+ld-entry: begin 5 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 5 0 0
+ld-entry: begin 5 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 5 1 0
+ld-entry: begin 5 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 5 2 1
+ld-entry: begin 6 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 6 0 0
+ld-entry: begin 6 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 6 1 0
+ld-entry: begin 6 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 6 2 1
+ld-entry: begin 7 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 7 0 0
+ld-entry: begin 7 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 7 1 0
+ld-entry: begin 7 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 7 2 1
+ld-entry: begin 8 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 8 0 0
+ld-entry: begin 8 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 8 1 0
+ld-entry: begin 8 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 8 2 1
+ld-entry: begin 9 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 9 0 0
+ld-entry: begin 9 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 9 1 0
+ld-entry: begin 9 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 9 2 1
+ld-entry: begin 10 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 10 0 0
+ld-entry: begin 10 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 10 1 0
+ld-entry: begin 10 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 10 2 1
+ld-entry: begin 11 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 11 0 0
+ld-entry: begin 11 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 11 1 0
+ld-entry: begin 11 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 11 2 1
+ld-entry: begin 12 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 12 0 0
+ld-entry: begin 12 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 12 1 0
+ld-entry: begin 12 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 12 2 1
+ld-entry: begin 13 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 13 0 0
+ld-entry: begin 13 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 13 1 0
+ld-entry: begin 13 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 13 2 1
+ld-entry: begin 14 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 14 0 0
+ld-entry: begin 14 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 14 1 0
+ld-entry: begin 14 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 14 2 1
+ld-entry: begin 15 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 15 0 0
+ld-entry: begin 15 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 15 1 0
+ld-entry: begin 15 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 15 2 1
+ld-entry: begin 16 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 16 0 0
+ld-entry: begin 16 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 16 1 0
+ld-entry: begin 16 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 16 2 1
+ld-entry: begin 17 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 17 0 0
+ld-entry: begin 17 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 17 1 0
+ld-entry: begin 17 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 17 2 1
+ld-entry: begin 18 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 18 0 0
+ld-entry: begin 18 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 18 1 0
+ld-entry: begin 18 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 18 2 1
+ld-entry: begin 19 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 19 0 0
+ld-entry: begin 19 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 19 1 0
+ld-entry: begin 19 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 19 2 1
+ld-entry: begin 20 0
+Usage: /ld.so [OPTION]... EXECUTABLE-FILE [ARGS-FOR-PROGRAM...]
+You have invoked 'ld.so', the program interpreter for dynamically-linked
+ELF programs.  Usually, the program interpreter is invoked automatically
+when a dynamically-linked executable is started.
+
+You may invoke the program interpreter program directly from the command
+line to load and run an ELF executable file; this is like executing that
+file itself, but always uses the program interpreter you invoked,
+instead of the program interpreter specified in the executable file you
+run.  Invoking the program interpreter directly provides access to
+additional diagnostics, and changing the dynamic linker behavior without
+setting environment variables (which would be inherited by subprocesses).
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+                        object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+                        variable LD_LIBRARY_PATH
+  --glibc-hwcaps-prepend LIST
+                        search glibc-hwcaps subdirectories in LIST
+  --glibc-hwcaps-mask LIST
+                        only search built-in subdirectories if in LIST
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+                        in LIST
+  --audit LIST          use objects named in LIST as auditors
+  --preload LIST        preload objects named in LIST
+  --argv0 STRING        set argv[0] to STRING before running
+  --list-tunables       list all tunables with minimum and maximum values
+  --list-diagnostics    list diagnostics information
+  --help                display this help and exit
+  --version             output version information and exit
+
+This program interpreter self-identifies as: /lib64/ld-linux-x86-64.so.2
+
+Shared library search path:
+  (libraries located via /etc/ld.so.cache)
+  /lib/x86_64-linux-gnu (system search path)
+  /usr/lib/x86_64-linux-gnu (system search path)
+  /lib (system search path)
+  /usr/lib (system search path)
+
+Subdirectories of glibc-hwcaps directories, in priority order:
+  x86-64-v4
+  x86-64-v3
+  x86-64-v2 (supported, searched)
+ld-entry: end 20 0 0
+ld-entry: begin 20 1
+ld.so (Debian GLIBC 2.41-12+deb13u4) stable release version 2.41.
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+ld-entry: end 20 1 0
+ld-entry: begin 20 2
+/ld.so: unrecognized option '--space-invalid-option'
+Try '/ld.so --help' for more information.
+ld-entry: end 20 2 1
+ld-entry: 63 original loader entries and 42 own auxv/exec/writev entries PASS
+
+space interactive shell -- type 'help'
