@@ -41,6 +41,18 @@ counter deadlines. Other descriptors and temporary signal masks still refuse.
 Timer services require explicit native authority. These are private kernel-linked
 integrations, not broader dynamic loading or foreign graphical frameworks.
 
+The [browser prerequisite continuation](plans/2026-10-26-original-browsers.md)
+adds direct self-relocating ET_DYN entry at a checked4MiB bias. Actual mapped
+entry/program-header addresses feed the existing owned stack and exec builder;
+the original foreign runtime performs its own relocation. PT_INTERP, DT_NEEDED,
+malformed dynamic metadata and unsupported alignment still refuse before VM
+allocation. Original Debian glibc's runtime linker runs help/version/error
+scenarios; this does not implement ELF interpreter/dependency loading. Finite
+writev supports at most64 vectors and65536 total bytes for synchronous serial or
+regular files, with full pointer preflight and exact partial-byte returns. Pipes
+and retained-terminal vectors refuse until they have an owned continuation.
+Original Helium and Firefox remain blocked before execution.
+
 Original QuickJS also runs its unchanged REPL through actual PS2 input and the
 existing protected SCI terminal view. Two processes evaluate code, edit a line,
 save and reopen exact file bytes. The optional Linux output profile implements

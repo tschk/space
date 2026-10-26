@@ -1,10 +1,12 @@
 package space.kernel
 import "linux-process-source.in"
+import "linux-process-elf-dynamic.in"
 import "linux-process-vm.in"
 import "linux-process-clock.in"
 import "linux-process-launch.in"
 import "linux-process-devices.in"
 import "linux-process-files.in"
+import "linux-process-write.in"
 import "linux-process-mmap.in"
 import "linux-process-metadata.in"
 import "linux-process-pipes.in"
@@ -17,7 +19,7 @@ import "linux-process-select.in"
 import "linux-process-truncate.in"
 import "linux-process-terminal-dispatch.in"
 
-// Bounded static ELF process family with cooperative, single-CPU execution.
+// Bounded static ET_EXEC / direct self-relocating ET_DYN process family.
 // Foreign semantics stay at this edge; CPU contexts and private page tables
 // remain native mechanisms with counted object/binding ownership.
 const LINUX-PROCESS-MAX-PAGES = 8192
@@ -129,31 +131,47 @@ fn linux-process-elf-entry(image: Int, size: Int) -> Int {
   if (load64(image) & 0x00FFFFFFFFFFFFFF) != 0x00010102464C457F { return -8 }
   // Both System V and GNU identify the ordinary Linux x86_64 static ABI.
   if load8(image + 7) != 0 && load8(image + 7) != 3 { return -8 }
-  if load8(image + 8) != 0 || linux-process-load16(image + 16) != 2 || linux-process-load16(image + 18) != 62 { return -8 }
+  let type=linux-process-load16(image+16)
+  if load8(image + 8) != 0 || (type!=2 && type!=3) || linux-process-load16(image + 18) != 62 { return -8 }
   if load32(image + 20) != 1 || linux-process-load16(image + 52) != 64 || linux-process-load16(image + 54) != 56 { return -8 }
   let phoff = load64(image + 32)
   let count = linux-process-load16(image + 56)
   if phoff < 64 || count < 1 || count > 32 || phoff > size - count * 56 { return -8 }
+  let bias=linux-process-elf-bias(image)
   let entry = load64(image + 24)
+  if entry<0 || entry>0x10000000 - bias{return -8;}
+  entry+=bias
   let entry-ok = 0
   let loads = 0
   let total = 0
+  let dynamic=0;let phdr-mapped=0
   let i = 0
   while i < count {
     let p = image + phoff + i * 56
     let kind = load32(p)
-    if kind == 3 || kind == 2 { return -8 }
+    if kind==3{return -8;}
+    if kind==2{
+      if type!=3 || dynamic!=0 || linux-process-elf-dynamic(image,size,p)!=0{return -8;}
+      dynamic=1
+    }
     if kind == 1 {
       loads = loads + 1
       let flags = load32(p + 4)
       let off = load64(p + 8)
-      let va = load64(p + 16)
+      let raw=load64(p+16);if raw<0 || raw>0x10000000 - bias{return -8;}
+      let va = raw+bias
       let file = load64(p + 32)
       let memory = load64(p + 40)
       if flags != 4 && flags != 5 && flags != 6 { return -8 }
       if memory <= 0 || memory > 0x1800000 || va < 0x400000 || va > 0x10000000 - memory { return -8 }
       if off < 0 || file < 0 || file > memory || off > size || file > size - off { return -8 }
       if (va & 4095) != (off & 4095) { return -8 }
+      if type==3{
+        let align=load64(p+48)
+        if align<0 || align>0x400000{return -8;}
+        if align>1 && ((align&(align - 1))!=0 || (va&(align - 1))!=(off&(align - 1))){return -8;}
+        if off<=phoff && file>=count*56 && phoff - off<=file - count*56{phdr-mapped=1;}
+      }
       let lo = va & -4096
       let hi = (va + memory + 4095) & -4096
       total = total + (hi - lo) / 4096
@@ -162,8 +180,8 @@ fn linux-process-elf-entry(image: Int, size: Int) -> Int {
       while j < i {
         let other = image + phoff + j * 56
         if load32(other) == 1 {
-          let a = load64(other + 16) & -4096
-          let b = (load64(other + 16) + load64(other + 40) + 4095) & -4096
+          let a = (load64(other + 16)+bias) & -4096
+          let b = (load64(other + 16)+bias + load64(other + 40) + 4095) & -4096
           if lo < b && a < hi { return -8 }
         }
         j = j + 1
@@ -173,6 +191,7 @@ fn linux-process-elf-entry(image: Int, size: Int) -> Int {
     i = i + 1
   }
   if loads == 0 || entry-ok == 0 { return -8 }
+  if type==3 && phdr-mapped==0{return -8;}
   return entry
 }
 
@@ -183,7 +202,7 @@ fn linux-process-map-elf(image: Int) -> Int {
   while i < count {
     let p = image + phoff + i * 56
     if load32(p) == 1 {
-      let va = load64(p + 16)
+      let va = load64(p + 16)+linux-process-elf-bias(image)
       let memory = load64(p + 40)
       let off = load64(p + 8)
       let file = load64(p + 32)
@@ -254,7 +273,7 @@ fn linux-process-stack-build(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int
     if linux-process-map-page(page, 6) <= 0 { return -12 }
     page = page + 4096
   }
-  let attach = linux-process-vm-attach(linux-process-staging-context,load64(image + 24),LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 16)
+  let attach = linux-process-vm-attach(linux-process-staging-context,load64(image + 24)+linux-process-elf-bias(image),LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 16)
   if attach <= 0 { return attach }
   let strings = LINUX-PROCESS-STACK-BASE + LINUX-PROCESS-STACK-SIZE - 4096
   linux-process-stack-string(strings, arg0)
@@ -279,7 +298,10 @@ fn linux-process-stack-build(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int
   let i = 0
   while i < linux-process-load16(image + 56) {
     let p = image + load64(image + 32) + i * 56
-    if load32(p) == 1 && load64(p + 8) == 0 { phdr = load64(p + 16) + load64(image + 32) }
+    if load32(p)==1{
+      let offset=load64(p+8);let bytes=load64(p+32);let table=load64(image+32);let size=linux-process-load16(image+56)*56
+      if offset<=table && bytes>=size && table - offset<=bytes - size{phdr=load64(p+16)+linux-process-elf-bias(image)+table - offset;}
+    }
     i = i + 1
   }
   linux-process-store64(stack + 64, 3); linux-process-store64(stack + 72, phdr)
@@ -287,7 +309,7 @@ fn linux-process-stack-build(image: Int, arg0: Int, arg1: Int, arg2: Int) -> Int
   linux-process-store64(stack + 96, 5); linux-process-store64(stack + 104, linux-process-load16(image + 56))
   linux-process-store64(stack + 112, 6); linux-process-store64(stack + 120, 4096)
   linux-process-store64(stack + 128, 7); linux-process-store64(stack + 136, 0)
-  linux-process-store64(stack + 144, 9); linux-process-store64(stack + 152, load64(image + 24))
+  linux-process-store64(stack + 144, 9); linux-process-store64(stack + 152, load64(image + 24)+linux-process-elf-bias(image))
   linux-process-store64(stack + 160, 11); linux-process-store64(stack + 168, 0)
   linux-process-store64(stack + 176, 12); linux-process-store64(stack + 184, 0)
   linux-process-store64(stack + 192, 13); linux-process-store64(stack + 200, 0)
@@ -551,28 +573,9 @@ fn linux-process-dispatch(frame: Int) -> Int {
     else if second == 128 && linux-process-read32(first) != third { result = -11 }
     else { result = -38 }
   } else if number == 5 { result = linux-process-fstat(first, second) }
+  else if number==20 { result=linux-process-writev(first,second,linux-process-int32(third)) }
   else if number == 1 {
-    if linux-process-pipe-is(first) != 0 { result = linux-process-blocking-write(first,second,third,0) }
-    else if linux-process-file-host(first) >= 3 || (first != 1 && first != 2) { result = linux-process-file-write(first,second,third) }
-    else if (first == 1 && linux-process-stdout-open == 0) || (first == 2 && linux-process-stderr-open == 0) { result = -9 }
-    else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
-    else if second < 0 || third < 0 || third > 65536 { result = -22 }
-    else if linux-process-range(second, third, 0) == 0 { result = -14 }
-    else {
-      let done = 0
-      result = third
-      while done < third && result >= 0 {
-        let count = third - done
-        if count > 4096 { count = 4096 }
-        if linux-process-copy-in(second + done,linux-process-file-buffer,count) != 0 { result = -14 }
-        else {
-          let i = 0
-          while i < count { serial-put(com1(),load8(linux-process-file-buffer + i));i = i + 1 }
-          done = done + count
-        }
-      }
-      linux-process-output-bytes = linux-process-output-bytes + done
-    }
+    result=linux-process-write-call(first,second,third)
   } else if number == 3 {
     if linux-process-pipe-is(first) != 0 { result = linux-process-pipe-close(first) }
     else if linux-process-file-host(first) >= 3 { result = linux-process-file-close(first) }

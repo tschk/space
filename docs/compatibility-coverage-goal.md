@@ -6,6 +6,13 @@ personalities; keep implementing and locally testing real CLI and GUI applicatio
 until the acceptance matrix below works end to end. This is the full project
 goal. The fixture lab is an early checkpoint, not the completion target.
 
+Helium and Firefox are explicit required browser targets. Run their original
+engines inside Space with real pages, JavaScript, HTTP/HTTPS and keyboard/pointer
+interaction, then verify focus, resize/scale, independent windows and cleanup.
+The [browser continuation](plans/2026-10-26-original-browsers.md) records pinned
+original packages and the first executable runtime prerequisites. Neither
+browser currently runs on Space; intermediate workloads do not complete them.
+
 The [original cross-OS execution continuation](plans/2026-10-25-original-cross-os-execution.md)
 now runs the upstream Windows PE32 `fasmg.exe` compiler in real compatibility
 mode over native owned objects. It prints its own help, compiles source files
@@ -440,6 +447,8 @@ must be reported separately from foreign compatibility.
 | Darwin Cocoa GUI | FLTK 1.3.9 `fluid` built as an x86_64 macOS application | Drive the actual Cocoa/AppKit application: launch, edit, resize/scale, save/reopen, second instance, close and crash cleanup. Use actual client pixels and input delivery. |
 | Windows Win32 GUI | FLTK 1.3.9 `fluid` built as an x86_64 Windows application | Drive the actual Win32 message loop and software drawing backend with the same edit/save/reopen/two-instance scenario; verify buffer and handle cleanup. |
 | Expanded desktop/browser milestone | NetSurf 3.11, [upstream](https://www.netsurf-browser.org/downloads/), with a declared port/profile | A real browser action launches a live browser instance, renders a bundled HTML/CSS page, accepts link/input/scroll interaction and retrieves a controlled HTTP page; add HTTPS only with certificate/error tests. This is a later workload with its own dependency gate, not a decorative browser window. |
+| Required Chromium browser | Original Helium0.20.1.1 Linux x86_64 package; [manifest](../fixtures/applications/original-browsers.json) | Actual original browser engine, HTML/CSS/JavaScript, HTTP/HTTPS certificate/errors, keyboard/pointer/focus/resize, independent windows and repeated cleanup. Currently blocked before execution. |
+| Required Gecko browser | Original Firefox158.0.1 Linux x86_64 package; same manifest | Same real browser workflow, independently verified through Gecko; no substitution by another browser or host runtime. Currently blocked before execution. |
 
 The acquired Linux FLTK workload now has a [pinned artifact, real host edit/save/
 reopen reference and actual protected-loader refusal](fltk-gui-workload.md). It

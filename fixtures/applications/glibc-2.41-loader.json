@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "application": "glibc runtime linker",
+  "version": "Debian glibc 2.41-12+deb13u4",
+  "license": "LGPL-2.1-or-later; see Debian copyright for component notices",
+  "source_modified": false,
+  "provenance": "Unchanged installed Debian libc6:amd64 package artifact; archive acquisition recorded separately",
+  "apps": [
+    {
+      "personality": "linux",
+      "sha256": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+      "size_bytes": 225672
+    }
+  ],
+  "copyright_sha256": "f5788886720a2605a946e81d571e6c8162b09f58d2e2ceb8d36e5768fccd850d",
+  "scope": "Original direct self-relocating ET_DYN runtime linker; browser and dependency loading not claimed",
+  "archive": {
+    "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb",
+    "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9",
+    "size_bytes": 2846580,
+    "verification": "Downloaded official Debian package; extracted loader exactly matches installed artifact; independent signature verification not claimed"
+  }
+}
