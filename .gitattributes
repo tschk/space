@@ -7,3 +7,7 @@ website/**/*.ts    linguist-detectable=false
 website/**/*.js    linguist-detectable=false
 website/**/*.astro linguist-detectable=false
 website/**/*.mjs   linguist-detectable=false
+
+# Exact serial captures retain the shell prompt's significant trailing space.
+docs/evidence/2026-10-26-browser-prerequisites/*.serial.txt whitespace=-blank-at-eol
+docs/evidence/2026-10-26-browser-prerequisites/*-serial.log whitespace=-blank-at-eol
