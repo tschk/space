@@ -5,9 +5,23 @@ package space.kernel
 // --- directory entries ------------------------------------------------------
 
 const SF-DIR-ENTRY-SIZE = 32
+const SF-DIR-NAME-MAX = 24 // 32-byte entry minus its 8-byte header
+
+// Returns the exact representable name length, or -1. Never truncate aliases.
+fn sf-dir-name-length(name:Int) -> Int {
+  let i=0
+  while i<=SF-DIR-NAME-MAX {
+    if load8(name+i)==0 { if i==0 { return -1 }; return i }
+    i=i+1
+  }
+  return -1
+}
+// Removal follows the existing single-owner filesystem scratch contract.
+var sf-dir-remove-workspace: Int = 0
 
 // Find `name` in directory `dir_ino`. Returns entry offset within directory data, or -1.
 fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
+  if sf-dir-name-length(name)<0 { return -1 }
   let addr = sf-inode-addr(dir-ino)
   let size = load64(addr + SF-IN-SIZE)
   let fbn = 0
@@ -21,6 +35,7 @@ fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
         if eino != 0 {
           let name-len = load8(sf-block-buf + off + 4)
           let is-match = 1
+          if name-len>SF-DIR-NAME-MAX { is-match=0; name-len=0 }
           let i = 0
           while i < name-len {
             let a = load8(name + i)
@@ -54,6 +69,9 @@ fn sf-dir-find(dir-ino: Int, name: Int, out-ino: Int) -> Int {
 
 // Add an entry to directory `dir_ino`. Returns 0 on success.
 fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
+  let timestamp=0;let timed=0;if sf-super!=0 && sf-disk-ready==1 && load32(sf-super+SF-SB-VERSION)==FS-METADATA-UTC-VERSION{timed=1;timestamp=fs-metadata-time();if timestamp<0{return -1;}}
+  let new-len=sf-dir-name-length(name)
+  if new-len<0 { return -1 }
   let addr = sf-inode-addr(dir-ino)
   let size = load64(addr + SF-IN-SIZE)
   let fbn = 0
@@ -62,7 +80,7 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
     if fbn * SF-BLOCK-SIZE < size {
       bno = sf-inode-block(dir-ino, fbn)
     }
-    if bno == 0 {
+    if bno <= 0 {
       bno = sf-alloc-block()
       if bno < 0 {
         return -1
@@ -78,16 +96,6 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
       let eino = load32(sf-block-buf + off)
       let name-len = load8(sf-block-buf + off + 4)
       if eino == 0 {
-        let new-len = 0
-        let k = 0
-        while k < SF-DIR-ENTRY-SIZE - SF-DIR-ENTRY-HEAD {
-          if load8(name + k) == 0 {
-            k = SF-DIR-ENTRY-SIZE - SF-DIR-ENTRY-HEAD
-          } else {
-            new-len = new-len + 1
-            k = k + 1
-          }
-        }
         let esz = SF-DIR-ENTRY-SIZE
         if off + esz <= SF-BLOCK-SIZE {
           store32(sf-block-buf + off, entry-ino)
@@ -98,12 +106,12 @@ fn sf-dir-add(dir-ino: Int, name: Int, entry-ino: Int, entry-type: Int) -> Int {
             store8(sf-block-buf + off + SF-DIR-ENTRY-HEAD + i, load8(name + i))
             i = i + 1
           }
-          sf-write-block(bno, sf-block-buf)
+          let written=sf-write-block(bno,sf-block-buf);if timed!=0 && written!=0{return -1;}
           let new-size = load64(addr + SF-IN-SIZE)
           if new-size < fbn * SF-BLOCK-SIZE + off + esz {
             store64(addr + SF-IN-SIZE, fbn * SF-BLOCK-SIZE + off + esz)
           }
-          sf-write-inode(dir-ino)
+          if timed!=0{store64(addr+SF-IN-MTIME,timestamp);if sf-write-inode(dir-ino)!=0{return -1;}}else{sf-write-inode(dir-ino);}
           return 0
         }
         break
@@ -142,7 +150,9 @@ fn sf-dir-is-empty(dir-ino: Int) -> Int {
 
 // Remove an entry from directory `dir_ino`. Returns 0 on success.
 fn sf-dir-remove(dir-ino: Int, name: Int) -> Int {
-  let tmp = alloc(4)
+  let timestamp=0;let timed=0;if sf-super!=0 && sf-disk-ready==1 && load32(sf-super+SF-SB-VERSION)==FS-METADATA-UTC-VERSION{timed=1;timestamp=fs-metadata-time();if timestamp<0{return -1;}}
+  if sf-dir-remove-workspace == 0 { sf-dir-remove-workspace = alloc(8) }
+  let tmp = sf-dir-remove-workspace
   let off = sf-dir-find(dir-ino, name, tmp)
   if off < 0 {
     return -1
@@ -157,7 +167,7 @@ fn sf-dir-remove(dir-ino: Int, name: Int) -> Int {
     store8(sf-block-buf + boff + i, 0)
     i = i + 1
   }
-  sf-write-block(bno, sf-block-buf)
-  sf-write-inode(dir-ino)
+  let written=sf-write-block(bno,sf-block-buf);if timed!=0 && written!=0{return -1;}
+  if timed!=0{store64(sf-inode-addr(dir-ino)+SF-IN-MTIME,timestamp);if sf-write-inode(dir-ino)!=0{return -1;}}else{sf-write-inode(dir-ino);}
   return 0
 }

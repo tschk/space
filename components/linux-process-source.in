@@ -1,0 +1,26 @@
+package space.kernel
+
+// Optional immutable native source identity, independent of guest argv[0].
+// The trusted caller lends this canonical name for the complete synchronous
+// process family and any retained cleanup, just like its immutable ELF bytes.
+// It is a captured label, not a live inode/rename or general execve contract.
+var linux-process-source-name:Int=0
+fn linux-process-source-name-valid(name:Int)->Int{
+ if name<65536 || name>0x100000000 - 512 || load8(name)!=47{return 0;}
+ let length=0;while length<512 && load8(name+length)!=0{length+=1;}
+ if length<2 || length>=512{return 0;}
+ let at=1;while at<length{
+  let start=at;while at<length && load8(name+at)!=47{if load8(name+at)<32{return 0;}at+=1;}
+  let count=at - start;if count<1 || count>24{return 0;}
+  if (count==1 && load8(name+start)==46) || (count==2 && load8(name+start)==46 && load8(name+start+1)==46){return 0;}
+  if at<length{at+=1;if at==length{return 0;}}
+ }return 1;
+}
+fn linux-process-run-named-input(image:Int,size:Int,name:Int,arg0:Int,arg1:Int,arg2:Int,authority:Int,input:Int,count:Int)->Int{
+ if domain-current!=0 || user-context-active!=0 || linux-process-active!=0 || domain-user-syscall-hook!=0 || linux-process-source-name!=0{return -16;}
+ if cap-check(authority,cap-memory()|cap-storage()|cap-serial())==0{return -13;}
+ if linux-process-source-name-valid(name)==0{return -22;}
+ linux-process-source-name=name;
+ let result=linux-process-run-counted-input(image,size,arg0,arg1,arg2,authority,input,count);
+ linux-process-source-name=0;return result;
+}

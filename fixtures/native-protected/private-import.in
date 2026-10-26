@@ -1,0 +1,16 @@
+package space.fixture
+component PrivateNativeImport {
+ target "x86_64-unknown-none"
+ capability serial: DebugConsole(write)
+ capability memory: NativeMemory(allocate)
+ export entry: NativeEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface NativeMemory { fn allocate(bytes:Int)->Int }
+interface NativeEntry { fn native-entry(info:Int)->Int }
+interrupt fn native-protected-run(handle:Int,budget:Int)->Int{}
+interrupt fn serial-write-cstr(port:Int,pointer:Int)->void{}
+fn native-entry(info:Int)->Int{
+ serial-write-cstr(0x3f8,"INVALID private protected native entry");
+ return native-protected-run(0,10);
+}

@@ -1,0 +1,50 @@
+package space.kernel
+
+// Optional Linux terminal edge: exactly stdin in one fd_set word. Readiness
+// observes the owned raw queue, never consumes bytes or borrows global input.
+fn linux-process-terminal-select-owned(frame:Int,number:Int)->Int{
+ let count=linux-process-int32(load64(frame+72));let read=load64(frame+80);let write=load64(frame+88);let errors=load64(frame+40);let timeout=load64(frame+56);let sigarg=load64(frame+48);let layout=0;if number==270{layout=1;}
+ if number!=23 && number!=270{return -38;}
+ if count==0{return linux-process-select(count,read,write,errors,timeout,sigarg,layout);}
+ if count<0{return -22;}if count!=1{return -95;}
+ if cap-check(linux-process-authority,cap-memory())==0{return -13;}
+ if linux-process-terminal-fd(0)==0{return -9;}
+ if read==0 || linux-process-range(read,8,0)==0 || linux-process-range(read,8,1)==0{return -14;}
+ if write!=0 && (linux-process-range(write,8,0)==0 || linux-process-range(write,8,1)==0){return -14;}
+ if errors!=0 && (linux-process-range(errors,8,0)==0 || linux-process-range(errors,8,1)==0){return -14;}
+ if linux-process-file-load64(read)!=1{return -95;}
+ if write!=0 && linux-process-file-load64(write)!=0{return -95;}if errors!=0 && linux-process-file-load64(errors)!=0{return -95;}
+ if layout==1 && sigarg!=0{if linux-process-range(sigarg,16,0)==0{return -14;}if linux-process-file-load64(sigarg)!=0{return -95;}}
+ let now=0;let scale=1000000;if layout==1{scale=1000000000;}
+ let zero=0;
+ if timeout!=0{
+  if linux-process-range(timeout,16,0)==0 || linux-process-range(timeout,16,1)==0{return -14;}
+  let seconds=linux-process-file-load64(timeout);let fraction=linux-process-file-load64(timeout+8);
+  if seconds<0 || fraction<0 || fraction>=scale{return -22;}if seconds>60 || (seconds==60 && fraction!=0){return -95;}
+  if seconds==0 && fraction==0{zero=1;}
+  else{
+   if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+   let frequency=counter-frequency-authorized(linux-process-authority);now=counter-read-authorized(linux-process-authority);
+   if frequency<=0 || frequency>1000000000 || now<0{return -95;}
+   if linux-process-terminal-deadline==0{
+    let duration=seconds*frequency+(frequency/scale)*fraction+((frequency%scale)*fraction+scale - 1)/scale;
+    if duration<=0 || now>0x7fffffffffffffff - duration{return -75;}
+    linux-process-terminal-deadline=now+duration;linux-process-terminal-frequency=frequency;
+   }else if linux-process-terminal-frequency!=frequency{return -5;}
+  }
+ }
+ let available=terminal-session-query(linux-process-terminal-session,linux-process-terminal-owner,2);if available<0{return -13;}
+ let ready=0;if available>0{ready=1;}
+ if ready!=0 || zero!=0 || (timeout!=0 && linux-process-terminal-deadline!=0 && now>=linux-process-terminal-deadline){
+  // All guest output ranges and the exact terminal lease were checked first.
+  linux-process-store64(read,ready);if write!=0{linux-process-store64(write,0);}if errors!=0{linux-process-store64(errors,0);}
+  if timeout!=0{
+   let left=0;if linux-process-terminal-deadline>now{left=linux-process-terminal-deadline - now;}
+   let frequency=linux-process-terminal-frequency;let seconds=0;let fraction=0;
+   if left>0 && frequency>0{seconds=left/frequency;fraction=((left%frequency)*scale)/frequency;}
+   linux-process-store64(timeout,seconds);linux-process-store64(timeout+8,fraction);
+  }
+  if linux-process-memory-failed!=0{return -14;}return ready;
+ }
+ linux-process-block-io(14,number,0,0,0);return 0;
+}

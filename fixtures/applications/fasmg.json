@@ -1,0 +1,33 @@
+{
+  "application": "flat assembler g",
+  "upstream": "https://github.com/tgrysztar/fasmg",
+  "source_commit": "905f6791f6777e35baec182e6843e2ada30cedd0",
+  "archive_url": "https://api.github.com/repos/tgrysztar/fasmg/tarball/905f6791f6777e35baec182e6843e2ada30cedd0",
+  "archive_sha256": "ff41539db0dc170669093b0feb6b9b98df03afcfbb07776c3b459fa4b68dac64",
+  "checksum_provenance": "Measured acquired upstream commit archive and shipped executables; not independent signature verification",
+  "license": "BSD 3-clause, original core/license.txt",
+  "apps": [
+    {
+      "personality": "linux",
+      "path": "core/fasmg.x64",
+      "sha256": "db544ed5a530dde139ef01ddc3fbc352bdec89fdda7fc1e9553e7da9361ac2e3",
+      "size_bytes": 72082,
+      "modified": false
+    },
+    {
+      "personality": "windows",
+      "path": "core/fasmg.exe",
+      "sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+      "size_bytes": 68608,
+      "modified": false
+    },
+    {
+      "personality": "darwin",
+      "path": "core/source/macos/x64/fasmg",
+      "sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+      "size_bytes": 78185,
+      "modified": false
+    }
+  ],
+  "license_sha256": "f68f0d6072aad5ec62905021cdcd689d1fca19b82f904fbb6c9ed366816b3c7d"
+}

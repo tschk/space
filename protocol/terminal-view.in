@@ -1,0 +1,11 @@
+// Application-specific, version-1 byte stream over the existing private SPDP
+// frame channel. No raw pointer, capability or device event in this payload.
+// One frame contains count1..15 in arg0 low7, present bit7, first7 bytes in arg0 bits8..63,
+// last8 bytes in arg1. Unused payload bytes must be zero. The channel belongs
+// to the exact retained SCI instance; close revokes routing before release.
+// Without present, the stopped client retains parser state and emits no reply.
+// Present emits the existing ATTACH/DAMAGE/COMMIT batch; only its validated
+// invocation epoch can replace the accepted immutable compositor snapshot.
+const TERMINAL-VIEW-OBJECT=0x54565931
+const TERMINAL-VIEW-BYTES=0
+const TERMINAL-VIEW-CLOSE=1

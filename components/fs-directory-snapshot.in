@@ -1,0 +1,141 @@
+package space.kernel
+import "fs-metadata-clock.in"
+
+// Trusted synchronous storage-provider API. Caller owns every buffer; no
+// cursor, inode lease, foreign wildcard policy or allocation escapes this call.
+const FS-DIRECTORY-SNAPSHOT-MAGIC = 0x5346444952530001
+const FS-DIRECTORY-SNAPSHOT-MAX = 262176
+
+fn fs-directory-span(pointer:Int,bytes:Int)->Int{
+ if pointer<65536 || bytes<0 || pointer>heap-next || bytes>heap-next - pointer{return 0;}return 1;
+}
+fn fs-directory-overlap(a:Int,bytes:Int,b:Int,count:Int)->Int{
+ if a<b+count && b<a+bytes{return 1;}return 0;
+}
+fn fs-directory-block-valid(block:Int)->Int{
+ let total=load64(sf-super+SF-SB-TOTAL-BLOCKS);let first=load64(sf-super+SF-SB-DATA-START);
+ if block<first || block>=total || (load8(sf-bitmap+block/8)&(1<<(block&7)))==0{return 0;}return 1;
+}
+// Direct and one indirect block cover the currently bounded directory profile.
+// Validate indirect addresses before reading them; never follow corrupt disk
+// pointers through the older unchecked inode-block helper.
+fn fs-directory-read(block:Int,buffer:Int,authority:Int)->Int{
+ if cap-check(authority,cap-storage())==0{return -2;}
+ if sf-read-block(block,buffer)!=0{return -7;}return 0;
+}
+fn fs-directory-block(inode:Int,index:Int,scratch:Int,authority:Int)->Int{
+ let record=sf-inode-addr(inode);
+ if index<0 || index>=SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT{return -7;}
+ let block=0;
+ if index<SF-INODE-DIRECT{block=load64(record+SF-IN-DIRECT+index*8);}
+ else{
+  let indirect=load64(record+SF-IN-INDIRECT);
+  if fs-directory-block-valid(indirect)==0{return -7;}
+  let status=fs-directory-read(indirect,scratch,authority);if status!=0{return status;}
+  block=load64(scratch+(index - SF-INODE-DIRECT)*8);
+ }
+ if fs-directory-block-valid(block)==0{return -7;}return block;
+}
+fn fs-directory-size(inode:Int)->Int{
+ let count=load32(sf-super+SF-SB-INODE-COUNT);
+ if inode<0 || inode>=count{return -7;}
+ let record=sf-inode-addr(inode);if load32(record+SF-IN-TYPE)!=SF-TYPE-DIR{return -5;}
+ let size=load64(record+SF-IN-SIZE);
+ if size<0 || size%32!=0 || size>(SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT)*4096{return -7;}return size;
+}
+fn fs-directory-find(inode:Int,name:Int,bytes:Int,buffer:Int,authority:Int)->Int{
+ let size=fs-directory-size(inode);if size<0{return size;}let offset=0;
+ while offset<size{
+  let block=fs-directory-block(inode,offset/4096,buffer,authority);if block<0{return block;}
+  let status=fs-directory-read(block,buffer,authority);if status!=0{return status;}
+  let limit=size - offset;if limit>4096{limit=4096;}let at=0;
+  while at<limit{
+   let item=load32(buffer+at);
+   if item!=0{
+    let length=load8(buffer+at+4);
+    if item>=load32(sf-super+SF-SB-INODE-COUNT) || length<1 || length>SF-DIR-NAME-MAX{return -7;}
+    if length==bytes{let i=0;while i<bytes && load8(name+i)==load8(buffer+at+8+i){i+=1;}if i==bytes{return item;}}
+   }at+=32;
+  }offset+=limit;
+ }return -4;
+}
+fn fs-directory-resolve(path:Int,length:Int,buffer:Int,authority:Int)->Int{
+ if load8(path)!=47{return -1;}
+ let inode=load32(sf-super+SF-SB-ROOT-INODE);if length==1{return inode;}
+ let at=1;
+ while at<length{
+  let start=at;while at<length && load8(path+at)!=47{at+=1;}let bytes=at - start;
+  if bytes<1 || bytes>24 || (bytes==1 && load8(path+start)==46) || (bytes==2 && load8(path+start)==46 && load8(path+start+1)==46){return -1;}
+  inode=fs-directory-find(inode,path+start,bytes,buffer,authority);if inode<0{return inode;}
+  if at<length{at+=1;if at==length{return -1;}}
+ }return inode;
+}
+
+// Return exact snapshot bytes, including its32-byte header, or a native status:
+// -1 contract/buffer, -2 authority, -3 provider unavailable, -4 missing,
+// -5 not directory, -6 output capacity, -7 I/O/corrupt/unsupported geometry.
+// Header: magic,mount identity,entry count,64-byte record size. Each record:
+// native type,inode+1,size,name byte length,25-byte NULterminated name,reserved0.
+// The identity records an observation, not a lifetime reference to an inode.
+// Output stays byte-exact on every refusal. Scratch may change. The snapshot
+// remains caller-owned after return and does not change if the directory does.
+fn fs-directory-snapshot-into(path:Int,authority:Int,output:Int,capacity:Int,scratch:Int,scratchbytes:Int)->Int{
+ return fs-directory-snapshot-layout-into(path,authority,output,capacity,scratch,scratchbytes,64);
+}
+// Native UTC metadata revision: same immutable observation,96-byte records,
+// times at64/72/80 (creation/access/modification, Unix seconds), mode at88.
+fn fs-directory-details-into(path:Int,authority:Int,output:Int,capacity:Int,scratch:Int,scratchbytes:Int)->Int{
+ return fs-directory-snapshot-layout-into(path,authority,output,capacity,scratch,scratchbytes,96);
+}
+fn fs-directory-snapshot-layout-into(path:Int,authority:Int,output:Int,capacity:Int,scratch:Int,scratchbytes:Int,recordbytes:Int)->Int{
+ if recordbytes!=64 && recordbytes!=96{return -1;}
+ if domain-current!=0 || user-context-active!=0{return -1;}
+ if cap-check(authority,cap-storage())==0{return -2;}
+ if volume-ready!=0 || sf-disk-ready==0 || sf-mount-id<=0{return -3;}
+ if recordbytes==96 && load32(sf-super+SF-SB-VERSION)!=FS-METADATA-UTC-VERSION{return -8;}
+ if capacity<32 || capacity>32+4096*recordbytes || (capacity - 32)%recordbytes!=0{return -1;}
+ if scratchbytes!=capacity+4096 || fs-directory-span(output,capacity)==0 || fs-directory-span(scratch,scratchbytes)==0{return -1;}
+ if fs-directory-overlap(output,capacity,scratch,scratchbytes)!=0{return -1;}
+ // Native source provenance belongs to the trusted caller; bound its C string
+ // and refuse scratch aliases before checked synchronous traversal.
+ if path<=0 || path>0x100000000 - 1024{return -1;}
+ let length=0;while length<1024 && load8(path+length)!=0{length+=1;}
+ if length==0 || length>=1024 || fs-directory-overlap(path,length+1,scratch,scratchbytes)!=0{return -1;}
+ let count=load32(sf-super+SF-SB-INODE-COUNT);
+ let total=load64(sf-super+SF-SB-TOTAL-BLOCKS);let first=load64(sf-super+SF-SB-DATA-START);
+ if count<1 || count>SF-MAX-INODE-COUNT || total<2 || total>SF-MAX-TOTAL-BLOCKS || first<1 || first>=total{return -7;}
+ let mount=sf-mount-id;let block-buffer=scratch+capacity;
+ let inode=fs-directory-resolve(path,length,block-buffer,authority);if inode<0{return inode;}
+ let size=fs-directory-size(inode);if size<0{return size;}
+ cpu-mem-fill64(scratch,0,4);let magic=FS-DIRECTORY-SNAPSHOT-MAGIC;if recordbytes==96{magic+=1;}store64(scratch,magic);store64(scratch+8,mount);store64(scratch+24,recordbytes);
+ let entries=0;let offset=0;
+ while offset<size{
+  let block=fs-directory-block(inode,offset/4096,block-buffer,authority);if block<0{return block;}
+  let status=fs-directory-read(block,block-buffer,authority);if status!=0{return status;}
+  let limit=size - offset;if limit>4096{limit=4096;}
+  let at=0;while at<limit{
+   let item=load32(block-buffer+at);
+   if item!=0{
+    if item>=count{return -7;}
+    let namebytes=load8(block-buffer+at+4);let kind=load8(block-buffer+at+5);let actual=sf-inode-addr(item);
+    if namebytes<1 || namebytes>SF-DIR-NAME-MAX || (kind!=SF-TYPE-FILE && kind!=SF-TYPE-DIR) || load32(actual+SF-IN-TYPE)!=kind || load64(actual+SF-IN-SIZE)<0{return -7;}
+    let i=0;while i<namebytes{let c=load8(block-buffer+at+8+i);if c==0 || c==47{return -7;}i+=1;}
+    if entries>=4096 || entries>=(capacity - 32)/recordbytes{return -6;}
+    let target=scratch+32+entries*recordbytes;cpu-mem-fill64(target,0,recordbytes/8);
+    store64(target,kind);store64(target+8,item+1);store64(target+16,load64(actual+SF-IN-SIZE));store64(target+24,namebytes);
+    if recordbytes==96{
+     let created=load64(actual+SF-IN-CTIME);let accessed=load64(actual+SF-IN-ATIME);let modified=load64(actual+SF-IN-MTIME);
+     if created<0 || created>253402300799 || accessed<0 || accessed>253402300799 || modified<0 || modified>253402300799{return -7;}
+     store64(target+64,created);store64(target+72,accessed);store64(target+80,modified);store64(target+88,load32(actual+SF-IN-MODE));
+    }
+    i=0;while i<namebytes{store8(target+32+i,load8(block-buffer+at+8+i));i+=1;}entries+=1;
+   }
+   at+=32;
+  }
+  offset+=limit;
+ }
+ if sf-mount-id!=mount || sf-disk-ready==0{return -3;}
+ if cap-check(authority,cap-storage())==0{return -2;}
+ store64(scratch+16,entries);let bytes=32+entries*recordbytes;let i=0;
+ while i<bytes{store8(output+i,load8(scratch+i));i+=1;}return bytes;
+}

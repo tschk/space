@@ -1,0 +1,217 @@
+import "gui-protected-clients.in"
+package space.kernel
+
+var gui-protected-layout-generation: Int = 0
+var gui-protected-candidate: Int = 0
+
+fn gui-protected-input-poll() -> Int {
+  if domain-get-current() != 0 || sci-proof-restore(1) != 1 { return -1 }
+  let output = input-output-argument(fb-width, fb-height)
+  if output == 0 { return -1 }
+  return sci-resume-sync-unit(sci-sync-domain, output, 1)
+}
+
+fn gui-protected-report(port: Int) -> void {
+  serial-write-cstr(port, "gui-window: mode ")
+  serial-write-dec-wide(port, fb-width); serial-write-cstr(port, "x"); serial-write-dec-wide(port, fb-height)
+  serial-write-cstr(port, " pitch "); serial-write-dec-wide(port, fb-pitch)
+  serial-write-cstr(port, " extent "); serial-write-dec-wide(port, load64(gui-protected-layout + 16))
+  serial-write-cstr(port, "x"); serial-write-dec-wide(port, load64(gui-protected-layout + 24))
+  serial-write-cstr(port, " scale "); serial-write-dec-wide(port, load64(gui-protected-layout + 32))
+  serial-write-cstr(port, " generation "); serial-write-dec-wide(port, gui-protected-layout-generation)
+  serial-write-cstr(port, " slots "); serial-write-dec-wide(port, load64(gui-protected-layout + 40))
+  serial-write-cstr(port, " "); serial-write-dec-wide(port, load64(gui-protected-layout + 48))
+  serial-write-cstr(port, " "); serial-write-dec-wide(port, load64(gui-protected-layout + 56)); serial-nl(port)
+}
+
+fn gui-protected-reconfigure(port: Int, width: Int, height: Int, scale: Int) -> Int {
+  if domain-get-current() != 0 { return 0 }
+  if gui-protected-candidate == 0 { gui-protected-candidate = alloc(GUI-WINDOW-LAYOUT-BYTES) }
+  if gui-window-layout-fill(gui-protected-candidate, width, height, scale, gui-protected-layout-generation + 1) != 1 { return 0 }
+  let numerator = 100
+  if scale == 3 { numerator = 150 }
+  if out-set-bga-mode(port, width, height, numerator, 100) <= 0 { return 0 }
+  if dsp-mouse-x >= fb-width { dsp-mouse-x = fb-width - 1 }
+  if dsp-mouse-y >= fb-height { dsp-mouse-y = fb-height - 1 }
+  gui-protected-layout-generation += 1
+  if gui-window-layout-fill(gui-protected-layout, fb-width, fb-height, fb-font-scale, gui-protected-layout-generation) != 1 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let record = gui-protected-records + slot * GUI-PROTECTED-RECORD-SIZE
+    if load64(record) != 0 {
+      let config = gui-protected-config(record)
+      if config == 0 { return 0 }
+      let i = 0
+      while i < 40 { store64(config + i, load64(gui-protected-layout + i)); i += 8 }
+      let word = gui-window-config-word(load64(config + 16), load64(config + 24), load64(config + 32))
+      let token = load64(record + 32)
+      if gui-protected-event(token, SPDP-OBJ-SURFACE, SPDP-SURFACE-CONFIGURE-V1, gui-protected-layout-generation, word) != 1 && gui-protected-record(token) != 0 { return 0 }
+    }
+    slot += 1
+  }
+  gui-protected-report(port)
+  return 1
+}
+
+fn gui-protected-session-owned(port: Int, input-image: Int, calc-image: Int, editor-image: Int) -> Int {
+  if domain-get-current() != 0 || runtime-instance-can-admit(3) != 1 { return 0 }
+  gui-protected-layout-generation += 1
+  if gui-protected-init(gui-protected-layout-generation) != 1 { return 0 }
+  if gui-protected-candidate == 0 { gui-protected-candidate = alloc(GUI-WINDOW-LAYOUT-BYTES) }
+  if gui-session-message == 0 { gui-session-message = alloc(8) }
+  let watermark = runtime-instance-retained-watermark()
+  if watermark < 0 { return 0 }
+  let input-result = sci-load-retained-component(port, input-image, "gui-seat", SCI-INPUT-GRANTS, 0)
+  let input-handle = runtime-instance-new-trusted-retained(watermark)
+  if input-result != 0 || input-handle == 0 {
+    if input-handle != 0 { gui-protected-discard-input(input-handle, watermark) }
+    return 0
+  }
+  if input-handle != sci-sync-handle || sci-admit-input-sync(sci-sync-domain) != 1 || sci-sync-provenance-valid(sci-sync-domain, 1) != 1 {
+    gui-protected-discard-input(input-handle, watermark)
+    return 0
+  }
+  gui-session-input-handle = input-handle
+  gui-session-input-page = sci-sync-page
+  if sci-proof-capture-input() != 1 { return 0 }
+  let calc = gui-protected-open(port, 0, calc-image, runtime-instance-image-boot-size(calc-image))
+  if calc == 0 { return 0 }
+  let editor = gui-protected-open(port, 1, editor-image, runtime-instance-image-boot-size(editor-image))
+  if editor == 0 { return 0 }
+  let domains = domain-count
+  let caps = cap-count
+  let heap = heap-next
+  let free = free-list
+  gui-protected-report(port)
+  serial-write-cstr(port, "gui: calculator left, text editor right; click or Tab to focus, Escape closes focused app"); serial-nl(port)
+  serial-write-cstr(port, "gui-window: Ctrl+G changes text scale; Ctrl+O changes output mode"); serial-nl(port)
+  while gui-protected-record(calc) != 0 || gui-protected-record(editor) != 0 {
+    let before-lifetime = gui-protected-lifetime
+    if gui-protected-input-poll() != 0 { return 0 }
+    let pointer-moved = 0
+    let received = input-page-recv(gui-session-input-page, gui-session-message)
+    if received < 0 { return 0 }
+    while received == 1 {
+      let event = load64(gui-session-message)
+      let type = event & 255
+      if type == INPUT-EVT-MOUSE-MOVE || type == INPUT-EVT-MOUSE-BUTTON {
+        dsp-mouse-x = (event >> 32) & 65535
+        dsp-mouse-y = (event >> 48) & 65535
+        if dsp-mouse-x >= fb-width { dsp-mouse-x = fb-width - 1 }
+        if dsp-mouse-y >= fb-height { dsp-mouse-y = fb-height - 1 }
+        pointer-moved = 1
+      }
+      if type == INPUT-EVT-KEY-DOWN {
+        let code = (event >> 16) & 65535
+        if code == 9 {
+          let recipient = calc
+          if gui-protected-focused == calc && gui-protected-record(editor) != 0 { recipient = editor }
+          if gui-protected-record(recipient) == 0 { recipient = editor }
+          let focus-lifetime = gui-protected-lifetime
+          if gui-protected-focus(recipient) != 1 {
+            if gui-protected-lifetime == focus-lifetime || gui-protected-recover(calc, editor) != 1 { return 0 }
+          }
+          serial-write-cstr(port, "gui: focus "); serial-write-dec-wide(port, recipient); serial-nl(port)
+        } else if code == 7 || code == 15 {
+          let width = fb-width
+          let height = fb-height
+          let scale = fb-font-scale
+          if code == 7 { scale = 5 - scale }
+          if code == 15 {
+            if width == 1024 { width = 1280; height = 720 }
+            else if width == 1280 { width = 1920; height = 1080 }
+            else { width = 1024; height = 768 }
+          }
+          if gui-protected-reconfigure(port, width, height, scale) != 1 || gui-protected-recover(calc, editor) != 1 { return 0 }
+        } else {
+          let recipient = gui-protected-focused
+          let epoch = gui-note-store-epoch
+          let lifetime = gui-protected-lifetime
+          let delivered = gui-protected-event(recipient, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, ticks, spdp-seat-key(code, 1))
+          if delivered != 1 && gui-protected-record(recipient) != 0 { return 0 }
+          if gui-protected-lifetime != lifetime {
+            if gui-protected-lifetime != lifetime + 1 { return 0 }
+            heap = heap-next; free = free-list
+          }
+          if gui-note-store-epoch != epoch {
+            if code != 19 || recipient != editor || gui-note-store-epoch != epoch + 1 { return 0 }
+            heap = heap-next; free = free-list
+          }
+          if code == 27 || delivered != 1 {
+            if gui-protected-record(recipient) != 0 || gui-protected-event(recipient, SPDP-OBJ-SEAT, SPDP-SEAT-KEYBOARD-KEY, ticks, spdp-seat-key(97, 1)) != 0 { return 0 }
+            let survivor = calc
+            if gui-protected-record(survivor) == 0 { survivor = editor }
+            if gui-protected-record(survivor) != 0 && gui-protected-focus(survivor) != 1 { return 0 }
+            if delivered != 1 { serial-write-cstr(port, "gui-protected: failed app retired; survivor interactive") }
+            else { serial-write-cstr(port, "gui: focused app closed, retired token refused") }
+          } else { serial-write-cstr(port, "gui: app rendered key "); serial-write-dec-wide(port, code) }
+          serial-nl(port)
+        }
+      }
+      if type == INPUT-EVT-MOUSE-BUTTON && ((event >> 8) & 1) == 1 {
+        let slot = gui-window-layout-hit(gui-protected-layout, (event >> 32) & 65535, (event >> 48) & 65535)
+        if slot >= 0 {
+          let record = gui-protected-records + slot * GUI-PROTECTED-RECORD-SIZE
+          if load64(record) != 0 {
+            let token = load64(record + 32)
+            let focused = gui-protected-focus(token)
+            let delivered = 0
+            if focused == 1 { delivered = gui-protected-event(token, SPDP-OBJ-SEAT, SPDP-SEAT-POINTER-BUTTON, ticks, spdp-seat-key(1, 1)) }
+            if delivered != 1 && (gui-protected-record(token) != 0 || gui-protected-recover(calc, editor) != 1) { return 0 }
+            serial-write-cstr(port, "gui: pointer focused app "); serial-write-dec-wide(port, token); serial-nl(port)
+          }
+        }
+      }
+      if gui-protected-record(calc) == 0 && gui-protected-record(editor) == 0 { break }
+      received = input-page-recv(gui-session-input-page, gui-session-message)
+      if received < 0 { return 0 }
+    }
+    if gui-protected-lifetime != before-lifetime { heap = heap-next; free = free-list }
+    if domain-get-current() != 0 || domain-count != domains || cap-count != caps || heap-next != heap || free-list != free { return 0 }
+    if pointer-moved == 1 { dsp-composite() }
+    pause()
+  }
+  return 1
+}
+
+// Recovery only follows a fenced identity. A still-live rejected event remains
+// a supervisor error; never rebind an invalid pointer or silently skip a peer.
+fn gui-protected-recover(calc: Int, editor: Int) -> Int {
+  if gui-protected-record(gui-protected-focused) != 0 { return 1 }
+  let survivor = calc
+  if gui-protected-record(survivor) == 0 { survivor = editor }
+  if gui-protected-record(survivor) == 0 { return 1 }
+  if gui-protected-focus(survivor) == 1 { return 1 }
+  return 0
+}
+
+// The runtime validates new generation ownership independently of guest result
+// and malformed ring headers. A refused wrapper leaves prior peers untouched.
+fn gui-protected-discard-input(handle: Int, watermark: Int) -> Int {
+  if runtime-instance-discard-new-trusted(handle, watermark) != 0 {
+    // Preserve exact opaque ownership for bounded cleanup retry/quarantine.
+    // No unadmitted/malformed ring pointer enters GUI routing or draining.
+    gui-session-input-handle = handle
+    gui-session-input-page = 0
+    return 0
+  }
+  if gui-session-input-handle == handle {
+    gui-session-input-handle = 0
+    gui-session-input-page = 0
+  }
+  if sci-sync-handle == handle {
+    sci-sync-handle = 0
+    sci-sync-ring-unit = 0
+    sci-sync-page = 0
+    sci-sync-domain = 0
+    sci-sync-info = 0
+    sci-sync-cap = -1
+    sci-sync-object = 0
+    sci-sync-entry = 0
+    sci-sync-grants = 0
+    sci-sync-pixel-phys = 0
+    sci-sync-pixel-size = 0
+    sci-sync-pixel-pool = 0
+  }
+  return 1
+}

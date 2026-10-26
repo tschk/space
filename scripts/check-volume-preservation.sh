@@ -30,14 +30,30 @@ fixture += r'''
 static unsigned char shared[4096], stage[4096], image[64];
 #define COMP_SHARED_VIRT ((int64_t)(intptr_t)shared)
 static int64_t storage_data_page = (intptr_t)stage;
+/* Scalar native-provider model; real DMA/status/ownership has QEMU gates. */
+static int64_t nvme_private_read_u32(int64_t lba, int64_t offset) {
+  reads++;
+  if (read_error || lba < 0 || offset < 0 || offset > 508 || (offset & 3) || (lba + 1) * 512 > sizeof(disk)) return -1;
+  return load32((intptr_t)disk + lba * 512 + offset);
+}
+
 static int invocations;
 static int64_t domain_create(void) { return 1; }
 static void domain_map_user_code(int64_t a, int64_t b, int64_t c) { }
 static void domain_map_user_data(int64_t a, int64_t b, int64_t c) { }
 static int64_t sci_bind_imports(int64_t a, int64_t b, int64_t c, int64_t d) { return 0; }
 static int64_t domain_create_shared_page(int64_t a, int64_t b, int64_t c, int64_t d) { return COMP_SHARED_VIRT; }
-static void domain_switch(int64_t a) { }
-static int64_t domain_get_current(void) { return 0; }
+/* Explicit service-context model; the CPU/domain implementation has separate
+ * QEMU gates. Logical domain and actual CR3 can differ inside a syscall. */
+static int64_t model_domain, model_root = 4096, current_cap = 9;
+static void domain_switch(int64_t a) { model_domain = a; model_root = 4096 + a * 4096; current_cap = 100 + a; }
+static int64_t domain_get_current(void) { return model_domain; }
+static int64_t cr3_read(void) { return model_root; }
+static int64_t domain_restore_service_context(int64_t domain, int64_t cap, int64_t root) {
+  if (domain < 0 || root <= 0) return -1;
+  model_domain = domain; current_cap = cap; model_root = root; return 0;
+}
+static void panic(const char *message) { fprintf(stderr, "%s\n", message); abort(); }
 static void serial_write_cstr(int64_t a, const char *b) { }
 static void serial_nl(int64_t a) { }
 static int64_t com1(void) { return 0; }
@@ -61,6 +77,7 @@ fixture += r'''
 static void reset_volume(int present) {
   memset(heap, 0, sizeof(heap)); memset(shared, 0, sizeof(shared)); heap_next = 0;
   reads = writes = read_error = invocations = 0; nvme_ready = present;
+  model_domain = 0; model_root = 4096; current_cap = 9;
   volume_ready = volume_domain = volume_entry_addr = volume_cap_info = volume_heap_frames = volume_shared = volume_via_marker = 0;
   memset(image, 0, sizeof(image)); store64((intptr_t)image, SCI_MAGIC); store64((intptr_t)image + 16, 123); store64((intptr_t)image + 24, 64);
 }
@@ -79,8 +96,28 @@ int main(int argc, char **argv) {
   sf_cache_buf = sf_cache_meta = sf_nvme_buf = 0; heap_next = 0; sparkfs_init();
   memset(disk, 0, sizeof(disk)); memcpy(disk + 65536 * 512, (void *)(intptr_t)sf_mem_disk, SF_MEM_DISK_SIZE);
   if (argc == 2) { FILE *out = fopen(argv[1], "r+b"); if (!out || fseek(out, 65536 * 512, SEEK_SET) || fwrite(disk + 65536 * 512, 1, SF_MEM_DISK_SIZE, out) != SF_MEM_DISK_SIZE || fclose(out)) return 1; }
-  reset_volume(1); CHECK(sci_volume_rpc(0, (intptr_t)image) == 0); CHECK(volume_ready == 1); CHECK(invocations == 4); CHECK(reads == 256); CHECK(writes == 256);
+  /* Unsupported schemas/layouts must never activate or rewrite backing. */
+  for (int control = 0; control < 3; control++) {
+    memcpy(before, disk, sizeof(disk));
+    int64_t header = (intptr_t)disk + 65536 * 512;
+    if (control == 0) store32(header + SF_SB_VERSION, 2);
+    if (control == 1) store64(header + SF_SB_INODE_TABLE_START, 1);
+    if (control == 2) store32(header + SF_SB_BLOCK_SIZE, 512);
+    unsigned char saved[4096]; memcpy(saved, (void *)(intptr_t)header, sizeof(saved));
+    reset_volume(1); size_t allocated = heap_next;
+    CHECK(sci_volume_rpc(0, (intptr_t)image) == -1);
+    CHECK(writes == 0); CHECK(invocations == 0); CHECK(volume_ready == 0); CHECK(heap_next == allocated);
+    CHECK(memcmp(saved, (void *)(intptr_t)header, sizeof(saved)) == 0);
+    CHECK(memcmp(disk, before, 65536 * 512) == 0);
+    CHECK(memcmp(disk + 65536 * 512 + 4096, before + 65536 * 512 + 4096, sizeof(disk) - 65536 * 512 - 4096) == 0);
+    memcpy(disk, before, sizeof(disk));
+  }
+  reset_volume(1); CHECK(sci_volume_rpc(0, (intptr_t)image) == 0); CHECK(volume_ready == 1); CHECK(invocations == 4); CHECK(reads == 271); CHECK(writes == 256);
   CHECK(volume_rpc_call(5, 1) == 6); CHECK(writes == 512);
+  /* A protected syscall keeps guest logical identity under the kernel root. */
+  model_domain = 7; model_root = 4096; current_cap = 99;
+  CHECK(volume_rpc_call(5, 0) == 6);
+  CHECK(model_domain == 7); CHECK(model_root == 4096); CHECK(current_cap == 99);
   if (failures) return 1;
   puts("PASS: unknown/blank/read-error backing preserved; RAM-only and initialized-backed RPC controls retained"); return 0;
 }

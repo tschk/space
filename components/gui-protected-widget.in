@@ -1,0 +1,56 @@
+package space.app.gui
+import "../protocol/display.in"
+import "../protocol/native-protected.in"
+import "gui-protected-paint.in"
+
+// Isolated preparation: imports become bounded native services only after
+// profile-3 admission. No supervisor helper or pointer is an app interface.
+interface GuiMemory { fn map() -> void }
+interface GuiDisplay {
+  fn present() -> void
+  fn window() -> void
+}
+interrupt fn chan-page-send-frame(page: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {}
+interrupt fn chan-page-recv-frame(page: Int, message: Int) -> Int {}
+var protected-widget-next: Int = 0
+
+fn alloc(size: Int) -> Int {
+  let result = protected-widget-next
+  let aligned = (size + 15) & -16
+  let first = NATIVE-PROTECTED-HEAP + 4096
+  let end = NATIVE-PROTECTED-HEAP + NATIVE-PROTECTED-HEAP-BYTES
+  if size < 0 || aligned < size || result < first || result > end || aligned > end - result { return 0 }
+  protected-widget-next = result + aligned
+  return result
+}
+
+fn protected-window-info-valid(info: Int) -> Int {
+  if info != NATIVE-PROTECTED-INFO { return 0 }
+  if load64(info) != 20 && load64(info) != 52 { return 0 }
+  if load64(info + 8) != 0 || load64(info + 16) != NATIVE-PROTECTED-HEAP || load64(info + 24) != NATIVE-PROTECTED-HEAP-BYTES { return 0 }
+  if load64(info + 32) != 0x70000000 || load64(info + 72) != 0x70001000 || load64(info + 80) != SCI-CANVAS-BYTES || load64(info + 88) != 0 { return 0 }
+  let args = load64(info + 64)
+  if args != 0 && args != NATIVE-PROTECTED-INFO + 256 { return 0 }
+  return 1
+}
+
+fn protected-window-start(info: Int) -> Int {
+  if protected-window-info-valid(info) != 1 || load64(info + 64) != NATIVE-PROTECTED-INFO + 256 { return 0 }
+  let config = NATIVE-PROTECTED-INFO + 256
+  if load64(config) != GUI-WINDOW-CONFIG-MAGIC { return 0 }
+  let focused = load64(config + 40)
+  if focused < 0 || focused > 1 { return 0 }
+  if window-configure(load64(config + 8), load64(config + 16), load64(config + 24), load64(config + 32)) != 1 { return 0 }
+  window-focused = focused
+  protected-widget-next = NATIVE-PROTECTED-HEAP + 4096
+  if protected-font-init()!=1{return 0;}
+  let i = 0
+  while i < 256 { store8(NATIVE-PROTECTED-HEAP + i, 0); i += 1 }
+  return chan-page-send-frame(0x70000000, SPDP-OBJ-COMPOSITOR, SPDP-COMPOSITOR-CREATE-SURFACE, 0, 0)
+}
+
+fn protected-widget-close() -> Int {
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SURFACE, SPDP-SURFACE-DESTROY, 0, 0) != 1 { return 1 }
+  if chan-page-send-frame(0x70000000, SPDP-OBJ-SHM, SPDP-SHM-POOL-DESTROY, 0, 0) != 1 { return 1 }
+  return 42
+}

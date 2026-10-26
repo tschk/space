@@ -1,0 +1,94 @@
+package space.kernel
+import "cleanup.in"
+// Actual parent executions retain the established independent native-pair and
+// allocator witnesses; synthetic child programs assert ordinary Linux results.
+var child-check-count: Int = 0
+var child-check-file-buffer: Int = 0
+// Used only by recorded private IRQ-observer snapshots, never production IRQ.
+var child-check-observe-irq: Int = 0
+
+fn child-check-init()->void {
+ pipe-check-init();
+ pipe-check-authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage());
+ child-check-cleanup-retention();
+ child-check-file-buffer=alloc(16);
+ linux-check(0,fs-write-file("/child-offset.txt","abcdef\n",7));
+ child-check-null-negatives();
+}
+// Native object has no guest pointers; the personality still validates every
+// guest range and live memory grant before dispatch. These are Space's explicit
+// checked-buffer rules, not Linux /dev/null host-conformance assertions.
+fn child-check-null-negatives()->void {
+ linux-fixture-begin(pipe-check-revocable);
+ linux-process-store64(0x20000000,0x12345678ABCDEF01);
+ let fd=linux-process-discard-open(0x80002);
+ if fd<0{panic("null adapter open");}
+ linux-check(-14,linux-process-file-read(fd,0x20001000,1));
+ linux-check(-14,linux-process-file-read(fd,0x20001FFF,2));
+ linux-check(-14,linux-process-file-write(fd,0x20001FFF,2));
+ linux-check(-22,linux-process-file-write(fd,0x20000000,65537));
+ linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000000));
+ let caprow=cap-table-base+pipe-check-revocable*16;let target=load64(caprow);
+ linux-check(0,cap-revoke(pipe-check-revocable));
+ linux-check(-13,linux-process-file-read(fd,0x20000000,1));
+ linux-check(-13,linux-process-file-write(fd,0x20000000,1));
+ linux-check(-13,linux-process-file-seek(fd,0,0));
+ linux-check(-13,linux-process-fstat(fd,0x20000000));
+ linux-check(-13,linux-process-descriptor-flags(fd));
+ linux-check(-13,linux-process-descriptor-dup(fd,-1,0,0));
+
+ linux-check(0,linux-process-file-close(fd));
+ store64(caprow,target);store64(caprow+8,cap-memory());
+ linux-check(0x12345678ABCDEF01,linux-process-pipe-read64(0x20000000));
+ linux-check(0,linux-process-release());pipe-check-released(0);
+}
+fn child-check-case(port:Int,id:Int,image:Int,size:Int,file:Int,rollback:Int,measured:Int)->void {
+ if file!=0{linux-check(0,fs-write-file("/child-offset.txt","abcdef\n",7));}
+ serial-write-cstr(port,"child-corpus: begin ");serial-write-dec-wide(port,child-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);serial-nl(port);
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
+ let path="";if file!=0{path="/child-offset.txt";}
+ linux-process-budget-ticks=100;if rollback==3 || rollback==4{linux-process-budget-ticks=10;}
+ child-check-observe-irq=0;if rollback==3 || rollback==4{child-check-observe-irq=1;}
+ let tickstart=ticks;
+ let result=linux-process-run(image,size,"/child-corpus",path,"",pipe-check-authority);
+ child-check-observe-irq=0;
+ let expected=42;if rollback==3{expected=124;}
+ linux-check(expected,result);linux-check(0,linux-process-pipe-last-signal);
+ if rollback!=0{linux-check(5,linux-process-copy-rollback-refs);}
+ if rollback==1{linux-check(1,linux-process-copy-rollbacks);}
+ if rollback==2 || rollback==4{linux-check(32,linux-process-copy-rollbacks);linux-check(32,linux-process-preparations);}
+ if rollback==3{
+  if ticks - tickstart<10 || linux-process-preparations<1 || linux-process-preparations>=32{panic("child cumulative IRQ witness");}
+  linux-check(linux-process-preparations,linux-process-copy-rollbacks);
+  linux-check(0,load64(linux-process-states+LPS-BUDGET));
+  linux-check(USER-CONTEXT-DEADLINE,load64(linux-process-states+LPS-STOP-KIND));
+  if load64(load64(linux-process-states+LPS-USER-CONTEXT))<10{panic("child real IRQ observer count");}
+  serial-write-cstr(port,"child-corpus: cumulative actual IRQ deadline passed");serial-nl(port);
+ }
+ if rollback==4{
+  linux-check(USER-CONTEXT-EXIT,load64(linux-process-states+LPS-STOP-KIND));
+  if load64(load64(linux-process-states+LPS-USER-CONTEXT))<32{panic("child control real IRQ observer count");}
+  serial-write-cstr(port,"child-corpus: omitted carry control normal exit passed");serial-nl(port);
+ }
+ linux-check(fs,rdmsr(0xC0000100));linux-check(gs,rdmsr(0xC0000101));linux-check(cap,current-cap);
+ if file!=0{
+  let fd=vfs-open-borrowed-path("/child-offset.txt",VFS-O-RDONLY);
+  if fd<3{panic("child offset oracle open");}
+  linux-check(7,vfs-read(fd,child-check-file-buffer,7));
+  linux-check(0x0A595864636261,load64(child-check-file-buffer)&0x00FFFFFFFFFFFFFF);
+  linux-check(0,vfs-close(fd));
+ }
+ pipe-check-released(measured);
+ serial-write-cstr(port,"child-corpus: end ");serial-write-dec-wide(port,child-check-count);
+ serial-write-cstr(port," case ");serial-write-dec-wide(port,id);
+ serial-write-cstr(port," status ");serial-write-dec-wide(port,result);serial-nl(port);
+ child-check-count=child-check-count+1;
+}
+fn child-check-finish(port:Int)->void {
+ linux-check(3,vfs-stream-read(pipe-check-witness-reader,pipe-check-witness-result,3));
+ linux-check(79,load8(pipe-check-witness-result));
+ linux-check(87,load8(pipe-check-witness-result+1));linux-check(78,load8(pipe-check-witness-result+2));
+ linux-check(0,vfs-close(pipe-check-witness-reader));linux-check(0,vfs-close(pipe-check-witness-writer));
+ serial-write-cstr(port,"child-corpus: passed activations ");serial-write-dec-wide(port,child-check-count);serial-nl(port);
+}

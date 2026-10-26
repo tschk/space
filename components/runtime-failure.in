@@ -1,0 +1,33 @@
+package space.kernel
+
+// Failure policy for the trusted synchronous component runner. Its assembly
+// capsule owns only register/stack restoration; this module owns the domain
+// provenance and abort status. Clone domains are still trusted CPL0 components.
+const RUNTIME-ABORT-STATUS = 134
+var runtime-active-domain: Int = -1
+var runtime-aborted: Int = 0
+
+fn runtime-invoke-entry(entry: Int, arg: Int) -> Int {
+  if entry == 0 || runtime-active-domain >= 0 { return -16 }
+  let invoke-stub = load64(0x4150)
+  if invoke-stub == 0 { return -1 }
+  runtime-active-domain = domain-get-current()
+  runtime-aborted = 0
+  let result = invoke2(invoke-stub, entry, arg)
+  runtime-active-domain = -1
+  return result
+}
+
+// Compiler-generated native allocation/aggregate failure imports this symbol.
+// It never resumes the failed expression or fabricates a returned value.
+fn abort() -> void {
+  let stub = load64(0x4158)
+  if runtime-active-domain >= 0 && domain-get-current() == runtime-active-domain && stub != 0 {
+    runtime-aborted = 1
+    invoke1(stub, RUNTIME-ABORT-STATUS)
+  }
+  // Calling abort outside an owned runtime boundary is a kernel failure.
+  cli()
+  while true { hlt() }
+  return
+}

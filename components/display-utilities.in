@@ -55,7 +55,7 @@ fn comp-draw-utilities-content(base: Int) -> void {
   let ty = content-y + 14
   comp-draw-ui-label(tx-x, ty, "DISPLAY OUTPUT", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, COMP-COLOR-BORDER)
   ty = ty + 4
   let rx-end = comp-draw-dec-aa(tx-x, ty, fb-width, COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   comp-draw-ui-label(rx-end, ty, " x ", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
@@ -72,17 +72,25 @@ fn comp-draw-utilities-content(base: Int) -> void {
   ty = ty + lh + 8
   comp-draw-ui-label(tx-x, ty, "TYPEFACES", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, COMP-COLOR-BORDER)
   ty = ty + 4
-  comp-draw-ui-label(tx-x, ty, "SPACE UI SANS", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  if text-ui-face == FONT-FACE-TTF {
+    comp-draw-ui-label(tx-x, ty, "SpaceSans vector", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  } else if text-ui-face == FONT-FACE-MONO {
+    comp-draw-ui-label(tx-x, ty, "DejaVu Sans Mono", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  } else if fb-font-scale == 3 {
+    comp-draw-ui-label(tx-x, ty, "DejaVu Sans (21px)", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  } else {
+    comp-draw-ui-label(tx-x, ty, "DejaVu Sans (14px)", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  }
   ty = ty + lh
-  comp-draw-label(tx-x, ty, "SPACE TERM MONO", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
+  comp-draw-label(tx-x, ty, "DejaVu Sans Mono", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
 
   // Section 3: Seat & shell contract
   ty = ty + lh + 8
   comp-draw-ui-label(tx-x, ty, "INPUT & SHELL", COMP-COLOR-MUTED, COMP-COLOR-SURFACE)
   ty = ty + lh
-  fb-fill-rect(tx-x, ty - 2, rule-w, 1, 0x00D4D4D8)
+  fb-fill-rect(tx-x, ty - 2, rule-w, 1, COMP-COLOR-BORDER)
   ty = ty + 4
   comp-draw-ui-label(tx-x, ty, "PS/2 + USB HID SEAT", COMP-COLOR-TEXT, COMP-COLOR-SURFACE)
   ty = ty + lh

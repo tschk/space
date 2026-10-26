@@ -1,0 +1,65 @@
+package space.kernel
+
+// Helpers require successful structural validation (or the original strict
+// header validation). They never synthesize or rewrite foreign file bytes.
+fn windows-application-coff(image: Int) -> Int {
+  return image + load32(image + 60) + 4
+}
+fn windows-application-opt(image: Int) -> Int {
+  return windows-application-coff(image) + 20
+}
+fn windows-application-sections(image: Int) -> Int {
+  return posix-load16(windows-application-coff(image) + 2)
+}
+fn windows-application-section(image: Int, index: Int) -> Int {
+  return windows-application-opt(image) + 240 + index * 40
+}
+
+// Non-admitting diagnostics: callers may inspect why a structurally valid
+// original app is blocked without mapping it or resolving an unknown import.
+fn windows-application-directory-mask(image: Int, size: Int, startup: Int) -> Int {
+  if windows-application-structure-entry(image, size) < 0 { return -1 }
+  let opt = windows-application-opt(image)
+  let mask = 0
+  let i = 0
+  while i < 16 {
+    if i != 1 && i != 12 && (i != 9 || startup == 0) && load64(opt + 112 + i * 8) != 0 { mask = mask | (1 << i) }
+    i = i + 1
+  }
+  return mask
+}
+
+// Return zero if all names resolve, or the 1-based first unsupported import
+// position. Negative values identify malformed/non-KERNEL32 dependency tables.
+// This does NOT widen the execution profile's separate 32-import limit.
+fn windows-application-import-barrier(image: Int, size: Int, parameters: Int) -> Int {
+  if windows-application-structure-entry(image, size) < 0 { return -1 }
+  let opt = windows-application-opt(image)
+  let rva = load32(opt + 120)
+  let bytes = load32(opt + 124)
+  if rva == 0 && bytes == 0 { return 0 }
+  if rva == 0 || bytes != 40 { return -2 }
+  let off = windows-protected-rva(image, size, rva, 40)
+  if off < 0 { return -2 }
+  let p = image + off
+  if load64(p + 4) != 0 || load64(p + 20) != 0 || load64(p + 28) != 0 || load32(p + 36) != 0 { return -2 }
+  if windows-application-kernel32(image, size, load32(p + 12)) == 0 { return -3 }
+  let lookup = load32(p)
+  if lookup == 0 { lookup = load32(p + 16) }
+  let i = 0
+  while i < 256 {
+    off = windows-protected-rva(image, size, lookup + i * 8, 8)
+    if off < 0 { return -2 }
+    let name = load64(image + off)
+    if name == 0 { return 0 }
+    if name < 0 || windows-protected-rva(image, size, name, 3) < 0 { return -2 }
+    let id = windows-application-import-id(image, size, name)
+    if parameters != 0 { id = windows-parameters-import-id(image, size, name) }
+    if parameters == 2 { id = windows-parameters-composed-import(image, size, name) }
+    if parameters == 3 { id = windows-parameters-unicode-import(image,size,name) }
+    if parameters == 4 { id = windows-parameters-path-import(image,size,name) }
+    if id < 0 { return i + 1 }
+    i = i + 1
+  }
+  return -4
+}

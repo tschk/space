@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "classification": "Original GNU sed4.9 static executable",
+  "infinite_argv": [
+    "/sed",
+    ":again;bagain",
+    "-"
+  ],
+  "infinite_stdin": "loop\n",
+  "cases": [
+    {
+      "name": "version",
+      "argv": [
+        "/sed",
+        "--version",
+        "--version"
+      ],
+      "expected_stdout": "/sed (GNU sed) 4.9\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Jay Fenlason, Tom Lord, Ken Pizzini,\nPaolo Bonzini, Jim Meyering, and Assaf Gordon.\n\nThis sed program was built without SELinux support.\n\nGNU sed home page: <https://www.gnu.org/software/sed/>.\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>.\nE-mail bug reports to: <bug-sed@gnu.org>.\n"
+    },
+    {
+      "name": "substitution",
+      "argv": [
+        "/sed",
+        "s/old/new/g",
+        "-"
+      ],
+      "stdin": "old thing old\nkeep\n",
+      "expected_stdout": "new thing new\nkeep\n",
+      "repeat": true
+    },
+    {
+      "name": "capture-groups",
+      "argv": [
+        "/sed",
+        "s/\\([A-Za-z]*\\)=\\([0-9]*\\)/\\2:\\1/",
+        "-"
+      ],
+      "stdin": "count=123\nsize=42\n",
+      "expected_stdout": "123:count\n42:size\n"
+    },
+    {
+      "name": "hold-space",
+      "argv": [
+        "/sed",
+        "1h;1d;G",
+        "-"
+      ],
+      "stdin": "first\nsecond\nthird\n",
+      "expected_stdout": "second\nfirst\nthird\nfirst\n"
+    },
+    {
+      "name": "file-transform",
+      "argv": [
+        "/sed",
+        "s/space/Space/g",
+        "@FILE@"
+      ],
+      "file": "from space\nspace works\n",
+      "expected_stdout": "from Space\nSpace works\n"
+    },
+    {
+      "name": "status",
+      "argv": [
+        "/sed",
+        "0q7",
+        "-"
+      ],
+      "stdin": "line\n",
+      "expected_stdout": "",
+      "expected_exit": 1,
+      "expected_stderr": "/sed: -e expression #1, char 2: invalid usage of line address 0\n"
+    },
+    {
+      "name": "multi-option-vector",
+      "argv": [
+        "/sed",
+        "-n",
+        "-e",
+        "s/old/new/p",
+        "-"
+      ],
+      "stdin": "old\nkeep\nold again\n",
+      "expected_stdout": "new\nnew again\n"
+    },
+    {
+      "name": "file-option-vector",
+      "argv": [
+        "/sed",
+        "-n",
+        "-e",
+        "2p",
+        "@FILE@"
+      ],
+      "file": "first\nsecond\nthird\n",
+      "expected_stdout": "second\n"
+    }
+  ]
+}

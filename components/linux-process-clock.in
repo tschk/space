@@ -1,0 +1,54 @@
+package space.kernel
+import "time.in"
+import "counter.in"
+// Foreign time_t policy at the edge. Native clock is explicitly granted and
+// sampled coherently; no host timestamp, epoch constant or fabricated success.
+fn linux-process-time(pointer:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if pointer!=0 && linux-process-range(pointer,8,1)==0{return -14;}
+ let seconds=time-component-wallclock();if seconds<0{return -5;}
+ if pointer!=0{linux-process-store64(pointer,seconds);if linux-process-memory-failed!=0{return -14;}}
+ return seconds;
+}
+
+// x86_64 Linux timeval/timezone layouts. The native wall clock is UTC and has
+// one-second RTC resolution. Preflight every output before sampling/writing.
+fn linux-process-gettimeofday(value:Int,zone:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if value!=0 && linux-process-range(value,16,1)==0{return -14;}
+ if zone!=0 && linux-process-range(zone,8,1)==0{return -14;}
+ let seconds=0;if value!=0{seconds=time-component-wallclock();if seconds<0{return -5;}}
+ if value!=0{linux-process-store64(value,seconds);linux-process-store64(value+8,0);}
+ if zone!=0{linux-process-store64(zone,0);}
+ if linux-process-memory-failed!=0{return -14;}return 0;
+}
+
+fn linux-process-clock-gettime(clock:Int,value:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if clock!=0 && clock!=1{return -22;}
+ if linux-process-range(value,16,1)==0{return -14;}
+ let seconds=0;let nanos=0;
+ if clock==0{seconds=time-component-wallclock();if seconds<0{return -5;}}
+ else{
+  let frequency=counter-frequency-authorized(linux-process-authority);let sample=counter-read-authorized(linux-process-authority);
+  if frequency<=0 || sample<0{return -95;}
+  seconds=sample/frequency;let remainder=sample%frequency;
+  // Reduce before multiplying, preserving exact floor(sample * 1e9 / Hz)
+  // without overflowing at valid high-frequency native counter values.
+  let x=frequency;let y=1000000000;while y!=0{let next=x%y;x=y;y=next;}
+  let factor=1000000000/x;let divisor=frequency/x;
+  if remainder>0x7fffffffffffffff/factor{return -75;}nanos=(remainder*factor)/divisor;
+ }
+ linux-process-store64(value,seconds);linux-process-store64(value+8,nanos);
+ if linux-process-memory-failed!=0{return -14;}return 0;
+}
+
+fn linux-process-clock-getres(clock:Int,value:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if clock!=0 && clock!=1{return -22;}
+ if value!=0 && linux-process-range(value,16,1)==0{return -14;}
+ let seconds=1;let nanos=0;
+ if clock==1{let frequency=counter-frequency-authorized(linux-process-authority);if frequency<=0{return -95;}seconds=0;nanos=1+999999999/frequency;}
+ if value!=0{linux-process-store64(value,seconds);linux-process-store64(value+8,nanos);}
+ if linux-process-memory-failed!=0{return -14;}return 0;
+}

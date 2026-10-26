@@ -1,0 +1,54 @@
+package space.kernel
+fn terminal-select-state(fs:Int,gs:Int,cap:Int)->void{
+ if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0 || rdmsr(0xc0000100)!=fs || rdmsr(0xc0000101)!=gs || current-cap!=cap{panic("Terminal select supervisor restoration");}
+}
+fn terminal-select-close(token:Int,authority:Int,session:Int,owner:Int,seat:Int)->void{
+ let result=linux-process-terminal-query(token,authority,1);if linux-process-terminal-query(token,authority,0)!=2 || result!=42{serial-write-cstr(com1(),"terminal-select: original control status ");serial-write-dec-wide(com1(),result);serial-nl(com1());panic("Terminal select actual CPU status");}
+ if linux-process-terminal-close(token,authority)!=0 || terminal-session-close(session,owner)!=0 || terminal-seat-clear(seat)!=0{panic("Terminal select owned close");}
+}
+fn terminal-select-controls(port:Int,authority:Int,noTimer:Int,owner:Int,seat:Int)->void{
+ let fs=rdmsr(0xc0000100);let gs=rdmsr(0xc0000101);let cap=current-cap;let caps=cap-count;let heap=0;let free=0;let domains=0;let cycle=0;
+ while cycle<3{
+  let session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("Terminal select lease");}
+  let token=linux-process-terminal-start(0x12000000,TERMINAL-SELECT-SIZE,"/select","select","",authority,session,owner);
+  if token<=0 || linux-process-terminal-query(token,authority,0)!=1 || linux-process-terminal-query(token,authority,4)!=0 || load64(linux-process-states+LPS-PENDING)!=14{panic("Terminal descriptor select did not retain");}
+  let budget=linux-process-terminal-query(token,authority,2);let calls=linux-process-terminal-query(token,authority,3);let idle=0;
+  while idle<20{if linux-process-terminal-resume(token,authority)!=LINUX-PROCESS-TERMINAL-WAIT || linux-process-terminal-query(token,authority,2)!=budget || linux-process-terminal-query(token,authority,3)!=calls{panic("Terminal select idle executed user CPU");}terminal-select-state(fs,gs,cap);idle+=1;}
+  if terminal-seat-deliver(seat,97)!=0 || linux-process-terminal-resume(token,authority)!=LINUX-PROCESS-TERMINAL-WAIT{panic("Terminal select readiness wake");}
+  let deadline=linux-process-terminal-query(token,authority,4);let frequency=counter-frequency-authorized(authority);let now=counter-read-authorized(authority);budget=linux-process-terminal-query(token,authority,2);
+  if deadline<=0 || frequency<=0 || now<0 || load64(linux-process-states+LPS-PENDING)!=14{panic("Terminal select actual deadline");}
+  while now<deadline{if execution-clock-await-interrupt(authority,frequency,deadline)<0{panic("Terminal select native wait");}now=counter-read-authorized(authority);}
+  if linux-process-terminal-query(token,authority,2)!=budget{panic("Terminal select wait charged user budget");}
+  if linux-process-terminal-resume(token,authority)!=LINUX-PROCESS-TERMINAL-WAIT || linux-process-terminal-query(token,authority,4)!=0 || load64(linux-process-states+LPS-PENDING)!=9{panic("Terminal select deadline survived a plain read");}
+  if terminal-seat-deliver(seat,98)!=0 || linux-process-terminal-resume(token,authority)!=42{panic("Terminal select final read");}terminal-select-close(token,authority,session,owner,seat);
+  session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("Postprocess lease");}
+  let i=0;while i<506{if terminal-session-write(session,owner,122)!=0{panic("Postprocess queue seed");}i+=1;}
+  token=linux-process-terminal-start-profile(0x12000000,TERMINAL-SELECT-SIZE,"/select","post","",authority,session,owner,5);
+  if token<=0 || linux-process-terminal-query(token,authority,0)!=1 || terminal-session-query(session,owner,3)!=506{panic("Postprocess published partial CRLF");}
+  i=0;while i<506{if terminal-session-output(session,owner)!=122{panic("Postprocess changed queued prefix");}i+=1;}
+  if linux-process-terminal-resume(token,authority)!=LINUX-PROCESS-TERMINAL-WAIT || terminal-session-query(session,owner,3)!=2 || terminal-session-output(session,owner)!=13 || terminal-session-output(session,owner)!=10{panic("Postprocess CRLF bytes/count");}
+  if terminal-seat-deliver(seat,97)!=0 || linux-process-terminal-resume(token,authority)!=42{panic("Postprocess actual continuation");}terminal-select-close(token,authority,session,owner,seat);
+  session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("Postprocess writer lease");}
+  token=linux-process-terminal-start-profile(0x12000000,TERMINAL-SELECT-SIZE,"/select","writer","",authority,session,owner,5);
+  let source=0;let published=0;let lf=0;let turns=0;
+  while linux-process-terminal-query(token,authority,0)==1 && turns<10{
+   while terminal-session-query(session,owner,3)>0{let byte=terminal-session-output(session,owner);let expected=source&255;
+    if lf!=0{expected=10;lf=0;source+=1;}else if expected==10{expected=13;lf=1;}else{source+=1;}
+    if byte!=expected{panic("Postprocess writer exact bytes");}published+=1;
+   }linux-process-terminal-resume(token,authority);turns+=1;
+  }
+  while terminal-session-query(session,owner,3)>0{let byte=terminal-session-output(session,owner);let expected=source&255;if lf!=0{expected=10;lf=0;source+=1;}else if expected==10{expected=13;lf=1;}else{source+=1;}if byte!=expected{panic("Postprocess writer tail");}published+=1;}
+  if source!=1024 || published!=1028 || lf!=0{panic("Postprocess partial write accounting");}terminal-select-close(token,authority,session,owner,seat);
+  session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("Terminal select denial lease");}
+  token=linux-process-terminal-start(0x12000000,TERMINAL-SELECT-SIZE,"/select","denied","",noTimer,session,owner);if token<=0{panic("Terminal select denied token");}terminal-select-close(token,noTimer,session,owner,seat);
+  session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("Terminal select cancellation lease");}
+  token=linux-process-terminal-start(0x12000000,TERMINAL-SELECT-SIZE,"/select","select","",authority,session,owner);
+  if token<=0 || linux-process-terminal-query(token,authority,0)!=1 || load64(linux-process-states+LPS-PENDING)!=14{panic("Terminal select cancellation was not pending");}
+  if linux-process-terminal-close(token,authority)!=0 || linux-process-terminal-query(token,authority,0)!=-9{panic("Terminal select cancellation token");}
+  if terminal-seat-deliver(seat,97)!=0 || terminal-session-read(session,owner)!=97 || terminal-session-query(session,owner,2)!=0{panic("Canceled select consumed a later native input byte");}
+  if terminal-session-close(session,owner)!=0 || terminal-seat-clear(seat)!=0{panic("Terminal select canceled lease close");}
+  terminal-select-state(fs,gs,cap);if cap-count!=caps || linux-process-active!=0 || linux-process-cleanup-failed!=0{panic("Terminal select retired process state");}
+  if cycle==0{heap=heap-next;free=quickjs-repl-free();domains=domain-count;}else if heap-next!=heap || quickjs-repl-free()!=free || domain-count!=domains{panic("Terminal select repeated ownership growth");}cycle+=1;
+ }
+ serial-write-cstr(port,"terminal-select: 15 own CPU controls, 60 idle waits, actual fd/deadline/grant/cancel and CRLF partial-write ownership PASS");serial-nl(port);
+}

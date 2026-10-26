@@ -1,0 +1,116 @@
+package space.kernel
+import "fs-directory-snapshot.in"
+
+// Trusted native Storage provider prototype, not an SCI service. A synchronous
+// immutable byte observation has no foreign executable/descriptor policy and
+// retains no inode/data-block ownership. Borrowed native pointers never cross
+// a guest/component boundary; consumers copy through their existing VM owner.
+const FILE-OBSERVATION-MAX=2146304 // Current12 direct +512 indirect blocks.
+const FILE-OBSERVATION-ROW=128
+var file-observation-table:Int=0
+var file-observation-generation:Int=0
+var file-observation-busy:Int=0
+fn file-observation-kernel()->Int{if domain-current!=0 || user-context-active!=0 || cr3-read()!=load64(domain-table){return 0;}return 1;}
+fn file-observation-authorized(row:Int)->Int{
+ let owner=load64(row+8);if cap-check(owner,cap-memory()|cap-storage())==0{return 0;}
+ if load64(cap-table-base+owner*16)!=load64(row+16){return 0;}return 1;
+}
+// Row: handle,owner,target,phase(1live/2retiring/3staging),bytes,scratch,
+// original-inode copy,size,mount,inode,borrow count; remaining words reserved.
+fn file-observation-row(handle:Int,owner:Int)->Int{
+ if file-observation-kernel()==0{return -4;}
+ if handle<=0 || file-observation-table==0{return -6;}let slot=(handle&255) - 1;if slot<0 || slot>=2{return -6;}
+ let row=file-observation-table+slot*FILE-OBSERVATION-ROW;
+ if load64(row)!=handle || load64(row+24)==0{return -6;}if load64(row+8)!=owner{return -2;}return row;
+}
+fn file-observation-reset(row:Int)->void{
+ let bytes=load64(row+32);let scratch=load64(row+40);let inode=load64(row+48);cpu-mem-fill64(row,0,FILE-OBSERVATION-ROW/8);store64(row+32,bytes);store64(row+40,scratch);store64(row+48,inode);
+}
+fn file-observation-source(row:Int)->Int{
+ if file-observation-authorized(row)==0{return -2;}
+ if volume-ready!=0 || sf-disk-ready==0 || sf-mount-id!=load64(row+64){return -3;}
+ if load64(sf-super+SF-SB-TOTAL-BLOCKS)!=load64(row+88) || load64(sf-super+SF-SB-DATA-START)!=load64(row+96) || load32(sf-super+SF-SB-INODE-COUNT)!=load64(row+104) || load64(sf-super+SF-SB-INODE-TABLE-START)!=load64(row+112) || load32(sf-super+SF-SB-VERSION)!=load64(row+120){return -7;}
+ let inode=load64(row+72);let actual=sf-inode-addr(inode);let stamp=load64(row+48);let i=0;
+ while i<SF-INODE-SIZE{if load64(actual+i)!=load64(stamp+i){return -7;}i+=8;}return 0;
+}
+fn file-observation-read(row:Int,block:Int,buffer:Int)->Int{
+ let status=file-observation-source(row);if status!=0{return status;}
+ status=fs-directory-read(block,buffer,load64(row+8));if status!=0{return status;}
+ return file-observation-source(row);
+}
+fn file-observation-build(path:Int,owner:Int,row:Int)->Int{
+ // The native caller lends a readable canonical path for this synchronous call.
+ // Directory metadata traversal uses the existing provider's checked Storage
+ // reads. Target and complete inode identity are rechecked before byte reads.
+ let length=0;while length<=1023 && load8(path+length)!=0{length+=1;}if length<1 || length>1023{return -1;}
+ if volume-ready!=0 || sf-disk-ready==0 || sf-mount-id<=0{return -3;}
+ let count=load32(sf-super+SF-SB-INODE-COUNT);let total=load64(sf-super+SF-SB-TOTAL-BLOCKS);let first=load64(sf-super+SF-SB-DATA-START);
+ if count<1 || count>SF-MAX-INODE-COUNT || total<2 || total>SF-MAX-TOTAL-BLOCKS || first<1 || first>=total{return -7;}
+ let scratch=load64(row+40);let stamp=load64(row+48);let output=load64(row+32);
+ if fs-directory-overlap(path,length+1,scratch,SF-BLOCK-SIZE)!=0 || fs-directory-overlap(path,length+1,stamp,SF-INODE-SIZE)!=0 || fs-directory-overlap(path,length+1,output,FILE-OBSERVATION-MAX)!=0{return -1;}
+ store64(row+64,sf-mount-id);store64(row+88,total);store64(row+96,first);store64(row+104,count);store64(row+112,load64(sf-super+SF-SB-INODE-TABLE-START));store64(row+120,load32(sf-super+SF-SB-VERSION));
+ let inode=fs-directory-resolve(path,length,load64(row+40),owner);if inode<0{return inode;}
+ if file-observation-authorized(row)==0{return -2;}
+ if sf-mount-id!=load64(row+64) || volume-ready!=0 || sf-disk-ready==0{return -3;}
+ if inode<0 || inode>=count{return -7;}let actual=sf-inode-addr(inode);
+ if load32(actual+SF-IN-TYPE)!=SF-TYPE-FILE{return -5;}
+ let size=load64(actual+SF-IN-SIZE);if size<0 || size>FILE-OBSERVATION-MAX{return -6;}
+ if (load32(actual+SF-IN-MODE)&256)==0{return -2;}
+ store64(row+72,inode);store64(row+56,size);let i=0;while i<SF-INODE-SIZE{store64(stamp+i,load64(actual+i));i+=8;}
+ if load32(actual+SF-IN-INLINE)!=0{
+  if load32(actual+SF-IN-INLINE)!=1 || size>SF-INLINE-MAX{return -7;}
+  i=0;while i<size{store8(output+i,load8(stamp+SF-IN-DIRECT+i));i+=1;}
+ }else{
+  let offset=0;while offset<size{
+   let status=file-observation-source(row);if status!=0{return status;}
+   let block=fs-directory-block(inode,offset/SF-BLOCK-SIZE,scratch,owner);if block<0{return block;}
+   status=file-observation-read(row,block,scratch);if status!=0{return status;}
+   let bytes=size - offset;if bytes>SF-BLOCK-SIZE{bytes=SF-BLOCK-SIZE;}
+   i=0;while i<bytes{store8(output+offset+i,load8(scratch+i));i+=1;}offset+=bytes;
+  }
+ }
+ return file-observation-source(row);
+}
+fn file-observation-open(path:Int,owner:Int)->Int{
+ if file-observation-kernel()==0 || file-observation-busy!=0{return -4;}
+ if cap-check(owner,cap-memory()|cap-storage())==0{return -2;}
+ if path<65536 || path>0xFFFFFFFF - 1024{return -1;}
+ if volume-ready!=0 || sf-disk-ready==0 || sf-mount-id<=0{return -3;}
+ let version=load32(sf-super+SF-SB-VERSION);if version!=SF-VERSION && version!=FS-METADATA-UTC-VERSION{return -3;}
+ if FILE-OBSERVATION-MAX!=(SF-INODE-DIRECT+SF-INODE-INDIRECT-COUNT)*SF-BLOCK-SIZE{return -3;}
+ if file-observation-generation>=0x7FFFFFFFFFFFFF{return -3;}
+ let slot=0;while slot<2 && file-observation-table!=0 && load64(file-observation-table+slot*FILE-OBSERVATION-ROW+24)!=0{slot+=1;}if slot==2{return -3;}
+ let need=0;if file-observation-table==0{need=2*FILE-OBSERVATION-ROW;}
+ let row=0;if file-observation-table!=0{row=file-observation-table+slot*FILE-OBSERVATION-ROW;}
+ if row==0{need+=FILE-OBSERVATION-MAX+SF-BLOCK-SIZE+SF-INODE-SIZE;}
+ else{if load64(row+32)==0{need+=FILE-OBSERVATION-MAX+SF-BLOCK-SIZE+SF-INODE-SIZE;}}
+ if heap-next<65536 || heap-next>heap-end || need>heap-end - heap-next{return -6;}
+ if file-observation-table==0{file-observation-table=alloc(2*FILE-OBSERVATION-ROW);cpu-mem-fill64(file-observation-table,0,2*FILE-OBSERVATION-ROW/8);}
+ row=file-observation-table+slot*FILE-OBSERVATION-ROW;
+ if load64(row+32)==0{store64(row+32,alloc(FILE-OBSERVATION-MAX));store64(row+40,alloc(SF-BLOCK-SIZE));store64(row+48,alloc(SF-INODE-SIZE));}
+ store64(row+8,owner);store64(row+16,load64(cap-table-base+owner*16));store64(row+24,3);
+ file-observation-busy=1;let result=file-observation-build(path,owner,row);file-observation-busy=0;if result!=0{file-observation-reset(row);return result;}
+ file-observation-generation+=1;let handle=(file-observation-generation<<8)|(slot+1);store64(row,handle);store64(row+24,1);return handle;
+}
+// which0size/1phase/2borrow count/3observed mount/4observed native inode+1.
+fn file-observation-query(handle:Int,owner:Int,which:Int)->Int{
+ let row=file-observation-row(handle,owner);if row<0{return row;}
+ if file-observation-authorized(row)==0{return -2;}if which<0 || which>4{return -1;}
+ if which==0{return load64(row+56);}if which==1{return load64(row+24);}if which==2{return load64(row+80);}if which==3{return load64(row+64);}return load64(row+72)+1;
+}
+fn file-observation-borrow(handle:Int,owner:Int)->Int{
+ let row=file-observation-row(handle,owner);if row<0{return row;}
+ if file-observation-authorized(row)==0{return -2;}if load64(row+24)!=1{return -4;}
+ if load64(row+80)>=64{return -3;}store64(row+80,load64(row+80)+1);return load64(row+32);
+}
+// Returning an existing loan and retiring its owner require no renewed grant.
+// Revocation cannot turn cleanup into an unreachable lease. Identity still
+// checks the exact native owner ID and generation; all endpoints remain private.
+fn file-observation-return(handle:Int,owner:Int)->Int{
+ let row=file-observation-row(handle,owner);if row<0{return row;}
+ if load64(row+80)<=0{return -1;}store64(row+80,load64(row+80) - 1);return 0;
+}
+fn file-observation-close(handle:Int,owner:Int)->Int{
+ let row=file-observation-row(handle,owner);if row<0{return row;}
+ store64(row+24,2);if load64(row+80)!=0{return -5;}file-observation-reset(row);return 0;
+}

@@ -12,7 +12,7 @@ args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 text = (root/'components/display.in').read_text() + '\n' + (root/'components/display-spdp.in').read_text()
 functions = []
-for name in ('dsp-surface-size', 'dsp-create-surface', 'dsp-surface-valid', 'dsp-surface-destroy', 'dsp-shm-destroy-pool', 'dsp-surface-attach', 'dsp-surface-geometry', 'dsp-surface-commit', 'dsp-handle-msg'):
+for name in ('dsp-surface-size', 'dsp-create-surface', 'dsp-surface-valid', 'dsp-surface-destroy', 'dsp-shm-destroy-pool', 'dsp-surface-attach', 'dsp-surface-geometry', 'dsp-surface-commit', 'dsp-handle-msg', 'dsp-surface-stride', 'dsp-buffer-end'):
     start = text.index('fn '+name+'(')
     # The size helper is a single-line declaration.
     end = text.index('\n', start) if name == 'dsp-surface-size' else text.index('\n}', start)+2
@@ -24,6 +24,7 @@ var dsp-surfaces:Int=8;
 var dsp-surface-count:Int=0;
 var dsp-pools:Int=1600;
 var dsp-pool-sizes:Int=1700;
+var dsp-strides:Int=1800;
 fn load64(p:Int)->Int{return heap[p];}
 fn store64(p:Int,v:Int)->Void{heap[p]=v;}
 fn dsp-shm-create-pool(id:Int,size:Int)->Void{return;}
@@ -52,6 +53,15 @@ fn main()->Int{
  if load64(third+8)!=1 || load64(third+40)!=1{return 8;}
  // Tombstones deliberately do not recycle IDs or revive stale requests.
  if dsp-surface-count!=3 || dsp-create-surface()!=-1{return 9;}
+ // Explicit pitch leaves legacy geometry unchanged and resets on reattach.
+ if dsp-surface-stride(1,3072)!=1 || load64(dsp-strides+8)!=3072 || load64(second+24)!=((32<<16)|16){return 10;}
+ if dsp-surface-stride(1,3)!=0 || dsp-surface-stride(1,16777220)!=0 || dsp-surface-stride(-1,4)!=0 || load64(dsp-strides+8)!=3072{return 11;}
+ dsp-surface-attach(1,1<<32);if load64(dsp-strides+8)!=0{return 12;}
+ dsp-surface-stride(1,3072);dsp-surface-destroy(1);if load64(dsp-strides+8)!=0{return 13;}
+ if dsp-buffer-end(4096,0,64,16,256)!=4096 || dsp-buffer-end(1179648,0,64,16,3072)!=46336{return 14;}
+ if dsp-buffer-end(46335,0,64,16,3072)!=-1 || dsp-buffer-end(4096,1,64,16,256)!=-1{return 15;}
+ if dsp-buffer-end(4096,0,64,16,252)!=-1 || dsp-buffer-end(4096,0,64,0,256)!=-1 || dsp-buffer-end(4096,-1,64,16,256)!=-1{return 16;}
+ if dsp-buffer-end(0x7fffffffffffffff,0,1,3,0x7ffffffffffffffc)!=-1{return 17;}
  return 42;
 }
 '''

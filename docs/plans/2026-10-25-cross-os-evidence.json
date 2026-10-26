@@ -1,0 +1,359 @@
+{
+  "goal_status": "OPEN",
+  "source_commit": "db1676f967aec7f4a86951a0bb46d4253a76f68e",
+  "scope": "Original shipped Linux ELF64, macOS Mach-O64 and Windows PE32 builds of one upstream assembler; native controls are separate; no new GUI-app execution claim.",
+  "cohort_receipt": "/workspace/cross-os-cohort/report.json",
+  "cohort_receipt_sha256": "77a0440ec2fa9b16fa08b198da8a421fc5d7bfbf00ce2dec2cd26344dbe148a6",
+  "cohort_integrity": "passed",
+  "source_files": 819,
+  "checks_passed": 11,
+  "checks_failed": 0,
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "applications": [
+    {
+      "name": "original-fasmg-linux-max",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-linux-max/report.json",
+      "receipt_sha256": "9de27e9ed940b52d9cddcffd27f4f16c0c638aaa3b992ede8c190123d062959b",
+      "elapsed_seconds": 31.772,
+      "result": {
+        "status": "passed",
+        "cpu_profile": "max",
+        "qemu_cpu": "max",
+        "application_sha256": "db544ed5a530dde139ef01ddc3fbc352bdec89fdda7fc1e9553e7da9361ac2e3",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "f1be297b45ab82e985163eb09ff49710fa4c2bacdd21b3cf69a952dec2ecbe9c",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "original_rtc_output_cases": 1
+      },
+      "personality": "linux",
+      "cpu": "max",
+      "generated_hex": "53706163650a0101020203030404",
+      "published_serial": "docs/evidence/2026-10-25-cross-os/linux-max.serial.txt",
+      "serial_sha256": "dee3b9f6f76b2d615810d805574e8136c79eaac1de94b03cdd4b3737a7cc9228"
+    },
+    {
+      "name": "original-fasmg-linux-qemu64-rdrand",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-linux-qemu64-rdrand/report.json",
+      "receipt_sha256": "c7033bd3ce9bb368aaa4540c81948fcc6a4414996931c64dbe8c28fc6f15e0e1",
+      "elapsed_seconds": 30.262,
+      "result": {
+        "status": "passed",
+        "cpu_profile": "qemu64-rdrand",
+        "qemu_cpu": "qemu64,+rdrand",
+        "application_sha256": "db544ed5a530dde139ef01ddc3fbc352bdec89fdda7fc1e9553e7da9361ac2e3",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "f1be297b45ab82e985163eb09ff49710fa4c2bacdd21b3cf69a952dec2ecbe9c",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "original_rtc_output_cases": 1
+      },
+      "personality": "linux",
+      "cpu": "qemu64-rdrand",
+      "generated_hex": "53706163650a0101020203030404"
+    },
+    {
+      "name": "original-fasmg-darwin-max",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-darwin-max/report.json",
+      "receipt_sha256": "88ca015cd7850ff68350ab232cee7ea06be4d8c2de4c0c3de53c0ba1e7331073",
+      "elapsed_seconds": 26.18,
+      "result": {
+        "status": "passed",
+        "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "47540fb2f9d206b052fb80efc070363e6a65a4381e9c96a205e279fc14500fdb",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          13
+        ]
+      },
+      "personality": "darwin",
+      "cpu": "max",
+      "generated_hex": "53706163650a0101020203030404",
+      "published_serial": "docs/evidence/2026-10-25-cross-os/darwin-max.serial.txt",
+      "serial_sha256": "ca2d0f8e518b8d8db4c0db9fae9e1de66e7121ad2ad943106859868c2716e893"
+    },
+    {
+      "name": "original-fasmg-darwin-qemu64",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-darwin-qemu64/report.json",
+      "receipt_sha256": "530552d9671175b4ac696d61a9399e222165a0b8ea18129aa082cd32631eabe5",
+      "elapsed_seconds": 25.407,
+      "result": {
+        "status": "passed",
+        "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "47540fb2f9d206b052fb80efc070363e6a65a4381e9c96a205e279fc14500fdb",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          13
+        ]
+      },
+      "personality": "darwin",
+      "cpu": "qemu64",
+      "generated_hex": "53706163650a0101020203030404"
+    },
+    {
+      "name": "original-fasmg-windows-max",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-windows-max/report.json",
+      "receipt_sha256": "068ab978f80559591e58baed4d7c5fbc8caa54b10df1f034c67ce44f2735af93",
+      "elapsed_seconds": 10.609,
+      "result": {
+        "status": "passed",
+        "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "cebcceb1c86d24aca374c05249116f55b1fc534afcb4f4073c4573e9b85ef7d4",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      },
+      "personality": "windows",
+      "cpu": "max",
+      "generated_hex": "53706163650a0101020203030404",
+      "published_serial": "docs/evidence/2026-10-25-cross-os/windows-max.serial.txt",
+      "serial_sha256": "072b73172612695e76a91c4608f70e1c6bd534a96a7581d25dec0549dd8530e9"
+    },
+    {
+      "name": "original-fasmg-windows-qemu64",
+      "receipt": "/workspace/cross-os-cohort/original-fasmg-windows-qemu64/report.json",
+      "receipt_sha256": "1838ee6349ae9a96b768b2d12c42c0e491021f0cb21cf8027bb97e5ee3d3b6b2",
+      "elapsed_seconds": 10.258,
+      "result": {
+        "status": "passed",
+        "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "cebcceb1c86d24aca374c05249116f55b1fc534afcb4f4073c4573e9b85ef7d4",
+        "original_application_entries": 65,
+        "original_error_exits": 42,
+        "lifetime_cycles": 21,
+        "malformed_controls": 6,
+        "observed_import_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      },
+      "personality": "windows",
+      "cpu": "qemu64",
+      "generated_hex": "53706163650a0101020203030404"
+    }
+  ],
+  "native_controls": [
+    {
+      "name": "native-compat32-max",
+      "receipt": "/workspace/cross-os-cohort/native-compat32-max/report.json",
+      "receipt_sha256": "eeed4fbc141ab3dca569cd716852a7ce2e89c18ca6f72f9275adb64b93b23bae",
+      "elapsed_seconds": 6.494,
+      "result": {
+        "status": "passed",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "437ab1e6d6870f0399110362a248bee4e25e2ff67dd5af69e50e2e161cccb54f",
+        "original_application_entries": 0,
+        "native_control_entries": 144,
+        "resumed_entries": 48,
+        "cloned_contexts": 24
+      }
+    },
+    {
+      "name": "native-low-view-max",
+      "receipt": "/workspace/cross-os-cohort/native-low-view-max/report.json",
+      "receipt_sha256": "20c12d71ce9f3832d655bb226d48dda9a1b42873567c84f8cc565e0a1a62fe06",
+      "elapsed_seconds": 6.402,
+      "result": {
+        "status": "passed",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "3b78968b449973b55f2cadbd23d4b7567d7414d29d1277df5849538010a229fc",
+        "original_application_entries": 0,
+        "native_control_entries": 80,
+        "owned_page_peak": 4103
+      }
+    },
+    {
+      "name": "native-compat32-qemu64",
+      "receipt": "/workspace/cross-os-cohort/native-compat32-qemu64/report.json",
+      "receipt_sha256": "d051e702e529f5d2fd651988c07bcf6511b559c08723ba54a213d59c2dbf0bcd",
+      "elapsed_seconds": 6.704,
+      "result": {
+        "status": "passed",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "437ab1e6d6870f0399110362a248bee4e25e2ff67dd5af69e50e2e161cccb54f",
+        "original_application_entries": 0,
+        "native_control_entries": 144,
+        "resumed_entries": 48,
+        "cloned_contexts": 24
+      }
+    },
+    {
+      "name": "native-low-view-qemu64",
+      "receipt": "/workspace/cross-os-cohort/native-low-view-qemu64/report.json",
+      "receipt_sha256": "17c342d755e14ca64bd5f15dc04ac8c12e42e3ed09f0ffd6acf562ee7defd9e7",
+      "elapsed_seconds": 6.503,
+      "result": {
+        "status": "passed",
+        "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+        "kernel_sha256": "3b78968b449973b55f2cadbd23d4b7567d7414d29d1277df5849538010a229fc",
+        "original_application_entries": 0,
+        "native_control_entries": 80,
+        "owned_page_peak": 4103
+      }
+    }
+  ],
+  "regressions": [
+    {
+      "name": "jq",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/linux.json",
+      "group_sha256": "55ef65558d300ae392f5b5ba5e4398ecc37463f52f47310e14ad84a38ff5cde2",
+      "status": "passed",
+      "log_sha256": "3201f568e03555b281f886a1393da66754f6a682f9c15250858d11a7632015bc"
+    },
+    {
+      "name": "lua",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/linux.json",
+      "group_sha256": "55ef65558d300ae392f5b5ba5e4398ecc37463f52f47310e14ad84a38ff5cde2",
+      "status": "passed",
+      "log_sha256": "62ec9b76468079c46bbef49d27b723e19d4eed234b63b974d8d971e3169f50de"
+    },
+    {
+      "name": "sqlite",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/linux.json",
+      "group_sha256": "55ef65558d300ae392f5b5ba5e4398ecc37463f52f47310e14ad84a38ff5cde2",
+      "status": "passed",
+      "log_sha256": "22a2ee55d566e36a841d59909c55a0fe7f86af0c5e0f684faa96f4b5fdc958c2"
+    },
+    {
+      "name": "user-space-standard",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/native-gui.json",
+      "group_sha256": "d9793444d8ad31b102f25299d83b79f1d1037ba37dfe43b6e42ec32866315f56",
+      "status": "passed",
+      "log_sha256": "f828ba5f6678cef173df5c8811b7d1dc5f867411f5d8c5738c63defa7d4c6fa4"
+    },
+    {
+      "name": "user-space-minimal",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/native-gui.json",
+      "group_sha256": "d9793444d8ad31b102f25299d83b79f1d1037ba37dfe43b6e42ec32866315f56",
+      "status": "passed",
+      "log_sha256": "5adce021dcdf53f6512f858774b398adfabd3d0c966ac666d57e52d70f401774"
+    },
+    {
+      "name": "desktop-launcher",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/native-gui.json",
+      "group_sha256": "d9793444d8ad31b102f25299d83b79f1d1037ba37dfe43b6e42ec32866315f56",
+      "status": "passed",
+      "log_sha256": "c607f485b11952a20b9ae4f27976e1aacca60872af37bd7d69a16269a0eed804"
+    },
+    {
+      "name": "desktop-damage",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "group_receipt": "/workspace/linux-fasmg-regressions/native-gui.json",
+      "group_sha256": "d9793444d8ad31b102f25299d83b79f1d1037ba37dfe43b6e42ec32866315f56",
+      "status": "passed",
+      "log_sha256": "67dc0abf15a4e26876914be6d498fc5f4030d52461f4f98cde5df2d03d307b80"
+    },
+    {
+      "name": "linux-vm",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "receipt": "/workspace/linux-fasmg-regressions/linux-vm/report.json",
+      "receipt_sha256": "5f5a91fe6e5d04f5d9c43789918d8f807a65ffb380a82dfbbc2c8dafdd498a03",
+      "status": "passed"
+    },
+    {
+      "name": "vi-view",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "receipt": "/workspace/linux-fasmg-regressions/vi-view/report.json",
+      "receipt_sha256": "1cba3f988f60f8c03cd561a3d53caed5378fea413ac01640b6937d2f48f1f865",
+      "status": "passed"
+    },
+    {
+      "name": "vi-minimal",
+      "source_commit": "e2ee4b18dbed7941c7026da5a18d83742fb27765",
+      "receipt": "/workspace/linux-fasmg-regressions/vi-minimal/report.json",
+      "receipt_sha256": "d47672244aeda035c4b92315aaf1bd68e69e0d8ee012d3367fe4a79f82f8345c",
+      "status": "passed"
+    }
+  ],
+  "failures_preserved": [
+    {
+      "receipt": "/workspace/linux-fasmg-regressions/fasmg-qemu64/report.json",
+      "sha256": "3d971e7de47eff7924f736003060e9c9a8ee3aa1048e384e474a8e43259d2fe6",
+      "status": "failed"
+    },
+    {
+      "receipt": "/workspace/fasmg-linux-clock/report.json",
+      "sha256": "f0a2e399d74e65018bc2e15c453ec70f04465a8c77da8a0597275cb56e97a422",
+      "status": "failed"
+    }
+  ],
+  "original_application_entries": 390,
+  "published_cohort_receipt": "docs/evidence/2026-10-25-cross-os/cohort-receipt.json"
+}

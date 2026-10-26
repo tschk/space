@@ -1,582 +1,8 @@
 package space.kernel
 
-// Interactive serial shell for the Space nanokernel.
-// Provides commands for inspecting and controlling the kernel state:
-// memory, processes, devices, filesystem, compositor, and debug features.
-// Imported by kernel-root.in; available via the `shell(port)` function.
+// Full desktop/personality shell profile and bounded integration proofs.
+import "shell-common.in"
 
-var line: Int = 0
-var shell-cwd: Int = 0
-var shell-pushback: Int = 0
-var shell-hist: Int = 0
-var shell-draft: Int = 0
-var shell-hist-len: Int = 0
-var shell-hist-head: Int = 0
-var shell-hist-view: Int = 0
-
-const SHELL-HIST-N = 16
-const SHELL-HIST-LEN = 256
-const SHELL-KEY-UP = 1002
-const SHELL-KEY-DOWN = 1003
-
-// --- serial I/O helpers -----------------------------------------------------
-fn serial-has-byte(port: Int) -> Int {
-  return inb(port + 5) & 1
-}
-
-fn serial-read(port: Int) -> Int {
-  while serial-has-byte(port) == 0 {
-  }
-  return inb(port + 0)
-}
-
-fn shell-read-byte(port: Int) -> Int {
-  if shell-pushback != 0 {
-    let c = shell-pushback
-    shell-pushback = 0
-    return c
-  }
-  return serial-read(port)
-}
-
-// ESC [ A/B (ANSI) or mouse.in codes 128/131 (PS/2 arrows).
-fn shell-read-key(port: Int) -> Int {
-  let c = shell-read-byte(port)
-  if c == 128 { return SHELL-KEY-UP }
-  if c == 131 { return SHELL-KEY-DOWN }
-  if c != 27 { return c }
-  let n = shell-read-byte(port)
-  if n != 91 {
-    shell-pushback = n
-    return 27
-  }
-  let f = shell-read-byte(port)
-  if f == 65 { return SHELL-KEY-UP }
-  if f == 66 { return SHELL-KEY-DOWN }
-  return 0
-}
-
-fn shell-clear-input(port: Int, len: Int) -> void {
-  let i = 0
-  while i < len {
-    serial-put(port, 8)
-    serial-put(port, 32)
-    serial-put(port, 8)
-    i = i + 1
-  }
-  return
-}
-
-fn shell-copy-cstr(dst: Int, src: Int, max: Int) -> Int {
-  let i = 0
-  while i < max - 1 && load8(src + i) != 0 {
-    store8(dst + i, load8(src + i))
-    i = i + 1
-  }
-  store8(dst + i, 0)
-  return i
-}
-
-fn shell-hist-slot(idx: Int) -> Int {
-  return shell-hist + idx * SHELL-HIST-LEN
-}
-
-fn shell-hist-entry(view: Int) -> Int {
-  let idx = (shell-hist-head + SHELL-HIST-N - view) % SHELL-HIST-N
-  return shell-hist-slot(idx)
-}
-
-fn shell-hist-push() -> void {
-  if load8(line) == 0 { return }
-  if shell-hist-len > 0 {
-    let last = (shell-hist-head + SHELL-HIST-N - 1) % SHELL-HIST-N
-    let same = 1
-    let i = 0
-    while i < SHELL-HIST-LEN {
-      let a = load8(line + i)
-      let b = load8(shell-hist-slot(last) + i)
-      if a != b { same = 0 }
-      if a == 0 { i = SHELL-HIST-LEN } else { i = i + 1 }
-    }
-    if same != 0 { return }
-  }
-  shell-copy-cstr(shell-hist-slot(shell-hist-head), line, SHELL-HIST-LEN)
-  shell-hist-head = (shell-hist-head + 1) % SHELL-HIST-N
-  if shell-hist-len < SHELL-HIST-N {
-    shell-hist-len = shell-hist-len + 1
-  }
-  return
-}
-
-// Read one line into the `line` buffer, echoing input. Returns its length.
-fn read-line(port: Int) -> Int {
-  let len = 0
-  shell-hist-view = 0
-  while true {
-    let c = shell-read-key(port)
-    if c == 0 { continue }
-    if (c == 13) || (c == 10) {
-      serial-nl(port)
-      store8(line + len, 0)
-      shell-hist-push()
-      shell-hist-view = 0
-      return len
-    }
-    if c == SHELL-KEY-UP {
-      if shell-hist-view < shell-hist-len {
-        if shell-hist-view == 0 {
-          store8(line + len, 0)
-          shell-copy-cstr(shell-draft, line, SHELL-HIST-LEN)
-        }
-        shell-hist-view = shell-hist-view + 1
-        shell-clear-input(port, len)
-        len = shell-copy-cstr(line, shell-hist-entry(shell-hist-view), SHELL-HIST-LEN)
-        serial-write-cstr(port, line)
-      }
-    } else if c == SHELL-KEY-DOWN {
-      if shell-hist-view > 0 {
-        shell-hist-view = shell-hist-view - 1
-        shell-clear-input(port, len)
-        if shell-hist-view == 0 {
-          len = shell-copy-cstr(line, shell-draft, SHELL-HIST-LEN)
-        } else {
-          len = shell-copy-cstr(line, shell-hist-entry(shell-hist-view), SHELL-HIST-LEN)
-        }
-        serial-write-cstr(port, line)
-      }
-    } else if (c == 8) || (c == 127) {
-      if len > 0 {
-        len = len - 1
-        serial-put(port, 8)
-        serial-put(port, 32)
-        serial-put(port, 8)
-      }
-    } else {
-      if c >= 32 && c < 127 && len < 254 {
-        serial-put(port, c)
-        store8(line + len, c)
-        len = len + 1
-      }
-    }
-  }
-  return len
-}
-
-// Resolve `p` against the shell cwd into a fresh canonical absolute path.
-fn shell-path(p: Int) -> Int {
-  let out = alloc(1024)
-  return sf-normalize-path(shell-cwd, p, out)
-}
-
-// Parse a hex string at addr into an integer.
-fn str-to-hex(addr: Int) -> Int {
-  let result = 0
-  let i = 0
-  if load8(addr) == 48 && (load8(addr + 1) == 120 || load8(addr + 1) == 88) {
-    i = 2
-  }
-  while i < 16 {
-    let c = load8(addr + i)
-    if (c >= 48) && (c <= 57) {
-      result = result * 16 + c - 48
-    } else if (c >= 65) && (c <= 70) {
-      result = result * 16 + c - 55
-    } else if (c >= 97) && (c <= 102) {
-      result = result * 16 + c - 87
-    } else {
-      return result
-    }
-    i = i + 1
-  }
-  return result
-}
-
-// Compare the line buffer against a NUL-terminated command string.
-fn line-eq(cmd: Int) -> Int {
-  let i = 0
-  while true {
-    let a = load8(line + i)
-    let b = load8(cmd + i)
-    if a != b {
-      return 0
-    }
-    if a == 0 {
-      return 1
-    }
-    i = i + 1
-  }
-  return 0
-}
-
-// If the line begins with `prefix`, return the index just past it, else -1.
-fn line-prefix(prefix: Int) -> Int {
-  let i = 0
-  while load8(prefix + i) != 0 {
-    if load8(line + i) != load8(prefix + i) {
-      return -1
-    }
-    i = i + 1
-  }
-  return i
-}
-
-// Compare two NUL-terminated strings at arbitrary addresses.
-fn str-eq(a: Int, b: Int) -> Int {
-  let i = 0
-  while true {
-    let x = load8(a + i)
-    let y = load8(b + i)
-    if x != y {
-      return 0
-    }
-    if x == 0 {
-      return 1
-    }
-    i = i + 1
-  }
-  return 0
-}
-
-// Skip the app name at `p` (length `name-len`) and one following space, so
-// apps receive their argument string: "sum notes.txt" -> "notes.txt". With
-// no arguments this yields a pointer to an empty string, never garbage.
-fn shell-args-tail(p: Int, name-len: Int) -> Int {
-  let t = p + name-len
-  if load8(t) == 32 {
-    t = t + 1
-  }
-  return t
-}
-
-// Match `runapp <name>` with an optional argument tail: `p` must start with
-// `name` (length `name-len`) and continue with end-of-line or a space.
-fn shell-args-match(p: Int, name: Int, name-len: Int) -> Int {
-  let i = 0
-  while i < name-len {
-    if load8(p + i) != load8(name + i) {
-      return 0
-    }
-    i += 1
-  }
-  let c = load8(p + name-len)
-  if c == 0 || c == 32 {
-    return 1
-  }
-  return 0
-}
-
-// Return the index of the next argument after `start`, or 0 if none.
-fn next-arg(start: Int) -> Int {
-  let i = start
-  while load8(line + i) != 0 && load8(line + i) != 32 {
-    i = i + 1
-  }
-  if load8(line + i) == 32 {
-    return i + 1
-  }
-  return 0
-}
-
-// Print the value of a stat buffer returned by fs_stat.
-fn print-stat(port: Int, stat-buf: Int) -> void {
-  serial-write-cstr(port, "  type=")
-  let ty = load32(stat-buf + SF-ST-TYPE)
-  if ty == SF-TYPE-DIR {
-    serial-write-cstr(port, "dir")
-  } else if ty == SF-TYPE-FILE {
-    serial-write-cstr(port, "file")
-  } else {
-    serial-write-cstr(port, "?")
-  }
-  serial-write-cstr(port, "  mode=0x")
-  serial-write-hex(port, load32(stat-buf + SF-ST-MODE))
-  serial-write-cstr(port, "  size=")
-  serial-write-dec-wide(port, load64(stat-buf + SF-ST-SIZE))
-  serial-write-cstr(port, "  nlink=")
-  serial-write-dec-wide(port, load32(stat-buf + SF-ST-NLINK))
-  serial-write-cstr(port, "  mtime=0x")
-  serial-write-hex(port, load64(stat-buf + SF-ST-MTIME))
-  serial-nl(port)
-  return
-}
-
-// A self-test of array indexing: sum of squares 0..7 == 140 (0x8C).
-fn array-selftest() -> Int {
-  let a = alloc(64)
-  for i in 0..8 {
-    a[i] = i * i
-  }
-  let sum = 0
-  for j in 0..8 {
-    sum = sum + a[j]
-  }
-  return sum
-}
-
-
-fn shell-bg-noop() -> void {
-  return
-}
-
-fn shell-strip-bg(port: Int) -> void {
-  let n = strlen(line)
-  while n > 0 && load8(line + n - 1) == 32 {
-    n = n - 1
-    store8(line + n, 0)
-  }
-  if n >= 2 && load8(line + n - 1) == 38 && load8(line + n - 2) == 32 {
-    store8(line + n - 2, 0)
-    let tid = thr-create(shell-bg-noop)
-    serial-write-cstr(port, "  bg: thr ")
-    serial-write-dec-wide(port, tid)
-    serial-nl(port)
-  }
-  return
-}
-
-fn shell-try-pipe(port: Int) -> Int {
-  let i = 0
-  while load8(line + i) != 0 {
-    if load8(line + i) == 124 {
-      store8(line + i, 0)
-      let right = i + 1
-      while load8(line + right) == 32 {
-        right = right + 1
-      }
-      let le = i
-      while le > 0 && load8(line + le - 1) == 32 {
-        le = le - 1
-        store8(line + le, 0)
-      }
-      let r0 = load8(line + right)
-      let r1 = load8(line + right + 1)
-      let r2 = load8(line + right + 2)
-      let r3 = load8(line + right + 3)
-      let is-cat = 0
-      if r0 == 99 && r1 == 97 && r2 == 116 && (r3 == 0 || r3 == 32) {
-        is-cat = 1
-      }
-      if is-cat == 0 {
-        serial-write-cstr(port, "  pipe: right must be cat")
-        serial-nl(port)
-        return 1
-      }
-      redir-buf = alloc(16384)
-      redir-pos = 0
-      redir-max = 16383
-      if line-eq("ls") != 0 {
-        fs-list-path(shell-cwd, port)
-      } else if line-prefix("ls ") >= 0 {
-        fs-list-path(shell-path(line + line-prefix("ls ")), port)
-      } else if line-prefix("cat ") >= 0 {
-        let abuf = alloc(4096)
-        let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf, 4096)
-        if n >= 0 {
-          let j = 0
-          while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
-        }
-      } else if line-prefix("read ") >= 0 {
-        let abuf = alloc(4096)
-        let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf, 4096)
-        if n >= 0 {
-          let j = 0
-          while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
-        }
-      } else if line-prefix("stat ") >= 0 {
-        let sb = alloc(64)
-        if fs-stat(shell-path(line + line-prefix("stat ")), sb) == 0 { print-stat(port, sb) }
-      } else if line-eq("status") != 0 {
-        serial-write-cstr(port, "  realm object id 0x")
-        serial-write-hex(port, obj-id(root-realm))
-        serial-write-cstr(port, " objects 0x")
-        serial-write-hex(port, obj-counter)
-        serial-write-cstr(port, " caps 0x")
-        serial-write-hex(port, cap-count)
-        serial-nl(port)
-      } else if line-eq("mem") != 0 {
-        let used = heap-next - 0x200000
-        let total = heap-end - 0x200000
-        let free = total - used
-        let pct = 0
-        if total > 0 { pct = (used * 100) / total }
-        serial-write-cstr(port, "  total RAM: ")
-        serial-write-dec-wide(port, total-ram / 1048576)
-        serial-write-cstr(port, " MiB")
-        serial-nl(port)
-        serial-write-cstr(port, "  heap used:  ")
-        serial-write-dec-wide(port, used / 1048576)
-        serial-write-cstr(port, " MiB / ")
-        serial-write-dec-wide(port, total / 1048576)
-        serial-write-cstr(port, " MiB (")
-        serial-write-dec-wide(port, pct)
-        serial-write-cstr(port, "%)")
-        serial-nl(port)
-        serial-write-cstr(port, "  kernel heap unallocated: ")
-        serial-write-dec-wide(port, mem-heap-free())
-        serial-nl(port)
-        serial-write-cstr(port, "  heap free:  ")
-        serial-write-dec-wide(port, free / 1048576)
-        serial-write-cstr(port, " MiB")
-        serial-nl(port)
-      } else if line-prefix("echo ") >= 0 {
-        serial-write-cstr(port, line + line-prefix("echo "))
-        serial-nl(port)
-      }
-      store8(redir-buf + redir-pos, 0)
-      let pipe-pos = redir-pos
-      let pipe-buf = redir-buf
-      redir-buf = 0
-      redir-pos = 0
-      redir-max = 0
-      let out-path = 0
-      let after-cat = line + right + 3
-      if load8(after-cat) == 32 {
-        let fp = after-cat + 1
-        while load8(fp) == 32 { fp = fp + 1 }
-        if load8(fp) != 0 { out-path = fp }
-      }
-      if out-path != 0 && load8(out-path) != 0 {
-        fs-write-file(shell-path(out-path), pipe-buf, pipe-pos)
-        serial-write-cstr(port, "  piped to ")
-        serial-write-cstr(port, out-path)
-        serial-nl(port)
-      } else {
-        let k = 0
-        while k < pipe-pos {
-          serial-put-real(port, load8(pipe-buf + k))
-          k = k + 1
-        }
-      }
-      return 1
-    }
-    i = i + 1
-  }
-  return 0
-}
-
-fn shell-run-with-redir(port: Int) -> void {
-  if line-eq("ls") != 0 {
-    fs-list-path(shell-cwd, port)
-  } else if line-prefix("ls ") >= 0 {
-    fs-list-path(shell-path(line + line-prefix("ls ")), port)
-  } else if line-prefix("cat ") >= 0 {
-    let abuf = alloc(4096)
-    let n = fs-read-file(shell-path(line + line-prefix("cat ")), abuf, 4096)
-    if n >= 0 {
-      let j = 0
-      while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
-    }
-  } else if line-prefix("read ") >= 0 {
-    let abuf = alloc(4096)
-    let n = fs-read-file(shell-path(line + line-prefix("read ")), abuf, 4096)
-    if n >= 0 {
-      let j = 0
-      while j < n { serial-put(port, load8(abuf + j)); j = j + 1 }
-    }
-  } else if line-prefix("stat ") >= 0 {
-    let sb = alloc(64)
-    if fs-stat(shell-path(line + line-prefix("stat ")), sb) == 0 { print-stat(port, sb) }
-  } else if line-eq("status") != 0 {
-    serial-write-cstr(port, "  realm object id 0x")
-    serial-write-hex(port, obj-id(root-realm))
-    serial-write-cstr(port, " objects 0x")
-    serial-write-hex(port, obj-counter)
-    serial-write-cstr(port, " caps 0x")
-    serial-write-hex(port, cap-count)
-    serial-nl(port)
-  } else if line-eq("mem") != 0 {
-    let used = heap-next - 0x200000
-    let total = heap-end - 0x200000
-    let free = total - used
-    let pct = 0
-    if total > 0 { pct = (used * 100) / total }
-    serial-write-cstr(port, "  total RAM: ")
-    serial-write-dec-wide(port, total-ram / 1048576)
-    serial-write-cstr(port, " MiB")
-    serial-nl(port)
-    serial-write-cstr(port, "  heap total: ")
-    serial-write-dec-wide(port, total / 1048576)
-    serial-write-cstr(port, " MiB")
-    serial-nl(port)
-    serial-write-cstr(port, "  heap used:  ")
-    serial-write-dec-wide(port, used / 1048576)
-    serial-write-cstr(port, " MiB (")
-    serial-write-dec-wide(port, pct)
-    serial-write-cstr(port, "%)")
-    serial-nl(port)
-    serial-write-cstr(port, "  kernel heap unallocated: ")
-    serial-write-dec-wide(port, mem-heap-free())
-    serial-nl(port)
-    serial-write-cstr(port, "  heap free:  ")
-    serial-write-dec-wide(port, free / 1048576)
-    serial-write-cstr(port, " MiB")
-    serial-nl(port)
-  } else if line-eq("ticks") != 0 {
-    serial-write-cstr(port, "  timer ticks 0x")
-    serial-write-hex(port, ticks-now())
-    serial-nl(port)
-  } else if line-eq("ps") != 0 {
-    proc-list(port)
-  } else if line-eq("uptime") != 0 {
-    serial-write-cstr(port, "  ")
-    serial-write-dec-wide(port, ticks)
-    serial-write-cstr(port, " ticks since boot")
-    serial-nl(port)
-  } else if line-eq("time") != 0 {
-    time-print(port)
-  } else if line-prefix("echo ") >= 0 {
-    serial-write-cstr(port, line + line-prefix("echo "))
-    serial-nl(port)
-  } else {
-    serial-write-cstr(port, "  unknown command for redir")
-    serial-nl(port)
-  }
-  return
-}
-
-fn shell-try-redir(port: Int) -> Int {
-  let i = 0
-  while load8(line + i) != 0 {
-    if load8(line + i) == 62 && load8(line + i + 1) != 62 {
-      store8(line + i, 0)
-      let path = i + 1
-      while load8(line + path) == 32 {
-        path = path + 1
-      }
-      let le = i
-      while le > 0 && load8(line + le - 1) == 32 {
-        le = le - 1
-        store8(line + le, 0)
-      }
-      if load8(line + path) == 0 {
-        serial-write-cstr(port, "  usage: cmd > <path>")
-        serial-nl(port)
-        return 1
-      }
-      redir-buf = alloc(16384)
-      redir-pos = 0
-      redir-max = 16383
-      shell-run-with-redir(port)
-      store8(redir-buf + redir-pos, 0)
-      let rc = fs-write-file(shell-path(line + path), redir-buf, redir-pos)
-      redir-buf = 0
-      redir-pos = 0
-      redir-max = 0
-      if rc == 0 {
-        serial-write-cstr(port, "  redirected to ")
-        serial-write-cstr(port, line + path)
-      } else {
-        serial-write-cstr(port, "  redirect failed")
-      }
-      serial-nl(port)
-      return 1
-    }
-    i = i + 1
-  }
-  return 0
-}
-
-// --- interactive serial shell ------------------------------------------------
 fn shell(port: Int) -> void {
   line = alloc(256)
   shell-cwd = alloc(1024)
@@ -598,7 +24,7 @@ fn shell(port: Int) -> void {
     if shell-try-pipe(port) != 0 {
     } else if shell-try-redir(port) != 0 {
     } else if line-eq("help") != 0 {
-      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test font desktop bench display dsp test comp halt up/down=hist")
+      serial-write-cstr(port, "help verbose quiet selftest status mem ticks ps kill test det domain chan cap pci net netstat nvme udpsend tcp dhcp dns snapshot spawn restore map sci hello uecho apps runapp exec load_sci run fault divzero echo echo>file echo|cat peek poke proc format ls cd pwd mkdir rmdir rm cat write read mv stat edit libc vfs usb linux linuxelf linuxsyscall linuxfileio darwin darwinmacho darwinsyscall darwinfileio windows windowspe windowsfileio fetch syscall uptime time fb fb test font desktop gui apps bench display dsp test comp halt up/down=hist")
       serial-nl(port)
     } else if line-eq("verbose") != 0 {
       boot-quiet = 0
@@ -758,72 +184,9 @@ fn shell(port: Int) -> void {
     } else if line-eq("uecho") != 0 {
       sci-load(port, boot-image-find(BOOT-IMAGE-USER-ECHO))
     } else if line-eq("apps") != 0 {
-      serial-write-cstr(port, "  preinstalled dynamic apps: calc notes hd sysmon bench files clock sum man sysinfo")
-      serial-nl(port)
-      serial-write-cstr(port, "  usage: runapp <app> [args]  (runapp man for the platform manual)")
-      serial-nl(port)
+      shell-list-apps(port)
     } else if line-prefix("runapp ") >= 0 {
-      let arg = line + line-prefix("runapp ")
-      let app-kind = 0
-      let app-name = 0
-      let app-grants = SCI-APP-GRANTS
-      let app-args = 0
-      if shell-args-match(arg, "calc", 4) != 0 {
-        app-kind = BOOT-IMAGE-APP-CALC
-        app-name = "app-calc"
-        app-args = shell-args-tail(arg, 4)
-      } else if shell-args-match(arg, "notes", 5) != 0 {
-        app-kind = BOOT-IMAGE-APP-NOTES
-        app-name = "app-notes"
-        app-grants = SCI-APP-FS-GRANTS
-        app-args = shell-args-tail(arg, 5)
-      } else if shell-args-match(arg, "hd", 2) != 0 {
-        app-kind = BOOT-IMAGE-APP-HD
-        app-name = "app-hd"
-        app-grants = SCI-APP-FS-GRANTS
-        app-args = shell-args-tail(arg, 2)
-      } else if shell-args-match(arg, "sysmon", 6) != 0 {
-        app-kind = BOOT-IMAGE-APP-SYSMON
-        app-name = "app-sysmon"
-        app-args = shell-args-tail(arg, 6)
-      } else if shell-args-match(arg, "bench", 5) != 0 {
-        app-kind = BOOT-IMAGE-APP-BENCH
-        app-name = "app-bench"
-        app-args = shell-args-tail(arg, 5)
-      } else if shell-args-match(arg, "files", 5) != 0 {
-        app-kind = BOOT-IMAGE-APP-FILES
-        app-name = "app-files"
-        app-grants = SCI-APP-FS-GRANTS
-        app-args = shell-args-tail(arg, 5)
-      } else if shell-args-match(arg, "clock", 5) != 0 {
-        app-kind = BOOT-IMAGE-APP-CLOCK
-        app-name = "app-clock"
-        app-args = shell-args-tail(arg, 5)
-      } else if shell-args-match(arg, "sum", 3) != 0 {
-        app-kind = BOOT-IMAGE-APP-SUM
-        app-name = "app-sum"
-        app-grants = SCI-APP-FS-GRANTS
-        app-args = shell-args-tail(arg, 3)
-      } else if shell-args-match(arg, "man", 3) != 0 {
-        app-kind = BOOT-IMAGE-APP-MAN
-        app-name = "app-man"
-        app-args = shell-args-tail(arg, 3)
-      } else if shell-args-match(arg, "sysinfo", 7) != 0 {
-        app-kind = BOOT-IMAGE-APP-SYSINFO
-        app-name = "app-sysinfo"
-        app-args = shell-args-tail(arg, 7)
-      }
-      if app-kind == 0 {
-        serial-write-cstr(port, "  runapp: unknown app (try: apps)")
-        serial-nl(port)
-      } else {
-        let rc = sci-load-runtime-component(port, boot-image-find(app-kind), app-name, app-grants, 1, app-args)
-        serial-write-cstr(port, "  runapp: ")
-        serial-write-cstr(port, app-name)
-        serial-write-cstr(port, " returned 0x")
-        serial-write-hex(port, rc)
-        serial-nl(port)
-      }
+      shell-run-app(port, line + line-prefix("runapp "))
     } else if line-prefix("exec ") >= 0 {
       let arg = line-prefix("exec ")
       let rc = posix-sys-execve(line + arg, 0, 0)
@@ -1320,6 +683,8 @@ fn shell(port: Int) -> void {
         serial-write-cstr(port, "  hardening FAIL")
         serial-nl(port)
       }
+    } else if line-eq("gui apps") != 0 {
+      if gui-desktop-run(port) == 0 { serial-write-cstr(port, "  gui: native session unavailable or failed"); serial-nl(port) }
     } else if line-eq("input app") != 0 {
       if input-app-proof(port) == 0 { serial-write-cstr(port, "  seat: SCI proof failed"); serial-nl(port) }
     } else if line-eq("input sci") != 0 {
@@ -1594,7 +959,7 @@ var dsp-proof-free-list: Int = 0
 
 fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if fb-ready == 0 { return 0 }
-  let image = 0x280000
+  let image = 0x2f0000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
   if phase != 0 {
     if dsp-surfaces == 0 || dsp-surface-count == 0 || dsp-proof-domain == 0 { return 0 }
@@ -1603,7 +968,7 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
   if phase == 1 { args = "right" }
   if phase == 2 { args = "destroy" }
   if phase == 0 {
-    if sci-load-runtime-component(port, image, "spdp-proof", cap-memory() | cap-display(), 1, args) != 42 { return 0 }
+    if sci-load-retained-component(port, image, "spdp-proof", cap-memory() | cap-display(), args) != 42 { return 0 }
     dsp-proof-domain = sci-sync-domain
     dsp-proof-pixel = sci-sync-pixel-phys
     dsp-proof-page = sci-sync-page
@@ -1644,9 +1009,9 @@ fn dsp-sci-demo(port: Int, phase: Int) -> Int {
 
 // Dedicated single-service proof. No app endpoint or seat-event delivery.
 fn input-sci-proof(port: Int) -> Int {
-  let image = 0x280000
+  let image = 0x2f0000
   if load64(image) != SCI-MAGIC-V2 { return 0 }
-  if sci-load-runtime-component(port, image, "input-poll-proof", SCI-INPUT-GRANTS, 1, 0) != 0 { return 0 }
+  if sci-load-retained-component(port, image, "input-poll-proof", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   let domain = sci-sync-domain
   let page = sci-sync-page
   if sci-admit-input-sync(domain) == 0 { return 0 }
@@ -1696,16 +1061,16 @@ fn input-sci-proof(port: Int) -> Int {
 // Two fixed proof endpoints, synchronous ownership handoff; no seat/focus manager.
 fn input-app-proof(port: Int) -> Int {
   if fb-ready == 0 || domain-get-current() != 0 { return 0 }
-  if load64(0x280000) != SCI-MAGIC-V2 || load64(0x290000) != SCI-MAGIC-V2 { return 0 }
+  if load64(0x2d0000) != SCI-MAGIC-V2 || load64(0x2e0000) != SCI-MAGIC-V2 { return 0 }
   sci-proof-input.unit = 0
   sci-proof-app.unit = 0
   dsp-init()
   let original-domains = domain-count
-  if sci-load-runtime-component(port, 0x280000, "seat-input", SCI-INPUT-GRANTS, 1, 0) != 0 { return 0 }
+  if sci-load-retained-component(port, 0x2d0000, "seat-input", SCI-INPUT-GRANTS, 0) != 0 { return 0 }
   if sci-admit-input-sync(sci-sync-domain) == 0 || sci-proof-capture-input() == 0 { return 0 }
   let input-domain = sci-sync-domain
   let input-page = sci-sync-page
-  if sci-load-runtime-component(port, 0x290000, "seat-client", cap-memory() | cap-display(), 1, "init") != 42 { return 0 }
+  if sci-load-retained-component(port, 0x2e0000, "seat-client", cap-memory() | cap-display(), "init") != 42 { return 0 }
   let app-domain = sci-sync-domain
   let app-page = sci-sync-page
   let pixel = sci-sync-pixel-phys

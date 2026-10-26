@@ -1,0 +1,30 @@
+package space.kernel
+
+// Shared native i8042 access. Existing polling behavior and helper names are
+// preserved; there is no framebuffer, mouse geometry or terminal policy here.
+const PS2-DATA = 0x60
+const PS2-STATUS = 0x64
+const PS2-CMD = 0x64
+
+fn mouse-wait-output() -> void {
+  while (inb(PS2-STATUS) & 0x01) == 0 {
+  }
+  return
+}
+
+fn mouse-wait-input() -> void {
+  while (inb(PS2-STATUS) & 0x02) != 0 {
+  }
+  return
+}
+
+fn ps2-cmd(cmd: Int) -> void {
+  mouse-wait-input()
+  outb(PS2-CMD, cmd)
+  return
+}
+
+fn ps2-read() -> Int {
+  mouse-wait-output()
+  return inb(PS2-DATA)
+}

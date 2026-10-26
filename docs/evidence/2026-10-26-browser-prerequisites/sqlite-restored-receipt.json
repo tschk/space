@@ -1,0 +1,471 @@
+{
+  "space_status": "passed",
+  "environment": {
+    "LC_ALL": "C",
+    "HOME": "/"
+  },
+  "working_directory": "/",
+  "umask": "022",
+  "source_receipt": "/workspace/browser-entry-sqlite-restored/source/receipt.json",
+  "source_receipt_sha256": "bfeab4dbed97cc581afade493296a7c6eff38f86362b51889fe3d9abbbd9d61a",
+  "root": "standard",
+  "timer_granted": false,
+  "hpet_available": true,
+  "native_deadline_idle_waits": 0,
+  "native_clock_provider_controls_per_cycle": true,
+  "application": "sqlite-3.46.1 unmodified static Linux ELF",
+  "application_sha256": "36e9f3eb66219d87d79dd62db4df7c04b69d3ee4f15bd00d632587072b50c507",
+  "application_manifest_sha256": "e19686f7bcc82cc976825808a2ff72c13e1990017baec6bf7ef56b464ddb6e58",
+  "reference": [
+    {
+      "filter": "arithmetic-version",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select 6*7, sqlite_version();"
+      ],
+      "stdout": "42|3.46.1\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "select 6*7, sqlite_version();"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "relational-sort",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(n integer); insert into t values(3),(1),(2); select sum(n),count(*) from t; select group_concat(n,'|') from(select n from t order by n);"
+      ],
+      "stdout": "6|3\n1|2|3\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(n integer); insert into t values(3),(1),(2); select sum(n),count(*) from t; select group_concat(n,'|') from(select n from t order by n);"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "recursive-sum",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "WITH RECURSIVE t(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM t WHERE x<1000) SELECT sum(x) FROM t;"
+      ],
+      "stdout": "500500\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "WITH RECURSIVE t(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM t WHERE x<1000) SELECT sum(x) FROM t;"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "json",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select json_extract('{\"a\":[1,2,3]}','$.a[1]'),json_array(1,'two',null);"
+      ],
+      "stdout": "2|[1,\"two\",null]\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "select json_extract('{\"a\":[1,2,3]}','$.a[1]'),json_array(1,'two',null);"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "unicode",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select char(955,128578),length(char(955,128578));"
+      ],
+      "stdout": "\u03bb\ud83d\ude42|2\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "select char(955,128578),length(char(955,128578));"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "transaction-rollback",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(x);begin;insert into t values(1);rollback;select count(*) from t;"
+      ],
+      "stdout": "0\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(x);begin;insert into t values(1);rollback;select count(*) from t;"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "blob",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select hex(x'0001ff'),length(zeroblob(9000));"
+      ],
+      "stdout": "0001FF|9000\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "select hex(x'0001ff'),length(zeroblob(9000));"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "window",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "with t(x)as(values(3),(1),(2))select x,sum(x)over(order by x)from t order by x;"
+      ],
+      "stdout": "1|1\n2|3\n3|6\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "with t(x)as(values(3),(1),(2))select x,sum(x)over(order by x)from t order by x;"
+      ],
+      "stderr": ""
+    },
+    {
+      "filter": "syntax-error",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select from;"
+      ],
+      "stdout": "",
+      "exit": 1,
+      "expected_stderr": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n",
+      "reference_command": [
+        "/sqlite3",
+        ":memory:",
+        "select from;"
+      ],
+      "stderr": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n"
+    },
+    {
+      "filter": "file-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists t(x);begin immediate;delete from t;insert into t values(42);commit;select sum(x) from t;"
+      ],
+      "stdout": "42\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9,
+      "reference_command": [
+        "/sqlite3",
+        "/workspace/browser-entry-sqlite-restored/sq-9.db",
+        "create table if not exists t(x);begin immediate;delete from t;insert into t values(42);commit;select sum(x) from t;"
+      ],
+      "stderr": "",
+      "space_expected_stdout": "42\n"
+    },
+    {
+      "filter": "file-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select sum(x) from t;"
+      ],
+      "stdout": "42\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9,
+      "reference_command": [
+        "/sqlite3",
+        "/workspace/browser-entry-sqlite-restored/sq-9.db",
+        "select sum(x) from t;"
+      ],
+      "stderr": "",
+      "space_expected_stdout": "42\n"
+    },
+    {
+      "filter": "file-large-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists big(x);begin immediate;delete from big;insert into big values(zeroblob(9000));commit;select length(x) from big;"
+      ],
+      "stdout": "9000\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9,
+      "reference_command": [
+        "/sqlite3",
+        "/workspace/browser-entry-sqlite-restored/sq-9.db",
+        "create table if not exists big(x);begin immediate;delete from big;insert into big values(zeroblob(9000));commit;select length(x) from big;"
+      ],
+      "stderr": "",
+      "space_expected_stdout": "9000\n"
+    },
+    {
+      "filter": "file-large-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select length(x) from big;"
+      ],
+      "stdout": "9000\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9,
+      "reference_command": [
+        "/sqlite3",
+        "/workspace/browser-entry-sqlite-restored/sq-9.db",
+        "select length(x) from big;"
+      ],
+      "stderr": "",
+      "space_expected_stdout": "9000\n"
+    },
+    {
+      "filter": "file-rollback",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "begin immediate;update big set x=zeroblob(18000);rollback;select length(x) from big;"
+      ],
+      "stdout": "9000\n",
+      "exit": 0,
+      "expected_stderr": "",
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9,
+      "reference_command": [
+        "/sqlite3",
+        "/workspace/browser-entry-sqlite-restored/sq-9.db",
+        "begin immediate;update big set x=zeroblob(18000);rollback;select length(x) from big;"
+      ],
+      "stderr": "",
+      "space_expected_stdout": "9000\n"
+    }
+  ],
+  "infinite_reference": "host infinite computation timed out as expected",
+  "space": {
+    "cases": [
+      {
+        "filter": "arithmetic-version",
+        "combined_serial_output": "42|3.46.1\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "relational-sort",
+        "combined_serial_output": "6|3\n1|2|3\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "recursive-sum",
+        "combined_serial_output": "500500\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "json",
+        "combined_serial_output": "2|[1,\"two\",null]\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "unicode",
+        "combined_serial_output": "\u03bb\ud83d\ude42|2\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "transaction-rollback",
+        "combined_serial_output": "0\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "blob",
+        "combined_serial_output": "0001FF|9000\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "window",
+        "combined_serial_output": "1|1\n2|3\n3|6\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "syntax-error",
+        "combined_serial_output": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n",
+        "exit": 1,
+        "passed": true
+      },
+      {
+        "filter": "file-transaction",
+        "combined_serial_output": "42\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "file-reopen",
+        "combined_serial_output": "42\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "file-large-transaction",
+        "combined_serial_output": "9000\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "file-large-reopen",
+        "combined_serial_output": "9000\n",
+        "exit": 0,
+        "passed": true
+      },
+      {
+        "filter": "file-rollback",
+        "combined_serial_output": "9000\n",
+        "exit": 0,
+        "passed": true
+      }
+    ],
+    "repeat_cleanup_and_denial_passed": true,
+    "repeat_count": 3,
+    "external_wall_timeout_seconds": 90,
+    "external_wall_timeout_hit": false,
+    "qemu_elapsed_seconds": 12.819572540000081,
+    "actual_application_activations": 38,
+    "file_transition_warmup_activations": 5,
+    "guest_budget_ticks": 100,
+    "guest_irq_cancellation_passed": true,
+    "other_domain_same_va_sentinel_passed": true,
+    "hardware_faults_per_cycle": 7,
+    "caller_fs_canary": 4194304,
+    "caller_gs_canary": 4194304,
+    "qemu_command": [
+      "qemu-system-x86_64",
+      "-cpu",
+      "max",
+      "-kernel",
+      "/workspace/browser-entry-sqlite-restored/kernel.bin",
+      "-m",
+      "512M",
+      "-display",
+      "none",
+      "-no-reboot",
+      "-serial",
+      "file:/workspace/browser-entry-sqlite-restored/serial.log",
+      "-device",
+      "loader,file=/workspace/browser-entry-sqlite-build/sqlite3,addr=0x10000000,force-raw=on",
+      "-device",
+      "loader,file=/workspace/browser-entry-sqlite-restored/int-width.elf,addr=0x18000000,force-raw=on"
+    ],
+    "kernel_sha256": "015e89e570ddd88d4743ac993ee4a614410407b021fd60c0cb7de9b2ec9288e0"
+  },
+  "personality_sha256": "810c846e52e1ebe9791fc4ef0fda96d99f684b417d06b34b40e13f410a27713a",
+  "anonymous_memory_sha256": "bf116e81894afd0c6ee2a59d40438afe99c316dc784e1c983344be8ddf07046b",
+  "file_adapter_sha256": "b281530bef217370cb85e1eb896618cb3dc7fcd9c1eac45814574ab2429ecd99",
+  "file_metadata_sha256": "4cc341a4bc3c656b705f50a8ec50ebc3775a9c869f588412dcc788036dfa1fe9",
+  "checks_sha256": "04c605b7a1745760a5ae07e29d4e55ae1cd2ac869af11e77dc892a1d906713c4",
+  "int_width_probe": {
+    "elf_sha256": "ffe19ebb700c4e6144e3b671537f064c7bc75b39471548c3bee657abaadf0dc4",
+    "activations": 3,
+    "actual_linux_host_oracle": {
+      "status": "passed",
+      "syscalls": [
+        {
+          "name": "openat upper32 dirfd/flags",
+          "return": 3,
+          "errno": 0
+        },
+        {
+          "name": "write upper32 fd with zero size",
+          "return": 0,
+          "errno": 0
+        },
+        {
+          "name": "lseek upper32 fd/whence",
+          "return": 45,
+          "errno": 0
+        },
+        {
+          "name": "fcntl upper32 fd/cmd",
+          "return": 32768,
+          "errno": 0
+        },
+        {
+          "name": "newfstatat upper32 dirfd/flags",
+          "return": 0,
+          "errno": 0
+        },
+        {
+          "name": "negative low32 fd",
+          "return": -1,
+          "errno": 9
+        },
+        {
+          "name": "getpid upper32 syscall number",
+          "return": 5458,
+          "errno": 0
+        },
+        {
+          "name": "full64 off_t",
+          "return": 4294967296,
+          "errno": 0
+        },
+        {
+          "name": "full64 size_t short read",
+          "return": 45,
+          "errno": 0
+        },
+        {
+          "name": "full64 pointer EFAULT",
+          "return": -1,
+          "errno": 14
+        }
+      ]
+    }
+  },
+  "compiler": "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75"
+}

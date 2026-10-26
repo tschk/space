@@ -1,0 +1,714 @@
+package space.kernel
+import "user-context.in"
+
+// Supervisor-owned native mappings and execution references. All raw helpers
+// are private to the trusted runtime; these are not guest SCI pointer APIs.
+const USER-SPACE-MAX = 16
+const USER-SPACE-BINDINGS = 32
+const USER-SPACE-MAPPINGS = 4096
+const USER-SPACE-EXTENDED-MAPPINGS = 8192
+// 16 * (4096 * 24 + 128) + 32 * 64; native constant initializers are literals.
+const USER-SPACE-CACHE-BYTES = 1576960
+const USER-SPACE-READ = 1
+const USER-SPACE-WRITE = 2
+const USER-SPACE-EXECUTE = 3
+const USER-SPACE-LIVE = 1
+const USER-SPACE-QUARANTINED = 2
+const US-HANDLE = 0
+const US-DOMAIN = 8
+const US-LEDGER = 16
+const US-PAGES = 24
+const US-LIMIT = 32
+const US-REFS = 40
+const US-AUTHORITY = 48
+const US-AUTH-OBJECT = 56
+const US-PHASE = 64
+const US-CONSTRUCTOR = 72
+const US-SEALED = 80
+const US-LOCK = 88
+const US-BORROW = 96
+const US-PENDING-INVARIANT = 104
+const US-MINIMUM = 112
+const US-LEDGER-CAPACITY = 120
+var user-space-table: Int = 0
+var user-space-bindings: Int = 0
+var user-space-generation: Int = 0
+var user-space-active-binding: Int = 0
+
+fn user-space-kernel() -> Int {
+  if domain-table == 0 || domain-current != 0 || user-context-active != 0 || user-budget-active != 0 { return 0 }
+  if cr3-read() != load64(domain-table) { return 0 }
+  return 1
+}
+
+fn user-space-room(cache: Int, count: Int) -> Int {
+  if count <= 0 || count > 32768 { return 0 }
+  // alloc() cache bytes require bump capacity. Free-list frames can fund only
+  // frame-alloc(), never the retained metadata allocation.
+  if cache < 0 || heap-next < 0 || heap-next > heap-end || cache > heap-end - heap-next { return 0 }
+  let start = (heap-next + cache + 4095) & -4096
+  let remaining = 0
+  if start <= heap-end { remaining = (heap-end - start) / 4096 }
+  if remaining >= count { return 1 }
+  let frame = free-list
+  let found = 0
+  while frame != 0 && found < count {
+    if frame < 65536 || (frame & 4095) != 0 || frame > heap-end - 4096 { return 0 }
+    found = found + 1
+    frame = load64(frame)
+  }
+  if remaining + found >= count { return 1 }
+  return 0
+}
+
+fn user-space-available(count: Int) -> Int { return user-space-room(0,count) }
+
+fn user-space-init() -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if user-space-table != 0 { return 0 }
+  if user-space-room(USER-SPACE-CACHE-BYTES,64) == 0 { return -3 }
+  user-space-table = alloc(USER-SPACE-MAX * 128)
+  user-space-bindings = alloc(USER-SPACE-BINDINGS * 64)
+  cpu-mem-fill64(user-space-table,0,USER-SPACE-MAX * 16)
+  cpu-mem-fill64(user-space-bindings,0,USER-SPACE-BINDINGS * 8)
+  let i = 0
+  while i < USER-SPACE-MAX {
+    store64(user-space-table + i * 128 + US-LEDGER,alloc(USER-SPACE-MAPPINGS * 24))
+    store64(user-space-table + i * 128 + US-LEDGER-CAPACITY,USER-SPACE-MAPPINGS)
+    i = i + 1
+  }
+  return 0
+}
+
+fn user-space-next() -> Int {
+  if user-space-generation >= 0x7fffffffffffff { return -3 }
+  user-space-generation = user-space-generation + 1
+  return user-space-generation << 8
+}
+
+fn user-space-row(handle: Int) -> Int {
+  if handle <= 0 || user-space-table == 0 { return 0 }
+  let slot = (handle & 255) - 1
+  if slot < 0 || slot >= USER-SPACE-MAX { return 0 }
+  let row = user-space-table + slot * 128
+  if load64(row + US-HANDLE) != handle || load64(row + US-PHASE) == 0 { return 0 }
+  return row
+}
+
+// Metadata/cleanup access retains the original owner even after grant revoke.
+// New ownership, mutation and entry additionally require its live memory grant.
+fn user-space-access(handle: Int, authority: Int, live: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let row = user-space-row(handle)
+  if row == 0 { return -6 }
+  if authority < 0 || authority >= cap-count || authority != load64(row + US-AUTHORITY) { return -2 }
+  if live != 0 {
+    if cap-check(authority,cap-memory()) == 0 || load64(cap-table-base + authority * 16) != load64(row + US-AUTH-OBJECT) { return -2 }
+    if load64(row + US-PHASE) != USER-SPACE-LIVE { return -5 }
+  }
+  return row
+}
+
+fn user-space-create-stopped-profile(authority: Int, limit: Int, minimum:Int, maximum:Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let tss = load64(0x4100)
+  if idt-base == 0 || tss == 0 { return -4 }
+  if load64(tss + 4) == 0 { return -4 }
+  if limit <= 0 || limit > maximum { return -1 }
+  if minimum!=4096 && minimum!=65536{return -1}
+  if minimum==4096 && supervisor-window-ready==0{return -4}
+  if cap-check(authority,cap-memory()) == 0 { return -2 }
+  if user-space-generation >= 0x7fffffffffffff { return -3 }
+  let candidate = 1
+  while candidate < domain-count && load64(domain-table + candidate * 24 + 8) != DOMAIN-FREE { candidate = candidate + 1 }
+  if candidate >= MAX-DOMAINS { return -3 }
+  if domain-user-object-table == 0 || load64(domain-user-object-table + candidate * 24) != 0 { return -3 }
+  let status = user-space-init()
+  if status != 0 { return status }
+  let slot = 0
+  while slot < USER-SPACE-MAX && load64(user-space-table + slot * 128 + US-PHASE) != 0 { slot = slot + 1 }
+  if slot == USER-SPACE-MAX || user-space-available(64) == 0 { return -3 }
+  let row = user-space-table + slot * 128
+  if limit>load64(row+US-LEDGER-CAPACITY){
+    // A single bounded cache extension per slot. Retirement preserves it;
+    // repeated larger activations must not keep growing native metadata.
+    if user-space-room(USER-SPACE-EXTENDED-MAPPINGS*24,64)==0{return -3}
+    store64(row+US-LEDGER,alloc(USER-SPACE-EXTENDED-MAPPINGS*24))
+    store64(row+US-LEDGER-CAPACITY,USER-SPACE-EXTENDED-MAPPINGS)
+  }
+  let generation = user-space-next()
+  if generation < 0 { return generation }
+  let domain = domain-create-user()
+  if domain <= 0 { return -3 }
+  let handle = generation | (slot + 1)
+  let ledger = load64(row + US-LEDGER)
+  let capacity=load64(row+US-LEDGER-CAPACITY)
+  cpu-mem-fill64(row,0,16)
+  store64(row + US-LEDGER,ledger)
+  store64(row+US-LEDGER-CAPACITY,capacity);store64(row+US-MINIMUM,minimum)
+  store64(row + US-HANDLE,handle);store64(row + US-DOMAIN,domain)
+  store64(row + US-LIMIT,limit);store64(row + US-REFS,1);store64(row + US-CONSTRUCTOR,1)
+  store64(row + US-AUTHORITY,authority);store64(row + US-AUTH-OBJECT,load64(cap-table-base + authority * 16))
+  store64(row + US-PHASE,USER-SPACE-LIVE)
+  if domain-user-object-claim(domain,handle) != 0 { store64(row + US-PHASE,USER-SPACE-QUARANTINED);return -5 }
+  domain-set-cap(domain,-1)
+  if minimum==4096{domain-user-relocated=domain-user-relocated|(1<<domain)}
+  // Reserve supervisor windows before accepting user mappings. Entry repeats
+  // these same mappings; it must never overwrite an owned user ledger page.
+  domain-map-idt(domain);domain-map-kernel-stack(domain);domain-map-trampoline(domain)
+  return handle
+}
+
+fn user-space-create-stopped(authority:Int,limit:Int)->Int{
+  return user-space-create-stopped-profile(authority,limit,65536,USER-SPACE-MAPPINGS)
+}
+
+fn user-space-create(authority: Int, limit: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let reader = load64(0x4198)
+  if reader == 0 { return -4 }
+  let flags = invoke1(reader,0)
+  cli()
+  let result = user-space-create-stopped(authority,limit)
+  if (flags & 512) != 0 { sti() }
+  return result
+}
+
+// Explicit native owner policy, never inferred from a foreign filename.
+// Existing create() retains its 64-KiB minimum and 4096-page ceiling.
+fn user-space-create-addressed(authority:Int,limit:Int,minimum:Int)->Int{
+  if user-space-kernel()==0{return -4}
+  let reader=load64(0x4198);if reader==0{return -4}
+  let flags=invoke1(reader,0);cli()
+  let result=user-space-create-stopped-profile(authority,limit,minimum,USER-SPACE-EXTENDED-MAPPINGS)
+  if (flags&512)!=0{sti()}return result
+}
+
+fn user-space-entry(row: Int, address: Int) -> Int {
+  let page = address & -4096
+  let i = 0
+  while i < load64(row + US-PAGES) {
+    let entry = load64(row + US-LEDGER) + i * 24
+    if load64(entry) == page { return entry }
+    i = i + 1
+  }
+  return 0
+}
+
+fn user-space-permission(permission: Int) -> Int {
+  if permission == USER-SPACE-READ { return PAGE-NX | 5 }
+  if permission == USER-SPACE-WRITE { return PAGE-NX | 7 }
+  if permission == USER-SPACE-EXECUTE { return 5 }
+  return 0
+}
+
+fn user-space-slot(domain: Int, address: Int) -> Int {
+  let table = load64(domain-table + domain * 24)
+  let shift = 39
+  while shift >= 21 {
+    let entry = load64(table + ((address >> shift) & 511) * 8)
+    if (entry & 5) != 5 || (entry & 128) != 0 { return 0 }
+    table = entry & PAGE-ADDRESS-MASK
+    shift = shift - 9
+  }
+  return table + ((address >> 12) & 511) * 8
+}
+
+fn user-space-consistent(row: Int, entry: Int) -> Int {
+  let slot = user-space-slot(load64(row + US-DOMAIN),load64(entry))
+  if slot == 0 { return 0 }
+  let value = load64(slot)
+  let expected = user-space-permission(load64(entry + 16))
+  if (value & PAGE-ADDRESS-MASK) != load64(entry + 8) || (value & (PAGE-NX | 7)) != expected { return 0 }
+  if (domain-page-flags(load64(row + US-DOMAIN),load64(entry)) & (PAGE-NX | 7)) != expected { return 0 }
+  return 1
+}
+
+fn user-space-quarantine(row: Int) -> void {
+  store64(row + US-PHASE,USER-SPACE-QUARANTINED)
+  let i = 0
+  while i < USER-SPACE-BINDINGS {
+    let binding = user-space-bindings + i * 64
+    if load64(binding) != 0 && load64(binding + 8) == load64(row + US-HANDLE) {
+      let context = load64(binding + 16)
+      if load64(context + 712) == load64(row + US-DOMAIN) { store64(context + 736,0) }
+      store64(binding + 24,2)
+    }
+    i = i + 1
+  }
+}
+
+fn user-space-lock(row: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  let domain = load64(row + US-DOMAIN)
+  if domain <= 0 || domain >= domain-count || domain-user-object-table == 0 { user-space-quarantine(row);return -5 }
+  if load64(domain-user-object-table + domain * 24) != load64(row + US-HANDLE) || user-context-domain-valid(domain) == 0 { user-space-quarantine(row);return -5 }
+  store64(row + US-LOCK,1)
+  return 0
+}
+
+fn user-space-map-owned(row: Int, address: Int, permission: Int, source: Int) -> Int {
+  let flags = user-space-permission(permission)
+  if address < load64(row+US-MINIMUM) || address >= 0x800000000000 || (address & 4095) != 0 || flags == 0 { return -1 }
+  if user-space-entry(row,address) != 0 || domain-page-flags(load64(row + US-DOMAIN),address) != 0 { return -1 }
+  if load64(row + US-PAGES) >= load64(row + US-LIMIT) || user-space-available(5) == 0 { return -3 }
+  let physical = frame-alloc()
+  if source != 0 { cpu-mem-copy64(physical,source,512) }
+  let entry = load64(row + US-LEDGER) + load64(row + US-PAGES) * 24
+  store64(entry,address);store64(entry + 8,physical);store64(entry + 16,permission)
+  store64(row + US-PAGES,load64(row + US-PAGES) + 1)
+  domain-map(load64(row + US-DOMAIN),address,physical,flags)
+  if user-space-consistent(row,entry) == 0 { user-space-quarantine(row);return -5 }
+  return 0
+}
+
+fn user-space-map-zero(handle: Int, authority: Int, address: Int, permission: Int) -> Int {
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  let status = user-space-lock(row)
+  if status != 0 { return status }
+  status = user-space-map-owned(row,address,permission,0)
+  store64(row + US-LOCK,0)
+  return status
+}
+
+fn user-space-copy-bytes(handle: Int, authority: Int, address: Int, source: Int, count: Int, populate: Int) -> Int {
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  if count < 0 || count > 65536 || address < load64(row+US-MINIMUM) || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
+  // The private caller supplies a provenance-validated kernel buffer. Arena
+  // bounds prevent overflow/unallocated reads; they do not prove ownership.
+  if source <= 0 || source > heap-next || count > heap-next - source { return -1 }
+  if populate != 0 && load64(row + US-SEALED) != 0 { return -4 }
+  let status = user-space-lock(row)
+  if status != 0 { return status }
+  let position = address
+  while position < address + count && status == 0 {
+    let entry = user-space-entry(row,position)
+    if entry == 0 { status = -1 }
+    else if user-space-consistent(row,entry) == 0 { user-space-quarantine(row);status = -5 }
+    else if populate == 0 && load64(entry + 16) != USER-SPACE-WRITE { status = -1 }
+    let next = (position & -4096) + 4096
+    if next > address + count { next = address + count }
+    position = next
+  }
+  // Validate the entire range before copying any byte.
+  if status == 0 {
+    let i = 0
+    while i < count {
+      let entry = user-space-entry(row,address + i)
+      let offset = (address + i) & 4095
+      let part = 4096 - offset
+      if part > count - i { part = count - i }
+      let target = load64(entry + 8) + offset
+      cpu-mem-copy64(target,source + i,part / 8)
+      let tail = (part / 8) * 8
+      while tail < part { store8(target + tail,load8(source + i + tail));tail = tail + 1 }
+      i = i + part
+    }
+  }
+  store64(row + US-LOCK,0)
+  return status
+}
+
+fn user-space-populate(handle: Int, authority: Int, address: Int, source: Int, count: Int) -> Int {
+  return user-space-copy-bytes(handle,authority,address,source,count,1)
+}
+fn user-space-write(handle: Int, authority: Int, address: Int, source: Int, count: Int) -> Int {
+  return user-space-copy-bytes(handle,authority,address,source,count,0)
+}
+
+fn user-space-refresh(row: Int) -> void {
+  let i = 0
+  while i < USER-SPACE-BINDINGS {
+    let binding = user-space-bindings + i * 64
+    if load64(binding) != 0 && load64(binding + 8) == load64(row + US-HANDLE) && load64(binding + 24) == 1 {
+      let context = load64(binding + 16)
+      if load64(context + 712) != load64(row + US-DOMAIN) || user-context-valid(context) == 0 { store64(binding + 24,2) }
+    }
+    i = i + 1
+  }
+}
+
+fn user-space-protect(handle: Int, authority: Int, address: Int, permission: Int) -> Int {
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  if (address & 4095) != 0 || user-space-permission(permission) == 0 { return -1 }
+  let entry = user-space-entry(row,address)
+  if entry == 0 { return -1 }
+  let status = user-space-lock(row)
+  if status != 0 { return status }
+  if user-space-consistent(row,entry) == 0 { user-space-quarantine(row);status = -5 }
+  else {
+    domain-map(load64(row + US-DOMAIN),address,load64(entry + 8),user-space-permission(permission))
+    store64(entry + 16,permission)
+    if user-space-consistent(row,entry) == 0 { user-space-quarantine(row);status = -5 }
+    else { user-space-refresh(row) }
+  }
+  store64(row + US-LOCK,0)
+  return status
+}
+
+fn user-space-unmap(handle: Int, authority: Int, address: Int) -> Int {
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  if (address & 4095) != 0 { return -1 }
+  let entry = user-space-entry(row,address)
+  if entry == 0 { return -1 }
+  let status = user-space-lock(row)
+  if status != 0 { return status }
+  if user-space-consistent(row,entry) == 0 || domain-unmap-user(load64(row + US-DOMAIN),address) != 0 {
+    user-space-quarantine(row);status = -5
+  } else {
+    frame-free(load64(entry + 8))
+    let last = load64(row + US-LEDGER) + (load64(row + US-PAGES) - 1) * 24
+    store64(entry,load64(last));store64(entry + 8,load64(last + 8));store64(entry + 16,load64(last + 16))
+    store64(last,0);store64(last + 8,0);store64(last + 16,0)
+    store64(row + US-PAGES,load64(row + US-PAGES) - 1)
+    user-space-refresh(row)
+  }
+  store64(row + US-LOCK,0)
+  return status
+}
+
+fn user-space-copy-into(target: Int, source: Int, authority: Int) -> Int {
+  let destination = user-space-access(target,authority,1)
+  if destination < 0 { return destination }
+  let origin = user-space-access(source,authority,1)
+  if origin < 0 { return origin }
+  if destination == origin || load64(destination + US-PAGES) != 0 || load64(destination + US-SEALED) != 0 { return -1 }
+  if load64(origin + US-PAGES) > load64(destination + US-LIMIT) || user-space-available(load64(origin + US-PAGES) * 4 + 8) == 0 { return -3 }
+  let status = user-space-lock(origin)
+  if status != 0 { return status }
+  status = user-space-lock(destination)
+  if status == 0 {
+    let i = 0
+    while i < load64(origin + US-PAGES) && status == 0 {
+      let entry = load64(origin + US-LEDGER) + i * 24
+      if user-space-consistent(origin,entry) == 0 { user-space-quarantine(origin);status = -5 }
+      i = i + 1
+    }
+    i = 0
+    while i < load64(origin + US-PAGES) && status == 0 {
+      let entry = load64(origin + US-LEDGER) + i * 24
+      status = user-space-map-owned(destination,load64(entry),load64(entry + 16),load64(entry + 8))
+      i = i + 1
+    }
+    store64(destination + US-LOCK,0)
+  }
+  store64(origin + US-LOCK,0)
+  return status
+}
+
+fn user-space-binding-row(handle: Int) -> Int {
+  if handle <= 0 || user-space-bindings == 0 { return 0 }
+  let slot = (handle & 255) - 65
+  if slot < 0 || slot >= USER-SPACE-BINDINGS { return 0 }
+  let row = user-space-bindings + slot * 64
+  if load64(row) != handle { return 0 }
+  return row
+}
+
+fn user-space-context-free(context: Int) -> Int {
+  if context < 65536 || (context & 15) != 0 || context > heap-next - USER-CONTEXT-BYTES { return 0 }
+  let i = 0
+  while i < USER-SPACE-BINDINGS {
+    let binding = user-space-bindings + i * 64
+    if load64(binding) != 0 {
+      let other = load64(binding + 16)
+      if context < other + USER-CONTEXT-BYTES && other < context + USER-CONTEXT-BYTES { return 0 }
+    }
+    i = i + 1
+  }
+  return 1
+}
+
+fn user-space-attach(handle: Int, authority: Int, context: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  if user-space-context-free(context) == 0 || user-context-valid(context) == 0 || load64(context + 712) != load64(row + US-DOMAIN) { return -1 }
+  if load64(context + 728) != 1 && load64(context + 728) != 2 { return -1 }
+  let slot = 0
+  while slot < USER-SPACE-BINDINGS && load64(user-space-bindings + slot * 64) != 0 { slot = slot + 1 }
+  if slot == USER-SPACE-BINDINGS { return -3 }
+  let generation = user-space-next()
+  if generation < 0 { return generation }
+  if domain-user-object-reference(load64(row + US-DOMAIN),handle,1) != 0 { user-space-quarantine(row);return -5 }
+  let binding = user-space-bindings + slot * 64
+  cpu-mem-fill64(binding,0,8)
+  let result = generation | (slot + 65)
+  store64(binding,result);store64(binding + 8,handle);store64(binding + 16,context);store64(binding + 24,1)
+  store64(row + US-REFS,load64(row + US-REFS) + 1);store64(row + US-SEALED,1)
+  return result
+}
+
+fn user-space-clone-binding(source: Int, authority: Int, target: Int, bytes: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(source)
+  if binding == 0 || load64(binding + 24) != 1 { return -6 }
+  let handle = load64(binding + 8)
+  let row = user-space-access(handle,authority,1)
+  if row < 0 { return row }
+  if load64(load64(binding + 16) + 712) != load64(row + US-DOMAIN) { store64(binding + 24,2);return -6 }
+  if domain-user-object-table == 0 || user-context-domain-valid(load64(row + US-DOMAIN)) == 0 { user-space-quarantine(row);return -5 }
+  if load64(domain-user-object-table + load64(row + US-DOMAIN) * 24) != handle { user-space-quarantine(row);return -5 }
+  if bytes < USER-CONTEXT-BYTES || user-space-context-free(target) == 0 { return -1 }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  if user-context-clone(target,bytes,load64(binding + 16),load64(row + US-DOMAIN)) != 0 { return -1 }
+  let result = user-space-attach(handle,authority,target)
+  if result < 0 { store64(target + 736,0) }
+  return result
+}
+
+fn user-space-resume(handle: Int, authority: Int, budget: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 || load64(binding + 24) != 1 { return -6 }
+  let row = user-space-access(load64(binding + 8),authority,1)
+  if row < 0 { return row }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  let context = load64(binding + 16)
+  if load64(context + 712) != load64(row + US-DOMAIN) || user-context-valid(context) == 0 { store64(binding + 24,2);return -6 }
+  if domain-user-object-table == 0 || user-context-domain-valid(load64(row + US-DOMAIN)) == 0 { user-space-quarantine(row);return -5 }
+  if load64(domain-user-object-table + load64(row + US-DOMAIN) * 24) != load64(row + US-HANDLE) { user-space-quarantine(row);return -5 }
+  let previous = user-space-active-binding
+  user-space-active-binding = handle
+  let result = user-context-resume(context,budget)
+  user-space-active-binding = previous
+  if load64(row + US-PENDING-INVARIANT) != 0 { user-space-quarantine(row);return -5 }
+  return result
+}
+
+fn user-space-finalize(row: Int) -> Int {
+  if load64(row + US-REFS) != 0 { return 0 }
+  let i = 0
+  while i < load64(row + US-PAGES) {
+    if user-space-consistent(row,load64(row + US-LEDGER) + i * 24) == 0 { user-space-quarantine(row);return -5 }
+    i = i + 1
+  }
+  if domain-user-object-revoke(load64(row + US-DOMAIN),load64(row + US-HANDLE)) != 0 { user-space-quarantine(row);return -5 }
+  i = 0
+  while i < load64(row + US-PAGES) {
+    let entry = load64(row + US-LEDGER) + i * 24
+    frame-free(load64(entry + 8));store64(entry,0);store64(entry + 8,0);store64(entry + 16,0)
+    i = i + 1
+  }
+  let ledger = load64(row + US-LEDGER)
+  let capacity=load64(row+US-LEDGER-CAPACITY)
+  cpu-mem-fill64(row,0,16);store64(row + US-LEDGER,ledger);store64(row+US-LEDGER-CAPACITY,capacity)
+  return 0
+}
+
+fn user-space-release-binding(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 { return -6 }
+  let row = user-space-access(load64(binding + 8),authority,0)
+  if row < 0 { return row }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  // Invalidate before dropping the counted attachment. Failure retains its
+  // binding record and ownership for repair, without a resumable CPU image.
+  let context = load64(binding + 16)
+  if load64(context + 712) == load64(row + US-DOMAIN) { store64(context + 736,0) }
+  if domain-user-object-reference(load64(row + US-DOMAIN),load64(row + US-HANDLE),-1) != 0 { user-space-quarantine(row);return -5 }
+  cpu-mem-fill64(binding,0,8)
+  store64(row + US-REFS,load64(row + US-REFS) - 1)
+  if load64(row + US-PHASE) == USER-SPACE-QUARANTINED { return -5 }
+  return user-space-finalize(row)
+}
+
+fn user-space-release(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  if load64(row + US-CONSTRUCTOR) != 1 { return -1 }
+  store64(row + US-CONSTRUCTOR,0);store64(row + US-REFS,load64(row + US-REFS) - 1)
+  if load64(row + US-PHASE) == USER-SPACE-QUARANTINED { return -5 }
+  return user-space-finalize(row)
+}
+
+fn user-space-recover(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  if load64(row + US-PHASE) != USER-SPACE-QUARANTINED || load64(row + US-REFS) != 0 || load64(row + US-LOCK) != 0 { return -4 }
+  return user-space-finalize(row)
+}
+
+fn user-space-refs(handle: Int, authority: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  return load64(row + US-REFS)
+}
+// Authoritative release-commit projections: a quarantined final release may
+// have retired its binding already. Consumers must not inspect private rows
+// or retry an already committed detach based only on the shared -5 error.
+fn user-space-binding-phase(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 { return -6 }
+  let row = user-space-access(load64(binding + 8),authority,0)
+  if row < 0 { return row }
+  return load64(binding + 24)
+}
+fn user-space-binding-space(handle: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 { return -6 }
+  let owner = load64(binding + 8)
+  let row = user-space-access(owner,authority,0)
+  if row < 0 { return row }
+  return owner
+}
+fn user-space-constructor-owned(handle: Int, authority: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  return load64(row + US-CONSTRUCTOR)
+}
+fn user-space-pages(handle: Int, authority: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  return load64(row + US-PAGES)
+}
+fn user-space-domain(handle: Int, authority: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  return load64(row + US-DOMAIN)
+}
+fn user-space-phase(handle: Int, authority: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  return load64(row + US-PHASE)
+}
+fn user-space-frame(handle: Int, authority: Int, address: Int) -> Int {
+  let row = user-space-access(handle,authority,0)
+  if row < 0 { return row }
+  if address < load64(row+US-MINIMUM) || address >= 0x800000000000 { return -1 }
+  let entry = user-space-entry(row,address)
+  if entry == 0 { return -1 }
+  return load64(entry + 8)
+}
+
+// Discovery preserves access to constructor failures that retained ownership
+// before returning an invariant error. It grants no entry or mutation rights.
+fn user-space-quarantined(authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if authority < 0 || authority >= cap-count { return -2 }
+  let i = 0
+  while i < USER-SPACE-MAX && user-space-table != 0 {
+    let row = user-space-table + i * 128
+    if load64(row + US-PHASE) == USER-SPACE-QUARANTINED && load64(row + US-AUTHORITY) == authority { return load64(row + US-HANDLE) }
+    i = i + 1
+  }
+  return 0
+}
+
+// This separate service seam never relaxes stopped mapping/ref mutations.
+// During a real trap it admits only the exact currently executing binding.
+fn user-space-service-row(handle: Int, authority: Int) -> Int {
+  if domain-table == 0 || cr3-read() != load64(domain-table) { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 || load64(binding + 24) != 1 { return -6 }
+  let row = user-space-row(load64(binding + 8))
+  if row == 0 { return -6 }
+  if authority < 0 || authority >= cap-count || authority != load64(row + US-AUTHORITY) { return -2 }
+  if cap-check(authority,cap-memory()) == 0 || load64(cap-table-base + authority * 16) != load64(row + US-AUTH-OBJECT) { return -2 }
+  if load64(row + US-PHASE) != USER-SPACE-LIVE { return -5 }
+  let context = load64(binding + 16)
+  let domain = load64(row + US-DOMAIN)
+  if load64(context + 712) != domain || user-context-valid(context) == 0 { return -6 }
+  if domain-user-object-table == 0 || user-context-domain-valid(domain) == 0 { return -5 }
+  if load64(domain-user-object-table + domain * 24) != load64(row + US-HANDLE) { return -5 }
+  if user-space-kernel() == 0 {
+    if user-space-active-binding != handle || user-context-active != context || domain-current != domain || user-budget-active != 1 { return -4 }
+  }
+  return row
+}
+
+fn user-space-span(row: Int, address: Int, count: Int, permission: Int) -> Int {
+  if count < 0 || count > 65536 || address < load64(row+US-MINIMUM) || address >= 0x800000000000 || count > 0x800000000000 - address { return -1 }
+  if permission != USER-SPACE-READ && permission != USER-SPACE-WRITE { return -1 }
+  let cursor = address
+  while cursor < address + count {
+    let entry = user-space-entry(row,cursor)
+    if entry == 0 { return -1 }
+    if permission == USER-SPACE-WRITE && load64(entry + 16) != USER-SPACE-WRITE { return -1 }
+    if user-space-consistent(row,entry) == 0 { return -5 }
+    let next = (cursor & -4096) + 4096
+    if next > address + count { next = address + count }
+    cursor = next
+  }
+  return 0
+}
+
+// One internal synchronous pin per object. It exposes no physical pointer or
+// external loan token. The bridge always closes it before returning; trusted
+// owning-function tests also hold it across real mutation/refusal checks.
+fn user-space-borrow-begin(binding: Int, authority: Int, address: Int, count: Int, permission: Int) -> Int {
+  let row = user-space-service-row(binding,authority)
+  if row < 0 { return row }
+  if load64(row + US-LOCK) != 0 { return -4 }
+  store64(row + US-LOCK,1);store64(row + US-BORROW,binding)
+  let status = user-space-span(row,address,count,permission)
+  if status != 0 {
+    store64(row + US-BORROW,0);store64(row + US-LOCK,0)
+    if status == -5 {
+      if user-space-kernel() != 0 { user-space-quarantine(row) }
+      else { store64(row + US-PENDING-INVARIANT,1) }
+    }
+  }
+  return status
+}
+
+fn user-space-borrow-end(handle: Int, authority: Int) -> Int {
+  if domain-table == 0 || cr3-read() != load64(domain-table) { return -4 }
+  let binding = user-space-binding-row(handle)
+  if binding == 0 { return -6 }
+  let row = user-space-row(load64(binding + 8))
+  if row == 0 { return -6 }
+  if authority < 0 || authority >= cap-count || authority != load64(row + US-AUTHORITY) { return -2 }
+  if user-space-kernel() == 0 {
+    if user-space-active-binding != handle || user-context-active != load64(binding + 16) || domain-current != load64(row + US-DOMAIN) { return -4 }
+  }
+  if load64(row + US-LOCK) != 1 || load64(row + US-BORROW) != handle { return -4 }
+  store64(row + US-BORROW,0);store64(row + US-LOCK,0)
+  return 0
+}
+
+fn user-space-copy-bridge(binding: Int, authority: Int, address: Int, buffer: Int, count: Int, output: Int) -> Int {
+  // Arena bounds are defensive arithmetic checks; buffer provenance remains a
+  // trusted private-caller obligation, never inferred from a numeric address.
+  if count < 0 || count > 65536 || buffer <= 0 || buffer > heap-next || count > heap-next - buffer { return -1 }
+  let permission = USER-SPACE-READ
+  if output != 0 { permission = USER-SPACE-WRITE }
+  let status = user-space-borrow-begin(binding,authority,address,count,permission)
+  if status != 0 { return status }
+  let record = user-space-binding-row(binding)
+  let row = user-space-row(load64(record + 8))
+  let i = 0
+  while i < count {
+    let entry = user-space-entry(row,address + i)
+    let offset = (address + i) & 4095
+    let part = 4096 - offset
+    if part > count - i { part = count - i }
+    let source = load64(entry + 8) + offset
+    let target = buffer + i
+    if output != 0 { source = buffer + i;target = load64(entry + 8) + offset }
+    cpu-mem-copy64(target,source,part / 8)
+    let tail = (part / 8) * 8
+    while tail < part { store8(target + tail,load8(source + tail));tail = tail + 1 }
+    i = i + part
+  }
+  return user-space-borrow-end(binding,authority)
+}
+
+fn user-space-copy-in(binding: Int, authority: Int, address: Int, output: Int, count: Int) -> Int {
+  return user-space-copy-bridge(binding,authority,address,output,count,0)
+}
+fn user-space-copy-out(binding: Int, authority: Int, address: Int, source: Int, count: Int) -> Int {
+  return user-space-copy-bridge(binding,authority,address,source,count,1)
+}

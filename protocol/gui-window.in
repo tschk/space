@@ -1,0 +1,16 @@
+import "gui-canvas.in"
+
+// Versioned events on existing32-byte SPDP surface/seat frames. Existing
+// clients never receive these events or reinterpret their old geometry.
+const SPDP-SURFACE-CONFIGURE-V1 = 16
+const SPDP-SURFACE-CONFIGURE-ACK-V1 = 17
+const SPDP-SEAT-FOCUS-V1 = 16
+const GUI-WINDOW-CONFIG-MAGIC = 0x4755494346470001
+
+// arg0 carries a positive generation; arg1 carries physical extent, content
+// scale and version. Fixed backing stride/extent come from the granted profile.
+fn gui-window-config-word(width: Int, height: Int, scale: Int) -> Int {
+  if (scale != 2 && scale != 3) || width < 128 * scale || height < 64 * scale { return 0 }
+  if width > SCI-CANVAS-WIDTH || height > SCI-CANVAS-HEIGHT || width % scale != 0 || height % scale != 0 { return 0 }
+  return (width << 48) | (height << 32) | (scale << 16) | 1
+}

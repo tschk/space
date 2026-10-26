@@ -17,13 +17,18 @@ for name in ('chan-page-frame-header-valid', 'chan-page-frame-valid', 'chan-page
 display = (Path(__file__).resolve().parent.parent / 'components/display.in').read_text() + '\n' + (Path(__file__).resolve().parent.parent / 'components/display-spdp.in').read_text()
 start = display.index('fn dsp-drain-page(')
 functions.append(display[start:display.index('\n}', start) + 2])
-for filename, names in [('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
+for filename, names in [('runtime-retained.in', ('runtime-instance-kernel-context','runtime-instance-record')), ('runtime-pixels.in', ('runtime-instance-canvas-slot','runtime-instance-pixel-bytes')), ('sci-loader.in', ('sci-display-cap-info', 'sci-sync-pixels')), ('shell.in', ('dsp-adopt-sync-pixels',))]:
     module = (Path(__file__).resolve().parent.parent / 'components' / filename).read_text()
     for name in names:
         start = module.index('fn '+name+'(')
         functions.append(module[start:module.index('\n}', start)+2])
-source = 'var memory:[Int]=[' + ','.join(['0'] * 2048) + '];\n' + '''
+source = 'var memory:[Int]=[' + ','.join(['0'] * 20000) + '];\n' + '''
 const COMP-PIXEL-VIRT=0x70001000;
+var domain-clone-owned:Int=6;var domain-user-owned:Int=0;const NATIVE-PROTECTED-KIND=2;const NATIVE-PROTECTED-GUI-PAGED=3;const NATIVE-PROTECTED-EXTRA-MAGIC=0x5350434e4c454447;const RUNTIME-INSTANCE-CATALOG-SLOTS=64;const RUNTIME-INSTANCE-LIVE=0x52554e54494d4531;
+const RUNTIME-INSTANCE-PIXEL-PAGES=288;const SCI-CANVAS-BYTES=1179648;
+var domain-current:Int=0;var runtime-instance-catalog:Int=16000;var sci-sync-handle:Int=257;
+var cap-count:Int=1;var cap-table-base:Int=1904;
+fn cr3-read()->Int{return 4096;}
 const DOMAIN-ACTIVE=1;
 var domain-count:Int=2;
 var domain-table:Int=1500;
@@ -43,6 +48,12 @@ fn load64(p:Int)->Int{return memory[p];}
 fn store64(p:Int,v:Int)->Void{memory[p]=v;}
 ''' + '\n'.join(functions) + '''
 fn main()->Int{
+ store64(domain-table,4096);store64(domain-table+24,8192);store64(domain-table+40,0);
+ store64(cap-table-base,14600);store64(cap-table-base+8,20);
+ store64(14600,101);store64(14608,5);store64(14640,1);
+ store64(14000,1);store64(14008,14600);store64(14016,0);store64(14040,4096);
+ store64(14256,RUNTIME-INSTANCE-LIVE);store64(14280,257);store64(14304,1);
+ store64(16000,14000);store64(16008,1);store64(16016,101);store64(16024,14600);store64(16032,0);store64(16040,1);store64(16048,1);
  let page=8;let message=1200;
  store64(page+16,12);store64(page+24,8);
  if chan-page-send-frame(page,1,2,3,4)!=1{return 1;}

@@ -1,0 +1,275 @@
+space: kernel root entered (Space 0.1.0)
+space: preemption ended; worker A iters 0x0000000000014e7c worker B iters 0x00000000000172ef
+  SCI: kernel exports registered: 970
+  nvme: no NVMe controller found (class 0x010802)
+  storage: component failed to become ready
+usb: no xHCI controller on PCI
+  SCI debug: magic=0x5343490000000001 req=0x0000000000000001 entry=0x0000000040000020 size=0x0000000000000028
+  SCI: loading test.sci, size 0x0000000000000028
+space: sys_exit(code=0x0000000000000042) from thread 0x0000000000000002
+  SCI: guest test.sci returned status 0x0000000000000042
+test_sci_loader: PASS
+linux-real-app: case 0 begins
+42
+linux-real-app: case 0 exit 0
+linux-real-app: case 1 begins
+93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000
+linux-real-app: case 1 exit 0
+linux-real-app: case 2 begins
+{"sum":1999000,"sort":[1,2,3]}
+linux-real-app: case 2 exit 0
+linux-real-app: case 3 begins
+{"digits":"123"}
+λ🙂
+linux-real-app: case 3 exit 0
+linux-real-app: case 4 begins
+42
+linux-real-app: case 4 exit 0
+linux-real-app: case 5 begins
+clock-ok
+linux-real-app: case 5 exit 0
+linux-real-app: case 6 begins
+first line
+second line
+linux-real-app: case 6 exit 0
+linux-real-app: case 7 begins
+saved by original QuickJS
+linux-real-app: case 7 exit 0
+linux-real-app: case 8 begins
+true
+linux-real-app: case 8 exit 0
+linux-real-app: case 9 begins
+monotonic-ok
+linux-real-app: case 9 exit 0
+linux-real-app: case 10 begins
+function function
+linux-real-app: case 10 exit 0
+linux-real-app: case 11 begins
+one|two
+linux-real-app: case 11 exit 0
+linux-real-app: case 12 begins
+13 arg0 arg12
+linux-real-app: case 12 exit 0
+linux-real-app: case 13 begins
+timer-ok
+linux-real-app: case 13 exit 0
+saved by original QuickJS
+timer-ok
+linux-real-app: regression begins
+linux-real-app: actual guest IRQ cancellation passed
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+42
+saved by original QuickJS
+timer-ok
+space: guest fault vector 0x0000000000000006 rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x000000004f000000
+space: guest fault vector 0x000000000000000d rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+space: guest fault vector 0x000000000000000e rip 0x0000000000400100
+linux-real-app: native deadline waits 91
+linux-real-app: other domain same-VA sentinel passed
+linux-real-app: regression passed 21
+
+space interactive shell -- type 'help'
+space> 

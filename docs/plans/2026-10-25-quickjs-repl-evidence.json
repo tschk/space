@@ -1,0 +1,328 @@
+{
+  "goal_status": "OPEN",
+  "runtime_source": "47037aa19171a6afba575a06463cbb5566510210",
+  "scope": "Original unchanged-source QuickJS and GNU sed plus actual PS2 QuickJS REPL over owned terminal and protected SCI ANSI16 screen; finite ASCII80x24, not foreign GUI frameworks or ordinary desktop app launch.",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "cohort": {
+    "receipt": "/workspace/quickjs-repl-frozen-cohort/report.json",
+    "published_receipt": "../evidence/2026-10-25-quickjs-repl/cohort-receipt.json",
+    "sha256": "608e41c11baa0408f1fb2b83bf3bb90ffb5e62a02db960490c404c6761c2a88e",
+    "passed": 8,
+    "failed": 0,
+    "source_files": 847,
+    "integrity_status": "passed"
+  },
+  "applications": [
+    {
+      "name": "original-quickjs-standard",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-quickjs-standard/report.json",
+      "sha256": "e28039d411cf3ec92dec8ee038e4def189eb6a4de47b7c94b71367a1be9d8fa1",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 80,
+      "kernel_sha256": "4f83d5a4e544a3b4f80e46672fbb2e848319280d2b8a0ff782ed830688e2d663",
+      "native_deadline_idle_waits": 92,
+      "repeat_cycles": 21
+    },
+    {
+      "name": "original-quickjs-minimal",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-quickjs-minimal/report.json",
+      "sha256": "5031b9ec4522c591163b6098ef9c367bd54848f24de58c4ce820e9b0a12cd355",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 80,
+      "kernel_sha256": "dd983b28dd2a016cc6cab0ba4bd823d0ad0e52ad7bfc5d904240986b4212a3d7",
+      "native_deadline_idle_waits": 90,
+      "repeat_cycles": 21
+    },
+    {
+      "name": "original-sed-standard",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-sed-standard/report.json",
+      "sha256": "8a37cc6879eff9848124ad8c2708fb739516eacca7e7a9bd5da4af98abae3112",
+      "application_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "original_application_entries": 74,
+      "kernel_sha256": "12a2550803c165135f5a23b2f7a7c92bfed1d327b209b970fc31796550400fd2",
+      "native_deadline_idle_waits": 0,
+      "repeat_cycles": 21
+    },
+    {
+      "name": "original-sed-minimal",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-sed-minimal/report.json",
+      "sha256": "6aadbe77e13df0db01a5d25bbb3253c90fe0ceeb9e7491f026d689e718f1897e",
+      "application_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "original_application_entries": 74,
+      "kernel_sha256": "7b451d7a5b94ac48e67ee76723c62c4c8f875ae44bc9156bd447e6c99b95cf54",
+      "native_deadline_idle_waits": 0,
+      "repeat_cycles": 21
+    },
+    {
+      "name": "original-quickjs-no-hpet",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-quickjs-no-hpet/report.json",
+      "sha256": "e30b3e450f04976183db09a8526cdcc87991150acba76cee2dab97d457311825",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 55,
+      "kernel_sha256": "0bfd9201e252cd1899e39a3bb81fc09ffeb7acd45581b54d5554f1327bff5134",
+      "native_deadline_idle_waits": 0,
+      "repeat_cycles": 21
+    },
+    {
+      "name": "original-quickjs-repl-minimal",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-quickjs-repl-minimal/report.json",
+      "sha256": "5c34ba7db6df540d3a64cad4165ff3eb162357c4a3b30b334db49542752a83b5",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 2,
+      "kernel_sha256": "01cc0e2bd0b4bbb5bd27ab60380ccc1837b14e5f81d77d9041c3e9fbaa05d8c6",
+      "actual_ps2_text_events": 134,
+      "own_control_activations": 15,
+      "own_control_idle_probes": 60,
+      "interactive_keyboard": true,
+      "interactive_gui": false,
+      "exact_saved_files": [
+        "saved",
+        "saved"
+      ],
+      "stable_after_warmup": true,
+      "original_output_sha256": "1ac37780e3f8bebe543ae55785035753110bb44d37a511cc46019b22f8a2bd39"
+    },
+    {
+      "name": "original-quickjs-repl-view",
+      "receipt": "/workspace/quickjs-repl-frozen-cohort/original-quickjs-repl-view/report.json",
+      "sha256": "da251c07d8132b67be573c60ce4290d574c55cde21507bd41b9910dc11e6d46f",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 2,
+      "kernel_sha256": "c43dfe052013b5abd2a22eb926990ce8b258fa15a40d3121b7edf5cc1c9c48c9",
+      "actual_ps2_text_events": 134,
+      "own_control_activations": 15,
+      "own_control_idle_probes": 60,
+      "interactive_keyboard": true,
+      "interactive_gui": true,
+      "exact_saved_files": [
+        "saved",
+        "saved"
+      ],
+      "stable_after_warmup": true,
+      "original_output_sha256": "1ac37780e3f8bebe543ae55785035753110bb44d37a511cc46019b22f8a2bd39"
+    }
+  ],
+  "regressions": [
+    {
+      "receipt": "/workspace/quickjs-repl-regressions/pipes.json",
+      "sha256": "2df091e75e7a16c157b497faf93e08ce8a17eda6d815da9b4ce35c0958e26360",
+      "checks": [
+        {
+          "name": "blocking-standard",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-blocking.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/blocking-standard"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 23.055
+        },
+        {
+          "name": "blocking-minimal",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-blocking.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/blocking-minimal",
+            "--root",
+            "minimal"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 17.214
+        },
+        {
+          "name": "vm",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-vm.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/vm"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 7.147
+        },
+        {
+          "name": "vfork",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-vm.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/vfork",
+            "--vfork"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 7.694
+        },
+        {
+          "name": "terminal-retained",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-terminal-session.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/terminal-retained",
+            "--retained"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 7.447
+        },
+        {
+          "name": "vi-view",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-terminal-vi.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/vi-view",
+            "--app",
+            "/workspace/busybox-vi-build4/busybox",
+            "--view",
+            "--navigation",
+            "--oracle-python",
+            "/workspace/terminal-oracle-venv/bin/python"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 14.917
+        },
+        {
+          "name": "vi-minimal",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-linux-terminal-vi.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/vi-minimal",
+            "--app",
+            "/workspace/busybox-vi-build4/busybox",
+            "--root",
+            "minimal",
+            "--navigation"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 6.292
+        }
+      ]
+    },
+    {
+      "receipt": "/workspace/quickjs-repl-regressions/native-gui.json",
+      "sha256": "09df17c445e731fca04d84482a80f3843edb9f8b13f299b5a5c669023c435033",
+      "checks": [
+        {
+          "name": "user-space-standard",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-user-space.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/user-space-standard"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 5.989
+        },
+        {
+          "name": "user-space-minimal",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-user-space.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--out",
+            "/workspace/quickjs-repl-regressions/user-space-minimal",
+            "--root",
+            "minimal"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 1.472
+        },
+        {
+          "name": "desktop-launcher",
+          "command": [
+            "python3",
+            "/workspace/space-quickjs-repl-source/scripts/check-desktop-launcher.py",
+            "--in",
+            "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+            "--build-dir",
+            "/workspace/quickjs-repl-regressions/desktop-launcher"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 86.192
+        },
+        {
+          "name": "desktop-damage",
+          "command": [
+            "bash",
+            "/workspace/space-quickjs-repl-source/scripts/check-desktop-damage.sh"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 5.733
+        }
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "name": "architecture-contract",
+      "receipt": "/workspace/quickjs-repl-architecture-contract.log",
+      "sha256": "3a7693bec868ed3e6070c89f328eb509bd153c19e1bce91c192988f18a68e881"
+    },
+    {
+      "name": "sci-contract",
+      "receipt": "/workspace/quickjs-repl-sci-contract.log",
+      "sha256": "41f6ab82cdf02a323d59e22e4958091c9141579b07b6c37299cad6197d57de39"
+    },
+    {
+      "name": "personality-abi",
+      "receipt": "/workspace/quickjs-repl-personality-abi.log",
+      "sha256": "62231edc3df4f299f1a62635e430f9f1c71482882f27c2bca829b3d61d7215b9"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "docs/screenshots/2026-10-25-quickjs-repl/original-quickjs-0.png",
+      "png_sha256": "f3bccfaa63abcc9027b23761c2466b6c742760cc255c667d67241dd094d3d7ca",
+      "ppm_sha256": "464c3038a9866abddf54b831817a94d3b2926bcad7b1b49e43502003962d7a18",
+      "actual_pixels_compared": 294912,
+      "stream_sha256": "98daa24881e7d59f1b3705cfdcd2091fea9dc46bdca058bbe4a8e398cf5681a2",
+      "independent_content_sha256": "ecfb06bdca666bb23d95772a8d551ab1771c6a3ea3bb8ad6b7e04edd1f36e6e5"
+    },
+    {
+      "path": "docs/screenshots/2026-10-25-quickjs-repl/original-quickjs-1.png",
+      "png_sha256": "1e4436235ce9ac1c7687a5936e399e54752b02abd419617eb5d317050b005175",
+      "ppm_sha256": "15c9770ae35565007d6445b5fda7645f60d5d7402c9fb733d76b0f411c2c708e",
+      "actual_pixels_compared": 294912,
+      "stream_sha256": "eafdc506ae43430819d758d83b35a49e164603a74033bb295a1c2211e37c820d",
+      "independent_content_sha256": "dc7ca708c611d4e99a99d4b9a4bb709fa49d746f712921bbfecc504e8e0c85e6"
+    }
+  ],
+  "private_sci": {
+    "receipt": "/workspace/quickjs-repl-frozen-cohort/private-execution-imports/report.json",
+    "sha256": "7d7137543ad060c5f21d28b5d9aa0cfce2d00c3ef847928aad5322864c088d18",
+    "status": "passed"
+  },
+  "total_original_application_entries": 367,
+  "affected_qemu_regressions": 11
+}

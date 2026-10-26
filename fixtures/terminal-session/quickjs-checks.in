@@ -1,0 +1,52 @@
+package space.kernel
+import "../../components/terminal-seat.in"
+import "../../components/linux-terminal-keyboard.in"
+import "../../components/linux-process-terminal.in"
+import "select-checks.in"
+var quickjs-repl-trace:Int=0
+var quickjs-repl-bytes:Int=0
+fn quickjs-repl-drain(session:Int,owner:Int)->Int{
+ let count=0;while terminal-session-query(session,owner,3)>0{let byte=terminal-session-output(session,owner);if byte<0 || byte>=128 || quickjs-repl-bytes>=262144{panic("QuickJS original terminal output");}store8(quickjs-repl-trace+quickjs-repl-bytes,byte);quickjs-repl-bytes+=1;count+=1;}return count;
+}
+fn quickjs-repl-file(buffer:Int)->void{
+ if fs-read-file("/repl.txt",buffer,32)!=5{panic("QuickJS real REPL file length");}let i=0;while i<5{if load8(buffer+i)!=load8("saved"+i){panic("QuickJS real REPL saved bytes");}i+=1;}
+}
+fn quickjs-repl-free()->Int{let n=0;let p=free-list;while p!=0 && n<131072{n+=1;p=load64(p);}if p!=0{panic("QuickJS free-page cycle");}return n;}
+fn quickjs-repl-check(port:Int)->void{
+ if heap-next>=0x10000000{panic("QuickJS source collision");}heap-end=0x10000000;
+ let authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage()|cap-timer());let owner=cap-mint(obj-alloc(281),cap-memory());let seat=cap-mint(obj-alloc(282),cap-input());
+ let noTimer=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage());
+ terminal-select-controls(port,authority,noTimer,owner,seat);
+ if cap-revoke(noTimer)!=0{panic("Terminal select test grant retirement");}
+ quickjs-repl-trace=alloc(262144);let buffer=alloc(64);let caps=cap-count;let originalcap=current-cap;let fs=rdmsr(0xc0000100);let gs=rdmsr(0xc0000101);let heap=0;let free=0;let domains=0;
+ serial-write-cstr(port,"qjs: trace address ");serial-write-dec-wide(port,quickjs-repl-trace);serial-nl(port);linux-process-trace=1;
+ let run=0;while run<2{
+  let hash=-3750763034362895579;let i=0;while i<QUICKJS-REPL-SIZE{hash=(hash^load8(0x10000000+i))*1099511628211;i+=1;}if hash!=QUICKJS-REPL-FNV{panic("QuickJS original ELF changed");}
+  if run==1{quickjs-repl-file(buffer);}
+  let session=terminal-session-open(owner,seat,80,24);if session<=0 || terminal-seat-focus(session,owner,seat)!=0{panic("QuickJS native terminal lease");}
+  ps2-kbd-init();serial-write-cstr(port,"qjs: begin ");serial-write-dec-wide(port,run);serial-nl(port);
+  let token=linux-process-terminal-start-profile(0x10000000,QUICKJS-REPL-SIZE,"/qjs","--std","-i",authority,session,owner,5);
+  if token<=0 || linux-process-terminal-query(token,authority,0)!=1{serial-write-cstr(port,"qjs: initial result ");serial-write-dec-wide(port,token);serial-nl(port);panic("QuickJS REPL did not reach a retained input wait");}
+  serial-write-cstr(port,"qjs: keyboard ready ");serial-write-dec-wide(port,run);serial-nl(port);
+  let keys=0;let turns=0;let painted=-1;
+  while linux-process-terminal-query(token,authority,0)==1 && turns<500000000{
+   let progress=quickjs-repl-drain(session,owner);let key=ps2-kbd-getchar();
+   if key>=0{if linux-terminal-deliver-key(seat,key)!=0{panic("QuickJS focused keyboard route");}
+    serial-write-cstr(port,"qjs: key ");serial-write-dec-wide(port,run);serial-put(port,32);serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,key);serial-nl(port);keys+=1;progress=1;}
+   let deadline=linux-process-terminal-query(token,authority,4);if deadline>0{let now=counter-read-authorized(authority);if now<0{panic("QuickJS terminal deadline");}if now>=deadline{progress=1;}}
+   if terminal-session-query(session,owner,2)>0{progress=1;}if progress!=0{linux-process-terminal-resume(token,authority);}
+   if terminal-session-query(session,owner,2)==0 && terminal-session-query(session,owner,3)==0 && painted!=quickjs-repl-bytes && linux-process-terminal-query(token,authority,0)==1{
+    serial-write-cstr(port,"qjs: idle ");serial-write-dec-wide(port,run);serial-put(port,32);serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,quickjs-repl-bytes);serial-nl(port);painted=quickjs-repl-bytes;
+   }
+   if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0 || rdmsr(0xc0000100)!=fs || rdmsr(0xc0000101)!=gs{panic("QuickJS stopped supervisor state");}turns+=1;
+  }
+  quickjs-repl-drain(session,owner);let status=linux-process-terminal-query(token,authority,1);serial-write-cstr(port,"qjs: end ");serial-write-dec-wide(port,run);serial-put(port,32);serial-write-dec-wide(port,status);serial-put(port,32);serial-write-dec-wide(port,keys);serial-nl(port);
+  if linux-process-terminal-query(token,authority,0)!=2 || status!=0{panic("QuickJS original interactive exit");}
+  if linux-process-terminal-close(token,authority)!=0 || terminal-session-close(session,owner)!=0 || terminal-seat-clear(seat)!=0{panic("QuickJS retained ownership close");}
+  quickjs-repl-file(buffer);if current-cap!=originalcap || cap-count!=caps || linux-process-active!=0 || linux-process-cleanup-failed!=0{panic("QuickJS retained process state");}
+  if run==0{heap=heap-next;free=quickjs-repl-free();domains=domain-count;}else if heap-next!=heap || quickjs-repl-free()!=free || domain-count!=domains{panic("QuickJS repeated REPL ownership leak");}
+  serial-write-cstr(port,"qjs: saved exact ");serial-write-dec-wide(port,run);serial-nl(port);run+=1;
+ }
+ serial-write-cstr(port,"qjs: trace ");serial-write-dec-wide(port,quickjs-repl-trace);serial-put(port,32);serial-write-dec-wide(port,quickjs-repl-bytes);serial-nl(port);
+ serial-write-cstr(port,"qjs: two original keyboard REPL file/reopen processes PASS");serial-nl(port);
+}

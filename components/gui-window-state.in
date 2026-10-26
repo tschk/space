@@ -1,0 +1,44 @@
+package space.app.gui
+import "../protocol/gui-window.in"
+import "../protocol/display.in"
+
+var window-width: Int = 0
+var window-height: Int = 0
+var window-scale: Int = 0
+var window-generation: Int = 0
+var window-focused: Int = 0
+var window-ack: Int = 0
+
+fn window-configure(generation: Int, width: Int, height: Int, scale: Int) -> Int {
+  if generation <= window-generation || gui-window-config-word(width, height, scale) == 0 { return 0 }
+  window-generation = generation
+  window-width = width
+  window-height = height
+  window-scale = scale
+  return 1
+}
+
+fn window-event-at(memory: Int) -> Int {
+  let message = memory + 256
+  if chan-page-recv-frame(0x70000000, message) != 1 || load64(0x70000000) != load64(0x70000008) { return -1 }
+  let object = load64(message)
+  let opcode = load64(message + 8)
+  let generation = load64(message + 16)
+  let packed = load64(message + 24)
+  if object == SPDP-OBJ-SURFACE && opcode == SPDP-SURFACE-CONFIGURE-V1 {
+    if (packed & 65535) != 1 { return -1 }
+    if window-configure(generation, (packed >> 48) & 65535, (packed >> 32) & 65535, (packed >> 16) & 65535) != 1 { return -1 }
+    window-ack = 1
+    return -2
+  }
+  if object != SPDP-OBJ-SEAT || generation < 0 { return -1 }
+  if opcode == SPDP-SEAT-FOCUS-V1 {
+    if generation != window-generation || packed < 0 || packed > 1 { return -1 }
+    window-focused = packed
+    return -3
+  }
+  if (packed >> 32) != 1 { return -1 }
+  if opcode == SPDP-SEAT-POINTER-BUTTON && (packed & 0xFFFFFFFF) == 1 { return 0 }
+  if opcode != SPDP-SEAT-KEYBOARD-KEY { return -1 }
+  return packed & 0xFFFFFFFF
+}

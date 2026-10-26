@@ -1,4 +1,5 @@
 // Phase 0: Memory Domain Subsystem.
+import "supervisor-window.in"
 // Provides isolated page table trees (realms) for component isolation.
 // Domain 0 = kernel domain (shared PML4).
 // Usage: domain_create() -> domain_id for use with chan_cross_send/recv.
@@ -6,6 +7,7 @@
 const MAX-DOMAINS = 64
 const DOMAIN-FREE = 0
 const DOMAIN-ACTIVE = 1
+const DOMAIN-KERNEL-STACK-BYTES = 65536
 
 var domain-table: Int = 0
 var domain-count: Int = 0
@@ -13,6 +15,16 @@ var domain-current: Int = 0
 var current-cap: Int = -1
 var cr3-read-stub: Int = 0
 var cr3-write-stub: Int = 0
+// Only empty user trees created here may be retired by the user-tree teardown.
+var domain-user-owned: Int = 0
+// Explicit native low-address views omit legacy low supervisor reservations.
+var domain-user-relocated: Int = 0
+// Exact runtime object generation, attached bindings and scoped revoke permit.
+var domain-user-object-table: Int = 0
+// Clone trees own private child tables but contain shared identity-map leaves.
+var domain-clone-owned: Int = 0
+// Supervisor-installed ABI edge dispatcher; zero keeps the native syscall ABI.
+var domain-user-syscall-hook: Int = 0
 
 fn domain-set-cap(id: Int, cap-idx: Int) -> void {
   if id < 0 || id >= domain-count {
@@ -27,11 +39,15 @@ fn domain-set-cap(id: Int, cap-idx: Int) -> void {
 
 fn domain-init() -> void {
   domain-table = alloc(MAX-DOMAINS * 24)
+  domain-user-object-table = alloc(MAX-DOMAINS * 24)
   let i = 0
   while i < MAX-DOMAINS {
     store64(domain-table + i * 24 + 0, 0)
     store64(domain-table + i * 24 + 8, DOMAIN-FREE)
     store64(domain-table + i * 24 + 16, -1)
+    store64(domain-user-object-table + i * 24,0)
+    store64(domain-user-object-table + i * 24 + 8,0)
+    store64(domain-user-object-table + i * 24 + 16,0)
     i = i + 1
   }
   // The bootloader left the kernel PML4 at 0x1000, but the compiler may place
@@ -51,15 +67,16 @@ fn domain-init() -> void {
   }
   let tss = load64(0x4100)
   if tss != 0 {
-    let kstack = alloc(8192)
-    store64(tss + 4, kstack + 8192)
-    cpu-load-tr(GDT-TSS-SEL)
+    let kstack = alloc(DOMAIN-KERNEL-STACK-BYTES)
+    supervisor-window-init(kernel-pml4,tss,kstack + DOMAIN-KERNEL-STACK-BYTES)
   }
   cpu-init-syscall-msrs()
   store64(domain-table + 0, kernel-pml4)
   store64(domain-table + 8, DOMAIN-ACTIVE)
   store64(domain-table + 16, -1)
   domain-count = 1
+  domain-user-owned = 0
+  domain-user-relocated = 0
   domain-current = 0
   return
 }
@@ -150,13 +167,24 @@ fn create-shared-domain-pml4() -> Int {
     let dst-pd = frame-alloc()
     let k = 0
     while k < 512 {
-      store64(dst-pd + k * 8, load64(src-pd + k * 8))
+      let entry = load64(src-pd + k * 8)
+      // A clone owns mutable leaf tables, including kernel shared-page windows.
+      // Sharing an existing PT would let the next loader overwrite this
+      // instance's ring/pixel mappings. Large identity leaves remain values.
+      if (entry & 1) != 0 && (entry & 128) == 0 {
+        let leaf = frame-alloc()
+        cpu-mem-copy64(leaf, entry & PAGE-ADDRESS-MASK, 512)
+        entry = leaf | (entry & (-1 ^ PAGE-ADDRESS-MASK))
+      }
+      store64(dst-pd + k * 8, entry)
       k = k + 1
     }
     store64(dst-pdpt + j * 8, dst-pd | 3)
     j = j + 1
   }
   store64(dst-pml4, dst-pdpt | 3)
+  // Borrow the exact supervisor-only kernel alias, never a private user tree.
+  store64(dst-pml4 + 256 * 8,load64(src-pml4 + 256 * 8))
   return dst-pml4
 }
 
@@ -185,7 +213,14 @@ fn domain-map-supervisor-page(domain: Int, addr: Int) -> void {
     return
   }
   let page = addr & -4096
-  domain-map(domain, page, page, 0x3)
+  let physical=page
+  if page<0{
+    // Kernel-linked clone trees already borrow the immutable root alias graph.
+    if (domain-clone-owned & (1 << domain))!=0{return}
+    physical=page - SUPERVISOR-WINDOW
+    if physical<0 || physical>=0x100000000{panic("supervisor physical alias bounds");}
+  }
+  domain-map(domain, page, physical, 0x3)
   return
 }
 
@@ -193,8 +228,12 @@ fn domain-map-idt(domain: Int) -> void {
   if idt-base == 0 {
     return
   }
-  domain-map-supervisor-page(domain, idt-base)
-  domain-map-supervisor-page(domain, idt-base + 4095)
+  domain-map-supervisor-page(domain, SUPERVISOR-WINDOW + idt-base)
+  domain-map-supervisor-page(domain, SUPERVISOR-WINDOW + idt-base + 4095)
+  if (domain-user-relocated & (1 << domain))==0{
+    domain-map-supervisor-page(domain, idt-base)
+    domain-map-supervisor-page(domain, idt-base + 4095)
+  }
   return
 }
 
@@ -207,47 +246,219 @@ fn domain-map-kernel-stack(domain: Int) -> void {
   if rsp0 == 0 {
     return
   }
-  domain-map-supervisor-page(domain, rsp0 - 8192)
-  domain-map-supervisor-page(domain, rsp0 - 4096)
-  domain-map-supervisor-page(domain, rsp0 - 1)
+  let page = (rsp0 - DOMAIN-KERNEL-STACK-BYTES) & -4096
+  while page < rsp0 {
+    domain-map-supervisor-page(domain, page)
+    if (domain-user-relocated & (1 << domain))==0{domain-map-supervisor-page(domain,page - SUPERVISOR-WINDOW)}
+    page = page + 4096
+  }
   return
 }
 
 fn domain-map-trampoline(domain: Int) -> void {
-  domain-map-supervisor-page(domain, 0x100000)
+  domain-map-supervisor-page(domain, SUPERVISOR-WINDOW + 0x100000)
+  if (domain-user-relocated & (1 << domain))==0{domain-map-supervisor-page(domain, 0x100000)}
   return
 }
 
 fn domain-create() -> Int {
-  if domain-count >= MAX-DOMAINS {
-    return -1
-  }
-  let id = domain-count
+  let id = 1
+  while id < domain-count && load64(domain-table + id * 24 + 8) != DOMAIN-FREE { id = id + 1 }
+  if id >= MAX-DOMAINS { return -1 }
   let pml4 = create-shared-domain-pml4()
-  if pml4 == 0 {
-    return -1
-  }
-  store64(domain-table + id * 24 + 0, pml4)
+  if pml4 == 0 { return -1 }
+  store64(domain-table + id * 24, pml4)
   store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
   store64(domain-table + id * 24 + 16, -1)
-  domain-count = domain-count + 1
+  domain-clone-owned = domain-clone-owned | (1 << id)
+  if id == domain-count { domain-count = domain-count + 1 }
   return id
 }
 
+// Structural table ledger for the explicit clone kind. Every non-huge child
+// table was privately copied/allocated; huge identity leaves are borrowed.
+// Validate the bounded four-directory shape and kernel-table separation first.
+fn domain-destroy-clone-owned(domain: Int) -> Int {
+  if domain-current != 0 || cr3-read() != load64(domain-table) { return -1 }
+  if domain <= 0 || domain >= domain-count { return -1 }
+  if (domain-clone-owned & (1 << domain)) == 0 || (domain-user-owned & (1 << domain)) != 0 { return -1 }
+  let root = load64(domain-table + domain * 24)
+  let kernel-root = load64(domain-table)
+  if root == 0 || root == kernel-root || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let i = 1
+  while i < 512 {
+    if i==256{if load64(root+i*8)!=load64(kernel-root+i*8){return -1}}
+    else if load64(root+i*8)!=0{return -1}
+    i+=1
+  }
+  let e4 = load64(root)
+  if (e4 & 1) == 0 || (e4 & 128) != 0 { return -1 }
+  let pdpt = e4 & PAGE-ADDRESS-MASK
+  let kernel-pdpt = load64(kernel-root) & PAGE-ADDRESS-MASK
+  if pdpt == kernel-pdpt { return -1 }
+  i = 4
+  while i < 512 { if load64(pdpt + i * 8) != 0 { return -1 }; i = i + 1 }
+  let j = 0
+  while j < 4 {
+    let e3 = load64(pdpt + j * 8)
+    if (e3 & 1) == 0 || (e3 & 128) != 0 { return -1 }
+    let pd = e3 & PAGE-ADDRESS-MASK
+    let kernel-pd = load64(kernel-pdpt + j * 8) & PAGE-ADDRESS-MASK
+    if pd == kernel-pd || pd == root || pd == pdpt { return -1 }
+    let k = 0
+    while k < 512 {
+      let e2 = load64(pd + k * 8)
+      if (e2 & 1) != 0 && (e2 & 128) == 0 {
+        let leaf = e2 & PAGE-ADDRESS-MASK
+        let kernel-e2 = load64(kernel-pd + k * 8)
+        if leaf == root || leaf == pdpt || leaf == pd { return -1 }
+        if (kernel-e2 & 1) != 0 && (kernel-e2 & 128) == 0 && leaf == (kernel-e2 & PAGE-ADDRESS-MASK) { return -1 }
+      }
+      k = k + 1
+    }
+    j = j + 1
+  }
+  j = 0
+  while j < 4 {
+    let pd = load64(pdpt + j * 8) & PAGE-ADDRESS-MASK
+    let k = 0
+    while k < 512 {
+      let e2 = load64(pd + k * 8)
+      if (e2 & 1) != 0 && (e2 & 128) == 0 { frame-free(e2 & PAGE-ADDRESS-MASK) }
+      k = k + 1
+    }
+    frame-free(pd)
+    j = j + 1
+  }
+  frame-free(pdpt)
+  frame-free(root)
+  store64(domain-table + domain * 24, 0)
+  store64(domain-table + domain * 24 + 8, DOMAIN-FREE)
+  store64(domain-table + domain * 24 + 16, -1)
+  domain-clone-owned = domain-clone-owned & (-1 ^ (1 << domain))
+  return 0
+}
+
 fn domain-create-user() -> Int {
-  if domain-count >= MAX-DOMAINS {
-    return -1
+  let id = 1
+  while id < domain-count && load64(domain-table + id * 24 + 8) != DOMAIN-FREE {
+    id = id + 1
   }
-  let id = domain-count
+  if id >= MAX-DOMAINS { return -1 }
+  if domain-user-object-table != 0 && load64(domain-user-object-table + id * 24) != 0 { return -1 }
   let pml4 = create-user-domain-pml4()
-  if pml4 == 0 {
-    return -1
-  }
+  if pml4 == 0 { return -1 }
   store64(domain-table + id * 24 + 0, pml4)
   store64(domain-table + id * 24 + 8, DOMAIN-ACTIVE)
   store64(domain-table + id * 24 + 16, -1)
-  domain-count = domain-count + 1
+  domain-user-owned = domain-user-owned | (1 << id)
+  domain-user-relocated = domain-user-relocated & (-1 ^ (1 << id))
+  if id == domain-count { domain-count = domain-count + 1 }
   return id
+}
+
+// Release only page-table frames, never shared/user backing frames. The owning
+// runtime must release its backing ledger after this removes every mapping.
+fn domain-destroy-user(domain: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count { return -1 }
+  if cr3-read() != load64(domain-table) { return -1 }
+  if domain-user-object-table != 0 {
+    let ownership = domain-user-object-table + domain * 24
+    let owner = load64(ownership)
+    if load64(ownership + 8) != 0 { return -1 }
+    if owner != 0 && load64(ownership + 16) != owner { return -1 }
+  }
+  if (domain-user-owned & (1 << domain)) == 0 { return -1 }
+  let root = load64(domain-table + domain * 24)
+  if root == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  // These trees never contain huge pages. Validate that invariant before
+  // changing any table or free-list link.
+  let a = 0
+  while a < 512 {
+    let e4 = load64(root + a * 8)
+    if (e4 & 1) != 0 {
+      let pdpt = e4 & PAGE-ADDRESS-MASK
+      let b = 0
+      while b < 512 {
+        let e3 = load64(pdpt + b * 8)
+        if (e3 & 1) != 0 {
+          if (e3 & 128) != 0 { return -1 }
+          let pd = e3 & PAGE-ADDRESS-MASK
+          let c = 0
+          while c < 512 {
+            let e2 = load64(pd + c * 8)
+            if (e2 & 1) != 0 && (e2 & 128) != 0 { return -1 }
+            c = c + 1
+          }
+        }
+        b = b + 1
+      }
+    }
+    a = a + 1
+  }
+  a = 0
+  while a < 512 {
+    let e4 = load64(root + a * 8)
+    if (e4 & 1) != 0 {
+      let pdpt = e4 & PAGE-ADDRESS-MASK
+      let b = 0
+      while b < 512 {
+        let e3 = load64(pdpt + b * 8)
+        if (e3 & 1) != 0 {
+          let pd = e3 & PAGE-ADDRESS-MASK
+          let c = 0
+          while c < 512 {
+            let e2 = load64(pd + c * 8)
+            if (e2 & 1) != 0 { frame-free(e2 & PAGE-ADDRESS-MASK) }
+            c = c + 1
+          }
+          frame-free(pd)
+        }
+        b = b + 1
+      }
+      frame-free(pdpt)
+    }
+    a = a + 1
+  }
+  frame-free(root)
+  store64(domain-table + domain * 24, 0)
+  store64(domain-table + domain * 24 + 8, DOMAIN-FREE)
+  store64(domain-table + domain * 24 + 16, -1)
+  domain-user-owned = domain-user-owned & (-1 ^ (1 << domain))
+  domain-user-relocated = domain-user-relocated & (-1 ^ (1 << domain))
+  return 0
+}
+
+// Caller owns stack, argument and the four-word kernel entry context. This
+// avoids hidden per-invocation allocations and enforces IOPL0 via strict entry.
+fn domain-enter-user-prepared(entry: Int, arg: Int, domain: Int, stack: Int, context: Int) -> Int {
+  return domain-enter-user-prepared-with-stub(entry,arg,domain,stack,context,load64(0x4160))
+}
+
+fn domain-enter-user-prepared-with-stub(entry: Int, arg: Int, domain: Int, stack: Int, context: Int, enter: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || context <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) { return -1 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let pml4 = load64(domain-table + domain * 24)
+  if enter != load64(0x4160) && enter != load64(0x4190) { return -1 }
+  if pml4 == 0 || enter == 0 { return -1 }
+  let code-flags = domain-page-flags(domain, entry)
+  let stack-flags = domain-page-flags(domain, stack)
+  if (code-flags & 5) != 5 || (code-flags & PAGE-NX) != 0 { return -1 }
+  if (stack-flags & 7) != 7 || (stack-flags & PAGE-NX) == 0 { return -1 }
+  domain-map-idt(domain)
+  domain-map-kernel-stack(domain)
+  domain-map-trampoline(domain)
+  store64(context, entry)
+  store64(context + 8, arg)
+  store64(context + 16, stack)
+  store64(context + 24, pml4)
+  domain-current = domain
+  current-cap = load64(domain-table + domain * 24 + 16)
+  let status = invoke1(enter, context)
+  domain-current = 0
+  current-cap = load64(domain-table + 16)
+  return status
 }
 
 fn domain-switch(id: Int) -> void {
@@ -259,6 +470,21 @@ fn domain-switch(id: Int) -> void {
   domain-current = id
   current-cap = load64(domain-table + id * 24 + 16)
   return
+}
+
+// A CPL3 syscall runs policy on kernel CR3 while retaining its logical guest
+// identity/capability. Nested trusted RPC must restore both pieces separately.
+fn domain-restore-service-context(domain: Int, cap: Int, actual-root: Int) -> Int {
+  if domain < 0 || domain >= domain-count { return -1 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let kernel-root = load64(domain-table)
+  let logical-root = load64(domain-table + domain * 24)
+  if actual-root == 0 || (actual-root != kernel-root && actual-root != logical-root) { return -1 }
+  cr3-write(actual-root)
+  if cr3-read() != actual-root { return -1 }
+  domain-current = domain
+  current-cap = cap
+  return 0
 }
 
 // Return the domain id last activated by domain_switch.
@@ -333,4 +559,71 @@ fn domain-create-shared-page(dom-a: Int, dom-b: Int, virt-a: Int, virt-b: Int) -
   domain-map-user-data(dom-a, virt-a, page)
   domain-map-user-data(dom-b, virt-b, page)
   return page
+}
+
+// Revoke one existing user mapping without allocating tables or releasing its
+// backing frame. The owning runtime frees that frame only after success.
+fn domain-unmap-user(domain: Int, virt: Int) -> Int {
+  if domain <= 0 || domain >= domain-count || virt < 0 || virt >= 0x800000000000 || (virt & 4095) != 0 { return -1 }
+  if cr3-read() != load64(domain-table) { return -1 }
+  if (domain-user-owned & (1 << domain)) == 0 { return -1 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let root = load64(domain-table + domain * 24)
+  if root == 0 { return -1 }
+  let e4 = load64(root + ((virt >> 39) & 511) * 8)
+  if (e4 & 5) != 5 { return -1 }
+  let pdpt = e4 & PAGE-ADDRESS-MASK
+  let e3 = load64(pdpt + ((virt >> 30) & 511) * 8)
+  if (e3 & 5) != 5 || (e3 & 128) != 0 { return -1 }
+  let pd = e3 & PAGE-ADDRESS-MASK
+  let e2 = load64(pd + ((virt >> 21) & 511) * 8)
+  if (e2 & 5) != 5 || (e2 & 128) != 0 { return -1 }
+  let pt = e2 & PAGE-ADDRESS-MASK
+  let slot = pt + ((virt >> 12) & 511) * 8
+  let leaf = load64(slot)
+  if (leaf & 5) != 5 { return -1 }
+  store64(slot, 0)
+  invlpg(virt)
+  return 0
+}
+
+fn domain-user-object-claim(domain: Int, owner: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != 0 || load64(row + 8) != 0 || load64(row + 16) != 0 { return -1 }
+  store64(row,owner)
+  return 0
+}
+
+fn domain-user-object-reference(domain: Int, owner: Int, change: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != owner || load64(row + 16) != 0 || (change != 1 && change != -1) { return -1 }
+  let count = load64(row + 8) + change
+  if count < 0 || count > 32 { return -1 }
+  store64(row + 8,count)
+  return 0
+}
+
+// Ownership stays installed across the walk and across any failure. The permit
+// is private, exact-owner and IRQ-scoped; legacy unowned teardown is unchanged.
+fn domain-user-object-revoke(domain: Int, owner: Int) -> Int {
+  if domain-current != 0 || domain <= 0 || domain >= domain-count || owner <= 0 { return -1 }
+  if cr3-read() != load64(domain-table) || domain-user-object-table == 0 { return -1 }
+  let row = domain-user-object-table + domain * 24
+  if load64(row) != owner || load64(row + 8) != 0 || load64(row + 16) != 0 { return -1 }
+  let reader = load64(0x4198)
+  if reader == 0 { return -1 }
+  let flags = invoke1(reader,0)
+  cli()
+  store64(row + 16,owner)
+  let result = domain-destroy-user(domain)
+  store64(row + 16,0)
+  if result == 0 { store64(row,0) }
+  if (flags & 512) != 0 { sti() }
+  return result
 }

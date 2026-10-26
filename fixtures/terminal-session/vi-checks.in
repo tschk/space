@@ -1,0 +1,112 @@
+package space.kernel
+import "../../components/terminal-seat.in"
+import "../../components/linux-process-terminal.in"
+
+var terminal-vi-trace: Int = 0
+var terminal-vi-trace-size: Int = 0
+
+fn terminal-vi-drain(session: Int, owner: Int) -> Int {
+  let count = 0
+  while terminal-session-query(session,owner,3) > 0 {
+    let byte = terminal-session-output(session,owner)
+    if byte < 0 || terminal-vi-trace-size >= 65536 { panic("vi native output capture") }
+    store8(terminal-vi-trace + terminal-vi-trace-size,byte)
+    terminal-vi-trace-size += 1
+    count += 1
+  }
+  return count
+}
+
+fn terminal-vi-free() -> Int {
+  let page = free-list
+  let count = 0
+  while page != 0 && count < 131072 { count += 1;page = load64(page) }
+  if page != 0 { panic("vi free page chain") }
+  return count
+}
+
+fn terminal-vi-file(expected: Int, bytes: Int, buffer: Int) -> void {
+  if fs-read-file("/tui.txt",buffer,64) != bytes + 1 { panic("vi saved length") }
+  let i = 0
+  while i < bytes {
+    if load8(buffer + i) != load8(expected + i) { panic("vi saved exact bytes") }
+    i += 1
+  }
+  if load8(buffer + bytes) != 10 { panic("vi saved newline") }
+}
+
+fn terminal-vi-fixture(port: Int) -> void {
+  let authority = cap-mint(root-realm,cap-memory() | cap-serial() | cap-storage() | cap-timer())
+  let owner = cap-mint(obj-alloc(271),cap-memory())
+  let seat = cap-mint(obj-alloc(272),cap-input())
+  if authority < 0 || owner < 0 || seat < 0 { panic("vi native grants") }
+  terminal-vi-trace = alloc(65536)
+  let buffer = alloc(64)
+  let i = 0
+  while i < 8 { store8(buffer + i,load8("original" + i));i += 1 }
+  store8(buffer + 8,10)
+  if fs-write-file("/tui.txt",buffer,9) != 0 { panic("vi original seed") }
+  let cap = current-cap
+  let caps = cap-count
+  let fs = rdmsr(0xC0000100)
+  let gs = rdmsr(0xC0000101)
+  let heap = 0
+  let free = 0
+  let domains = 0
+  let run = 0
+  linux-process-trace = 1
+  while run < 2 {
+    let hash = -3750763034362895579
+    let byte = 0
+    while byte < TERMINAL-VI-ELF-SIZE { hash = (hash ^ load8(0x10000000 + byte)) * 1099511628211;byte += 1 }
+    if hash != TERMINAL-VI-FNV { panic("vi original ELF mutated") }
+    if run == 1 { terminal-vi-file("native42original",16,buffer) }
+    let session = terminal-session-open(owner,seat,80,24)
+    if session <= 0 || terminal-seat-focus(session,owner,seat) != 0 { panic("vi native session") }
+    ps2-kbd-init()
+    serial-write-cstr(port,"vi: begin ");serial-write-dec-wide(port,run);serial-nl(port)
+    let token = linux-process-terminal-start(0x10000000,TERMINAL-VI-ELF-SIZE,"/busybox","vi","/tui.txt",authority,session,owner)
+    if token <= 0 { serial-write-dec-wide(port,token);panic("vi original activation") }
+    serial-write-cstr(port,"vi: keyboard ready ");serial-write-dec-wide(port,run);serial-nl(port)
+    let keys = 0
+    let turns = 0
+    while linux-process-terminal-query(token,authority,0) == 1 && turns < 500000000 {
+      let progress = terminal-vi-drain(session,owner)
+      let key = ps2-kbd-getchar()
+      if key >= 0 {
+        if key > 127 || terminal-seat-deliver(seat,key) != 0 { panic("vi focused PS2 delivery") }
+        serial-write-cstr(port,"vi: key ");serial-write-dec-wide(port,run);serial-put(port,32)
+        serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,key);serial-nl(port)
+        keys += 1
+        progress = 1
+      }
+      let deadline = linux-process-terminal-query(token,authority,4)
+      if deadline > 0 {
+        let now = counter-read-authorized(authority)
+        if now < 0 { panic("vi native timer lease") }
+        if now >= deadline { progress = 1 }
+      }
+      if terminal-session-query(session,owner,2) > 0 { progress = 1 }
+      if progress != 0 { linux-process-terminal-resume(token,authority) }
+      if domain-current != 0 || user-context-active != 0 || user-budget-active != 0 || domain-user-syscall-hook != 0 || rdmsr(0xC0000100) != fs || rdmsr(0xC0000101) != gs { panic("vi stopped supervisor state") }
+      turns += 1
+    }
+    terminal-vi-drain(session,owner)
+    let result = linux-process-terminal-query(token,authority,1)
+    serial-write-cstr(port,"vi: end ");serial-write-dec-wide(port,run);serial-put(port,32);serial-write-dec-wide(port,result)
+    serial-put(port,32);serial-write-dec-wide(port,keys);serial-put(port,32);serial-write-dec-wide(port,linux-process-terminal-query(token,authority,3));serial-nl(port)
+    if linux-process-terminal-query(token,authority,0) != 2 || result != 0 { panic("vi actual interactive exit") }
+    if run == 0 && keys != 14 { panic("vi first keyboard count") }
+    if run == 1 && keys != 13 { panic("vi reopen keyboard count") }
+    if linux-process-terminal-close(token,authority) != 0 || terminal-session-close(session,owner) != 0 || terminal-seat-clear(seat) != 0 { panic("vi native retirement") }
+    if run == 0 { terminal-vi-file("native42original",16,buffer) }
+    else { terminal-vi-file("again42native42original",23,buffer) }
+    if current-cap != cap || cap-count != caps || linux-process-active != 0 || linux-process-cleanup-failed != 0 { panic("vi owned state") }
+    if run == 0 { heap = heap-next;free = terminal-vi-free();domains = domain-count }
+    else if heap != heap-next || free != terminal-vi-free() || domains != domain-count { panic("vi repeated resource lifetime") }
+    serial-write-cstr(port,"vi: saved exact ");serial-write-dec-wide(port,run);serial-nl(port)
+    run += 1
+  }
+  serial-write-cstr(port,"vi: trace ");serial-write-dec-wide(port,terminal-vi-trace);serial-put(port,32);serial-write-dec-wide(port,terminal-vi-trace-size);serial-nl(port)
+  serial-write-cstr(port,"vi: two actual original keyboard edit/save/reopen processes PASS");serial-nl(port)
+}

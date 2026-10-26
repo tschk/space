@@ -1,0 +1,62 @@
+{
+  "goal_status": "OPEN",
+  "scope": "Focused protected client typography continuation; not a new complete163-gate lab",
+  "source_commit": "94799a981d2b6d0e57459157c7c887539fcc1ab8",
+  "checks": [
+    {
+      "name": "protected-windows",
+      "receipt": "/workspace/protected-font-final-windows/report.json",
+      "sha256": "116714e594d27dcece42b1c86a37e5c84aabf3e448c4cfced94fac2a3a39e336"
+    },
+    {
+      "name": "protected-faults",
+      "receipt": "/workspace/protected-font-final-faults/report.json",
+      "sha256": "f2193ab0a975ca62f051bae17455957a94916d131045a3be0ad395f721e0fb6a"
+    },
+    {
+      "name": "protected-persistence",
+      "receipt": "/workspace/protected-font-final-persistence/report.json",
+      "sha256": "f3349f37873ce820f51527cc4ccd448ead277d95745d15947df9a7b3bb237372"
+    },
+    {
+      "name": "protected-lifetime",
+      "receipt": "/workspace/protected-font-final-lifetime/report.json",
+      "sha256": "0d8d3ebd6fe2a44a2f9aa1f367e24d8d29cd7f8f79c89a52f8bb08c4ffef2451"
+    },
+    {
+      "name": "default-windows",
+      "receipt": "/workspace/protected-font-final-default/report.json",
+      "sha256": "ed61b7b6652e139879c2221f83d4cdbef2df099b933b4d13a8fd0b52d5d32614"
+    },
+    {
+      "name": "default-faults",
+      "receipt": "/workspace/protected-font-final-default-faults/report.json",
+      "sha256": "2332a86e6fa2932dd4b5af65f6b954765a434262eff72afe0aebae67619cb4d9"
+    },
+    {
+      "name": "default-persistence",
+      "receipt": "/workspace/protected-font-final-default-persistence/report.json",
+      "sha256": "2c8e94d26944daa3e26a805238259f5d45b8bbb7940b8ec326d5bdb7c75ee39d"
+    },
+    {
+      "name": "default-lifecycle",
+      "receipt": "/workspace/protected-font-final-default-lifecycle/report.json",
+      "sha256": "82bd586cc1c3b85d42c23031395b4e242947cdcd7e35afdde344e6d10907adef"
+    },
+    {
+      "name": "legacy-windows",
+      "receipt": "/workspace/protected-font-final-legacy-windows/report.json",
+      "sha256": "adfdefcf1aaf65dc327e01ba5a7d871c68be9da04e8f41e854f6821315a90eea"
+    },
+    {
+      "name": "launcher",
+      "log": "/workspace/protected-font-final-launcher.log",
+      "sha256": "5f7e540330585ad4b319988dcd71f59cc18791c3564a38b4655dc1997a08031b"
+    },
+    {
+      "name": "damage",
+      "log": "/workspace/protected-font-final-damage.log",
+      "sha256": "9140d077c1cc477364131a9069d01a2bc5a88da2a42eaabd8341826386eeac56"
+    }
+  ]
+}

@@ -44,7 +44,8 @@ fn app-sysinfo-entry(cap-info: Int) -> Int {
   let k = 0
   while k < 8 {
     x = x ^ (x << 13)
-    x = x ^ (x >> 7)
+    // Xorshift uses an unsigned 64-bit word; Int right shift sign-extends.
+    x = x ^ ((x >> 7) & 0x01FFFFFFFFFFFFFF)
     x = x ^ (x << 17)
     k = k + 1
   }

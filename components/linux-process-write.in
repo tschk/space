@@ -1,0 +1,61 @@
+package space.kernel
+
+// Finite synchronous serial/regular-file profile. Pipes and retained terminals
+// need owned vector continuation and refuse before publishing any bytes.
+fn linux-process-writev(fd:Int,vector:Int,count:Int)->Int{
+ fd=linux-process-int32(fd)
+ if cap-check(linux-process-authority,cap-memory())==0{return -13;}
+ if count<0{return -22;}if count>64{return -95;}
+ if linux-process-pipe-is(fd)!=0{return -95;}
+ let host=linux-process-file-host(fd)
+ if host<3{
+  if fd!=1 && fd!=2{return -9;}
+  if (fd==1 && linux-process-stdout-open==0) || (fd==2 && linux-process-stderr-open==0){return -9;}
+  if linux-process-terminal-entry!=0{return -95;}
+  if cap-check(linux-process-authority,cap-serial())==0{return -13;}
+ }else{if (load64(vfs-fd-table+host*32+16)&3)==VFS-O-RDONLY{return -9;}}
+ if count==0{return 0;}
+ if linux-process-range(vector,count*16,0)==0{return -14;}
+ let total=0;let i=0;
+ while i<count{
+  let buffer=linux-process-file-load64(vector+i*16);let bytes=linux-process-file-load64(vector+i*16+8);
+  if bytes<0 || bytes>65536 - total{return -22;}
+  if bytes>0 && linux-process-range(buffer,bytes,0)==0{return -14;}
+  total+=bytes;i+=1;
+ }
+ let done=0;i=0;while i<count{
+  let buffer=linux-process-file-load64(vector+i*16);let bytes=linux-process-file-load64(vector+i*16+8);
+  if bytes>0{
+   let result=linux-process-write-call(fd,buffer,bytes)
+   if result<0{if done>0{return done;}return result;}
+   done+=result;if result<bytes{return done;}
+  }i+=1;
+ }return done;
+}
+
+// Shared scalar write behavior; retained terminal writes are intercepted before this.
+fn linux-process-write-call(fd:Int,buffer:Int,length:Int)->Int{
+ let result= -38
+    if linux-process-pipe-is(fd) != 0 { result = linux-process-blocking-write(fd,buffer,length,0) }
+    else if linux-process-file-host(fd) >= 3 || (fd != 1 && fd != 2) { result = linux-process-file-write(fd,buffer,length) }
+    else if (fd == 1 && linux-process-stdout-open == 0) || (fd == 2 && linux-process-stderr-open == 0) { result = -9 }
+    else if cap-check(linux-process-authority, cap-serial()) == 0 { result = -13 }
+    else if buffer < 0 || length < 0 || length > 65536 { result = -22 }
+    else if linux-process-range(buffer, length, 0) == 0 { result = -14 }
+    else {
+      let done = 0
+      result = length
+      while done < length && result >= 0 {
+        let count = length - done
+        if count > 4096 { count = 4096 }
+        if linux-process-copy-in(buffer + done,linux-process-file-buffer,count) != 0 { result = -14 }
+        else {
+          let i = 0
+          while i < count { serial-put(com1(),load8(linux-process-file-buffer + i));i = i + 1 }
+          done = done + count
+        }
+      }
+      linux-process-output-bytes = linux-process-output-bytes + done
+    }
+ return result
+}

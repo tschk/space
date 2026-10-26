@@ -1,0 +1,43 @@
+package space.kernel
+
+// Pure Unicode scalar mechanics. Inputs are bytes/code units, never pointers
+// or authority. Packed successful steps hold consumed units in bits32.. and
+// the Unicode scalar below; malformed input returns-1.
+fn unicode-utf8-decode(a:Int,b:Int,c:Int,d:Int,bytes:Int)->Int{
+ if bytes<=0 || a<0 || a>255{return -1;}
+ if a<128{return (1<<32)|a;}
+ if a<194 || a>244 || bytes<2 || b<128 || b>191{return -1;}
+ if a<224{return (2<<32)|((a&31)<<6)|(b&63);}
+ if a==224 && b<160{return -1;}if a==237 && b>=160{return -1;}
+ if a==240 && b<144{return -1;}if a==244 && b>=144{return -1;}
+ if bytes<3 || c<128 || c>191{return -1;}
+ if a<240{return (3<<32)|((a&15)<<12)|((b&63)<<6)|(c&63);}
+ if bytes<4 || d<128 || d>191{return -1;}
+ return (4<<32)|((a&7)<<18)|((b&63)<<12)|((c&63)<<6)|(d&63);
+}
+// Consume the maximal well-formed prefix of a malformed UTF8 subsequence.
+// The caller substitutes one U+FFFD for each such prefix in replacement mode.
+fn unicode-utf8-invalid-prefix(a:Int,b:Int,c:Int,bytes:Int)->Int{
+ if a<194 || a>244 || bytes<2 || b<128 || b>191{return 1;}
+ if a==224 && b<160{return 1;}if a==237 && b>=160{return 1;}
+ if a==240 && b<144{return 1;}if a==244 && b>=144{return 1;}
+ if a<224{return 1;}
+ if bytes<3 || c<128 || c>191{return 2;}
+ if a<240{return 1;}return 3;
+}
+fn unicode-utf16-decode(a:Int,b:Int,units:Int)->Int{
+ if units<=0 || a<0 || a>65535{return -1;}
+ if a<0xd800 || a>0xdfff{return (1<<32)|a;}
+ if a>=0xdc00 || units<2 || b<0xdc00 || b>0xdfff{return -1;}
+ return (2<<32)|(((a - 0xd800)<<10)+(b - 0xdc00)+0x10000);
+}
+fn unicode-utf8-width(scalar:Int)->Int{
+ if scalar<0 || scalar>0x10ffff || (scalar>=0xd800 && scalar<=0xdfff){return 0;}
+ if scalar<128{return 1;}if scalar<2048{return 2;}if scalar<65536{return 3;}return 4;
+}
+fn unicode-utf8-byte(scalar:Int,index:Int)->Int{
+ let bytes=unicode-utf8-width(scalar);if index<0 || index>=bytes{return -1;}
+ if bytes==1{return scalar;}
+ if index==0{if bytes==2{return 192|(scalar>>6);}if bytes==3{return 224|(scalar>>12);}return 240|(scalar>>18);}
+ return 128|((scalar>>((bytes - index - 1)*6))&63);
+}

@@ -26,6 +26,16 @@ PE fixture loader does not provide a general Windows environment.
 
 ---
 
+## Active executable coverage goal
+
+Keep growing observable Linux, Darwin and Windows behavior together with a
+usable GUI test platform. The [coverage goal](compatibility-coverage-goal.md)
+defines milestones, source references and acceptance evidence. Run
+`scripts/check-compatibility-coverage.py --tier all --in <checkout>/in-cli/target/release/in --out <new-evidence-directory>`
+to retain source/compiler hashes, per-gate logs, artifacts and a JSON result.
+Individual tiers are `contracts`, `model`, `runtime` and `gui`; these evidence
+levels must not be reported as interchangeable compatibility coverage.
+
 ## Research anchors
 
 ### Windows / ReactOS
@@ -36,6 +46,8 @@ PE fixture loader does not provide a general Windows environment.
   ReactOS executive managers in full.
 
 ### Darwin / XNU
+- User-space loader/framework research and executable GUI slices:
+  [Rosemary macOS reference](rosemary-macos-reference.md).
 - Kernel = **Mach** + **BSD**.
 - Files / process / POSIX-ish APIs = **BSD syscalls**.
 - Mach = ports, tasks, VM messages.

@@ -1,0 +1,76 @@
+package space.fixture
+import "../../components/fs-directory-snapshot.in"
+fn fum-check(expected:Int,actual:Int)->void{
+ if expected!=actual{serial-write-cstr(com1(),"native-utc: expected ");serial-write-dec-wide(com1(),expected);serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);serial-nl(com1());panic("native UTC metadata contract");}
+}
+fn fum-equal(a:Int,b:Int,bytes:Int)->void{let i=0;while i<bytes{if load8(a+i)!=load8(b+i){serial-write-dec-wide(com1(),i);panic("native UTC bytes changed");}i+=1;}}
+fn fum-fill(buffer:Int,bytes:Int,value:Int)->void{let i=0;while i<bytes{store8(buffer+i,value);i+=1;}}
+fn fum-free()->Int{let frame=free-list;let count=0;while frame!=0 && count<131072{frame=load64(frame);count+=1;}if frame!=0{panic("native UTC free cycle");}return count;}
+fn fum-snapshot(storage:Int,output:Int,scratch:Int)->void{
+ fum-check(128,fs-directory-details-into("/timed",storage,output,128,scratch,4224));
+ fum-check(FS-DIRECTORY-SNAPSHOT-MAGIC+1,load64(output));fum-check(sf-mount-id,load64(output+8));fum-check(1,load64(output+16));fum-check(96,load64(output+24));
+ fum-check(1,load64(output+32));fum-check(4,load64(output+56));fum-check(0,strcmp(output+64,"file"));fum-check(420,load64(output+120));
+ let created=load64(output+96);let accessed=load64(output+104);let modified=load64(output+112);
+ if created<1792800000 || created>1792800060 || accessed<created || modified<created || accessed>1792800060 || modified>1792800060{panic("native UTC sample range");}
+}
+fn native-utc-check(port:Int)->void{
+ if sf-mem-disk==0 || sf-disk-ready!=1 || volume-ready!=0{panic("native UTC RAM profile");}
+ fum-check(-1,dyn-resolve-idx("nvme-private-read-u32"));fum-check(-1,dyn-resolve-idx("fs-metadata-format-utc"));fum-check(-1,dyn-resolve-idx("fs-directory-details-into"));
+ if dyn-resolve-idx("serial-write-cstr")<0{panic("native UTC public registry control");}
+ let table=alloc(48);store64(table,BOOT-IMAGE-TABLE-MAGIC);store64(table+8,1);store64(table+16,254);store64(table+24,0x2f0000);store64(table+32,FUM-PRIVATE-SIZE);store64(table+40,0);
+ let boot=load64(0x40d0);store64(0x40d0,table);let beforeheap=heap-next;let beforecaps=cap-count;let beforedomains=domain-count;let live=runtime-instance-live;
+ fum-check(-1,sci-load-runtime-component(port,0x2f0000,"private-native-utc",1,1,0));fum-check(beforeheap,heap-next);fum-check(beforecaps,cap-count);fum-check(beforedomains,domain-count);fum-check(live,runtime-instance-live);store64(0x40d0,boot);
+ let storage=cap-mint(root-realm,cap-storage());let timer=cap-mint(root-realm,cap-timer());let wrong=cap-mint(root-realm,cap-memory());
+ let output=alloc(128);let scratch=alloc(4224);let baseline=alloc(128);let readbuf=alloc(128);let saved=alloc(SF-MEM-DISK-SIZE);let large=alloc(8193);let large-read=alloc(8193);
+ fum-fill(output,128,165);fum-check(-8,fs-directory-details-into("/",storage,output,128,scratch,4224));let i=0;while i<128{fum-check(165,load8(output+i));i+=1;}
+ let oldname=alloc(8);store8(oldname,47);store8(oldname+1,111);store8(oldname+2,108);store8(oldname+3,100);store8(oldname+6,0);
+ i=0;while i<20{store8(oldname+4,48+i/10);store8(oldname+5,48+i%10);fum-check(0,fs-write-file(oldname,"x",1));i+=1;}
+ let mount=sf-mount-id;let heap=heap-next;let free=fum-free();cpu-mem-copy64(saved,sf-mem-disk,SF-MEM-DISK-SIZE/8);
+ let end=heap-end;heap-end=heap-next+16;fum-check(-1,fs-metadata-format-utc(256,256,storage,timer));heap-end=end;
+ fum-check(-1,fs-metadata-format-utc(2,256,storage,timer));fum-check(-1,fs-metadata-format-utc(257,256,storage,timer));
+ fum-check(-2,fs-metadata-format-utc(256,256,wrong,timer));fum-check(-2,fs-metadata-format-utc(256,256,storage,wrong));
+ fum-check(heap,heap-next);fum-check(free,fum-free());fum-check(mount,sf-mount-id);fum-equal(saved,sf-mem-disk,SF-MEM-DISK-SIZE);
+ fum-check(0,fs-metadata-format-utc(256,256,storage,timer));fum-check(2,load32(sf-super+SF-SB-VERSION));
+ let tableaddr=sf-mem-disk+load64(sf-super+SF-SB-INODE-TABLE-START)*4096;i=1;while i<256{fum-check(0,load32(tableaddr+i*256));i+=1;}
+ if fs-mkdir("/timed")<0{panic("native UTC directory");}fum-check(0,fs-write-file("/timed/file","initial",7));
+ fum-check(0,fs-stat("/timed/file",readbuf));let created=load64(readbuf+SF-ST-CTIME);
+ fum-check(7,fs-read-file("/timed/file",readbuf,128));fum-equal(readbuf,"initial",7);
+ i=0;while i<8193{store8(large+i,i&255);i+=1;}fum-check(0,fs-write-file("/large",large,8193));
+ // A real PIT interval separates the creation and completed-write sample.
+ let until=ticks+120;while ticks<until{sti();hlt();cli();}
+ fum-check(8193,fs-read-file("/large",large-read,8193));fum-equal(large,large-read,8193);fum-check(0,fs-stat("/large",readbuf));if load64(readbuf+SF-ST-ATIME)<=load64(readbuf+SF-ST-CTIME){panic("native UTC noninline access time");}
+ fum-check(10,sparkfs-pread("/large",large-read,10,4090));fum-equal(large+4090,large-read,10);
+ fum-check(0,fs-write-file("/large",large,11));fum-check(0,fs-stat("/large",readbuf));fum-check(11,load64(readbuf+SF-ST-SIZE));
+ fum-check(0,fs-write-file("/timed/file","new",3));fum-check(0,fs-stat("/timed/file",readbuf));
+ fum-check(created,load64(readbuf+SF-ST-CTIME));if load64(readbuf+SF-ST-MTIME)<=created{panic("native UTC modification did not advance");}
+ fum-check(0,fs-rename("/timed/file","/timed/other"));fum-check(0,fs-rename("/timed/other","/timed/file"));
+ fum-snapshot(storage,output,scratch);cpu-mem-copy64(baseline,output,16);
+ fum-check(0,fs-stat("/timed",readbuf));if load64(readbuf+SF-ST-MTIME)<=load64(readbuf+SF-ST-CTIME){panic("native UTC directory modification time");}
+ fum-fill(output,128,165);fum-check(-2,fs-directory-details-into("/timed",wrong,output,128,scratch,4224));i=0;while i<128{fum-check(165,load8(output+i));i+=1;}
+ fum-check(-6,fs-directory-details-into("/timed",storage,output,32,scratch,4128));i=0;while i<128{fum-check(165,load8(output+i));i+=1;}
+ let inode=sf-lookup-path("/timed/file");let field=sf-inode-addr(inode)+SF-IN-CTIME;let good=load64(field);store64(field,-1);
+ fum-check(-7,fs-directory-details-into("/timed",storage,output,128,scratch,4224));i=0;while i<128{fum-check(165,load8(output+i));i+=1;}store64(field,good);
+
+ cpu-mem-copy64(saved,sf-mem-disk,SF-MEM-DISK-SIZE/8);heap=heap-next;free=fum-free();
+ // Coherent hardware RTC setup freeze is a genuine unavailable-clock sample.
+ let rtc=time-component-rtc-read(0x0B);outb(0x70,0x0B);outb(0x71,rtc|128);
+ fum-check(-1,fs-write-file("/timed/file","bad",3));fum-check(-1,fs-write-file("/denied","bad",3));
+ fum-fill(readbuf,128,165);fum-check(-1,fs-read-file("/timed/file",readbuf,128));i=0;while i<128{fum-check(165,load8(readbuf+i));i+=1;}
+ fum-check(-1,fs-delete("/timed/file"));fum-check(-1,fs-rename("/timed/file","/timed/denied"));fum-check(-4,fs-metadata-bind-clock(storage,timer));
+ fum-check(heap,heap-next);fum-check(free,fum-free());fum-equal(saved,sf-mem-disk,SF-MEM-DISK-SIZE);
+ outb(0x70,0x0B);outb(0x71,rtc);
+ let row=cap-table-base+timer*16;let target=load64(row);let rights=load64(row+8);fum-check(0,cap-revoke(timer));
+ fum-check(-1,fs-write-file("/timed/file","bad",3));fum-snapshot(storage,output,scratch);fum-equal(output,baseline,128);fum-equal(saved,sf-mem-disk,SF-MEM-DISK-SIZE);
+ store64(row,root-realm+1);store64(row+8,rights);fum-check(-1,fs-write-file("/timed/file","bad",3));fum-equal(saved,sf-mem-disk,SF-MEM-DISK-SIZE);
+ store64(row,target);store64(row+8,rights);
+ // A missing mount binding does not reinterpret persistent seconds as ticks.
+ fs-metadata-clock-mount=0;fum-check(-1,fs-write-file("/timed/file","bad",3));fum-check(0,fs-metadata-bind-clock(storage,timer));
+ let domains=domain-count;let caps=cap-count;let objects=obj-arena-next;heap=heap-next;free=fum-free();
+ let cycle=0;while cycle<22{
+  fum-snapshot(storage,output,scratch);fum-equal(output,baseline,128);fum-check(heap,heap-next);fum-check(free,fum-free());fum-check(domains,domain-count);fum-check(caps,cap-count);fum-check(objects,obj-arena-next);fum-equal(saved,sf-mem-disk,SF-MEM-DISK-SIZE);
+  cycle+=1;
+ }
+ // Complete independent byte record on serial, not just a success marker.
+ serial-write-cstr(port,"native-utc: record ");i=0;while i<128{serial-put(port,load8("0123456789abcdef"+(load8(output+i)>>4)));serial-put(port,load8("0123456789abcdef"+(load8(output+i)&15)));i+=1;}serial-nl(port);
+ serial-write-cstr(port,"native-utc: UTC creation/access/modification, clock denial and21 stable observations PASS");serial-nl(port);
+}

@@ -1,0 +1,42 @@
+package space.kernel
+fn fasmg-linux-free()->Int{let n=0;let p=free-list;while p!=0 && n<32768{n+=1;p=load64(p);}return n;}
+fn fasmg-linux-denied(image:Int,size:Int,offset:Int,value:Int,authority:Int)->void{
+ let old=load64(image+offset);let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;store64(image+offset,value);
+ let status=linux-process-run(image,size,"fasmg","input.asm","denied.bin",authority);store64(image+offset,old);
+ if status!= -8 || heap-next!=heap || free-list!=free || domain-count!=domains || cap-count!=caps{panic("Linux larger image refusal allocated");}
+}
+fn fasmg-linux-check(port:Int)->void{
+ if heap-next>=0x10000000{panic("Original Linux source collision");}heap-end=0x10000000;
+ let authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage()|cap-timer());let buffer=alloc(4096);let image=0x10000000;let size=72082;linux-process-budget-ticks=1000;
+ let entry=linux-process-elf-entry(image,size);serial-write-cstr(port,"original-linux: entry ");serial-write-hex(port,entry);serial-nl(port);if entry<0{panic("Original Linux ELF not admitted");}
+ serial-write-cstr(port,"original-linux: BEGIN help");serial-nl(port);
+ let status=linux-process-run-counted-input(image,size,"fasmg","","",authority,-1,1);serial-write-cstr(port,"original-linux: help status ");serial-write-dec-wide(port,status);serial-nl(port);if status!=1{panic("Original Linux help failed");}
+ let input="db 'Space',10\nrepeat 4\n dw % * 257\nend repeat\n";if fs-write-file("/input.asm",input,strlen(input))!=0{panic("Original Linux source seed");}
+ status=linux-process-run(image,size,"fasmg","input.asm","output.bin",authority);serial-write-cstr(port,"original-linux: assemble status ");serial-write-dec-wide(port,status);serial-nl(port);if status!=0{panic("Original Linux assembly failed");}
+ let bad="this_is_not_an_instruction\n";if fs-write-file("/bad.asm",bad,strlen(bad))!=0{panic("Original Linux invalid source seed");}
+ let clocksource="dq %t\n";if fs-write-file("/clock.asm",clocksource,strlen(clocksource))!=0{panic("Original Linux clock source seed");}store64(buffer,0);if fs-write-file("/clock.bin",buffer,8)!=0{panic("Original Linux clock output seed");}
+ let prior=linux-process-authority;linux-process-authority=-1;if linux-process-time(0)!= -13{panic("Linux clock ignored timer grant");}linux-process-authority=authority;
+ if linux-process-time(1)!= -14 || dyn-resolve-idx("linux-process-time")!= -1{panic("Linux clock pointer/native-export denial");}linux-process-authority=prior;
+ let specimen=alloc(size);let copied=0;while copied<size{store8(specimen+copied,load8(image+copied));copied+=1;}
+ let ph=load64(specimen+32);let last=ph+3*56;
+ fasmg-linux-denied(specimen,size,last+40,0x1800001,authority);
+ fasmg-linux-denied(specimen,size,last+40,0x1800000,authority);
+ fasmg-linux-denied(specimen,size,ph,0x700000001,authority);
+ fasmg-linux-denied(specimen,size,last+16,0x100000,authority);
+ fasmg-linux-denied(specimen,size,ph+32,load64(specimen+ph+40)+1,authority);
+ fasmg-linux-denied(specimen,size,ph,3,authority);
+ let expected="Space\n";let heap=heap-next;let free=fasmg-linux-free();let domains=domain-count;let caps=cap-count;let fd=vfs-fd-alloc();let entries=2;
+ let cycle=0;while cycle<21{let mode=0;while mode<3{
+  let source="input.asm";let output="output.bin";let expectedstatus=0;if mode==1{source="bad.asm";output="rejected.bin";expectedstatus=2;}if mode==2{source="missing.asm";output="missing.bin";expectedstatus=2;}
+  let clockcase=0;let clockbefore=0;if cycle==0 && mode==0{source="clock.asm";output="clock.bin";clockcase=1;clockbefore=time-component-wallclock();}
+  status=linux-process-run(image,size,"fasmg",source,output,authority);
+  if status!=expectedstatus{serial-write-dec-wide(port,status);panic("Original Linux compiler success/error exit");}entries+=1;
+  if clockcase!=0{let clockafter=time-component-wallclock();if clockbefore<0 || clockafter<clockbefore || fs-read-file("/clock.bin",buffer,4096)!=8 || load64(buffer)<clockbefore || load64(buffer)>clockafter{panic("Original Linux time syscall did not supply actual RTC bytes");}}
+  else if mode==0{if fs-read-file("/output.bin",buffer,4096)!=14{panic("Original Linux repeated output size");}let i=0;while i<6{if load8(buffer+i)!=load8(expected+i){panic("Original Linux repeated output text");}i+=1;}i=0;while i<4{if load16(buffer+6+i*2)!=(i+1)*257{panic("Original Linux repeated output arithmetic");}i+=1;}}
+  else{let path="/rejected.bin";if mode==2{path="/missing.bin";}if fs-stat(path,buffer)>=0{panic("Original Linux error produced output");}}
+  if heap-next!=heap || fasmg-linux-free()!=free || domain-count!=domains || cap-count!=caps || vfs-fd-alloc()!=fd || linux-process-active!=0 || domain-user-syscall-hook!=0 || user-context-active!=0 || user-budget-active!=0 || user-space-quarantined(authority)!=0{panic("Original Linux repeated ownership leak");}
+  mode+=1;
+ }cycle+=1;}
+ cap-revoke(authority);serial-write-cstr(port,"original-linux: completed original application entries ");serial-write-dec-wide(port,entries);serial-nl(port);
+ serial-write-cstr(port,"original-linux: original ELF assembler generated exact 14-byte macro/arithmetic file inside Space PASS");serial-nl(port);
+}

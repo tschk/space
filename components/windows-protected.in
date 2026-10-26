@@ -1,0 +1,723 @@
+package space.kernel
+
+import "windows-pe-application.in"
+import "windows-pe-startup.in"
+import "windows-process-parameters.in"
+
+// Bounded protected PE32+ profile. Foreign payload policy stays at this edge;
+// the native domain runtime owns page-table entry and teardown.
+const WINDOWS-PROTECTED-LOW = 0x44000000
+const WINDOWS-PROTECTED-HIGH = 0x48000000
+const WINDOWS-PROTECTED-MAX-FRAMES = 1152
+const WINDOWS-PROTECTED-STUB = 0x40007000
+var windows-protected-frames: Int = 0
+var windows-protected-virtuals: Int = 0
+var windows-protected-count: Int = 0
+var windows-protected-context: Int = 0
+var windows-protected-domain: Int = 0
+var windows-protected-last-domain: Int = 0
+var windows-protected-authority: Int = -1
+var windows-protected-busy: Int = 0
+var windows-protected-error: Int = 0
+var windows-protected-profile: Int = 0
+var windows-protected-budget: Int = 100
+var windows-protected-storage: Int = -1
+var windows-protected-files: Int = 0
+var windows-protected-paths: Int = 0
+var windows-protected-buffer: Int = 0
+var windows-protected-shares: Int = 0
+
+fn windows-protected-rva(image: Int, size: Int, rva: Int, bytes: Int) -> Int {
+  if rva < 0 || bytes < 0 { return -1 }
+  let i = 0
+  while i < windows-application-sections(image) {
+    let p = windows-application-section(image, i)
+    let va = load32(p + 12)
+    let raw = load32(p + 16)
+    let off = load32(p + 20)
+    if rva >= va && rva - va <= raw && bytes <= raw - (rva - va) {
+      let result = off + rva - va
+      if result <= size && bytes <= size - result { return result }
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn windows-protected-name(image: Int, size: Int, rva: Int, name: Int) -> Int {
+  let n = strlen(name) + 1
+  let off = windows-protected-rva(image, size, rva, n)
+  if off < 0 { return 0 }
+  let i = 0
+  while i < n {
+    if load8(image + off + i) != load8(name + i) { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn windows-protected-import-name(index: Int) -> Int {
+  if index == 0 { return "GetStdHandle" }
+  if index == 1 { return "WriteFile" }
+  if index == 2 { return "GetCurrentProcessId" }
+  if index == 3 { return "ExitProcess" }
+  if index == 4 { return "GetLastError" }
+  if index == 5 { return "CreateFileA" }
+  if index == 6 { return "ReadFile" }
+  if index == 7 { return "SetFilePointerEx" }
+  if index == 8 { return "CloseHandle" }
+  if index == 9 { return "GetFileSizeEx" }
+  return 0
+}
+
+// Exact two-section profile: RX code, RW/NX data and BSS; no relocation,
+// exception, TLS, resource or delay-import directories. Imports are either absent
+// or one explicit KERNEL32 descriptor with five console imports or all ten console/file imports; no ordinals.
+fn windows-protected-entry(image: Int, size: Int) -> Int {
+  if image <= 0 || size < 1536 || size > 0x200000 || (size & 511) != 0 || image > 0x100000000 - size { return -8 }
+  if posix-load16(image) != 0x5A4D || load32(image + 60) != 128 { return -8 }
+  if load32(image + 128) != 0x4550 || posix-load16(image + 132) != 0x8664 || posix-load16(image + 134) != 2 { return -8 }
+  if load64(image + 140) != 0 || posix-load16(image + 148) != 240 || posix-load16(image + 150) != 0x23 { return -8 }
+  let opt = image + 152
+  if posix-load16(opt) != 0x20B || load32(opt + 32) != 4096 || load32(opt + 36) != 512 { return -8 }
+  let base = load64(opt + 24)
+  let extent = load32(opt + 56)
+  if base < WINDOWS-PROTECTED-LOW || (base & 4095) != 0 || extent < 12288 || extent > 131072 || (extent & 4095) != 0 { return -8 }
+  if base > WINDOWS-PROTECTED-HIGH - extent || load32(opt + 60) != 512 { return -8 }
+  if posix-load16(opt + 68) != 3 || posix-load16(opt + 70) != 256 || load32(opt + 108) != 16 { return -8 }
+  let i = 0
+  while i < 16 {
+    if i != 1 && load64(opt + 112 + i * 8) != 0 { return -8 }
+    i = i + 1
+  }
+  let previous = 4096
+  let file-end = 512
+  i = 0
+  while i < 2 {
+    let p = image + 392 + i * 40
+    let vm = load32(p + 8)
+    let va = load32(p + 12)
+    let raw = load32(p + 16)
+    let off = load32(p + 20)
+    if vm <= 0 || vm > 65536 || va < previous || (va & 4095) != 0 || va > extent - vm { return -8 }
+    if raw <= 0 || raw > vm || (raw & 511) != 0 || off < file-end || (off & 511) != 0 || off > size - raw { return -8 }
+    if load64(p + 24) != 0 || load32(p + 32) != 0 { return -8 }
+    let flags = 0x60000020
+    if i == 1 { flags = 0xC0000040 }
+    if load32(p + 36) != flags { return -8 }
+    if i == 0 && vm != raw { return -8 }
+    previous = va + ((vm + 4095) & -4096)
+    file-end = off + raw
+    i = i + 1
+  }
+  if previous != extent || file-end != size { return -8 }
+  let entry = load32(opt + 16)
+  let text = image + 392
+  if entry < load32(text + 12) || entry - load32(text + 12) >= load32(text + 16) { return -8 }
+  let imp = load32(opt + 120)
+  let imp-size = load32(opt + 124)
+  if imp == 0 && imp-size == 0 { return base + entry }
+  if imp == 0 || imp-size != 40 { return -8 }
+  let descriptor = windows-protected-rva(image, size, imp, 40)
+  if descriptor < 0 { return -8 }
+  let p = image + descriptor
+  if load64(p + 4) != 0 || load64(p + 20) != 0 || load64(p + 28) != 0 || load32(p + 36) != 0 { return -8 }
+  let lookup = load32(p)
+  let iat = load32(p + 16)
+  let data = image + 432
+  if iat < load32(data + 12) || iat > load32(data + 12) + load32(data + 16) - 48 || (iat & 7) != 0 { return -8 }
+  if lookup < iat + 48 && iat < lookup + 48 { return -8 }
+  let lo = windows-protected-rva(image, size, lookup, 48)
+  let io = windows-protected-rva(image, size, iat, 48)
+  if lo < 0 || io < 0 || windows-protected-name(image, size, load32(p + 12), "KERNEL32.dll") == 0 { return -8 }
+  i = 0
+  let done = 0
+  while i <= 10 && done == 0 {
+    let current-lo = windows-protected-rva(image, size, lookup + i * 8, 8)
+    let current-io = windows-protected-rva(image, size, iat + i * 8, 8)
+    if current-lo < 0 || current-io < 0 || iat + i * 8 > load32(data + 12) + load32(data + 16) - 8 { return -8 }
+    let name = load64(image + current-lo)
+    if name == 0 {
+      if load64(image + current-io) != 0 || (i != 5 && i != 10) { return -8 }
+      done = 1
+    } else {
+      if i == 10 { return -8 }
+      if load64(image + current-io) != name { return -8 }
+      let no = windows-protected-rva(image, size, name, 3)
+      if no < 0 || posix-load16(image + no) != 0 || windows-protected-name(image, size, name + 2, windows-protected-import-name(i)) == 0 { return -8 }
+      i = i + 1
+    }
+  }
+  if done == 0 || (lookup < iat + (i + 1) * 8 && iat < lookup + (i + 1) * 8) { return -8 }
+  return base + entry
+}
+
+fn windows-protected-frame(va: Int) -> Int {
+  if windows-protected-count >= WINDOWS-PROTECTED-MAX-FRAMES { return 0 }
+  let frame = frame-alloc()
+  store64(windows-protected-frames + windows-protected-count * 8, frame)
+  store64(windows-protected-virtuals + windows-protected-count * 8, va)
+  windows-protected-count = windows-protected-count + 1
+  return frame
+}
+
+fn windows-protected-physical(addr: Int) -> Int {
+  if addr < 0 { return 0 }
+  let page = addr & -4096
+  let i = 0
+  while i < windows-protected-count {
+    if load64(windows-protected-virtuals + i * 8) == page { return load64(windows-protected-frames + i * 8) + (addr & 4095) }
+    i = i + 1
+  }
+  return 0
+}
+
+fn windows-protected-span(addr: Int, len: Int, writable: Int) -> Int {
+  if addr < 0 || len < 0 || len > 4096 || addr >= 0x800000000000 || len > 0x800000000000 - addr { return 0 }
+  let i = 0
+  while i < len {
+    if windows-protected-physical(addr + i) == 0 { return 0 }
+    if writable != 0 && (domain-page-flags(windows-protected-domain, addr + i) & 7) != 7 { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn windows-protected-load64(addr: Int) -> Int {
+  let value = 0
+  let i = 0
+  while i < 8 { value = value | (load8(windows-protected-physical(addr + i)) << (i * 8)); i = i + 1 }
+  return value
+}
+
+fn windows-protected-store32(addr: Int, value: Int) -> void {
+  let i = 0
+  while i < 4 { store8(windows-protected-physical(addr + i), value >> (i * 8)); i = i + 1 }
+}
+
+fn windows-protected-writefile(frame: Int) -> Int {
+  let handle = load64(frame + 96)
+  let addr = load64(frame + 88)
+  let len = load64(frame + 56) & 0xFFFFFFFF
+  let written = load64(frame + 48)
+  let stack = load64(frame + 144)
+  if windows-protected-span(written, 4, 1) == 0 { windows-protected-error = 998; return 0 }
+  windows-protected-store32(written, 0)
+  if windows-protected-span(stack + 40, 8, 0) == 0 { windows-protected-error = 998; return 0 }
+  if windows-protected-load64(stack + 40) != 0 { windows-protected-error = 87; return 0 }
+  if handle != 1 && handle != 2 { return windows-protected-file-write(handle, addr, len, written) }
+  if cap-check(windows-protected-authority, cap-serial()) == 0 { windows-protected-error = 5; return 0 }
+  if windows-protected-span(addr, len, 0) == 0 { windows-protected-error = 998; return 0 }
+  let i = 0
+  while i < len { serial-put(com1(), load8(windows-protected-physical(addr + i))); i = i + 1 }
+  windows-protected-store32(written, len)
+  return 1
+}
+
+// File handles are execution-local indices; VFS descriptors never cross this ABI.
+fn windows-protected-file-host(handle: Int) -> Int {
+  if handle < 3 || handle >= VFS-MAX-FDS || windows-protected-files == 0 { return -1 }
+  return load64(windows-protected-files + handle * 8)
+}
+
+fn windows-protected-files-release() -> void {
+  let i = 3
+  while i < VFS-MAX-FDS {
+    let host = windows-protected-file-host(i)
+    if host >= 3 { vfs-close(host) }
+    store64(windows-protected-files + i * 8, -1)
+    i = i + 1
+  }
+}
+
+fn windows-protected-files-ready() -> Int {
+  if cap-check(windows-protected-storage, cap-storage()) == 0 { windows-protected-error = 5; return 0 }
+  // Only synchronous direct SparkFS is admitted. Asynchronous volume scheduling
+  // requires a separate service activation contract, even with guest IRQ0 live.
+  if volume-ready != 0 || sf-disk-ready == 0 { windows-protected-error = 120; return 0 }
+  return 1
+}
+
+fn windows-protected-file-error(result: Int) -> Int {
+  windows-protected-error = 31
+  if result == -2 { windows-protected-error = 2 }
+  else if result == -9 { windows-protected-error = 6 }
+  else if result == -13 { windows-protected-error = 5 }
+  else if result == -16 { windows-protected-error = 4 }
+  else if result == -22 { windows-protected-error = 87 }
+  else if result == -5 { windows-protected-error = 1117 }
+  return 0
+}
+
+fn windows-protected-store64(addr: Int, value: Int) -> void {
+  let i = 0
+  while i < 8 { store8(windows-protected-physical(addr + i), value >> (i * 8)); i = i + 1 }
+}
+
+fn windows-protected-createfile-arguments(frame: Int) -> Int {
+  let access = load64(frame + 88) & 0xFFFFFFFF
+  let sharing = load64(frame + 56) & 0xFFFFFFFF
+  let security = load64(frame + 48)
+  let stack = load64(frame + 144)
+  if windows-protected-span(stack + 40, 24, 0) == 0 { windows-protected-error = 998; return 0 }
+  let disposition = windows-protected-load64(stack + 40) & 0xFFFFFFFF
+  let attrs = windows-protected-load64(stack + 48) & 0xFFFFFFFF
+  let template = windows-protected-load64(stack + 56)
+  if (access != 0x80000000 && access != 0x40000000 && access != 0xC0000000) || sharing > 3 || security != 0 || disposition < 1 || disposition > 5 || attrs != 0x80 || template != 0 { windows-protected-error = 87; return 0 }
+  // Creation/truncation is admitted only with explicit write access. Read-only
+  // OPEN_EXISTING retains the earlier profile without destructive widening.
+  if disposition != 3 && (access & 0x40000000) == 0 { windows-protected-error = 87; return 0 }
+  return 1
+}
+
+fn windows-protected-createfile-owned(frame:Int,slot:Int,copy:Int)->Int{
+ let access=load64(frame+88)&0xffffffff;let sharing=load64(frame+56)&0xffffffff;let stack=load64(frame+144);let disposition=windows-protected-load64(stack+40)&0xffffffff;
+      let flags = VFS-O-RDONLY
+      if access == 0x40000000 { flags = VFS-O-WRONLY }
+      if access == 0xC0000000 { flags = VFS-O-RDWR }
+      if windows-protected-share-valid(copy, flags, sharing) == 0 { windows-protected-error = 32; return -1 }
+      let exists = 0
+      if fs-stat(copy, windows-protected-buffer) == 0 {
+        exists = 1
+        if load32(windows-protected-buffer + SF-ST-TYPE) != SF-TYPE-FILE { windows-protected-error = 5; return -1 }
+      }
+      if exists != 0 && disposition == 1 { windows-protected-error = 80; return -1 }
+      if exists == 0 && (disposition == 3 || disposition == 5) { windows-protected-error = 2; return -1 }
+      if exists == 0 || disposition == 2 || disposition == 5 {
+        if fs-write-file(copy, windows-protected-buffer, 0) != 0 { windows-protected-error = 1117; return -1 }
+      }
+      let host = vfs-open-borrowed-path(copy, flags)
+      if host < 3 { windows-protected-file-error(host); return -1 }
+      store64(windows-protected-files + slot * 8, host)
+      store64(windows-protected-shares + slot * 8, sharing)
+      if disposition == 2 || disposition == 4 {
+        windows-protected-error = 0
+        if exists != 0 { windows-protected-error = 183 }
+      }
+      return slot
+}
+
+fn windows-protected-createfile(frame: Int) -> Int {
+  if windows-protected-files-ready() == 0 { return -1 }
+  if windows-protected-createfile-arguments(frame) == 0 { return -1 }
+  let path = load64(frame + 96)
+  let slot = 3
+  while slot < VFS-MAX-FDS && windows-protected-file-host(slot) >= 3 { slot = slot + 1 }
+  if slot >= VFS-MAX-FDS || vfs-fd-alloc() < 0 { windows-protected-error = 4; return -1 }
+  let copy = windows-protected-paths + slot * 256
+  let i = 0
+  while i < 256 {
+    if windows-protected-span(path + i, 1, 0) == 0 { windows-protected-error = 998; return -1 }
+    let ch = load8(windows-protected-physical(path + i))
+    store8(copy + i, ch)
+    if ch == 0 {
+      if i == 0 { windows-protected-error = 2; return -1 }
+      if sf-path-name-valid(copy) == 0 { windows-protected-error = 206; return -1 }
+      return windows-protected-createfile-owned(frame,slot,copy)
+    }
+    i = i + 1
+  }
+  windows-protected-error = 206
+  return -1
+}
+
+fn windows-protected-path-at(slot:Int)->Int{if windows-protected-profile>=12{return windows-parameters-path-slot(slot);}return windows-protected-paths+slot*256;}
+
+fn windows-protected-share-valid(path: Int, flags: Int, sharing: Int) -> Int {
+  let i = 3
+  while i < VFS-MAX-FDS {
+    let host = windows-protected-file-host(i)
+    if host >= 3 && strcmp(path, windows-protected-path-at(i)) == 0 {
+      let old-flags = load64(vfs-fd-table + host * 32 + 16) & 3
+      let old-share = load64(windows-protected-shares + i * 8)
+      if flags != VFS-O-WRONLY && (old-share & 1) == 0 { return 0 }
+      if flags != VFS-O-RDONLY && (old-share & 2) == 0 { return 0 }
+      if old-flags != VFS-O-WRONLY && (sharing & 1) == 0 { return 0 }
+      if old-flags != VFS-O-RDONLY && (sharing & 2) == 0 { return 0 }
+    }
+    i = i + 1
+  }
+  return 1
+}
+
+fn windows-protected-file-write(handle: Int, addr: Int, count: Int, written: Int) -> Int {
+  let host = windows-protected-file-host(handle)
+  if host < 3 { windows-protected-error = 6; return 0 }
+  if (load64(vfs-fd-table + host * 32 + 16) & 3) == VFS-O-RDONLY { windows-protected-error = 5; return 0 }
+  if windows-protected-files-ready() == 0 { return 0 }
+  if count > 4096 { windows-protected-error = 87; return 0 }
+  if windows-protected-span(addr, count, 0) == 0 { windows-protected-error = 998; return 0 }
+  if count == 0 { return 1 }
+  // Bound sparse-hole work performed in the synchronous kernel service.
+  let offset = vfs-fd-offset(host)
+  if offset < 0 || offset > 65536 - count { windows-protected-error = 223; return 0 }
+  let i = 0
+  while i < count { store8(windows-protected-buffer + i, load8(windows-protected-physical(addr + i))); i = i + 1 }
+  let result = vfs-write(host, windows-protected-buffer, count)
+  if result < 0 { return windows-protected-file-error(result) }
+  windows-protected-store32(written, result)
+  return 1
+}
+
+fn windows-protected-readfile(frame: Int) -> Int {
+  let handle = load64(frame + 96)
+  let buffer = load64(frame + 88)
+  let count = load64(frame + 56) & 0xFFFFFFFF
+  let written = load64(frame + 48)
+  let stack = load64(frame + 144)
+  if windows-protected-span(written, 4, 1) == 0 { windows-protected-error = 998; return 0 }
+  windows-protected-store32(written, 0)
+  if windows-protected-span(stack + 40, 8, 0) == 0 { windows-protected-error = 998; return 0 }
+  if windows-protected-load64(stack + 40) != 0 { windows-protected-error = 87; return 0 }
+  let host = windows-protected-file-host(handle)
+  if host < 3 { windows-protected-error = 6; return 0 }
+  if (load64(vfs-fd-table + host * 32 + 16) & 3) == VFS-O-WRONLY { windows-protected-error = 5; return 0 }
+  if windows-protected-files-ready() == 0 { return 0 }
+  if count > 4096 { windows-protected-error = 87; return 0 }
+  if windows-protected-span(buffer, count, 1) == 0 { windows-protected-error = 998; return 0 }
+  let result = vfs-read(host, windows-protected-buffer, count)
+  if result < 0 { return windows-protected-file-error(result) }
+  let i = 0
+  while i < result { store8(windows-protected-physical(buffer + i), load8(windows-protected-buffer + i)); i = i + 1 }
+  windows-protected-store32(written, result)
+  return 1
+}
+
+fn windows-protected-close(handle: Int) -> Int {
+  let host = windows-protected-file-host(handle)
+  if host < 3 { windows-protected-error = 6; return 0 }
+  let result = vfs-close(host)
+  if result < 0 { return windows-protected-file-error(result) }
+  store64(windows-protected-files + handle * 8, -1)
+  return 1
+}
+
+fn windows-protected-seek(frame: Int) -> Int {
+  let host = windows-protected-file-host(load64(frame + 96))
+  let distance = load64(frame + 88)
+  let output = load64(frame + 56)
+  let method = load64(frame + 48) & 0xFFFFFFFF
+  if host < 3 { windows-protected-error = 6; return 0 }
+  if output != 0 && windows-protected-span(output, 8, 1) == 0 { windows-protected-error = 998; return 0 }
+  if windows-protected-files-ready() == 0 { return 0 }
+  if distance < -0x7FFFFFFF || distance > 0x7FFFFFFF || method > 2 { windows-protected-error = 87; return 0 }
+  let base = 0
+  if method == 1 { base = vfs-fd-offset(host) }
+  if method == 2 { base = vfs-sparkfs-file-size(load64(vfs-fd-table + host * 32)) }
+  if base < 0 { windows-protected-error = 1117; return 0 }
+  if base + distance < 0 { windows-protected-error = 131; return 0 }
+  let result = vfs-lseek(host, distance, method)
+  if result < 0 { return windows-protected-file-error(result) }
+  if output != 0 { windows-protected-store64(output, result) }
+  return 1
+}
+
+fn windows-protected-filesize(frame: Int) -> Int {
+  let host = windows-protected-file-host(load64(frame + 96))
+  let output = load64(frame + 88)
+  if host < 3 { windows-protected-error = 6; return 0 }
+  if windows-protected-span(output, 8, 1) == 0 { windows-protected-error = 998; return 0 }
+  if windows-protected-files-ready() == 0 { return 0 }
+  let result = vfs-sparkfs-file-size(load64(vfs-fd-table + host * 32))
+  if result < 0 { windows-protected-error = 1117; return 0 }
+  windows-protected-store64(output, result)
+  return 1
+}
+
+// Private INT80 capsules implement only admitted imports; these service numbers
+// are runtime-local, never claimed as Windows NT syscall numbers.
+fn windows-protected-dispatch(frame: Int) -> Int {
+  if windows-protected-busy == 0 || domain-current != windows-protected-domain { store64(frame + 112, -1); return 0 }
+  if windows-protected-profile >= 2 { windows-protected-error = load32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104)) }
+  let num = load64(frame + 112)
+  if num >= 0x100035 && num <= 0x10003B && windows-protected-profile == 13 {
+    if windows-parameters-local-callback != 0 {
+      windows-protected-error = 50
+      let refused = -1
+      if num == 0x100036 || num == 0x100037 || num == 0x100039 { refused = 0 }
+      store64(frame+112,refused);windows-protected-store32(WINDOWS-STARTUP-TEB+104,50);return 1
+    }
+    windows-find-pending = num;windows-parameters-local-pending = 3;return 2
+  }
+  if num == 0x100011 && (windows-protected-profile == 4 || windows-protected-profile == 6 || windows-protected-profile >= 10) { return windows-parameters-time-dispatch(frame) }
+  let result = 0
+  if num >= 0x100025 && num <= 0x10002A && (windows-protected-profile == 9 || windows-protected-profile >= 10) { return windows-parameters-critical-dispatch(frame, num) }
+  if (windows-protected-profile == 8 || windows-protected-profile >= 10) && num == 0x100103 && windows-parameters-local-callback != 0 { store64(frame + 112, 0); return 0 }
+  if (windows-protected-profile == 8 || windows-protected-profile >= 10) && num == 0x100003 { windows-parameters-local-exit = load64(frame + 96) & 0xFFFFFFFF; windows-parameters-local-pending = 2; store64(frame + 112, 0); return 2 }
+  if num == 0x100003 { store64(frame + 112, load64(frame + 96) & 0xFFFFFFFF); return 0 }
+  if num == 0x100000 {
+    let which = load64(frame + 96) & 0xFFFFFFFF
+    if which == 0xFFFFFFF5 { result = 1 }
+    else if which == 0xFFFFFFF4 { result = 2 }
+    else { result = -1; windows-protected-error = 87 }
+  } else if num == 0x100001 { result = windows-protected-writefile(frame) }
+  else if num == 0x100002 { result = windows-protected-domain }
+  else if num == 0x100004 { result = windows-protected-error }
+  else if num == 0x100005 { if windows-protected-profile >= 12 { result = windows-parameters-path-create(frame,0) } else { result = windows-protected-createfile(frame) } }
+  else if num == 0x100006 { result = windows-protected-readfile(frame) }
+  else if num == 0x100007 { result = windows-protected-seek(frame) }
+  else if num == 0x100008 { result = windows-protected-close(load64(frame + 96)) }
+  else if num == 0x100009 { result = windows-protected-filesize(frame) }
+  else if num >= 0x10000A && num <= 0x100010 && windows-parameters-active != 0 { result = windows-parameters-dispatch(frame, num) }
+  else if (num == 0x100012 || num == 0x100013) && (windows-protected-profile == 6 || windows-protected-profile >= 10) { result = windows-parameters-counter-dispatch(frame, num) }
+  else if num >= 0x100014 && num <= 0x100017 && (windows-protected-profile == 5 || windows-protected-profile >= 10) && windows-parameters-env-active != 0 { if windows-protected-profile >= 10 && cap-check(windows-parameters-heap-authority,cap-memory()) == 0 { windows-protected-error = 5;result = 0 } else { result = windows-parameters-env-dispatch(frame, num) } }
+  else if num >= 0x100018 && num <= 0x10001C && (windows-protected-profile == 7 || windows-protected-profile == 8 || windows-protected-profile == 9 || windows-protected-profile >= 10) { result = windows-parameters-heap-dispatch(frame, num) }
+  else if num >= 0x10001D && num <= 0x100024 && (windows-protected-profile == 8 || windows-protected-profile >= 10) { result = windows-parameters-local-dispatch(frame, num) }
+  else if num >= 0x10002B && num <= 0x100030 && windows-protected-profile >= 11 { result = windows-parameters-unicode-dispatch(frame,num) }
+  else if num >= 0x100031 && num <= 0x100034 && windows-protected-profile >= 12 { result = windows-parameters-path-dispatch(frame,num) }
+  else { result = 0; windows-protected-error = 120 }
+  if windows-protected-profile >= 2 { store32(windows-protected-physical(WINDOWS-STARTUP-TEB + 104), windows-protected-error) }
+  store64(frame + 112, result)
+  if (windows-protected-profile == 8 || windows-protected-profile >= 10) && windows-parameters-local-pending != 0 { return 2 }
+  return 1
+}
+
+// Exact guest backing ledger: image/header/stub/stack pages, then the
+// versioned startup, parameter, environment, heap and callback-owned pages.
+fn windows-protected-owned-pages(image:Int,profile:Int)->Int{
+ let pages=windows-application-pages(image);
+ if profile>=2{pages=pages+4;}
+ if profile>=3{pages=pages+1;}
+ if profile==5 || profile>=10{pages=pages+4;}
+ if profile>=7{pages=pages+64;}
+ if profile==8 || profile>=10{pages=pages+3;}
+ return pages;
+}
+
+fn windows-protected-run-profile(image: Int, size: Int, authority: Int, storage: Int, profile: Int) -> Int {
+  let entry = -8
+  if profile == 0 { entry = windows-protected-entry(image, size) }
+  else if profile == 1 { entry = windows-application-entry(image, size) }
+  else if profile == 2 { entry = windows-startup-entry(image, size) }
+  else if profile == 3 {
+    if windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 1)
+  }
+  if profile == 4 {
+    if windows-parameters-time-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 2)
+  }
+  if profile == 5 {
+    if windows-parameters-env-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 3)
+  }
+  if profile == 6 {
+    if windows-parameters-time-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 4)
+  }
+  if profile == 7 {
+    if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 5)
+  }
+  if profile == 8 {
+    if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 6)
+  }
+  if profile == 9 {
+    if windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    entry = windows-startup-entry-mode(image, size, 7)
+  }
+  if profile >= 10 {
+    if profile > 13 { return -22 }
+    if windows-parameters-composed-active == 0 || windows-parameters-env-active == 0 || windows-parameters-heap-active == 0 || windows-parameters-active == 0 { return -22 }
+    let mode = 8
+    if profile == 11 { mode = 9 }
+    if profile == 12 { mode = 10 }
+    if profile == 13 { mode = 11 }
+    entry = windows-startup-entry-mode(image, size, mode)
+  }
+  if entry < 0 { return entry }
+  if domain-current != 0 || windows-protected-busy != 0 || domain-user-syscall-hook != 0 { return -16 }
+  if authority >= 0 && cap-check(authority, cap-serial()) == 0 { return -13 }
+  if storage >= 0 && cap-check(storage, cap-storage()) == 0 { return -13 }
+  if load64(0x4160) == 0 { return -38 }
+  let needed = 80
+  if profile >= 1 { needed = windows-application-pages(image) + 80 }
+  if profile >= 7 { needed = needed + 67 }
+  if profile == 8 { needed = needed + 6 }
+  if profile == 9 { needed = needed + 1 }
+  if profile >= 10 { needed = needed + 14 }
+  if profile >= 12 { needed = needed + 6 }
+  if windows-protected-owned-pages(image,profile)>WINDOWS-PROTECTED-MAX-FRAMES { return -12 }
+  // All seven retained alloc() blocks are 16-byte multiples. Free frames
+  // cannot fund these first-use bump allocations; reserve them before rounding
+  // the remaining bump cursor to complete frame boundaries.
+  let retained = 0
+  if windows-protected-frames == 0 { retained = WINDOWS-PROTECTED-MAX-FRAMES * 16 + 32 + VFS-MAX-FDS * 272 + 4096 }
+  if profile == 13 { if windows-find-admissible()==0 { return -16 }; retained = retained + windows-find-needed() }
+  if heap-next < 0 || heap-next > heap-end || heap-end > 0x7FFFFFFFFFFFF000 || retained > heap-end - heap-next { return -12 }
+  let available = (heap-end - ((heap-next + retained + 4095) & -4096)) / 4096
+  let free = free-list
+  while free != 0 && available < needed { available = available + 1; free = load64(free) }
+  if available < needed { return -12 }
+  if windows-protected-frames == 0 {
+    windows-protected-frames = alloc(WINDOWS-PROTECTED-MAX-FRAMES * 8)
+    windows-protected-virtuals = alloc(WINDOWS-PROTECTED-MAX-FRAMES * 8)
+    windows-protected-context = alloc(32)
+    windows-protected-files = alloc(VFS-MAX-FDS * 8)
+    windows-protected-paths = alloc(VFS-MAX-FDS * 256)
+    windows-protected-buffer = alloc(4096)
+    windows-protected-shares = alloc(VFS-MAX-FDS * 8)
+  }
+  let domain = domain-create-user()
+  if domain <= 0 { return -12 }
+  windows-protected-busy = 1
+  windows-protected-profile = profile
+  windows-protected-count = 0
+  windows-protected-domain = domain
+  windows-protected-last-domain = domain
+  windows-protected-authority = authority
+  windows-protected-error = 0
+  windows-protected-storage = storage
+  let slot = 0
+  while slot < VFS-MAX-FDS { store64(windows-protected-files + slot * 8, -1); slot = slot + 1 }
+  domain-set-cap(domain, -1)
+  let base = load64(windows-application-opt(image) + 24)
+  let headers = windows-protected-frame(base)
+  let i = 0
+  let header-bytes = 512
+  if profile >= 1 { header-bytes = load32(windows-application-opt(image) + 60) }
+  while i < header-bytes { store8(headers + i, load8(image + i)); i = i + 1 }
+  domain-map-user-readonly(domain, base, headers)
+  let section = 0
+  while section < windows-application-sections(image) {
+    let p = windows-application-section(image, section)
+    let va = base + load32(p + 12)
+    let bytes = load32(p + 16)
+    let off = load32(p + 20)
+    let vm = load32(p + 8)
+    if profile >= 1 && bytes > vm { vm = bytes }
+    let done = 0
+    while done < vm {
+      let frame = windows-protected-frame(va + done)
+      let n = bytes - done
+      if n > 4096 { n = 4096 }
+      i = 0
+      while i < n { store8(frame + i, load8(image + off + done + i)); i = i + 1 }
+      if profile >= 1 {
+        let flags = load32(p + 36)
+        if (flags & 0x20000000) != 0 { domain-map-user-code(domain, va + done, frame) }
+        else if (flags & 0x80000000) != 0 { domain-map-user-data(domain, va + done, frame) }
+        else { domain-map-user-readonly(domain, va + done, frame) }
+      } else {
+        if section == 0 { domain-map-user-code(domain, va + done, frame) }
+        else { domain-map-user-data(domain, va + done, frame) }
+      }
+      done = done + 4096
+    }
+    section = section + 1
+  }
+  let stub = windows-protected-frame(WINDOWS-PROTECTED-STUB)
+  i = 0
+  let services = 43
+  if profile >= 11 { services = 49 }
+  if profile >= 12 { services = 53 }
+  if profile == 13 { services = 60 }
+  while i < services {
+    let p = stub + windows-parameters-stub(i) - WINDOWS-PROTECTED-STUB
+    store8(p, 0xB8);store32(p + 1, 0x100000 + i);store8(p + 5, 0xCD);store8(p + 6, 0x80);store8(p + 7, 0xC3)
+    i = i + 1
+  }
+  // Returned entry result becomes ExitProcess's ECX argument.
+  store8(stub + 352, 0x89);store8(stub + 353, 0xC1)
+  store8(stub + 354, 0xB8);store32(stub + 355, 0x100003)
+  store8(stub + 359, 0xCD);store8(stub + 360, 0x80);store8(stub + 361, 0x0F);store8(stub + 362, 0x0B)
+  domain-map-user-code(domain, WINDOWS-PROTECTED-STUB, stub)
+  if load32(windows-application-opt(image) + 120) != 0 {
+    let descriptor = windows-protected-rva(image, size, load32(windows-application-opt(image) + 120), 40)
+    let iat = load32(image + descriptor + 16)
+    i = 0
+    let lookup = load32(image + descriptor)
+    if lookup == 0 { lookup = iat }
+    while i < 32 && load64(image + windows-protected-rva(image, size, lookup + i * 8, 8)) != 0 {
+      let index = i
+      if profile >= 1 { index = windows-application-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 3 { index = windows-parameters-import-id(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 4 { index = windows-parameters-time-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 5 { index = windows-parameters-env-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 6 { index = windows-parameters-counter-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 7 { index = windows-parameters-heap-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 8 { index = windows-parameters-local-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile == 9 { index = windows-parameters-critical-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 10 { index = windows-parameters-composed-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 11 { index = windows-parameters-unicode-import(image, size, load64(image + windows-protected-rva(image, size, lookup + i * 8, 8))) }
+      if profile >= 12 { index = windows-parameters-path-import(image,size,load64(image+windows-protected-rva(image,size,lookup+i*8,8))) }
+      if profile == 13 { index = windows-find-import(image,size,load64(image+windows-protected-rva(image,size,lookup+i*8,8))) }
+      store64(windows-protected-physical(base + iat + i * 8), windows-parameters-stub(index)); i = i + 1
+    }
+  }
+  i = 0
+  while i < 5 {
+    let frame = windows-protected-frame(0x4F000000 + i * 4096)
+    if i == 3 { store64(frame + 4056, WINDOWS-PROTECTED-STUB + 352) }
+    domain-map-user-data(domain, 0x4F000000 + i * 4096, frame)
+    i = i + 1
+  }
+  let caller-fs = rdmsr(0xC0000100)
+  let caller-gs = rdmsr(0xC0000101)
+  wrmsr64(0xC0000100, 0)
+  wrmsr64(0xC0000101, 0)
+  if profile >= 2 {
+    entry = windows-startup-prepare(image, size, stub, domain, entry)
+    wrmsr64(0xC0000101, WINDOWS-STARTUP-TEB)
+  }
+  if profile >= 3 { windows-parameters-prepare(domain) }
+  if profile == 5 || profile >= 10 { windows-parameters-env-prepare(domain) }
+  if profile >= 7 { windows-parameters-heap-prepare(domain) }
+  if profile == 8 || profile >= 10 { windows-parameters-local-prepare(domain, stub) }
+  if profile == 9 || profile >= 10 { windows-parameters-critical-prepare() }
+  if profile >= 10 { windows-parameters-composed-prepare() }
+  if profile >= 12 { windows-parameters-path-prepare() }
+  domain-user-syscall-hook = windows-protected-dispatch
+  let status = 0
+  if profile == 13 { status = windows-find-prepare() }
+  if status == 0 {
+  if profile == 8 || profile >= 10 { status = windows-parameters-local-run(entry, domain, 0x4F003FD8) }
+  else { status = domain-enter-user-budgeted(entry, 0, domain, 0x4F003FD8, windows-protected-context, windows-protected-budget) }
+  }
+  wrmsr64(0xC0000100, caller-fs)
+  wrmsr64(0xC0000101, caller-gs)
+  domain-user-syscall-hook = 0
+  if profile == 13 { windows-find-release() }
+  windows-protected-files-release()
+  if profile >= 12 { windows-parameters-path-release() }
+  if profile == 5 || profile >= 10 { windows-parameters-env-release() }
+  if profile == 9 || profile >= 10 { windows-parameters-critical-release() }
+  if profile == 8 || profile >= 10 { windows-parameters-local-release() }
+  if profile >= 10 { windows-parameters-composed-release() }
+  if profile >= 7 { windows-parameters-heap-release() }
+  if domain-destroy-user(domain) != 0 { return -5 }
+  i = 0
+  while i < windows-protected-count {
+    frame-free(load64(windows-protected-frames + i * 8));store64(windows-protected-frames + i * 8, 0);store64(windows-protected-virtuals + i * 8, 0)
+    i = i + 1
+  }
+  windows-protected-count = 0
+  windows-protected-domain = 0
+  windows-protected-busy = 0
+  windows-protected-profile = 0
+  windows-protected-authority = -1
+  windows-protected-storage = -1
+  windows-protected-error = 0
+  return status
+}
+
+fn windows-protected-run-authorized(image: Int, size: Int, authority: Int, storage: Int) -> Int {
+  return windows-protected-run-profile(image, size, authority, storage, 0)
+}
+
+fn windows-application-run(image: Int, size: Int, authority: Int, storage: Int) -> Int {
+  return windows-protected-run-profile(image, size, authority, storage, 1)
+}
+
+fn windows-protected-run-granted(image: Int, size: Int, authority: Int) -> Int {
+  return windows-protected-run-authorized(image, size, authority, -1)
+}
+
+fn windows-protected-run-files(image: Int, size: Int, authority: Int, storage: Int) -> Int {
+  return windows-protected-run-authorized(image, size, authority, storage)
+}
+
+fn windows-protected-run(image: Int, size: Int) -> Int {
+  return windows-protected-run-granted(image, size, -1)
+}

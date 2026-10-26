@@ -1,0 +1,93 @@
+[1/4] Linux x86_64 syscall numbers / errno...
+  ok: LINUX-SYS-READ == 0
+  ok: LINUX-SYS-WRITE == 1
+  ok: LINUX-SYS-OPEN == 2
+  ok: LINUX-SYS-CLOSE == 3
+  ok: LINUX-SYS-STAT == 4
+  ok: LINUX-SYS-FSTAT == 5
+  ok: LINUX-SYS-LSEEK == 8
+  ok: LINUX-SYS-MMAP == 9
+  ok: LINUX-SYS-MUNMAP == 11
+  ok: LINUX-SYS-BRK == 12
+  ok: LINUX-SYS-SOCKET == 41
+  ok: LINUX-SYS-CONNECT == 42
+  ok: LINUX-SYS-ACCEPT == 43
+  ok: LINUX-SYS-BIND == 49
+  ok: LINUX-SYS-LISTEN == 50
+  ok: LINUX-SYS-FORK == 57
+  ok: LINUX-SYS-EXECVE == 59
+  ok: LINUX-SYS-EXIT == 60
+  ok: LINUX-SYS-WAIT4 == 61
+  ok: LINUX-SYS-KILL == 62
+  ok: LINUX-SYS-GETCWD == 79
+  ok: LINUX-SYS-CHDIR == 80
+  ok: LINUX-ENOENT == -2
+  ok: LINUX-ENOEXEC == -8
+  ok: LINUX-EBADF == -9
+  ok: LINUX-ECHILD == -10
+  ok: LINUX-ENOMEM == -12
+  ok: LINUX-ENOSPC == -28
+  ok: LINUX-ESPIPE == -29
+  ok: LINUX-ENOSYS == -38
+  ok: LINUX-O-CREAT == 64
+  ok: LINUX-ELF-LOAD-ADDR == 3080192
+  ok: linux personality probes the ELF load address
+  ok: VFS ENOENT/EMFILE/EBADF match Linux errno magnitudes
+[2/4] Darwin BSD syscall numbers / flags...
+  ok: DARWIN-SYS-EXIT == 1
+  ok: DARWIN-SYS-FORK == 2
+  ok: DARWIN-SYS-READ == 3
+  ok: DARWIN-SYS-WRITE == 4
+  ok: DARWIN-SYS-OPEN == 5
+  ok: DARWIN-SYS-CLOSE == 6
+  ok: DARWIN-SYS-WAIT4 == 7
+  ok: DARWIN-SYS-GETPID == 20
+  ok: DARWIN-SYS-KILL == 37
+  ok: DARWIN-SYS-PIPE == 42
+  ok: DARWIN-SYS-EXECVE == 59
+  ok: DARWIN-SYS-SOCKET == 97
+  ok: DARWIN-SYS-CONNECT == 98
+  ok: DARWIN-SYS-MMAP == 197
+  ok: DARWIN-SYS-LSEEK == 199
+  ok: DARWIN-O-CREAT == 512
+  ok: DARWIN-O-TRUNC == 1024
+  ok: DARWIN-SOCK-STREAM == 1
+  ok: DARWIN-SOCK-DGRAM == 2
+  ok: DARWIN-MACH-TASK-SELF == 4096
+  ok: DARWIN-SYS-ERRNO == 8192
+  ok: DARWIN-ENOENT == -2
+  ok: DARWIN-ENOSYS == -78
+  ok: DARWIN-ECHILD == -10
+  ok: DARWIN-EAGAIN == -35
+  ok: DARWIN-ESPIPE == -29
+  ok: Darwin O_CREAT is 0x200, not Linux 64
+[3/4] Windows call table / NTSTATUS...
+  ok: WIN-CALL-WRITEFILE == 1
+  ok: WIN-CALL-EXITPROCESS == 3
+  ok: WIN-CALL-CREATEFILEA == 4
+  ok: WIN-CALL-READFILE == 5
+  ok: WIN-CALL-GETLASTERROR == 17
+  ok: WIN-CALL-CREATEPROCESSA == 21
+  ok: WIN-CALL-RTLGETLASTNTSTATUS == 34
+  ok: WIN-CALL-RTLNTSTATUSTODOSERROR == 35
+  ok: WIN-MAX-HANDLES == 16
+  ok: WIN-ERROR-FILE-NOT-FOUND == 2
+  ok: WIN-ERROR-INVALID-HANDLE == 6
+  ok: WIN-STATUS-SUCCESS == 0
+  ok: WIN-STATUS-UNSUCCESSFUL == -1073741823
+  ok: WIN-STATUS-NOT-IMPLEMENTED == -1073741822
+  ok: WIN-STATUS-INVALID-HANDLE == -1073741816
+  ok: WIN-STATUS-OBJECT-NAME-NOT-FOUND == -1073741772
+  ok: WIN-STATUS-END-OF-FILE == -1073741805
+  ok: NTSTATUS OBJECT_NAME_NOT_FOUND is 0xC0000034
+  ok: NTSTATUS SUCCESS/UNSUCCESSFUL match unsigned 0 / 0xC0000001
+[4/4] Personality translators are kernel-linked microservices...
+  ok: kernel-root imports personality-hub.in
+  ok: personality-hub imports linux.in
+  ok: personality-hub imports darwin.in
+  ok: personality-hub imports windows.in
+  ok: posix.in is pulled in via linux.in, not kernel-root
+  ok: linux.in imports posix.in
+
+=== Results: 86 passed, 0 failed ===
+PASS: personality ABI contracts

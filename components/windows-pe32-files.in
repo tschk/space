@@ -1,0 +1,98 @@
+package space.kernel
+import "windows-pe32-memory.in"
+
+// Activation-owned Windows tokens and borrowed native paths. Native VFS owns
+// descriptors/offsets; all guest copies use the existing owned VM binding.
+fn pe32-file-ready(state:Int)->Int{
+ if cap-check(load64(state+48),cap-storage())==0{return 0;}
+ return sf-disk-ready!=0 && volume-ready==0;
+}
+fn pe32-file-row(state:Int,handle:Int)->Int{
+ let slot=(handle&255) - 1;if slot<0 || slot>=32{return 0;}
+ let row=state+9216+slot*32;if load64(row)!=handle{return 0;}return row;
+}
+fn pe32-file-open(state:Int,args:Int)->Int{
+ if pe32-file-ready(state)==0{return pe32-error(state,5,0xffffffff);}
+ let source=load32(args);let access=load32(args+4);let share=load32(args+8);let disposition=load32(args+16);let attributes=load32(args+20);
+ if access==0 || (access&(0xffffffff^0xc0000000))!=0 || share>3 || load32(args+12)!=0 || load32(args+24)!=0 || (attributes!=0 && attributes!=0x80){return pe32-error(state,50,0xffffffff);}
+ if disposition<1 || disposition>5{return pe32-error(state,87,0xffffffff);}
+ let slot=0;while slot<32 && load64(state+9216+slot*32)!=0{slot+=1;}if slot==32{return pe32-error(state,4,0xffffffff);}
+ let path=state+10240+slot*256;store8(path,47);let used=1;let pos=0;let done=0;
+ while pos<254 && done==0{
+  let value=0;
+  if pe32-in(state,source+pos,state+20480,1)!=0{return pe32-error(state,998,0xffffffff);}
+  value=load8(state+20480);if value==92{value=47;}
+  if value==0{done=1;}
+  else if pos==0 && value==47{}else{
+   if value<32 || value>=127 || value==47 || value==58{return pe32-error(state,123,0xffffffff);}
+   store8(path+used,value);used+=1;
+  }pos+=1;
+ }
+ if done==0 || used<=1{return pe32-error(state,123,0xffffffff);}store8(path+used,0);
+ if sf-path-name-valid(path)==0{return pe32-error(state,123,0xffffffff);}
+ let i=0;while i<32{
+  let row=state+9216+i*32;
+  if load64(row)!=0 && strcmp(path,state+10240+i*256)==0{
+   let oldaccess=load64(row+16);let oldshare=load64(row+24);
+   if ((access&0x80000000)!=0 && (oldshare&1)==0) || ((access&0x40000000)!=0 && (oldshare&2)==0) || ((oldaccess&0x80000000)!=0 && (share&1)==0) || ((oldaccess&0x40000000)!=0 && (share&2)==0){return pe32-error(state,32,0xffffffff);}
+  }i+=1;
+ }
+ let exists=fs-stat(path,state+20480)>=0;
+ if exists!=0 && load32(state+20480+SF-ST-TYPE)!=SF-TYPE-FILE{return pe32-error(state,5,0xffffffff);}
+ if exists!=0 && disposition==1{return pe32-error(state,80,0xffffffff);}
+ if exists==0 && (disposition==3 || disposition==5){return pe32-error(state,2,0xffffffff);}
+ if (disposition==2 || disposition==5) && (access&0x40000000)==0{return pe32-error(state,5,0xffffffff);}
+ let flags=VFS-O-RDONLY;if access==0x40000000{flags=VFS-O-WRONLY;}if access==0xc0000000{flags=VFS-O-RDWR;}if exists==0{flags=flags|VFS-O-CREAT;}
+ if vfs-fd-alloc()<0{return pe32-error(state,4,0xffffffff);}
+ let fd=vfs-open-borrowed-path(path,flags);if fd<3{return pe32-error(state,2,0xffffffff);}
+ if exists!=0 && (disposition==2 || disposition==5){if fs-write-file(path,path,0)!=0{vfs-close(fd);return pe32-error(state,1117,0xffffffff);}}
+ let token=0x46000000|(load64(state+120)<<8)|(slot+1);let row=state+9216+slot*32;
+ store64(row,token);store64(row+8,fd);store64(row+16,access);store64(row+24,share);
+ if exists!=0 && (disposition==2 || disposition==4){store64(state+88,183);}else{store64(state+88,0);}return token;
+}
+fn pe32-file-close(state:Int,handle:Int)->Int{
+ if handle==1 || handle==2{let bit=1<<handle;if (load64(state+136)&bit)==0{return pe32-error(state,6,0);}store64(state+136,load64(state+136)&(-1^bit));return 1;}
+ let row=pe32-file-row(state,handle);if row==0{return pe32-error(state,6,0);}let result=vfs-close(load64(row+8));if result!=0{return pe32-error(state,6,0);}store64(row,0);return 1;
+}
+fn pe32-file-io(state:Int,args:Int,write:Int)->Int{
+ let handle=load32(args);let pointer=load32(args+4);let bytes=load32(args+8);let count=load32(args+12);let overlapped=load32(args+16);
+ if overlapped!=0 || bytes>65536{return pe32-error(state,87,0);}
+ if count==0 || pe32-span(state,count,4,1)==0{return pe32-error(state,998,0);}
+ if bytes!=0 && pe32-span(state,pointer,bytes,1 - write)==0{return pe32-error(state,998,0);}
+ let fd=0;let console=0;
+ if handle==1 || handle==2{
+  if write==0 || (load64(state+136)&(1<<handle))==0{return pe32-error(state,6,0);}if cap-check(load64(state+40),cap-serial())==0{return pe32-error(state,5,0);}console=1;
+ }else{
+  let row=pe32-file-row(state,handle);if row==0{return pe32-error(state,6,0);}let required=0x80000000;if write!=0{required=0x40000000;}
+  if (load64(row+16)&required)==0{return pe32-error(state,5,0);}if pe32-file-ready(state)==0{return pe32-error(state,5,0);}fd=load64(row+8);
+ }
+ if pe32-put32(state,count,0)!=0{return pe32-error(state,998,0);}
+ let done=0;while done<bytes{
+  let part=bytes - done;if part>4096{part=4096;}let result=0;
+  if write!=0{
+   if pe32-in(state,pointer+done,state+20480,part)!=0{return pe32-error(state,998,0);}
+   if console!=0{let i=0;while i<part{serial-put(com1(),load8(state+20480+i));i+=1;}result=part;}
+   else{result=vfs-write(fd,state+20480,part);}
+  }else{
+   result=vfs-read(fd,state+20480,part);if result<0 || result>part{return pe32-error(state,1117,0);}if result>0 && pe32-out(state,pointer+done,state+20480,result)!=0{return pe32-error(state,998,0);}
+  }
+  if result<0{return pe32-error(state,1117,0);}if result>part{return pe32-error(state,1117,0);}done+=result;
+  if result<part{if pe32-put32(state,count,done)!=0{return pe32-error(state,998,0);}return 1;}
+ }
+ if pe32-put32(state,count,done)!=0{return pe32-error(state,998,0);}return 1;
+}
+fn pe32-file-seek(state:Int,args:Int)->Int{
+ let row=pe32-file-row(state,load32(args));if row==0{return pe32-error(state,6,0xffffffff);}if pe32-file-ready(state)==0{return pe32-error(state,5,0xffffffff);}
+ let low=load32(args+4);let high=load32(args+8);let whence=load32(args+12);if whence>2{return pe32-error(state,87,0xffffffff);}
+ let offset=low;
+ if high!=0{if pe32-span(state,high,4,1)==0{return pe32-error(state,998,0xffffffff);}let upper=pe32-get32(state,high);offset=(upper<<32)|low;}
+ else if low>=0x80000000{offset-=0x100000000;}
+ let fd=load64(row+8);let origin=0;if whence==1{origin=vfs-fd-offset(fd);}if whence==2{origin=vfs-sparkfs-file-size(load64(vfs-fd-table+fd*32));}
+ if origin<0 || (offset<0 && offset<0 - origin) || (offset>0 && offset>0x7fffffffffffffff - origin){return pe32-error(state,131,0xffffffff);}
+ let position=origin+offset;if high==0 && position>0xffffffff{return pe32-error(state,87,0xffffffff);}
+ let result=vfs-lseek(fd,offset,whence);if result<0{return pe32-error(state,131,0xffffffff);}
+ if high!=0 && pe32-put32(state,high,result>>32)!=0{return pe32-error(state,998,0xffffffff);}store64(state+88,0);return result&0xffffffff;
+}
+fn pe32-files-release(state:Int)->Int{
+ let i=0;let failed=0;while i<32{let row=state+9216+i*32;if load64(row)!=0{if vfs-close(load64(row+8))==0{store64(row,0);}else{failed=1;}}i+=1;}return failed;
+}

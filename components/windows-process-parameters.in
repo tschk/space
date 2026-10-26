@@ -1,0 +1,114 @@
+package space.kernel
+
+import "windows-process-identity.in"
+import "windows-process-time.in"
+import "windows-process-environment.in"
+import "windows-process-counter.in"
+import "windows-process-heap.in"
+import "windows-process-local.in"
+import "windows-process-critical.in"
+import "windows-process-composed.in"
+import "windows-process-unicode.in"
+import "windows-process-paths.in"
+import "windows-process-find.in"
+
+// Bounded, explicit process-parameter profile. The borrowed native input is
+// copied into an execution-owned RO user page before entry; no kernel pointer
+// or host environment is exported. The initial encoding profile is ASCII.
+const WINDOWS-PARAMETERS-PAGE = 0x4E004000
+var windows-parameters-line: Int = 0
+var windows-parameters-bytes: Int = 0
+var windows-parameters-active: Int = 0
+
+fn windows-parameters-import-name(id: Int) -> Int {
+  if id == 10 { return "GetCommandLineA" }
+  if id == 11 { return "GetCommandLineW" }
+  if id == 12 { return "GetStartupInfoW" }
+  if id == 13 { return "GetModuleHandleW" }
+  return windows-parameters-identity-name(id)
+}
+
+fn windows-parameters-import-id(image: Int, size: Int, name: Int) -> Int {
+  if windows-protected-rva(image, size, name, 2) < 0 { return -1 }
+  let id = windows-application-import-id(image, size, name)
+  if id >= 0 { return id }
+  id = 10
+  while id < 17 {
+    if windows-protected-name(image, size, name + 2, windows-parameters-import-name(id)) != 0 { return id }
+    id = id + 1
+  }
+  return -1
+}
+
+fn windows-parameters-stub(id: Int) -> Int {
+  if id < 10 { return WINDOWS-PROTECTED-STUB + id * 32 }
+  return WINDOWS-PROTECTED-STUB + 1024 + (id - 10) * 32
+}
+
+fn windows-parameters-prepare(domain: Int) -> void {
+  let page = windows-protected-frame(WINDOWS-PARAMETERS-PAGE)
+  let i = 0
+  while i < windows-parameters-bytes {
+    let c = load8(windows-parameters-line + i)
+    store8(page + i, c);store16(page + 1024 + i * 2, c)
+    i = i + 1
+  }
+  domain-map-user-readonly(domain, WINDOWS-PARAMETERS-PAGE, page)
+}
+
+fn windows-parameters-dispatch(frame: Int, num: Int) -> Int {
+  if num >= 0x10000E && num <= 0x100010 { return windows-parameters-identity(frame, num) }
+  if num == 0x10000A { return WINDOWS-PARAMETERS-PAGE }
+  if num == 0x10000B { return WINDOWS-PARAMETERS-PAGE + 1024 }
+  let addr = load64(frame + 96)
+  if num == 0x10000C {
+    if windows-protected-span(addr, 104, 1) == 0 { windows-protected-error = 998; return 0 }
+    let i = 0
+    while i < 104 { store8(windows-protected-physical(addr + i), 0); i = i + 1 }
+    windows-protected-store32(addr, 104)
+    // No STARTF_USESTDHANDLES or console/window geometry request is asserted.
+    // Match the existing stdout/stderr tokens; stdin is unavailable.
+    windows-protected-store32(addr + 80, -1);windows-protected-store32(addr + 84, -1)
+    windows-protected-store32(addr + 88, 1);windows-protected-store32(addr + 96, 2)
+    return 0
+  }
+  if addr == 0 { return load64(windows-protected-physical(windows-startup-peb() + 16)) }
+  let i = 0
+  while i < 260 {
+    if windows-protected-span(addr + i * 2, 2, 0) == 0 { windows-protected-error = 998; return 0 }
+    if load8(windows-protected-physical(addr + i * 2)) == 0 && load8(windows-protected-physical(addr + i * 2 + 1)) == 0 {
+      windows-protected-error = 126; return 0
+    }
+    i = i + 1
+  }
+  windows-protected-error = 206
+  return 0
+}
+
+fn windows-parameters-line-valid(line: Int, bytes: Int) -> Int {
+  if line <= 0 || bytes < 1 || bytes > 1024 || line > 0x100000000 - bytes || load8(line + bytes - 1) != 0 { return 0 }
+  let i = 0
+  while i < bytes - 1 {
+    let c = load8(line + i)
+    if c == 0 || c > 127 { return 0 }
+    i = i + 1
+  }
+  return 1
+}
+
+fn windows-command-run-profile(image: Int, size: Int, authority: Int, storage: Int, line: Int, bytes: Int, profile: Int) -> Int {
+  if domain-current != 0 || windows-protected-busy != 0 || windows-parameters-active != 0 { return -16 }
+  if windows-parameters-line-valid(line, bytes) == 0 { return -22 }
+  windows-parameters-line = line
+  windows-parameters-bytes = bytes
+  windows-parameters-active = 1
+  let result = windows-protected-run-profile(image, size, authority, storage, profile)
+  windows-parameters-line = 0
+  windows-parameters-bytes = 0
+  windows-parameters-active = 0
+  return result
+}
+
+fn windows-command-run(image: Int, size: Int, authority: Int, storage: Int, line: Int, bytes: Int) -> Int {
+  return windows-command-run-profile(image, size, authority, storage, line, bytes, 3)
+}

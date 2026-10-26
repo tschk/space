@@ -1,11 +1,87 @@
 # Compatibility personalities
 
+## Original Windows PE32 compiler continuation
+
+The [cross-OS continuation](plans/2026-10-25-original-cross-os-execution.md)
+adds a distinct hardware compatibility-mode CPU context and a separate PE32
+profile over native owned address spaces. The original upstream Windows
+`fasmg.exe` now executes its own instructions, prints help, reads source files
+and produces exact macro/arithmetic output in Space. The first expanded run has
+65 original activations including real compiler error exits and 21 ownership
+cycles. Nineteen checked KERNEL32 imports, an explicit empty environment and a
+bounded private heap/file profile are supported. The existing PE32+ profiles
+remain separate. This is a private kernel-linked integration path; normal
+installed-app launch, broader dependencies and Windows GUI apps remain open.
+
+The original upstream macOS x86_64 `fasmg` also executes its own code and
+produces the same exact source-derived output through a separate classic
+UNIXTHREAD/indirect-symbol profile. The initial expanded run passes65 original
+activations,42 actual compiler-error exits and21 lifetime cycles. A high
+supervisor window allows its complete original low-address image. Thirteen
+bounded libSystem imports translate into native file/clock/VM services after
+CPU suspension. This does not execute Apple's dyld/libSystem or provide GUI
+frameworks. Normal installed-app/desktop launch remains open.
+
+The original Linux x86_64 assembler also runs unchanged with larger bounded
+BSS support. Its65-entry suite includes exact generated macro bytes,42 actual
+compiler errors,21 ownership cycles and an original `%t` output checked against
+the actual native RTC. Linux `time(2)` requires the timer grant; image limits
+are8192 total pages,6144 image pages and24 MiB per segment, with the existing
+64-KiB minimum and reserved low supervisor addresses.
+
+The [broader CLI continuation](plans/2026-10-25-broader-original-apps.md)
+also runs unmodified-source static QuickJS2024-01-13 and GNU sed4.9. QuickJS
+language, BigInt, Unicode/regex, promises, files and real clocks pass; GNU sed
+regex/hold-space/file transformations pass. Owned launch vectors accept up to16
+strings. Finite zero-descriptor select/pselect6 waits retain the real CPU/VM,
+wait for an actual native IRQ and resume after a counter deadline. The optional
+retained-terminal edge additionally supports exactly stdin in one readable
+fd-set word, with actual queue readiness, indefinite input waits or finite
+counter deadlines. Other descriptors and temporary signal masks still refuse.
+Timer services require explicit native authority. These are private kernel-linked
+integrations, not broader dynamic loading or foreign graphical frameworks.
+
+The [browser prerequisite continuation](plans/2026-10-26-original-browsers.md)
+adds direct self-relocating ET_DYN entry at a checked4MiB bias. Actual mapped
+entry/program-header addresses feed the existing owned stack and exec builder;
+the original foreign runtime performs its own relocation. PT_INTERP, DT_NEEDED,
+malformed dynamic metadata and unsupported alignment still refuse before VM
+allocation. Original Debian glibc's runtime linker runs help/version/error
+scenarios; this does not implement ELF interpreter/dependency loading. Finite
+writev supports at most64 vectors and65536 total bytes for synchronous serial or
+regular files, with full pointer preflight and exact partial-byte returns. Pipes
+and retained-terminal vectors refuse until they have an owned continuation.
+Original Helium and Firefox remain blocked before execution.
+
+Original QuickJS also runs its unchanged REPL through actual PS2 input and the
+existing protected SCI terminal view. Two processes evaluate code, edit a line,
+save and reopen exact file bytes. The optional Linux output profile implements
+OPOST|ONLCR with atomic CRLF pairs and logical input-byte return counts; native
+queues remain raw and the existing raw launch default is unchanged. Finite
+ASCII80x24 ANSI16 pixels are checked independently. This is an interactive
+terminal application, not an AppKit/Win32/browser implementation.
+
+The later [original vi checkpoint](linux-vi-workload.md) adds finite protected
+Linux syscall7 regular-file readiness and syscall77 inline-file resize. Its EX
+edit/save/reopen profile executes original vi; focused interactive TUI support
+remains open. Native providers own readiness, bytes and identity, with Linux
+structures/errors at the edge. They remain private kernel-linked prototypes.
+
 Space provides bounded foreign ABI fixtures and translator microservices.
 The compatibility surface maps onto Space VFS, process, and serial primitives;
 it does not provide a general Linux, macOS, or Windows process environment.
 
 **Progress + milestones:** [`personalities-roadmap.md`](personalities-roadmap.md)
 Verify: `bash scripts/check-personalities.sh`.
+
+The separately imported [initial Linux framebuffer profile](plans/2026-10-24-linux-framebuffer-app.md)
+now runs the original pinned fbv BMP viewer against an explicitly owned native
+canvas:22 original activations,88 separately counted syscall/failure controls,
+exact pixels and21 resource cycles. Ordinary CLI images import only the optional
+private device contract; they acquire no display implementation or authority.
+The profile admits one completed mapping per sole-process lease and publishes
+on checked stopped unmap. Interactive input, remapping/aliases, X11 and FLTK
+remain open. Neither private adapter is an isolated SCI service.
 
 ## ReactOS / NT layering (research takeaway)
 
@@ -93,6 +169,16 @@ Space Darwin personality follows that split:
 - `getcwd=192`, `getpagesize=276`, and the Mach/errno shims remain Space-local
   interfaces; they are not macOS binary ABI promises.
 
+The separate high-address owned mapper also has a finite C-locale data profile:
+`__DefaultRuneLocale` binds a private RO/NX guest object, and
+`__CurrentRuneLocale` binds a read-only guest pointer to it. Cached classes/case
+maps are pinned BSD-licensed Apple data, populated through the native owned VM
+API. This is distinct from function capsules and the older image/heap symbol
+policy. It does not provide locale mutation, multibyte conversion or a general
+libSystem/dyld runtime. Original macOS jq remains refused before entry at the
+next unavailable import,`____chkstk_darwin`. See the
+[data ownership and executable evidence](plans/2026-10-25-darwin-data-imports.md).
+
 BSD numbers used (Darwin where implemented; Space-local shims noted):
 
 | # | call | maps to |
@@ -130,11 +216,13 @@ BSD numbers used (Darwin where implemented; Space-local shims noted):
 Checks: `scripts/check-darwin-personality.sh`, `scripts/check-windows-personality.sh`.
 
 Source review and acceptance checks: [ravynOS Darwin reference](ravynos-darwin-review.md).
+For user-space frameworks and the staged GUI path, see the
+[Rosemary macOS reference](rosemary-macos-reference.md).
 
 ## Trusted Mach-O fixture path
 
 `darwinmacho` validates and invokes a boot-injected thin x86_64 Mach-O image at
-0x280000. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
+`0x2f0000`. `components/darwin-macho.in` accepts only MH_EXECUTE/subtype 3,
 MH_NOUNDEFS, exactly one RX LC_SEGMENT_64 with no sections, and one LC_MAIN.
 The segment must already reside at its declared address, be entirely file-backed,
 and contain the entry after the commands. Command bounds and all 64-bit ranges
@@ -189,7 +277,16 @@ Linux and Darwin return variants check the same cleanup when the entry returns n
 Asynchronous volume RPC and direct NVMe SparkFS are rejected by this runner,
 which disables interrupts. Fixture commands require a fresh descriptor table.
 Existing VFS path copies use the bump allocator; descriptor cleanup does not
-reclaim those allocations. File writes, process isolation and general Windows
+reclaim those allocations.
+
+Linux `lseek=8` and Darwin Unix-class `lseek=199` now seek only execution-owned
+regular-file descriptors with a storage grant. SET/CUR/END use VFS offsets;
+invalid whence, negative targets and host/closed descriptors are refused. The
+file fixtures check tail reads, read advancement and rewind on both ABIs.
+Windows fixtures additionally check a boundary-crossing output-count pointer
+refuses without consuming data, and zero-byte read success preserves position.
+
+File writes, process isolation and general Windows
 path/sharing semantics remain unsupported.
 
 Run `bash scripts/check-foreign-syscalls.sh` (also included in personality gates).

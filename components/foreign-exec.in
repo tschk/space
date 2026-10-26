@@ -47,6 +47,13 @@ fn foreign-file-read(fd: Int, buf: Int, len: Int) -> Int {
   return vfs-read(fd, buf, len)
 }
 
+fn foreign-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
+  if foreign-fd-owned(fd) == 0 { return -9 }
+  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
+  return vfs-lseek(fd, offset, whence)
+}
+
 fn foreign-file-close(fd: Int) -> Int {
   if foreign-fd-owned(fd) == 0 { return -9 }
   let rc = vfs-close(fd)
@@ -191,6 +198,9 @@ fn foreign-syscall-dispatch(frame: Int) -> Int {
   if (foreign-mode == 1 && num == 0) || (foreign-mode == 2 && num == 0x2000003) {
     rc = foreign-file-read(fd, buf, len)
   }
+  if (foreign-mode == 1 && num == 8) || (foreign-mode == 2 && num == 0x20000C7) {
+    rc = foreign-file-seek(fd, buf, len)
+  }
   if (foreign-mode == 1 && num == 3) || (foreign-mode == 2 && num == 0x2000006) {
     rc = foreign-file-close(fd)
   }
@@ -224,7 +234,7 @@ fn foreign-syscall-dispatch(frame: Int) -> Int {
 }
 
 fn foreign-fileio-demo(port: Int, mode: Int) -> void {
-  let image = 0x280000
+  let image = 0x2f0000
   let entry = posix-elf-entry(image, 4096)
   if mode == 2 { entry = darwin-macho-entry(image, 4096) }
   if mode == 3 { entry = win-pe-entry(image, 4096) }
@@ -309,7 +319,7 @@ fn foreign-fileio-demo(port: Int, mode: Int) -> void {
 }
 
 fn foreign-stream-demo(port: Int) -> Void {
-  let image = 0x280000
+  let image = 0x2f0000
   let offset = posix-elf-entry(image, 4096)
   if offset != 128 { serial-write-cstr(port, "local-stream: invalid fixture"); serial-nl(port); return }
   if fs-write-file("local-stream-host", "sentinel", 8) != 0 { return }

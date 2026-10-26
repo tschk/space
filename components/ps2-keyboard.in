@@ -1,0 +1,128 @@
+package space.kernel
+import "ps2-controller.in"
+import "../protocol/keyboard.in"
+
+// Native PS/2 decoder/state, independent of mouse geometry and the compositor.
+// Kernel-linked library; importing it does not establish an isolated Input SCI.
+var ps2-kbd-shift: Int = 0
+
+var ps2-kbd-caps: Int = 0
+var ps2-kbd-caps-held: Int = 0
+var ps2-kbd-ctrl: Int = 0
+var ps2-kbd-extended: Int = 0
+var ps2-kbd-pause: Int = 0
+
+fn ps2-kbd-init() -> Int {
+  ps2-cmd(0xAE)
+  mouse-wait-input()
+  outb(PS2-DATA, 0xF4)
+  ps2-kbd-shift = 0
+  ps2-kbd-caps = 0
+  ps2-kbd-caps-held = 0
+  ps2-kbd-ctrl = 0
+  ps2-kbd-extended = 0
+  ps2-kbd-pause = 0
+  return 0
+}
+
+fn ps2-kbd-has-data() -> Int {
+  let st = inb(PS2-STATUS)
+  if (st & 0x01) != 0 && (st & 0x20) == 0 {
+    return 1
+  }
+  return 0
+}
+
+fn ps2-scancode-ascii(sc: Int) -> Int {
+  if sc == 0x01 { return 27 }
+  if sc == 0x0E { return 8 }
+  if sc == 0x0F { return 9 }
+  if sc == 0x1C { return 10 }
+  if sc == 0x39 { return 32 }
+  if sc == 0x48 { return 128 }
+  if sc == 0x4B { return 129 }
+  if sc == 0x4D { return 130 }
+  if sc == 0x50 { return 131 }
+  if sc == 0x47 { return 132 }
+  if sc == 0x4F { return 133 }
+  if sc == 0x49 { return 128 }
+  if sc == 0x51 { return 129 }
+  if sc == 0x02 { return 49 }
+  if sc == 0x03 { return 50 }
+  if sc == 0x04 { return 51 }
+  if sc == 0x05 { return 52 }
+  if sc == 0x06 { return 53 }
+  if sc == 0x07 { return 54 }
+  if sc == 0x08 { return 55 }
+  if sc == 0x09 { return 56 }
+  if sc == 0x0A { return 57 }
+  if sc == 0x0B { return 48 }
+  if sc == 0x10 { return 113 }
+  if sc == 0x11 { return 119 }
+  if sc == 0x12 { return 101 }
+  if sc == 0x13 { return 114 }
+  if sc == 0x14 { return 116 }
+  if sc == 0x15 { return 121 }
+  if sc == 0x16 { return 117 }
+  if sc == 0x17 { return 105 }
+  if sc == 0x18 { return 111 }
+  if sc == 0x19 { return 112 }
+  if sc == 0x1E { return 97 }
+  if sc == 0x1F { return 115 }
+  if sc == 0x20 { return 100 }
+  if sc == 0x21 { return 102 }
+  if sc == 0x22 { return 103 }
+  if sc == 0x23 { return 104 }
+  if sc == 0x24 { return 106 }
+  if sc == 0x25 { return 107 }
+  if sc == 0x26 { return 108 }
+  if sc == 0x2C { return 122 }
+  if sc == 0x2D { return 120 }
+  if sc == 0x2E { return 99 }
+  if sc == 0x2F { return 118 }
+  if sc == 0x30 { return 98 }
+  if sc == 0x31 { return 110 }
+  if sc == 0x32 { return 109 }
+  if sc == 0x0C { return 45 }
+  if sc == 0x0D { return 61 }
+  if sc == 0x1A { return 91 }
+  if sc == 0x1B { return 93 }
+  if sc == 0x27 { return 59 }
+  if sc == 0x28 { return 39 }
+  if sc == 0x29 { return 96 }
+  if sc == 0x2B { return 92 }
+  if sc == 0x33 { return 44 }
+  if sc == 0x34 { return 46 }
+  if sc == 0x35 { return 47 }
+  return -1
+}
+
+fn ps2-kbd-getchar() -> Int {
+  if ps2-kbd-has-data() == 0 { return -1 }
+  let sc = inb(PS2-DATA)
+  // Set1 Pause is E1 plus five bytes; do not interpret its embedded Ctrl bytes.
+  if ps2-kbd-pause > 0 { ps2-kbd-pause -= 1; return -1 }
+  if sc == 0xE1 { ps2-kbd-pause = 5; ps2-kbd-extended = 0; return -1 }
+  if sc == 0xE0 { ps2-kbd-extended = 1; return -1 }
+  if ps2-kbd-extended == 1 {
+    ps2-kbd-extended = 0
+    if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 2; return -1 }
+    if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -3; return -1 }
+    // PrintScreen's synthetic E0 Shift bytes and all break codes are ignored.
+    return ps2-extended-ascii(sc)
+  }
+  if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -2; return -1 }
+  if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
+  if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
+  if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }
+  if sc == 0xB6 { ps2-kbd-shift = ps2-kbd-shift & -3; return -1 }
+  if sc == 0x3A {
+    if ps2-kbd-caps-held == 0 { ps2-kbd-caps = ps2-kbd-caps ^ 1 }
+    ps2-kbd-caps-held = 1
+    return -1
+  }
+  if sc == 0xBA { ps2-kbd-caps-held = 0; return -1 }
+  if (sc & 0x80) != 0 { return -1 }
+  return ps2-modified-ascii(ps2-scancode-ascii(sc), ps2-kbd-shift, ps2-kbd-caps, ps2-kbd-ctrl)
+}

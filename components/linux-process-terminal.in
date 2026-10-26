@@ -1,0 +1,218 @@
+package space.kernel
+import "terminal-session.in"
+import "linux-process.in"
+import "linux-process-terminal-controls.in"
+import "linux-process-terminal-select.in"
+
+// One retained Linux family over a borrowed native terminal. The personality
+// owns CPU/FD policy; the native object owns bytes, geometry and lifetime.
+// A returned wait keeps the saved VM/context alive and restores supervisor TLS.
+var linux-process-terminal-generation: Int = 0
+var linux-process-terminal-session: Int = 0
+var linux-process-terminal-owner: Int = -1
+var linux-process-terminal-authority: Int = -1
+var linux-process-terminal-target: Int = 0
+
+fn linux-process-terminal-reset() -> void {
+  linux-process-terminal-token = 0
+  linux-process-terminal-session = 0
+  linux-process-terminal-owner = -1
+  linux-process-terminal-authority = -1
+  linux-process-terminal-target = 0
+  linux-process-terminal-phase = 0
+  linux-process-terminal-result = 0
+  linux-process-terminal-entry = 0
+  linux-process-terminal-stdin-open = 0
+  linux-process-terminal-nonblock = 0
+  linux-process-terminal-deadline = 0
+  linux-process-terminal-frequency = 0
+}
+
+fn linux-process-terminal-valid(token: Int, authority: Int) -> Int {
+  if user-space-kernel() == 0 { return -16 }
+  if token <= 0 || token != linux-process-terminal-token { return -9 }
+  if authority != linux-process-terminal-authority { return -13 }
+  return 0
+}
+
+fn linux-process-terminal-start(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, session: Int, owner: Int) -> Int {
+  return linux-process-terminal-start-profile(image,size,arg0,arg1,arg2,authority,session,owner,0)
+}
+fn linux-process-terminal-start-profile(image: Int, size: Int, arg0: Int, arg1: Int, arg2: Int, authority: Int, session: Int, owner: Int, output:Int) -> Int {
+  if output!=0 && output!=1 && output!=5{return -22;}
+  if user-space-kernel() == 0 || linux-process-active != 0 || linux-process-terminal-token != 0 || linux-process-terminal-entry != 0 || linux-process-terminal-busy != 0 || linux-process-device-entry != 0 { return -16 }
+  if cap-check(authority,cap-memory() | cap-serial()) == 0 { return -13 }
+  if terminal-session-query(session,owner,0) < 0 { return -13 }
+  if linux-process-terminal-generation >= 0x7FFFFFFFFFFFFF { return -12 }
+  if linux-process-terminal-request == 0 {
+    if heap-next > heap-end || heap-end - heap-next < 64 { return -12 }
+    linux-process-terminal-request = alloc(64)
+  }
+  let initialized = linux-process-terminal-controls-init()
+  if initialized != 0 { return initialized }
+  store32(linux-process-terminal-settings+4,output)
+  linux-process-terminal-entry = linux-process-terminal-native-entry
+  linux-process-terminal-generation += 1
+  let token = (linux-process-terminal-generation << 8) | 1
+  linux-process-terminal-token = token
+  linux-process-terminal-session = session
+  linux-process-terminal-owner = owner
+  linux-process-terminal-authority = authority
+  linux-process-terminal-target = load64(cap-table-base + authority * 16)
+  linux-process-terminal-phase = 0
+  let result = linux-process-run-counted-input(image,size,arg0,arg1,arg2,authority,-1,3)
+  if linux-process-active == 0 && linux-process-cleanup-failed == 0 {
+    linux-process-terminal-reset()
+    return result
+  }
+  if linux-process-cleanup-failed != 0 {
+    linux-process-terminal-phase = 3
+    linux-process-terminal-result = result
+  }
+  return token
+}
+
+// phase0 preparing,1 externally waiting,2 stopped with a result,3 retiring.
+// which0 phase,1 result,2 actual remaining guest IRQ budget,3 syscall count.
+fn linux-process-terminal-query(token: Int, authority: Int, which: Int) -> Int {
+  let status = linux-process-terminal-valid(token,authority)
+  if status != 0 { return status }
+  if which == 0 { return linux-process-terminal-phase }
+  if which == 1 { return linux-process-terminal-result }
+  if which == 2 { return load64(linux-process-states + LPS-BUDGET) }
+  if which == 3 { return load64(linux-process-states + LPS-SYSCALLS) }
+  if which == 4 { return linux-process-terminal-deadline }
+  return -22
+}
+
+fn linux-process-terminal-resume(token: Int, authority: Int) -> Int {
+  let status = linux-process-terminal-valid(token,authority)
+  if status != 0 { return status }
+  if linux-process-terminal-phase != 1 || linux-process-cleanup-failed != 0 { return -16 }
+  if cap-check(authority,cap-memory() | cap-serial()) == 0 || load64(cap-table-base + authority * 16) != linux-process-terminal-target { return -13 }
+  if terminal-session-query(linux-process-terminal-session,linux-process-terminal-owner,0) < 0 { return -13 }
+  if domain-user-syscall-hook != 0 { return -16 }
+  let fs = rdmsr(0xC0000100)
+  let gs = rdmsr(0xC0000101)
+  wrmsr64(0xC0000100,0);wrmsr64(0xC0000101,0)
+  domain-user-syscall-hook = linux-process-dispatch
+  status = linux-process-family-resume(linux-process-states)
+  domain-user-syscall-hook = 0
+  wrmsr64(0xC0000100,fs);wrmsr64(0xC0000101,gs)
+  linux-process-terminal-result = status
+  linux-process-terminal-phase = 2
+  if status == LINUX-PROCESS-TERMINAL-WAIT { linux-process-terminal-phase = 1 }
+  return status
+}
+
+// The caller owns the terminal itself and the source ELF/path lifetimes until
+// this activation is retired. Cancellation never closes another owner's queue.
+fn linux-process-terminal-close(token: Int, authority: Int) -> Int {
+  let status = linux-process-terminal-valid(token,authority)
+  if status != 0 { return status }
+  linux-process-terminal-phase = 3
+  if linux-process-active == 0 {
+    if linux-process-cleanup-recover() != 0 { return -5 }
+    linux-process-terminal-reset()
+    return 0
+  }
+  let children = linux-process-schedule-close-children(linux-process-states)
+  status = linux-process-finish()
+  if children != 0 || status != 0 { return -5 }
+  linux-process-terminal-reset()
+  return 0
+}
+
+fn linux-process-terminal-capture(frame: Int, number: Int) -> Int {
+  if linux-process-terminal-token == 0 { return 0 }
+  if number==23 || number==270{
+    linux-process-terminal-deadline=0;linux-process-terminal-frequency=0;linux-process-block-io(14,number,0,0,0);return 1;
+  }
+  if number == 7 {
+    linux-process-terminal-deadline = 0
+    linux-process-terminal-frequency = 0
+    linux-process-block-io(11,load64(frame + 72),load64(frame + 80),linux-process-int32(load64(frame + 88)),0)
+    return 1
+  }
+  let fd = linux-process-int32(load64(frame + 72))
+  if linux-process-pipe-is(fd) != 0 || linux-process-file-host(fd) >= 3 { return 0 }
+  let operation = 0
+  if number == 0 && fd == 0 && linux-process-terminal-stdin-open != 0 { operation = 9 }
+  if number == 1 && ((fd == 1 && linux-process-stdout-open != 0) || (fd == 2 && linux-process-stderr-open != 0)) { operation = 10 }
+  if (number == 3 || number == 5 || number == 16 || number == 72) && fd >= 0 && fd <= 2 {
+    linux-process-block-io(12,number,fd,load64(frame + 80),load64(frame + 88))
+    return 1
+  }
+  if operation == 0 { return 0 }
+  linux-process-block-io(operation,fd,load64(frame + 80),load64(frame + 88),0)
+  return 1
+}
+
+fn linux-process-terminal-transfer(operation: Int, fd: Int, buffer: Int, count: Int) -> Int {
+  if linux-process-terminal-token == 0 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if count < 0 || count > 65536 { return -22 }
+  if count == 0 { return 0 }
+  let writable = 0
+  let queue = 3
+  if operation == 9 { writable = 1;queue = 2 }
+  if linux-process-range(buffer,count,writable) == 0 { return -14 }
+  let available = terminal-session-query(linux-process-terminal-session,linux-process-terminal-owner,queue)
+  if available < 0 { return -13 }
+  if operation == 10 { available = 507 - available }
+  if available == 0 {
+    if (linux-process-terminal-nonblock & (1 << fd)) != 0 { return -11 }
+    linux-process-block-io(operation,fd,buffer,count,0)
+    return 0
+  }
+  let piece = count
+  if piece > available { piece = available }
+  let done = 0
+  if operation == 9 {
+    while done < piece {
+      let byte = terminal-session-read(linux-process-terminal-session,linux-process-terminal-owner)
+      if byte < 0 { if done == 0 { return -5 } piece = done }
+      else { store8(linux-process-file-buffer + done,byte);done += 1 }
+    }
+    if linux-process-copy-out(buffer,linux-process-file-buffer,done) != 0 { return -14 }
+  } else {
+    if linux-process-copy-in(buffer,linux-process-file-buffer,piece) != 0 { return -14 }
+    let post=load32(linux-process-terminal-settings+4)==5
+    while done < piece {
+      let byte=load8(linux-process-file-buffer+done);let needed=1;if post && byte==10{needed=2;}
+      if available<needed{piece=done;}
+      else{
+        if needed==2{if terminal-session-write(linux-process-terminal-session,linux-process-terminal-owner,13)!=0{return -5;}}
+        let result=terminal-session-write(linux-process-terminal-session,linux-process-terminal-owner,byte)
+        if result!=0{if done==0{return -5;}piece=done;}else{done+=1;available-=needed;}
+      }
+    }
+    if done==0{linux-process-block-io(operation,fd,buffer,count,0);return 0;}
+    linux-process-output-bytes += done
+  }
+  return done
+}
+
+fn linux-process-terminal-native-entry(request: Int) -> Int {
+  if request == 0 || request != linux-process-terminal-request { return -5 }
+  let operation = load64(request)
+  if operation == 0 { return linux-process-terminal-capture(load64(request + 8),load64(request + 16)) }
+  if operation == 1 { return linux-process-terminal-transfer(load64(request + 8),load64(request + 16),load64(request + 24),load64(request + 32)) }
+  if operation == 2 { return linux-process-terminal-control-owned(load64(request + 8),load64(request + 16),load64(request + 24),load64(request + 32)) }
+  if operation == 3 {
+    let result = linux-process-terminal-poll-owned(load64(request + 8),load64(request + 16),load64(request + 24))
+    // Only a still-armed poll owns a deadline. A later plain read must not
+    // inherit an expired timer and cause repeated supervisor wake attempts.
+    if linux-process-current-record == 0 || load64(linux-process-current-record + LPS-PENDING) != 11 {
+      linux-process-terminal-deadline = 0
+      linux-process-terminal-frequency = 0
+    }
+    return result
+  }
+  if operation==4{
+    let result=linux-process-terminal-select-owned(load64(request+8),load64(request+16))
+    if linux-process-current-record==0 || load64(linux-process-current-record+LPS-PENDING)!=14{linux-process-terminal-deadline=0;linux-process-terminal-frequency=0;}
+    return result
+  }
+  return -95
+}

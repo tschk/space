@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run one retained input SCI: real PS/2 keys consumed once, no app-seat claim."""
+from boot_fixture_layout import stage_fixture
 import argparse
 import hashlib
 import json
@@ -20,8 +21,8 @@ compiler = Path(args.compiler).resolve()
 compiler_hash = hashlib.sha256(compiler.read_bytes()).hexdigest()
 (out/'compiler.json').write_text(json.dumps({'path': str(compiler), 'sha256': compiler_hash,
     'version': subprocess.check_output([str(compiler), '--version'], text=True).strip()}, indent=2)+'\n')
-sources = [root/'components/input.in', root/'components/channel.in', root/'protocol/input.in',
-           root/'components/sci-loader.in', root/'components/shell.in']
+sources = [root/'protocol/keyboard.in', root/'components/input.in', root/'components/channel.in', root/'protocol/input.in',
+           root/'components/sci-loader.in', root/'components/shell.in', root/'components/shell-common.in']
 snapshot = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
 # Execute the actual bounded mouse parser with a continuous synthetic device:
 # 32-byte boundaries intentionally split three-byte packets across calls.
@@ -75,10 +76,10 @@ assert [(c['name'], c['capability_type'], c['args']) for c in metadata['capabili
 client = (out/'input.sci').read_bytes()
 assert struct.unpack_from('<Q', client, 8)[0] == 3
 image = bytearray((out/'kernel.bin').read_bytes())
-offset = 0x280000-0x100000
+offset = 0x2f0000-0x100000
 assert len(image) <= offset and len(client) <= 0x10000
-assert 0x280000+len(client) < 0x300000
-image += bytes(offset-len(image))+client
+assert 0x2f0000+len(client) < 0x300000
+image = bytearray(stage_fixture(image,client,0x2f0000))
 (out/'combined.bin').write_bytes(image)
 serial_path, monitor_path = out/'serial.sock', out/'monitor.sock'
 for path in (serial_path, monitor_path):

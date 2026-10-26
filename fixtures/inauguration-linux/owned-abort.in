@@ -1,0 +1,8 @@
+// Synthetic compiler corpus: the compiler-owned Linux abort must not return.
+extern asm fn abort()->Void
+var entered:Int=0;
+fn main()->Int {
+ entered=entered+1;
+ if entered==1{abort();}
+ return 5;
+}

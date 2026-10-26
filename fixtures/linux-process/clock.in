@@ -1,0 +1,70 @@
+package space.fixture
+// Native provider/ABI controls in an actually owned stopped Linux VM.
+// No additional original-application or CPU activation credit.
+fn linux-check-clock(frame:Int,fixture:Int)->void{
+ let value=0x20000400;let zone=value+32;let authority=linux-process-authority;
+ linux-process-store64(value,0x123456789abcdef);linux-process-store64(value+8,0x23456789abcdef0);
+ if cap-check(authority,cap-timer())==0{
+  linux-check(-13,linux-check-call(frame,96,value,zone,0));
+  linux-check(-13,linux-check-call(frame,201,value,0,0));
+  linux-check(-13,linux-check-call(frame,228,0,value,0));
+  linux-check(-13,linux-check-call(frame,229,0,value,0));
+ }else{
+  let before=time-component-wallclock();linux-check(0,linux-check-call(frame,96,value,zone,0));let after=time-component-wallclock();
+  linux-fixture-copy-in(value,fixture+1024,40);
+  if before<0 || after<before || load64(fixture+1024)<before || load64(fixture+1024)>after{panic("Linux timeval actual RTC interval");}
+  linux-check(0,load64(fixture+1032));linux-check(0,load64(fixture+1056));
+  linux-process-store64(value,0x123456789abcdef);
+  linux-check(-14,linux-check-call(frame,96,value,0x20001000,0));
+  linux-fixture-copy-in(value,fixture+1024,8);linux-check(0x123456789abcdef,load64(fixture+1024));
+  linux-check(0,linux-check-call(frame,96,0,zone,0));
+  linux-check(0,linux-check-call(frame,96,0,0,0));
+  linux-check(-14,linux-check-call(frame,96,fixture+600,0,0));
+  linux-check(-14,linux-check-call(frame,201,0x20001000,0,0));
+  linux-check(-14,linux-check-call(frame,228,0,0,0));
+  linux-check(-14,linux-check-call(frame,228,0,0x20001000,0));
+  linux-check(-22,linux-check-call(frame,228,99,value,0));
+  linux-check(-22,linux-check-call(frame,229,-1,0,0));
+  linux-fixture-copy-in(value,fixture+1024,8);linux-check(0x123456789abcdef,load64(fixture+1024));
+  linux-check(0,linux-check-call(frame,229,0,value,0));linux-fixture-copy-in(value,fixture+1024,16);
+  linux-check(1,load64(fixture+1024));linux-check(0,load64(fixture+1032));
+  linux-check(0,linux-check-call(frame,229,0,0,0));
+  linux-check(0,linux-check-call(frame,228,0x123400000000,value,0));linux-fixture-copy-in(value,fixture+1024,16);
+  if load64(fixture+1024)<before || load64(fixture+1032)!=0{panic("Linux realtime/int width");}
+  if counter-frequency-authorized(authority)>0{
+   linux-check(0,linux-check-call(frame,229,1,value,0));linux-fixture-copy-in(value,fixture+1024,16);
+   linux-check(0,load64(fixture+1024));if load64(fixture+1032)<1 || load64(fixture+1032)>1000000000{panic("Linux counter actual resolution");}
+   linux-check(0,linux-check-call(frame,228,0x123400000001,value,0));linux-fixture-copy-in(value,fixture+1024,16);
+   let first=load64(fixture+1024);let nanos=load64(fixture+1032);if first<0 || nanos<0 || nanos>=1000000000{panic("Linux monotonic split/range");}
+   linux-check(0,linux-check-call(frame,228,1,value,0));linux-fixture-copy-in(value,fixture+1024,16);
+   if load64(fixture+1024)<first || (load64(fixture+1024)==first && load64(fixture+1032)<nanos){panic("Linux monotonic reversed");}
+  }else{linux-check(-95,linux-check-call(frame,228,1,value,0));linux-check(-95,linux-check-call(frame,229,1,value,0));}
+  // Zero-descriptor Linux wait structure and refusal controls. Real timed
+  // suspension is driven by the original QuickJS event loop separately.
+  store64(frame+40,0);store64(frame+48,0);store64(frame+56,value);
+  linux-process-store64(value,0);linux-process-store64(value+8,0);
+  linux-check(0,linux-check-call(frame,23,0,0,0));linux-check(0,linux-check-call(frame,270,0,0,0));
+  linux-check(-22,linux-check-call(frame,23,-1,0,0));linux-check(-95,linux-check-call(frame,23,1,0,0));
+  linux-process-store64(value,-1);linux-check(-22,linux-check-call(frame,23,0,0,0));
+  linux-process-store64(value,0);linux-process-store64(value+8,1000000);linux-check(-22,linux-check-call(frame,23,0,0,0));
+  linux-process-store64(value+8,1000000000);linux-check(-22,linux-check-call(frame,270,0,0,0));
+  linux-process-store64(value,61);linux-process-store64(value+8,0);linux-check(-95,linux-check-call(frame,23,0,0,0));
+  store64(frame+56,0);linux-check(-95,linux-check-call(frame,23,0,0,0));
+  store64(frame+56,0x20001000);linux-check(-14,linux-check-call(frame,23,0,0,0));store64(frame+56,value);
+  linux-process-store64(value,0);linux-process-store64(value+8,0);store64(frame+48,0x20002000);linux-check(-14,linux-check-call(frame,270,0,0,0));
+  linux-process-store64(zone,zone+16);linux-process-store64(zone+8,8);store64(frame+48,zone);linux-check(-95,linux-check-call(frame,270,0,0,0));store64(frame+48,0);
+  if counter-frequency-authorized(authority)>0{
+   let entry=load64(0x4198);let flags=invoke1(entry,0);let frequency=counter-frequency-authorized(authority);let now=counter-read-authorized(authority);let waits=execution-clock-interrupt-waits;
+   linux-check(1,execution-clock-await-interrupt(authority,frequency,now+frequency/20));
+   linux-check(waits+1,execution-clock-interrupt-waits);linux-check(flags&512,invoke1(entry,0)&512);
+   linux-check(0,domain-current);linux-check(0,user-context-active);linux-check(0,user-budget-active);
+  }
+  let slot=cap-table-base+authority*16;let mask=load64(slot+8);store64(slot+8,mask&(-1^cap-timer()));
+  linux-process-store64(value,0x123456789abcdef);
+  linux-check(-13,linux-check-call(frame,96,value,zone,0));linux-check(-13,linux-check-call(frame,201,value,0,0));
+  linux-check(-13,linux-check-call(frame,228,0,value,0));linux-check(-13,linux-check-call(frame,229,0,value,0));
+  store64(slot+8,mask);
+ }
+ linux-fixture-copy-in(value,fixture+1024,8);linux-check(0x123456789abcdef,load64(fixture+1024));
+ if dyn-resolve-idx("execution-clock-await-interrupt")!=-1 || dyn-resolve-idx("linux-process-time")!=-1 || dyn-resolve-idx("linux-process-gettimeofday")!=-1 || dyn-resolve-idx("linux-process-clock-gettime")!=-1 || dyn-resolve-idx("linux-process-clock-getres")!=-1{panic("Linux clock raw native export");}
+}

@@ -1,5 +1,31 @@
 # Space Architecture
 
+The [original Windows PE32 continuation](docs/plans/2026-10-25-original-cross-os-execution.md)
+adds an explicitly tagged 32-bit compatibility-mode CPU context alongside the
+existing 64-bit context. Its PE/stdcall/heap/file/clock policy stays in private
+personality libraries over the existing native owned address space and CPU
+objects. User-mode import capsules only stop execution; native services run
+after kernel-root restoration. No alternate mapping ledger or SCI privilege
+bypass is added. Original application output and lifecycle evidence remain
+separate from native CPU control fixtures.
+
+The classic macOS continuation adds an explicit native low-address VM policy
+over the same owned objects. Sparse supervisor hardware aliases permit original
+low images without holes or payload rewriting; existing constructors keep their
+bounds. Mach-O startup, FILE and libSystem-shaped policy stays in separately
+imported private personality libraries. Its original assembler output is
+verified independently of native VM/provider controls. General desktop launch
+and foreign GUI frameworks remain unfinished. The Linux edge also requests the
+explicit8192-page policy with its existing64-KiB minimum, admits bounded larger
+BSS and copies only file-backed bytes into native zeroed pages. Linux time(2)
+requires a native timer grant. The broader CLI continuation adds owned launch
+vectors and Linux clock/select translation over the existing process state.
+A private native execution-clock seam yields for a real IRQ only with the user
+CPU stopped and preserves native IF/context state. It carries no Linux timeout
+layout or foreign process policy. Kernel SCI export discovery excludes this
+seam, supervisor relocation, classic Darwin and PE32 private helpers.
+
+
 ```
          ┌─────────────────────────────────────┐
          │              Space                   │
@@ -38,6 +64,18 @@ enforcement and execution/IPC mechanisms; the runtime, drivers, filesystem,
 networking, compatibility personalities and desktop are separable service policy.
 The current full boot root still links many of them together. Its subsystem list
 below records the present image, not the intended trusted-core boundary.
+
+The [desktop font checkpoint](docs/plans/2026-10-24-desktop-fonts.md) keeps raster
+assets/rendering in that existing trusted display library. The
+[vi checkpoint](docs/linux-vi-workload.md) adds private synchronous native VFS
+readiness and bounded inline-file resizing, translated by the Linux edge. These
+are explicitly denied raw SCI exports, not newly isolated Storage/TerminalSession
+services. The [next terminal/GUI boundary](docs/terminal-gui-reference.md) preserves
+component, capability, object and execution-graph ownership above the nanokernel.
+The [native terminal continuation](docs/plans/2026-10-25-native-terminal-session.md)
+now has separately owned raw queues and focused seat leases with actual keyboard
+and lifetime checks. It is still private and kernel-linked; retained foreign
+activation waits and interactive TUI/screen integration are active next work.
 
 The end-to-end contract is `.in` declarations and code → generic Inauguration
 Core IR/MIR/native emission → SCI plus available metadata → Space packaging and
@@ -178,7 +216,16 @@ bind to earlier ones (chained dynamic modules, boot kind 8). Preinstalled
 dynamic apps (`calc`, `notes`, `hd`, `sysmon`, `bench`, boot kinds 9-11) ride in the boot
 image and load on demand via the shell's `runapp` command. Two root variants
 build from the same components: the full standard image and a minimal
-core-only image (`kernel-root-minimal.in`). Full contract
+core-only image (`kernel-root-minimal.in`). The full shell retains optional
+hardware/personality/desktop commands and integration proofs. Both profiles use
+`components/shell-common.in` for serial history, path/pipeline handling and the
+native app registry/launcher; `shell-minimal.in` exposes only implemented core
+commands. Minimal imports CPU/domain/channel/scheduler/syscall contracts and
+RAM SparkFS, but no desktop, network or foreign personality implementations.
+Its explicit unavailable block-transport binding returns ENODEV for device I/O;
+RAM filesystem operations remain real. Protocol definitions used by shared SCI
+validation do not instantiate input/display devices. This is a build-profile
+boundary, not new runtime separation or protection. Full contract
 in [`sci-schema.md`](sci-schema.md).
 
 ---
@@ -231,7 +278,7 @@ Domains are separate page-table trees. Two regimes exist today:
   page directories — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
   Extra SCI image/heap/shared mappings are additive. A kernel-linked
   component can still `load64(0x200000)` (kernel globals) and reach MMIO.
-- **SCI guests** (`sci-load`, `sci-load-file`, apps) use
+- **SCI user guests** (`sci-load`, `sci-load-file`) use
   `domain_create_user()`: an empty PML4 with only trampoline, IDT, TSS RSP0
   stack, and exclusive `U=1` 4 KiB image/stub/stack pages — no identity
   clone, kernel globals unmapped. The GDT carries DPL3 segments and a TSS;
@@ -239,6 +286,16 @@ Domains are separate page-table trees. Two regimes exist today:
   timer/syscall/exception stubs switch back to `kernel_cr3`.
 - `domain_switch()` changes CR3. `domain_map()` installs a mapping.
   Shared pages are for IPC, not isolation.
+
+`runapp` uses the trusted CPL0 runtime-component path. Its scoped allocation
+abort terminates the activation and returns failure to the shell. Ordinary
+synchronous activations release explicitly owned clone/backing resources;
+retained GUI and asynchronous instances keep their own lifetime. See the
+[native lifecycle contract](docs/native-runtime-lifecycle.md). New prepared user entry is
+strict CPL3/IOPL0, supports resumable SYSCALL and INT80, and recovers only
+CPU-confirmed user exceptions. Legacy user SCI entry retains IOPL3. See the
+[runtime failure and syscall contract](docs/runtime-failure.md) for ownership,
+frame offsets and executable checks.
 
 Kernel-linked CPL0 services are the remaining gap before domains can be
 advertised as isolation.

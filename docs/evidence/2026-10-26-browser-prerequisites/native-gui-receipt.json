@@ -1,0 +1,61 @@
+{
+  "source_commit": "bf6b16c",
+  "group": "native-gui",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "user-space-standard",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/user-space-standard"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 8.886
+    },
+    {
+      "name": "user-space-minimal",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-user-space.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--out",
+        "/workspace/browser-entry-regressions/user-space-minimal",
+        "--root",
+        "minimal"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 1.947
+    },
+    {
+      "name": "desktop-launcher",
+      "command": [
+        "python3",
+        "/workspace/space-browser-entry-source/scripts/check-desktop-launcher.py",
+        "--in",
+        "/workspace/toolchain/inauguration-0.9.325/in-cli/target/release/in",
+        "--build-dir",
+        "/workspace/browser-entry-regressions/desktop-launcher"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 87.657
+    },
+    {
+      "name": "desktop-damage",
+      "command": [
+        "bash",
+        "/workspace/space-browser-entry-source/scripts/check-desktop-damage.sh"
+      ],
+      "status": "passed",
+      "returncode": 0,
+      "elapsed_seconds": 5.846
+    }
+  ]
+}

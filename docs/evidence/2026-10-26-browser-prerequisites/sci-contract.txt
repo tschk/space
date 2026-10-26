@@ -1,0 +1,63 @@
+[1/3] Compiling kernel to produce metadata sidecar...
+[2/3] Validating SCI metadata fields...
+  ok: top-level key 'component'
+  ok: top-level key 'target'
+  ok: top-level key 'entry'
+  ok: top-level key 'imports'
+  ok: top-level key 'exports'
+  ok: top-level key 'capabilities_required'
+  ok: top-level key 'object_schemas'
+  ok: top-level key 'deterministic'
+  ok: top-level key 'checkpoint'
+  ok: top-level key 'code_size'
+  ok: top-level key 'provenance'
+  ok: component is non-null string
+  ok: target is non-null string
+  ok: entry is non-null string
+  ok: deterministic is bool
+  ok: checkpoint is string
+  ok: code_size is positive int
+  ok: capabilities_required present (count=10)
+  ok: capability[0].name
+  ok: capability[0].capability_type
+  ok: capability[0].args
+  ok: capability[1].name
+  ok: capability[1].capability_type
+  ok: capability[1].args
+  ok: capability[2].name
+  ok: capability[2].capability_type
+  ok: capability[2].args
+  ok: capability[3].name
+  ok: capability[3].capability_type
+  ok: capability[3].args
+  ok: capability[4].name
+  ok: capability[4].capability_type
+  ok: capability[4].args
+  ok: capability[5].name
+  ok: capability[5].capability_type
+  ok: capability[5].args
+  ok: capability[6].name
+  ok: capability[6].capability_type
+  ok: capability[6].args
+  ok: capability[7].name
+  ok: capability[7].capability_type
+  ok: capability[7].args
+  ok: capability[8].name
+  ok: capability[8].capability_type
+  ok: capability[8].args
+  ok: capability[9].name
+  ok: capability[9].capability_type
+  ok: capability[9].args
+  ok: object_schemas present (count=3)
+  ok: provenance.compiler exists
+  ok: provenance.compiler_version exists
+  ok: exports present (count=1)
+[3/3] Checking loader-rule compatibility...
+  ok: declared capability 'serial'
+  ok: declared capability 'memory'
+  ok: declared capability 'tables'
+  ok: declared capability 'traps'
+  ok: declared capability 'caps'
+
+=== Results: 57 passed, 0 failed ===
+PASS: all SCI metadata fields valid.

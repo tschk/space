@@ -1,0 +1,54 @@
+package space.kernel
+
+// Bounded native editor storage interface. Authority is checked before pointer
+// reads, allocation or filesystem work. One fixed file, maximum eight bytes.
+// This is an API guard for CPL0 integration, not hostile-code isolation.
+var gui-note-store-epoch: Int = 0
+var gui-note-store-stat: Int = 0
+
+fn gui-note-store-authorized() -> Int {
+  let domain = domain-get-current()
+  if domain <= 0 || domain >= domain-count { return 0 }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return 0 }
+  if load64(domain-table + domain * 24 + 16) != current-cap { return 0 }
+  return cap-require(cap-storage())
+}
+
+fn gui-note-buffer-valid(buffer: Int, size: Int) -> Int {
+  if size < 0 || size > 8 || buffer < COMP-HEAP-VIRT || buffer > COMP-HEAP-VIRT + COMP-HEAP-SIZE - size { return 0 }
+  return 1
+}
+
+// Private supervisor-buffer backend; never exported as a guest pointer API.
+fn gui-note-store-read-buffer(buffer: Int, maximum: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if maximum != 8 || buffer == 0 { return -22 }
+  if nvme-ready == 0 || sf-mem-disk != 0 || sf-disk-ready == 0 { return -19 }
+  gui-note-store-epoch += 1
+  if gui-note-store-stat == 0 { gui-note-store-stat = alloc(64) }
+  if fs-stat("/gui-note.txt", gui-note-store-stat) != 0 { return -1 }
+  let size = load64(gui-note-store-stat + SF-ST-SIZE)
+  if size < 0 || size > 8 { return -27 }
+  return fs-read-file("/gui-note.txt", buffer, maximum)
+}
+
+fn gui-note-store-write-buffer(buffer: Int, size: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if size < 0 || size > 8 || buffer == 0 { return -22 }
+  if nvme-ready == 0 || sf-mem-disk != 0 || sf-disk-ready == 0 { return -19 }
+  gui-note-store-epoch += 1
+  return fs-write-file("/gui-note.txt", buffer, size)
+}
+
+// Trusted CPL0 client wrappers retain their original authority and heap guard.
+fn gui-note-read(buffer: Int, maximum: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if maximum != 8 || gui-note-buffer-valid(buffer, maximum) != 1 { return -22 }
+  return gui-note-store-read-buffer(buffer, maximum)
+}
+
+fn gui-note-write(buffer: Int, size: Int) -> Int {
+  if gui-note-store-authorized() != 1 { return -13 }
+  if gui-note-buffer-valid(buffer, size) != 1 { return -22 }
+  return gui-note-store-write-buffer(buffer, size)
+}

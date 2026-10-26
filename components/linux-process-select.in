@@ -1,0 +1,46 @@
+package space.kernel
+import "execution-clock.in"
+
+// Finite no-descriptor select/pselect6. Reuse the owned process's one pending
+// operation: fd=layout, buffer=guest timeout, count=absolute counter deadline,
+// done=captured frequency. No event readiness or temporary signal mask is faked.
+fn linux-process-select(count:Int,readset:Int,writeset:Int,errors:Int,timeout:Int,sigarg:Int,layout:Int)->Int{
+ if count<0{return -22;}if count!=0{return -95;}
+ if timeout==0{return -95;}
+ if cap-check(linux-process-authority,cap-memory())==0{return -13;}
+ if linux-process-range(timeout,16,0)==0 || linux-process-range(timeout,16,1)==0{return -14;}
+ if layout==1 && sigarg!=0{
+  if linux-process-range(sigarg,16,0)==0{return -14;}
+  if linux-process-file-load64(sigarg)!=0{return -95;}
+ }
+ let seconds=linux-process-file-load64(timeout);let fraction=linux-process-file-load64(timeout+8);let scale=1000000;if layout==1{scale=1000000000;}
+ if seconds<0 || fraction<0 || fraction>=scale{return -22;}
+ if seconds==0 && fraction==0{return 0;}
+ if seconds>60 || (seconds==60 && fraction!=0){return -95;}
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ let frequency=counter-frequency-authorized(linux-process-authority);let now=counter-read-authorized(linux-process-authority);
+ if frequency<=0 || frequency>1000000000000000 || now<0{return -95;}
+ let duration=seconds*frequency+(frequency/scale)*fraction+((frequency%scale)*fraction+scale - 1)/scale;
+ if duration<=0 || now>0x7fffffffffffffff - duration{return -75;}
+ if linux-process-state-valid(linux-process-current-record)==0{return -16;}
+ linux-process-block-io(13,layout,timeout,now+duration,frequency);return 0;
+}
+fn linux-process-select-retry(layout:Int,timeout:Int,deadline:Int,frequency:Int)->Int{
+ if cap-check(linux-process-authority,cap-timer())==0{return -13;}
+ if linux-process-range(timeout,16,1)==0{return -14;}
+ if counter-frequency-authorized(linux-process-authority)!=frequency{return -95;}
+ let now=counter-read-authorized(linux-process-authority);if now<0{return -95;}
+ if now<deadline{linux-process-block-io(13,layout,timeout,deadline,frequency);return 0;}
+ linux-process-store64(timeout,0);linux-process-store64(timeout+8,0);if linux-process-memory-failed!=0{return -14;}return 0;
+}
+fn linux-process-select-waiting()->Int{
+ let i=0;while i<LINUX-STATE-MAX{let row=linux-process-states+i*LINUX-STATE-BYTES;
+  if load64(row+LPS-STATUS)==LINUX-STATE-BLOCKED && load64(row+LPS-PENDING)==13{return 1;}i+=1;
+ }return 0;
+}
+fn linux-process-select-idle()->Int{
+ let first=0;let i=0;while i<LINUX-STATE-MAX{let row=linux-process-states+i*LINUX-STATE-BYTES;
+  if load64(row+LPS-STATUS)==LINUX-STATE-BLOCKED && load64(row+LPS-PENDING)==13{if first==0 || load64(row+LPS-IO-COUNT)<load64(first+LPS-IO-COUNT){first=row;}}i+=1;
+ }if first==0{return 0;}
+ return execution-clock-await-interrupt(load64(first+LPS-AUTHORITY),load64(first+LPS-IO-DONE),load64(first+LPS-IO-COUNT));
+}

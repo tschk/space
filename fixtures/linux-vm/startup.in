@@ -1,0 +1,37 @@
+package space.fixture
+
+fn lvm-startup-copy-errors()->void {
+ let vm=linux-process-vm-create(lvm-authority);if vm<=0{panic("startup copy error VM");}
+ lvm-check(0,linux-process-vm-use(vm,0));
+ lvm-check(0,linux-process-vm-map(0x20000000,6));lvm-check(0,linux-process-vm-map(0x20001000,5));
+ store64(linux-process-vm-buffer,0x002ABF0000003CB8);store64(linux-process-vm-buffer+8,0x0B0F050F0000);
+ lvm-check(0,linux-process-vm-populate(0x20001000,linux-process-vm-buffer,16));
+ let context=(alloc(831)+63)&-64;
+ let binding=linux-process-vm-attach(context,0x20001000,0x20000FF0);if binding<=0{panic("startup copy error binding");}
+ linux-process-startup=1;linux-process-startup-error=0;
+ linux-process-store64(0x20001000,0x1122334455667788);
+ lvm-check(-14,linux-process-startup-result(0x20000FF0));
+ lvm-check(0,linux-process-copy-in(0x20001000,linux-process-vm-buffer,8));
+ lvm-check(0x002ABF0000003CB8,load64(linux-process-vm-buffer));
+ linux-process-startup=1;linux-process-startup-error=0;
+ lvm-check(-1,linux-process-stack-string(0x20001000,0x13000000));
+ lvm-check(-14,linux-process-startup-result(0x20000FF0));lvm-check(1,load64(context+728));
+ lvm-check(0,linux-process-vm-drop(vm,binding));
+ linux-process-vm=0;linux-process-binding=0;linux-process-domain=0;linux-process-pages=0;linux-process-authority=-1;
+ serial-write-cstr(com1(),"linux-vm: refused startup scalar and string copies cannot report success PASS");serial-nl(com1());
+}
+
+fn lvm-high-source-check(image:Int,size:Int)->void {
+ let end=heap-end;
+ if heap-next+0x2000000>=0x10000000{panic("high startup payload overlap");}
+ heap-end=0x10000000;
+ lvm-startup-copy-errors();
+ let fs=rdmsr(0xC0000100);let gs=rdmsr(0xC0000101);let cap=current-cap;
+ lvm-check(42,linux-process-run(image,size,0x13000000,0x13000100,0x13000200,lvm-authority));
+ lvm-check(fs,rdmsr(0xC0000100));lvm-check(gs,rdmsr(0xC0000101));lvm-check(cap,current-cap);
+ lvm-check(0,linux-process-cleanup-failed);lvm-check(0,linux-process-active);
+ // Verify the original trusted ingress strings were not rewritten as argv storage.
+ let i=0;while i<12{lvm-check(load8("/high-source"+i),load8(0x13000000+i));i=i+1;}
+ heap-end=end;
+ serial-write-cstr(com1(),"linux-vm: actual high source argc argv env startup outside heap PASS");serial-nl(com1());
+}

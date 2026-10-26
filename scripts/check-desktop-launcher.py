@@ -48,15 +48,19 @@ fn main()->Int{{heap[8+24]=9;heap[8+64+24]=42;heap[8+128+24]=7;comp-win-close({c
         (out/f'close-{focus}-{closed}-{profile}.json').write_text(run.stdout)
         assert report.get('success') and report.get('eval_result') == {'Int':42}, report
 # Exercise both actual PS/2 decoders: Ctrl make/break, letters, and nonletters.
-for decoder in ('mouse', 'input'):
+for decoder in ('ps2-keyboard', 'input'):
     decoder_text = (root/f'components/{decoder}.in').read_text()
-    functions = []
+    functions = [(root/'protocol/keyboard.in').read_text()]
     for name in ('ps2-scancode-ascii', 'ps2-kbd-getchar'):
         begin = decoder_text.index('fn '+name+'(')
         functions.append(decoder_text[begin:decoder_text.index('\n}', begin)+2])
     source = """const PS2-DATA=96;
 var ps2-kbd-ctrl:Int=0;
+var ps2-kbd-extended:Int=0;
+var ps2-kbd-pause:Int=0;
 var ps2-kbd-shift:Int=0;
+var ps2-kbd-caps:Int=0;
+var ps2-kbd-caps-held:Int=0;
 var code:Int=0;
 fn ps2-kbd-has-data()->Int{return 1;}
 fn inb(port:Int)->Int{return code;}
@@ -69,6 +73,28 @@ code=0x02;if ps2-kbd-getchar()!=49{return 4;}
 code=0x9D;if ps2-kbd-getchar()!=-1{return 5;}
 code=0x31;if ps2-kbd-getchar()!=110{return 6;}
 code=0x19;if ps2-kbd-getchar()!=112{return 7;}
+code=0x2A;if ps2-kbd-getchar()!=-1{return 8;}
+code=0x09;if ps2-kbd-getchar()!=42{return 9;}
+code=0x1E;if ps2-kbd-getchar()!=65{return 10;}
+code=0x36;if ps2-kbd-getchar()!=-1{return 11;}
+code=0xAA;if ps2-kbd-getchar()!=-1{return 12;}
+code=0x09;if ps2-kbd-getchar()!=42{return 13;}
+code=0xB6;if ps2-kbd-getchar()!=-1{return 14;}
+code=0x09;if ps2-kbd-getchar()!=56{return 15;}
+code=0x3A;if ps2-kbd-getchar()!=-1{return 16;}
+code=0x3A;if ps2-kbd-getchar()!=-1{return 17;}
+code=0x1E;if ps2-kbd-getchar()!=65{return 18;}
+code=0x09;if ps2-kbd-getchar()!=56{return 19;}
+code=0xBA;if ps2-kbd-getchar()!=-1{return 20;}
+code=0x2A;if ps2-kbd-getchar()!=-1{return 21;}
+code=0x1E;if ps2-kbd-getchar()!=97{return 22;}
+code=0xAA;if ps2-kbd-getchar()!=-1{return 23;}
+code=0x1D;if ps2-kbd-getchar()!=-1{return 24;}
+code=0x1E;if ps2-kbd-getchar()!=1{return 25;}
+code=0x9D;if ps2-kbd-getchar()!=-1{return 26;}
+code=0x3A;if ps2-kbd-getchar()!=-1{return 27;}
+code=0xBA;if ps2-kbd-getchar()!=-1{return 28;}
+code=0x1E;if ps2-kbd-getchar()!=97{return 29;}
 return 42;}
 """
     path = out/f'keyboard-{decoder}.in'
@@ -270,6 +296,23 @@ with (out/'qemu.log').open('w') as qlog:
         frame_until('tile-enter-geometry', tiled)
         tile_click=action('tile','TILE WINDOWS',True)
         frame_until('tile-click-geometry', tiled)
+        # Bottom-right resizing must be reachable outside the title bar and
+        # preserve the pointer's grip offset when geometry changes.
+        # Reset at the screen edge: preceding clicks intentionally use generous
+        # hit boxes, but an 8x8 grip needs an exact pointer coordinate.
+        move(-1920,-1080)
+        move(948,1032)
+        command('mouse_button 1')
+        move(-64,-48)
+        def resized_utility(pixels):
+            def pixel(x,y): return pixels[(y*1920+x)*3:(y*1920+x)*3+3]
+            desktop=bytes((11,9,9))
+            return pixel(900,900)==desktop and pixel(800,900)!=desktop and pixel(800,1000)==desktop
+        frame_until('pointer-resize-utility', resized_utility)
+        move(64,48)
+        command('mouse_button 0')
+        frame_until('pointer-resize-restored', tiled)
+        move(700-948,138-1032)
         # Terminal 2 identity survives the earlier index-zero close.
         restored=action('focus','FOCUS TERMINAL 2')
         minimized=action('minimize','MINIMIZE FOCUSED')
@@ -294,7 +337,7 @@ with (out/'qemu.log').open('w') as qlog:
         capture('dismissed')
         command('sendkey esc'); wait('space: compositor exited')
         serial.sendall(b'halt\n')
-        print(f'PASS: PS/2 launcher selection/focus, search/edit, terminal input, pointer taskbar/topbar, Escape and rendered pixels ({out})')
+        print(f'PASS: PS/2 launcher selection/focus, search/edit, terminal input, pointer taskbar/topbar/resize, Escape and rendered pixels ({out})')
     finally:
         (out/'serial.log').write_bytes(log)
         if monitor:

@@ -1,0 +1,67 @@
+{
+  "wine-console.c": {
+    "url": "https://raw.githubusercontent.com/wine-mirror/wine/840a939ee526137639665ff5f587224d6a36403f/dlls/kernelbase/console.c",
+    "bytes": 79683,
+    "sha256": "28f3db9fd652b88cd63cd454d73a84247a559b9a233fac02bdf4b85a7f175cd2"
+  },
+  "wine-console-tests.c": {
+    "url": "https://raw.githubusercontent.com/wine-mirror/wine/840a939ee526137639665ff5f587224d6a36403f/dlls/kernel32/tests/console.c",
+    "bytes": 269651,
+    "sha256": "961ddfe3d6c51f0cb50cd62a8d95e5b5ff1c5e541e83dac5f6c8b24704ce55ed"
+  },
+  "reactos-coninput.c": {
+    "url": "https://raw.githubusercontent.com/reactos/reactos/e81244349554c4f98a97fdd7fb67d7a1b450eec5/win32ss/user/winsrv/consrv/coninput.c",
+    "bytes": 29724,
+    "sha256": "7d2152040cfd42f08a14c8c456bf3264a52b3b2a485a84f48fb249f0d3602395"
+  },
+  "reactos-msgqueue.c": {
+    "url": "https://raw.githubusercontent.com/reactos/reactos/e81244349554c4f98a97fdd7fb67d7a1b450eec5/win32ss/user/ntuser/msgqueue.c",
+    "bytes": 81995,
+    "sha256": "8b6c305c7457a7b5b0160c8f11cc53126183e0366f6e233a9760b6311a5d6a9a"
+  },
+  "edit-readme.md": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/README.md",
+    "bytes": 4728,
+    "sha256": "04b9460b1ba9b95f4b4268820cee6742215c6477c086bd3ab9377e5fe24c4d12"
+  },
+  "edit-cargo.toml": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/Cargo.toml",
+    "bytes": 1266,
+    "sha256": "22fe161ccf57938c0d71f7c1db513f79d3e49ac5c3caef0fefac05c7fb91c0aa"
+  },
+  "vte-readme.md": {
+    "url": "https://raw.githubusercontent.com/alacritty/vte/abeae765dd546dfff60b278f0757dcc71beb8ab1/README.md",
+    "bytes": 843,
+    "sha256": "ff6200be737dfb4275b2cfbcd7742a7d7031f159908dd7799925733782341995"
+  },
+  "vte-cargo.toml": {
+    "url": "https://raw.githubusercontent.com/alacritty/vte/abeae765dd546dfff60b278f0757dcc71beb8ab1/Cargo.toml",
+    "bytes": 1167,
+    "sha256": "bb0c9360e1f4740a68cdaf43e9eef35df123e8e0a6357fce17982bf112531f0f"
+  },
+  "rosemary-termios.rs": {
+    "url": "https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/darwin/src/termios.rs",
+    "bytes": 19383,
+    "sha256": "b3105d94ca94d6e9afac5f1b456b69a5f865513017e9ae79973c647f57933e57"
+  },
+  "rosemary-backing.rs": {
+    "url": "https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/appkit/src/backing.rs",
+    "bytes": 96904,
+    "sha256": "7ebf53f6ed931b8789b2b086525a51432170015d9b35cfa29a881479a85e9149"
+  },
+  "rosemary-event.rs": {
+    "url": "https://github.com/microlift/rosemary/blob/f845f21842c85f6863cfa8a7a749cb945b88994a/crates/appkit/src/event.rs",
+    "bytes": 69362,
+    "sha256": "1e9e2280f4977b832345a82fd1114226612b8703257d242fd32a8f693266f9a3"
+  },
+  "edit-unix.rs": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/unix.rs",
+    "bytes": 22183,
+    "sha256": "8e86bd4ff17da295f59342d5ce2f9ffa1906d8c10b9983f9c6d2969c5772e541"
+  },
+  "edit-windows.rs": {
+    "url": "https://raw.githubusercontent.com/microsoft/edit/cb6de0a8966aecd01d19a3541dab1829d0e679ca/crates/edit/src/sys/windows.rs",
+    "bytes": 23028,
+    "sha256": "90b508e401b9363faf4c03ae2b228fbfe2eeb5c994db6d1256917fdaba622485"
+  }
+}

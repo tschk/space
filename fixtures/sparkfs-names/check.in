@@ -1,0 +1,69 @@
+package space.kernel
+
+fn name-check(port:Int,actual:Int,expected:Int,label:Int)->void{
+ if actual!=expected{serial-write-cstr(port,"names: failed ");serial-write-cstr(port,label);serial-write-cstr(port," got ");serial-write-dec-wide(port,actual);serial-write-cstr(port," expected ");serial-write-dec-wide(port,expected);serial-nl(port);panic("SparkFS name assertion");}
+}
+fn name-copy(dest:Int,source:Int,count:Int)->void{let i=0;while i<count{store8(dest+i,load8(source+i));i=i+1;}}
+fn name-equal(port:Int,a:Int,b:Int,count:Int)->void{let i=0;while i<count{if load8(a+i)!=load8(b+i){name-check(port,i,-1,"snapshot byte mismatch");}i=i+1;}}
+var name-snapshot:Int=0
+var name-snapshot-size:Int=0
+var name-snapshot-heap:Int=0
+fn name-take-snapshot()->void{
+ let count=load32(sf-super+SF-SB-INODE-COUNT);let bitmap=(load64(sf-super+SF-SB-TOTAL-BLOCKS)+7)/8;
+ name-copy(name-snapshot,sf-inodes,count*SF-INODE-SIZE);name-copy(name-snapshot+count*SF-INODE-SIZE,sf-bitmap,bitmap);
+ let pos=count*SF-INODE-SIZE+bitmap;let ino=0;
+ while ino<count{let addr=sf-inode-addr(ino);if load32(addr+SF-IN-TYPE)==SF-TYPE-DIR{
+  let blocks=(load64(addr+SF-IN-SIZE)+4095)/4096;let fbn=0;
+  while fbn<blocks{let block=sf-inode-block(ino,fbn);if sf-read-block(block,name-snapshot+pos)!=0{panic("name directory snapshot read");}pos=pos+4096;fbn=fbn+1;}
+ }ino=ino+1;}
+ name-snapshot-size=pos;name-snapshot-heap=heap-next;
+}
+fn name-assert-snapshot(port:Int)->void{
+ name-check(port,heap-next,name-snapshot-heap,"refusal no heap allocation");
+ let count=load32(sf-super+SF-SB-INODE-COUNT);let bitmap=(load64(sf-super+SF-SB-TOTAL-BLOCKS)+7)/8;
+ name-equal(port,name-snapshot,sf-inodes,count*SF-INODE-SIZE);name-equal(port,name-snapshot+count*SF-INODE-SIZE,sf-bitmap,bitmap);
+ let pos=count*SF-INODE-SIZE+bitmap;let ino=0;
+ while ino<count{let addr=sf-inode-addr(ino);if load32(addr+SF-IN-TYPE)==SF-TYPE-DIR{
+  let blocks=(load64(addr+SF-IN-SIZE)+4095)/4096;let fbn=0;
+  while fbn<blocks{let block=sf-inode-block(ino,fbn);name-check(port,sf-read-block(block,sf-block-buf),0,"directory read after refusal");name-equal(port,name-snapshot+pos,sf-block-buf,4096);pos=pos+4096;fbn=fbn+1;}
+ }ino=ino+1;}
+ name-check(port,pos,name-snapshot-size,"directory extent unchanged");
+}
+fn name-read(port:Int,path:Int,out:Int)->void{
+ name-check(port,fs-read-file(path,out,128),17,"reopened name content size");name-equal(port,out,"name-file-content",17);
+}
+fn names-proof(port:Int,phase:Int)->void{
+ name-check(port,nvme-ready,1,"real NVMe required");name-check(port,sf-mem-disk,0,"no RAM fallback");
+ if phase==1{name-check(port,fs-format(),0,"owned disk format");}
+ let count=load32(sf-super+SF-SB-INODE-COUNT);
+ name-snapshot=alloc(count*(SF-INODE-SIZE+4096)+4096);
+ let out=alloc(4096);let path=alloc(1024);let bad=alloc(1024);let stat=alloc(64);
+ let exact="abcdefghijklmnopqrstuvwx";let oversized="abcdefghijklmnopqrstuvwxy";
+ if phase==1{
+  name-take-snapshot();name-check(port,fs-write-file(oversized,"bad",3),-1,"25byte create refused");name-assert-snapshot(port);
+  name-check(port,fs-write-file(exact,"name-file-content",17),0,"24byte create accepted");name-read(port,exact,out);
+  let depth=0;let end=0;
+  while depth<12{
+   store8(path+end,47);end=end+1;name-copy(path+end,"ABCDEFGHIJKLMNOPQRSTUVWX",24);end=end+24;store8(path+end,0);
+   if fs-mkdir(path)<1{panic("deep24byte directory create");}depth=depth+1;
+  }
+  store8(path+end,47);end=end+1;name-copy(path+end,exact,24);end=end+24;store8(path+end,0);
+  name-check(port,fs-write-file(path,"name-file-content",17),0,"nested path longer than255 accepted");name-read(port,path,out);
+  name-copy(bad,path,end+1);store8(bad+end,121);store8(bad+end+1,0);
+  name-take-snapshot();name-check(port,fs-write-file(bad,"bad",3),-1,"nested25byte component refused");name-assert-snapshot(port);
+  name-take-snapshot();name-check(port,sf-dir-add(0,oversized,1,SF-TYPE-FILE),-1,"direct directory add refuses25bytes");name-check(port,fs-write-file("/ABCDEFGHIJKLMNOPQRSTUVWXY/leaf","bad",3),-1,"oversized parent component refused");name-check(port,fs-rename(exact,oversized),-1,"oversized rename refused");name-assert-snapshot(port);
+  name-take-snapshot();name-check(port,fs-read-file(oversized,out,128),-1,"oversized readonly refused");name-check(port,fs-stat(oversized,stat),-1,"oversized stat refused");name-check(port,fs-delete(oversized),-1,"oversized delete refused");name-assert-snapshot(port);
+  // Inject only directory-add refusal, before any directory mutation.
+  // Create must restore the selected free inode and return an error.
+  name-test-fail-add=1;name-take-snapshot();name-check(port,sparkfs-create("rollback",SF-TYPE-FILE),-1,"dir-add failure propagated");name-assert-snapshot(port);name-test-fail-add=0;
+ }else{
+  name-read(port,exact,out);let depth=0;let end=0;
+  while depth<13{store8(path+end,47);end=end+1;if depth<12{name-copy(path+end,"ABCDEFGHIJKLMNOPQRSTUVWX",24);}else{name-copy(path+end,exact,24);}end=end+24;store8(path+end,0);depth=depth+1;}
+  name-read(port,path,out);
+  if phase==0{
+   name-check(port,fs-delete(path),0,"delete deep24byte file");name-check(port,fs-read-file(path,out,128),-1,"deleted deep file absent");
+   name-check(port,fs-write-file(path,"name-file-content",17),0,"recreate deep24byte file");name-read(port,path,out);
+  }
+ }
+ serial-write-cstr(port,"names: real NVMe name proof PASS");serial-nl(port);
+}

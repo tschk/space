@@ -1,0 +1,82 @@
+package space.kernel
+
+// PE32 is a separate edge profile. The existing PE32+ validators are unchanged.
+fn pe32-opt(image:Int)->Int{return image+load32(image+60)+24;}
+fn pe32-section(image:Int,index:Int)->Int{return pe32-opt(image)+224+index*40;}
+fn pe32-sections(image:Int)->Int{return load16(image+load32(image+60)+6);}
+fn pe32-rva(image:Int,size:Int,rva:Int,bytes:Int)->Int{
+ if rva<0 || bytes<0{return -1;}let i=0;
+ while i<pe32-sections(image){let p=pe32-section(image,i);let va=load32(p+12);let raw=load32(p+16);
+  if rva>=va && rva - va<=raw && bytes<=raw - (rva - va){let off=load32(p+20)+rva - va;if off<=size && bytes<=size - off{return off;}}
+  i+=1;
+ }return -1;
+}
+fn pe32-name(image:Int,size:Int,rva:Int,name:Int)->Int{
+ let count=strlen(name)+1;let off=pe32-rva(image,size,rva,count);if off<0{return 0;}let i=0;
+ while i<count{if load8(image+off+i)!=load8(name+i){return 0;}i+=1;}return 1;
+}
+fn pe32-import-name(id:Int)->Int{
+ if id==1{return "CloseHandle";}if id==2{return "CreateFileA";}if id==3{return "ExitProcess";}
+ if id==4{return "GetCommandLineA";}if id==5{return "GetEnvironmentVariableA";}if id==6{return "GetStdHandle";}
+ if id==7{return "GetSystemTime";}if id==8{return "GetTickCount";}if id==9{return "HeapAlloc";}
+ if id==10{return "HeapCreate";}if id==11{return "HeapDestroy";}if id==12{return "HeapFree";}
+ if id==13{return "HeapReAlloc";}if id==14{return "HeapSize";}if id==15{return "ReadFile";}
+ if id==16{return "SetFilePointer";}if id==17{return "SystemTimeToFileTime";}if id==18{return "WriteFile";}
+ if id==19{return "GetLastError";}return 0;
+}
+fn pe32-import-args(id:Int)->Int{
+ if id==4 || id==8 || id==19{return 0;}if id==2{return 7;}if id==15 || id==18{return 5;}
+ if id==13 || id==16{return 4;}if id==5 || id==9 || id==10 || id==12 || id==14{return 3;}
+ if id==17{return 2;}return 1;
+}
+fn pe32-import-id(image:Int,size:Int,rva:Int)->Int{
+ if pe32-rva(image,size,rva,3)<0{return 0;}let id=1;while id<=19{
+  if pe32-name(image,size,rva+2,pe32-import-name(id))!=0{return id;}id+=1;
+ }return 0;
+}
+fn pe32-import-descriptor(image:Int,size:Int)->Int{
+ let opt=pe32-opt(image);let rva=load32(opt+104);let bytes=load32(opt+108);
+ if rva==0 && bytes==0{return 0;}if bytes<40 || bytes>65536{return -8;}
+ let off=pe32-rva(image,size,rva,bytes);if off<0{return -8;}let p=image+off;
+ if load64(p+20)!=0 || load64(p+28)!=0 || load32(p+36)!=0 || load64(p+4)!=0{return -8;}
+ let name=pe32-rva(image,size,load32(p+12),13);if name<0{return -8;}let i=0;
+ while i<13{let a=load8(image+name+i);let b=load8("KERNEL32.DLL"+i);if a>=97 && a<=122{a-=32;}if a!=b{return -38;}i+=1;}
+ return off;
+}
+fn pe32-image-check(image:Int,size:Int)->Int{
+ if image<=0 || size<512 || size>0x200000 || (size&511)!=0 || image>0x100000000 - size{return -8;}
+ if load16(image)!=0x5a4d{return -8;}let pe=load32(image+60);
+ if pe<64 || pe>size - 248 || pe>4096 - 248 || (pe&3)!=0{return -8;}
+ if load32(image+pe)!=0x4550 || load16(image+pe+4)!=0x14c || load16(image+pe+20)!=224{return -8;}
+ let count=pe32-sections(image);let chars=load16(image+pe+22);
+ if count<1 || count>16 || (chars&0x102)!=0x102 || (chars&(0xffff^0x12f))!=0 || load64(image+pe+12)!=0{return -8;}
+ let opt=pe32-opt(image);let base=load32(opt+28);let extent=load32(opt+56);let headers=load32(opt+60);
+ if load16(opt)!=0x10b || load32(opt+32)!=4096 || load32(opt+36)!=512 || load16(opt+68)!=3 || load32(opt+92)!=16{return -8;}
+ if (load16(opt+70)&0x100)==0 || (load16(opt+70)&(0xffff^0x500))!=0{return -8;}
+ if base<0x400000 || (base&65535)!=0 || extent<=4096 || extent>0x2000000 || (extent&4095)!=0 || base>0x10000000 - extent{return -8;}
+ if headers<pe+248+count*40 || headers>4096 || headers>size || (headers&511)!=0{return -8;}
+ let previous=4096;let fileend=headers;let entry=load32(opt+16);let found=0;let i=0;
+ while i<count{
+  let p=pe32-section(image,i);let vm=load32(p+8);let va=load32(p+12);let raw=load32(p+16);let off=load32(p+20);let flags=load32(p+36);
+  if vm<=0 || vm>0x800000 || va<previous || (va&4095)!=0 || va>extent - vm || load64(p+24)!=0 || load32(p+32)!=0{return -8;}
+  if raw<0 || off<headers || off>size || raw>size - off || (raw&511)!=0 || (off&511)!=0{return -8;}
+  if raw>0 && off<fileend{return -8;}
+  if (flags&(0xffffffff^0xe00000e0))!=0 || (flags&0x60000000)==0 || (flags&0xa0000000)==0xa0000000{return -8;}
+  if (flags&0x20000000)!=0{if raw==0 || (flags&0x20)==0{return -8;}if entry>=va && entry - va<raw{found=1;}}
+  let bytes=vm;if raw>bytes{bytes=raw;}let high=va+((bytes+4095)&(-4096));if high>extent{return -8;}previous=high;
+  if raw>0{fileend=off+raw;}i+=1;
+ }
+ if found==0{return -8;}i=0;while i<16{if i!=1 && i!=12 && load64(opt+96+i*8)!=0{return -38;}i+=1;}
+ let desc=pe32-import-descriptor(image,size);if desc<0{return desc;}
+ if desc>0{
+  let lookup=load32(image+desc);let iat=load32(image+desc+16);if lookup==0{lookup=iat;}i=0;
+  while i<=64{
+   let at=pe32-rva(image,size,lookup+i*4,4);let target=pe32-rva(image,size,iat+i*4,4);if at<0 || target<0{return -8;}
+   let name=load32(image+at);if load32(image+target)!=name{return -8;}if name==0{return base+entry;}
+   if i==64 || (name&0x80000000)!=0{return -38;}if pe32-import-id(image,size,name)==0{return -38;}
+   let j=0;let writable=0;while j<count{let s=pe32-section(image,j);if iat+i*4>=load32(s+12) && iat+i*4 - load32(s+12)<load32(s+16){if (load32(s+36)&0x20000000)!=0{return -8;}writable=1;}j+=1;}
+   if writable==0{return -8;}i+=1;
+  }return -8;
+ }
+ return base+entry;
+}

@@ -1,0 +1,161 @@
+package space.kernel
+
+// Test-only supervisor instrumentation. Product lifecycle functions run intact.
+var gui-observer-sessions = 0
+var gui-observer-closes = 0
+var gui-observer-old-handle = 0
+var gui-observer-old-token = 0
+var gui-observer-old-entry = 0
+var gui-observer-old-info = 0
+var gui-observer-heap = 0
+var gui-observer-free = 0
+var gui-observer-domains = 0
+var gui-observer-caps = 0
+var gui-observer-objects = 0
+var gui-observer-exports = 0
+var gui-observer-clones = 0
+
+fn gui-observer-free-count() -> Int {
+  let frame = free-list
+  let count = 0
+  while frame != 0 && count < 10000 { count += 1; frame = load64(frame) }
+  if frame != 0 { panic("GUI free-list cycle") }
+  return count
+}
+
+fn gui-observer-alias(virt: Int) -> Int {
+  let e4 = load64(load64(domain-table) + ((virt >> 39) & 511) * 8)
+  if (e4 & 1) == 0 { return 0 }
+  let e3 = load64((e4 & PAGE-ADDRESS-MASK) + ((virt >> 30) & 511) * 8)
+  if (e3 & 1) == 0 { return 0 }
+  if (e3 & 128) != 0 { return (e3 & 0x000fffffc0000000) | (virt & 0x3ffff000) }
+  let e2 = load64((e3 & PAGE-ADDRESS-MASK) + ((virt >> 21) & 511) * 8)
+  if (e2 & 1) == 0 { return 0 }
+  if (e2 & 128) != 0 { return (e2 & 0x000fffffffe00000) | (virt & 0x1ff000) }
+  let e1 = load64((e2 & PAGE-ADDRESS-MASK) + ((virt >> 12) & 511) * 8)
+  if (e1 & 1) == 0 { return 0 }
+  return e1 & PAGE-ADDRESS-MASK
+}
+
+fn gui-observer-aliases() -> void {
+  let ring = gui-observer-alias(COMP-SHARED-VIRT)
+  let pixel = gui-observer-alias(COMP-PIXEL-VIRT)
+  let frame = free-list
+  let count = 0
+  while frame != 0 && count < 10000 {
+    if frame == ring || frame == pixel { panic("GUI alias references freed frame") }
+    frame = load64(frame); count += 1
+  }
+  if frame != 0 { panic("GUI alias free-list cycle") }
+}
+
+fn gui-admit(slot: Int) -> Int {
+  return gui-observer-admit(gui-admit-implementation(slot), slot)
+}
+
+fn gui-window-admit(slot: Int) -> Int {
+  return gui-observer-admit(gui-window-admit-implementation(slot), slot)
+}
+
+fn gui-observer-admit(token: Int, slot: Int) -> Int {
+  if token == 0 { return 0 }
+  let record = gui-record(token)
+  let handle = load64(record + GUI-HANDLE)
+  if gui-observer-old-handle != 0 {
+    if handle == gui-observer-old-handle { panic("GUI handle generation reused") }
+    if token == gui-observer-old-token || gui-record(gui-observer-old-token) != 0 || gui-event(gui-observer-old-token, SPDP-SEAT-KEYBOARD-KEY, ticks, 97) != 0 { panic("GUI stale surface token accepted after reuse") }
+    let page = load64(record + 8)
+    let head = load64(page)
+    let tail = load64(page + 8)
+    let pixel = load64(record + 32)
+    let color = load64(pixel)
+    if runtime-instance-resume(gui-observer-old-handle, gui-observer-old-entry, gui-observer-old-info) != -1 || runtime-instance-retire(gui-observer-old-handle) != -1 || runtime-instance-release(gui-observer-old-handle) != -1 { panic("GUI stale generation accepted after reuse") }
+    if load64(page) != head || load64(page + 8) != tail || load64(pixel) != color { panic("GUI stale generation mutated new client") }
+  }
+  // A valid handle from the other client must fail before event publication.
+  let other = gui-records + (1 - slot) * GUI-RECORD-SIZE
+  if load64(other + GUI-ACTIVE) == 1 {
+    let page = load64(record + 8)
+    let head = load64(page)
+    let tail = load64(page + 8)
+    store64(record + GUI-HANDLE, load64(other + GUI-HANDLE))
+    let refused = gui-restore(token)
+    store64(record + GUI-HANDLE, handle)
+    if refused != 0 || load64(page) != head || load64(page + 8) != tail { panic("GUI wrong owner accepted") }
+  }
+  return token
+}
+
+fn gui-retire(record: Int) -> Int {
+  let handle = load64(record + GUI-HANDLE)
+  let entry = load64(record + 56)
+  let info = load64(record + 80)
+  let domain = load64(record + 16)
+  let cap = load64(record + 88)
+  let sid = load64(record + GUI-SURFACE)
+  let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let runtime = runtime-instance-record(handle, 1)
+  if runtime == 0 { runtime = runtime-instance-record(handle, 2) }
+  if runtime == 0 { panic("GUI observer missing owner") }
+  let pixel-pages = load64(load64(runtime) + 304)
+  let pixel-view = load64(record + 32)
+  let pixel-parent = 0
+  if pixel-pages > 1 {
+    pixel-parent = runtime-instance-view-parent(pixel-view)
+    if pixel-parent == 0 { panic("GUI canvas missing server parent") }
+  }
+  let before = gui-observer-free-count()
+  domain-switch(domain)
+  let denied = 0
+  if runtime-instance-retire(handle) == -1 && runtime-instance-release(handle) == -1 { denied = 1 }
+  domain-switch(0)
+  if denied != 1 { panic("GUI guest retired supervisor instance") }
+  let result = gui-retire-implementation(record)
+  if result != 1 { return result }
+  if gui-observer-free-count() < before + 512 + pixel-pages { panic("GUI backing not physically reclaimed") }
+  if pixel-pages > 1 {
+    // The private PD/PT was freed. Only the captured kernel-owned parent entry
+    // remains valid to inspect; never dereference a freed directory address.
+    if load64(pixel-parent) != 0 { panic("GUI canvas server view survived release") }
+  }
+  if load64(record + GUI-HANDLE) != 0 || load64(record + GUI-ACTIVE) != 0 || load64(dsp-pools + slot * 8) != 0 || dsp-surface-valid(sid) != 0 { panic("GUI close references survive release") }
+  if gui-reply(record, 0, 0) != 0 { panic("GUI retired reply accessed freed endpoint") }
+  if load64(record + GUI-WINDOW-CONFIG) != 0 && gui-window-reply(record, 0, 0, 0) != 0 { panic("GUI retired window reply accessed freed endpoint") }
+  if load64(domain-table + domain * 24 + 8) != DOMAIN-FREE || load64(cap-table-base + cap * 16) != 0 { panic("GUI close authority survives release") }
+  // The first freed frame is deliberately recycled as a canary. Stale resume
+  // must reject before dereferencing the former info/entry/frame addresses.
+  let canary = frame-alloc()
+  store64(canary, 0x123456789abcdef)
+  if runtime-instance-resume(handle, entry, info) != -1 || runtime-instance-retire(handle) != -1 || runtime-instance-release(handle) != -1 || load64(canary) != 0x123456789abcdef { panic("GUI stale handle touched recycled frame") }
+  frame-free(canary)
+  gui-observer-old-handle = handle
+  gui-observer-old-token = load64(record + GUI-TOKEN)
+  gui-observer-old-entry = entry
+  gui-observer-old-info = info
+  gui-observer-closes += 1
+  gui-observer-aliases()
+  return 1
+}
+
+fn gui-session-run(port: Int) -> Int {
+  let result = gui-session-run-implementation(port)
+  if result != 1 { return result }
+  gui-observer-sessions += 1
+  if runtime-instance-live != 0 || domain-current != 0 || current-cap != load64(domain-table + 16) || gui-session-input-handle != 0 || sci-proof-input.unit != 0 { panic("GUI session live ownership remains") }
+  if gui-observer-closes != gui-observer-sessions * 2 { panic("GUI close ownership count") }
+  gui-observer-aliases()
+  let free = gui-observer-free-count()
+  if gui-observer-sessions == 16 {
+    gui-observer-heap = heap-next; gui-observer-free = free
+    gui-observer-domains = domain-count; gui-observer-caps = cap-count
+    gui-observer-objects = obj-arena-next; gui-observer-exports = dyn-count
+    gui-observer-clones = domain-clone-owned
+  }
+  if gui-observer-sessions > 16 {
+    if heap-next != gui-observer-heap || free != gui-observer-free || domain-count != gui-observer-domains || cap-count != gui-observer-caps || obj-arena-next != gui-observer-objects || dyn-count != gui-observer-exports || domain-clone-owned != gui-observer-clones { panic("GUI resources grew after warmup") }
+  }
+  serial-write-cstr(port, "gui-lifetime: resource and ABA observation ")
+  serial-write-dec-wide(port, gui-observer-sessions)
+  serial-nl(port)
+  return result
+}

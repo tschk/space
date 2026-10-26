@@ -1,7 +1,7 @@
 package space.app
 
-// notes (boot kind 10): a vro-style text editor as a dynamically linked,
-// isolated app — modeled after undivisible/vro (micro-inspired editor).
+// notes (boot kind 10): a vro-style text editor as a dynamically linked
+// runtime component — modeled after undivisible/vro (micro-inspired editor).
 // Edits /notes.txt through the kernel filesystem service, so notes persist
 // across reboots when a volume backend is present.
 //
@@ -81,8 +81,17 @@ var n-dirty: Int = 0
 var n-scroll: Int = 0
 
 // --- terminal primitives ----------------------------------------------------
+fn t-port-put(port: Int, ch: Int) -> void {
+  // Every terminal byte, including ANSI sequences, must wait for the UART.
+  // Writing while THR is busy silently drops redraw bytes on real/emulated UARTs.
+  while (inb(port + 5) & 0x20) == 0 {
+  }
+  outb(port, ch)
+  return
+}
+
 fn t-put(ch: Int) -> void {
-  outb(COM1, ch)
+  t-port-put(COM1, ch)
   return
 }
 
@@ -640,8 +649,8 @@ fn n-command-bar() -> Int {
 }
 
 fn serial-nl-ln(port: Int) -> void {
-  outb(port, 13)
-  outb(port, 10)
+  t-port-put(port, 13)
+  t-port-put(port, 10)
   return
 }
 

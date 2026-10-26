@@ -1,0 +1,196 @@
+package space.fixture
+var native-test-runs:Int=0
+fn native-test-run(handle:Int,budget:Int)->Int{native-test-runs=native-test-runs+1;return native-protected-run(handle,budget);}
+fn native-test-state(handle:Int)->Int{
+ let record=runtime-instance-record(handle,1);
+ if record==0{record=runtime-instance-record(handle,2);}
+ if record==0{panic("protected native missing owner");return 0;}
+ return load64(record);
+}
+fn native-test-mode(handle:Int,mode:Int,pointer:Int)->void{
+ let state=native-test-state(handle);let heap=load64(load64(state+24));
+ store64(heap+8,mode);store64(heap+24,pointer);
+}
+fn native-test-close(handle:Int)->void{
+ if runtime-instance-retire(handle)!=0 || runtime-instance-release(handle)!=0 || native-protected-run(handle,10)!=-1{panic("protected native stale teardown");}
+}
+fn native-protected-check(port:Int)->void{
+ let image=boot-image-find(254);let bytes=runtime-instance-image-boot-size(image);
+ let profile=native-protected-image-valid(image,bytes,5);
+ if profile==0{panic("protected native fixture profile invalid");}
+ native-test-refusals(port,image,bytes);
+ let original=alloc(bytes);let byte=0;while byte<bytes{store8(original+byte,load8(image+byte));byte=byte+1;}
+ let left=native-protected-open(port,image,bytes,"protected-left",5,0);
+ let right=native-protected-open(port,image,bytes,"protected-right",5,0);
+ if left<=0 || right<=0 || left==right{panic("protected native two opens");}
+ if native-test-run(left,100)!=101 || native-test-run(right,100)!=101 || native-test-run(left,100)!=102{panic("protected native independent heaps");}
+ let lstate=native-test-state(left);let rstate=native-test-state(right);
+ if runtime-instance-resume(left,load64(lstate+288),lstate+128)!=-1{panic("protected native trusted resume accepted");}
+ native-test-mode(right,9,0);
+ if native-test-run(right,100)!=42{panic("protected native pointer port service denial");}
+ native-test-mode(right,15,0);
+ if native-test-run(right,100)!=42{panic("protected native allocator pointer denial");}
+ let rights=load64(cap-table-base+load64(rstate+16)*16+8);store64(cap-table-base+load64(rstate+16)*16+8,0);
+ native-test-mode(right,10,0);
+ if native-test-run(right,100)!=42{panic("protected native capability denial");}
+ store64(cap-table-base+load64(rstate+16)*16+8,rights);
+ native-test-mode(right,0,0);
+ if native-test-run(right,100)!=102{panic("protected native peer after denied service");}
+ if profile==2{
+  native-test-mode(left,11,0);native-test-mode(right,11,0);
+  if native-test-run(left,100)!=11 || native-test-run(right,100)!=11 || native-test-run(left,100)!=12{panic("protected native independent initialized globals");}
+ }
+ let mode=1;
+ while mode<=16{
+  if mode!=9 && mode!=10 && mode!=15 && (mode!=11 || profile==1) && ((mode!=12 && mode!=16) || profile==2){
+   let handle=native-protected-open(port,image,bytes,"protected-fault",5,0);
+   if handle<=0{panic("protected native fault open");}
+   let state=native-test-state(handle);let pointer=load64(load64(lstate+24));
+   if mode==12{pointer=NATIVE-PROTECTED-IMAGE+load64(image+40);}
+   if mode==16{pointer=NATIVE-PROTECTED-IMAGE+load64(image+bytes - 64+40);}
+   native-test-mode(handle,mode,pointer);
+   let expected=142;let kind=2;
+   if mode==5{expected=141;}
+   if mode==6{
+    let pointer=native-protected-malloc(state,0x200000);if pointer==0{panic("protected native allocation failure setup");}
+    expected=134;kind=5;
+   }
+   if mode==7{expected=124;kind=3;}
+   if mode==11{expected=142;}
+   let outcome=native-test-run(handle,2);
+   if outcome!=expected || native-protected-stop(handle)!=kind{serial-write-dec-wide(port,mode);serial-write-hex(port,outcome);panic("protected native typed failure");}
+   if mode==6 && load64(load64(load64(state+24))+16)!=0{panic("protected native aborted expression resumed");}
+   native-test-close(handle);
+   native-test-mode(right,9,0);if native-test-run(right,100)!=42{panic("protected native peer after fault");}
+  }
+  mode=mode+1;
+ }
+ native-test-close(left);native-test-close(right);
+ if runtime-instance-live!=0{panic("protected native live leak");}
+ native-test-lifecycle(port,image,bytes);
+ byte=0;while byte<bytes{if load8(original+byte)!=load8(image+byte){panic("protected native source image mutated");}byte=byte+1;}
+ serial-write-cstr(port,"native: CPU activations ");serial-write-dec-wide(port,native-test-runs);serial-nl(port);
+ serial-write-cstr(port,"native: actual protected SCI two instances trap heap capability denial abort fault deadline lifetime PASS");serial-nl(port);
+}
+
+fn native-test-free-count()->Int{
+ let cursor=free-list;let count=0;
+ while cursor!=0{if cursor<0x100000 || cursor>=heap-end || (cursor&4095)!=0 || count>1048576{panic("protected native free list");}count=count+1;cursor=load64(cursor);}
+ return count;
+}
+fn native-test-refusals(port:Int,image:Int,bytes:Int)->void{
+ let tail=image+bytes - 64;
+ let arguments=alloc(16);
+ let heap=heap-next;let frames=native-test-free-count();let caps=cap-count;let domains=domain-count;let objects=obj-arena-next;let live=runtime-instance-live;
+ let field=0;
+ while field<8{
+  let old=load64(tail+field*8);let bad=1;
+  if field==0{bad=0;}if field==1{bad=2;}if field==2{bad=99;}if field==3 || field==4 || field==6{bad=bytes;}
+  store64(tail+field*8,bad);
+  if native-protected-open(port,image,bytes,"malformed-native",5,0)!=-1{panic("protected native malformed accepted");}
+  store64(tail+field*8,old);field=field+1;
+ }
+ if load64(tail+16)==2{
+  let size=load64(tail+48);store64(tail+48,load64(tail+24) - load64(tail+40));
+  if native-protected-open(port,image,bytes,"writable-bindings-native",5,0)!=-1{panic("protected native writable bindings accepted");}store64(tail+48,size);
+ }
+ if native-protected-open(port,image,bytes,"ungranted-native",0,0)!=-1 || native-protected-open(port,image,bytes - 1,"truncated-native",5,0)!=-1{panic("protected native authority or extent accepted");}
+ let required=load64(image+8);store64(image+8,7);
+ if native-protected-open(port,image,bytes,"unknown-authority-native",7,0)!=-1{panic("protected native unsupported authority accepted");}store64(image+8,required);
+ let entry=load64(image+16);store64(image+16,0x60001040);
+ if native-protected-open(port,image,bytes,"wrong-layout-native",5,0)!=-1{panic("protected native image region accepted");}store64(image+16,entry);
+ store64(arguments,0);store64(arguments+8,-1);
+ if native-protected-open(port,image,bytes,"negative-args-native",5,arguments)!=-1{panic("protected native negative args accepted");}
+ store64(arguments+8,1024);
+ if native-protected-open(port,image,bytes,"oversized-args-native",5,arguments)!=-1{panic("protected native oversized args accepted");}
+ let private-image=boot-image-find(256);let private-bytes=runtime-instance-image-boot-size(private-image);
+ if private-image==0 || native-protected-open(port,private-image,private-bytes,"private-import-native",5,0)!=-1{panic("protected native private import accepted");}
+ if heap-next!=heap || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || runtime-instance-live!=live{panic("protected native refusal allocated");}
+}
+
+fn native-test-lifecycle(port:Int,image:Int,bytes:Int)->void{
+ let trusted-image=boot-image-find(255);
+ if trusted-image==0{panic("protected native trusted fixture missing");}
+ let saved-caps=alloc(cap-table-cap*16);let saved-domains=alloc(MAX-DOMAINS*24);
+ let heap=0;let frames=0;let caps=0;let domains=0;let objects=0;let exports=0;let clones=domain-clone-owned;let users=domain-user-owned;
+ let cycle=0;
+ let previous-victim=0;let recycled=0;
+ while cycle<70{
+  if sci-load-retained-component(port,trusted-image,"trusted-mixed",1,0)!=1{panic("protected native mixed trusted initial");}
+  let trusted=runtime-instance-last-handle;let trusted-entry=sci-sync-entry;let trusted-info=sci-sync-info;
+  let protected=native-protected-open(port,image,bytes,"protected-mixed",5,0);
+  if protected<=0 || native-test-run(protected,100)!=101{panic("protected native mixed initial");}
+  let state=native-test-state(protected);
+  if native-protected-run(trusted,10)!=-1 || runtime-instance-resume(protected,load64(state+288),state+128)!=-1{panic("protected native mixed execution kind accepted");}
+  // Unknown and mismatched kinds must fail without touching owned resources.
+  let before=free-list;let before-cap=load64(cap-table-base+load64(state+16)*16);
+  store64(state+120,99);
+  if runtime-instance-dispose(state)!=-1 || free-list!=before || load64(cap-table-base+load64(state+16)*16)!=before-cap{panic("protected native unknown kind destructive");}
+  store64(state+120,0);
+  if runtime-instance-resume(protected,load64(state+288),state+128)!=-1 || runtime-instance-dispose(state)!=-1{panic("protected native ownership kind mismatch");}
+  store64(state+120,2);
+  let victim=native-protected-open(port,image,bytes,"protected-mixed-failure",5,0);
+  if victim<=0{panic("protected native mixed victim");}
+  if previous-victim!=0{
+   if (previous-victim&255)==(victim&255){recycled=recycled+1;}
+   if native-protected-run(previous-victim,10)!=-1 || load64(load64(load64(native-test-state(victim)+24)))!=0{panic("protected native recycled generation revived");}
+  }
+  previous-victim=victim;
+  let mode=1;let expected=142;
+  if cycle%3==0{mode=6;expected=134;if native-protected-malloc(native-test-state(victim),0x200000)==0{panic("protected native mixed abort setup");}}
+  if cycle%3==1{mode=7;expected=124;}
+  native-test-mode(victim,mode,0);
+  if native-test-run(victim,2)!=expected{panic("protected native mixed failure");}
+  native-test-close(victim);
+  if runtime-instance-resume(trusted,trusted-entry,trusted-info)!=2 || native-test-run(protected,100)!=102{panic("protected native mixed peers after failure");}
+  if cycle%2==0{
+   native-test-close(trusted);
+   if native-test-run(protected,100)!=103{panic("protected native mixed protected survivor");}
+   native-test-close(protected);
+  }else{
+   native-test-close(protected);
+   if runtime-instance-resume(trusted,trusted-entry,trusted-info)!=3{panic("protected native mixed trusted survivor");}
+   native-test-close(trusted);
+  }
+  if runtime-instance-live!=0 || domain-clone-owned!=clones || domain-user-owned!=users || cr3-read()!=load64(domain-table) || domain-current!=0{panic("protected native mixed ownership drift");}
+  if cycle==0{
+   heap=heap-next;frames=native-test-free-count();caps=cap-count;domains=domain-count;objects=obj-arena-next;exports=dyn-count;
+   let i=0;while i<cap-table-cap*16{store8(saved-caps+i,load8(cap-table-base+i));i=i+1;}
+   i=0;while i<MAX-DOMAINS*24{store8(saved-domains+i,load8(domain-table+i));i=i+1;}
+  }else{
+   if heap-next!=heap || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || dyn-count!=exports{panic("protected native mixed resource drift");}
+   let i=0;while i<cap-table-cap*16{if load8(saved-caps+i)!=load8(cap-table-base+i){panic("protected native capability bytes drift");}i=i+1;}
+   i=0;while i<MAX-DOMAINS*24{if load8(saved-domains+i)!=load8(domain-table+i){panic("protected native domain bytes drift");}i=i+1;}
+  }
+  serial-write-cstr(port,"native: lifecycle cycle ");serial-write-dec-wide(port,cycle+1);serial-nl(port);cycle=cycle+1;
+ }
+ if recycled<1{panic("protected native ABA fixture not recycled");}
+}
+
+fn native-protected-oom-check(port:Int)->void{
+ let flags=invoke1(load64(0x4198),0);let image=boot-image-find(254);let bytes=runtime-instance-image-boot-size(image);
+ let held=alloc((heap-end/4096)*8);let saved-caps=alloc(cap-table-cap*16);let saved-domains=alloc(MAX-DOMAINS*24);
+ sti();let peer=native-protected-open(port,image,bytes,"protected-oom-peer",5,0);
+ if peer<=0 || native-test-run(peer,100)!=101{panic("protected native OOM peer");}
+ let budget=native-protected-frame-budget(bytes);let capacity=runtime-instance-frame-capacity();let hold=capacity - budget+1;
+ if hold<=0{panic("protected native OOM fixture capacity");}
+ let page=0;while page<hold{let frame=frame-alloc();store64(held+page*8,frame);store64(frame+8,0x77110000+page);page=page+1;}
+ if runtime-instance-frame-capacity()!=budget - 1{panic("protected native OOM fixture pressure");}
+ let heap=heap-next;let free=free-list;let frames=native-test-free-count();let caps=cap-count;let domains=domain-count;let objects=obj-arena-next;let object-id=obj-counter;let live=runtime-instance-live;let last=runtime-instance-last-handle;
+ let byte=0;while byte<cap-table-cap*16{store8(saved-caps+byte,load8(cap-table-base+byte));byte=byte+1;}
+ byte=0;while byte<MAX-DOMAINS*24{store8(saved-domains+byte,load8(domain-table+byte));byte=byte+1;}
+ if native-protected-open(port,image,bytes,"protected-oom-refuse-if1",5,0)!=-1 || (invoke1(load64(0x4198),0)&512)!=512{panic("protected native OOM IF1 refusal");}
+ if native-test-run(peer,100)!=102{panic("protected native OOM peer survives");}
+ cli();if native-protected-open(port,image,bytes,"protected-oom-refuse-if0",5,0)!=-1 || (invoke1(load64(0x4198),0)&512)!=0{panic("protected native OOM IF0 refusal");}
+ if heap-next!=heap || free-list!=free || native-test-free-count()!=frames || cap-count!=caps || domain-count!=domains || obj-arena-next!=objects || obj-counter!=object-id || runtime-instance-live!=live || runtime-instance-last-handle!=last{panic("protected native OOM refusal resources");}
+ byte=0;while byte<cap-table-cap*16{if load8(saved-caps+byte)!=load8(cap-table-base+byte){panic("protected native OOM capability bytes");}byte=byte+1;}
+ byte=0;while byte<MAX-DOMAINS*24{if load8(saved-domains+byte)!=load8(domain-table+byte){panic("protected native OOM domain bytes");}byte=byte+1;}
+ page=0;while page<hold{let frame=load64(held+page*8);if load64(frame+8)!=0x77110000+page{panic("protected native OOM held frame canary");}frame-free(frame);page=page+1;}
+ sti();let fresh=native-protected-open(port,image,bytes,"protected-oom-recovery",5,0);
+ if fresh<=0 || native-test-run(fresh,100)!=101 || native-test-run(peer,100)!=103{panic("protected native OOM recovery");}
+ native-test-close(fresh);native-test-close(peer);
+ if runtime-instance-live!=0{panic("protected native OOM live leak");}
+ if (flags&512)==0{cli();}
+ serial-write-cstr(port,"native: constrained memory budget ");serial-write-dec-wide(port,budget);serial-write-cstr(port," available ");serial-write-dec-wide(port,budget - 1);serial-nl(port);
+ serial-write-cstr(port,"native: actual protected SCI constrained memory exact refusal IF restoration peer recovery PASS");serial-nl(port);
+}

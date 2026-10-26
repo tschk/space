@@ -31,21 +31,23 @@ trap cleanup EXIT
   --trampoline "$BUILD_DIR/trampoline.bin" --target native \
   --target-triple x86_64-unknown-none --linkage static-lib --out "$BUILD_DIR/kernel.bin"
 "$NASM" -f bin "$SPACE_DIR/fixtures/darwin-minimal-macho.asm" -o "$BUILD_DIR/fixture.macho"
-python3 - "$BUILD_DIR" <<'PY'
+python3 - "$BUILD_DIR" "$SCRIPT_DIR" <<'PY'
 from pathlib import Path
 import struct
 import sys
+sys.path.insert(0, sys.argv[2])
+from boot_fixture_layout import stage_fixture
 build = Path(sys.argv[1])
 image = (build / 'fixture.macho').read_bytes()
 assert len(image) == 4096
 assert struct.unpack_from('<8I', image) == (0xfeedfacf, 0x1000007, 3, 2, 2, 96, 1, 0)
 assert struct.unpack_from('<II16s4Q4I', image, 32) == (
-    0x19, 72, b'__TEXT' + bytes(10), 0x280000, 4096, 0, 4096, 5, 5, 0, 0)
+    0x19, 72, b'__TEXT' + bytes(10), 0x2f0000, 4096, 0, 4096, 5, 5, 0, 0)
 assert struct.unpack_from('<IIQQ', image, 104) == (0x80000028, 24, 128, 0)
 assert image[128:134] == bytes.fromhex('b82a000000c3')
 kernel = (build / 'kernel.bin').read_bytes()
-assert len(kernel) <= 0x180000, 'kernel overlaps Mach-O fixture'
-(build / 'combined.bin').write_bytes(kernel + bytes(0x180000-len(kernel)) + image)
+assert len(kernel) <= 0x1f0000, 'kernel overlaps Mach-O fixture'
+(build / 'combined.bin').write_bytes(stage_fixture(kernel,image,0x2f0000))
 PY
 mkfifo "$SERIAL_BASE.in" "$SERIAL_BASE.out"
 qemu-system-x86_64 -kernel "$BUILD_DIR/combined.bin" -m 512M -no-reboot \

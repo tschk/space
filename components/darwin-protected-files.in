@@ -1,0 +1,125 @@
+package space.kernel
+
+// The Darwin edge owns these descriptors, path lifetimes and copy buffer.
+// VFS owns offsets and filesystem semantics. Guest pointers never reach VFS.
+var darwin-file-table: Int = 0
+var darwin-file-paths: Int = 0
+var darwin-file-buffer: Int = 0
+
+fn darwin-file-ready() -> Int {
+  if cap-check(darwin-protected-storage, cap-storage()) == 0 { return -13 }
+  // Syscall services run with IF0; asynchronous Volume RPC is not supported.
+  if volume-ready != 0 || sf-mem-disk == 0 { return -78 }
+  return 0
+}
+
+fn darwin-file-init() -> void {
+  if darwin-file-table == 0 {
+    darwin-file-table = alloc(VFS-MAX-FDS * 8)
+    darwin-file-paths = alloc(VFS-MAX-FDS * 256)
+    darwin-file-buffer = alloc(4096)
+  }
+  let i = 0
+  while i < VFS-MAX-FDS { store64(darwin-file-table + i * 8, -9); i = i + 1 }
+  return
+}
+
+fn darwin-file-host(fd: Int) -> Int {
+  if darwin-file-table == 0 || fd < 3 || fd >= VFS-MAX-FDS { return -9 }
+  return load64(darwin-file-table + fd * 8)
+}
+
+fn darwin-file-release() -> void {
+  if darwin-file-table == 0 { return }
+  let i = 3
+  while i < VFS-MAX-FDS {
+    let host = darwin-file-host(i)
+    if host >= 3 { vfs-close(host) }
+    store64(darwin-file-table + i * 8, -9)
+    i = i + 1
+  }
+  return
+}
+
+fn darwin-file-range(addr: Int, length: Int, write: Int) -> Int {
+  if length < 0 || length > 65536 || addr < 0 || addr > 0x50000000 - length { return 0 }
+  let i = 0
+  while i < length {
+    if darwin-protected-physical(addr + i) == 0 { return 0 }
+    if write != 0 && (domain-page-flags(darwin-protected-domain, addr + i) & 7) != 7 { return 0 }
+    let n = 4096 - ((addr + i) & 4095)
+    if n > length - i { n = length - i }
+    i = i + n
+  }
+  return 1
+}
+
+fn darwin-file-open(path: Int, flags: Int) -> Int {
+  let ready = darwin-file-ready()
+  if ready < 0 { return ready }
+  if flags != 0 { return -22 }
+  let slot = 3
+  while slot < VFS-MAX-FDS && darwin-file-host(slot) >= 3 { slot = slot + 1 }
+  if slot == VFS-MAX-FDS { return -24 }
+  let dest = darwin-file-paths + slot * 256
+  let i = 0
+  while i < 256 {
+    if darwin-file-range(path + i, 1, 0) == 0 { return -14 }
+    let ch = load8(darwin-protected-physical(path + i))
+    store8(dest + i, ch)
+    if ch == 0 {
+      if i == 0 { return -2 }
+      if sf-path-name-valid(dest) == 0 { return -63 }
+      if fs-stat(dest, darwin-file-buffer) < 0 { return -2 }
+      if load32(darwin-file-buffer + SF-ST-TYPE) != SF-TYPE-FILE { return -21 }
+      let fd = vfs-open-borrowed-path(dest, VFS-O-RDONLY)
+      if fd == -16 { return -24 }
+      if fd >= 3 { store64(darwin-file-table + slot * 8, fd); return slot }
+      return fd
+    }
+    i = i + 1
+  }
+  return -63
+}
+
+fn darwin-file-read(fd: Int, addr: Int, length: Int) -> Int {
+  let host = darwin-file-host(fd)
+  if host < 3 { return -9 }
+  if length < 0 || length > 65536 { return -22 }
+  if darwin-file-range(addr, length, 1) == 0 { return -14 }
+  let ready = darwin-file-ready()
+  if ready < 0 { return ready }
+  let done = 0
+  while done < length {
+    let count = length - done
+    if count > 4096 { count = 4096 }
+    let n = vfs-read(host, darwin-file-buffer, count)
+    if n < 0 { if done > 0 { return done }; return n }
+    if n > count { return -5 }
+    let i = 0
+    while i < n {
+      store8(darwin-protected-physical(addr + done + i), load8(darwin-file-buffer + i))
+      i = i + 1
+    }
+    done = done + n
+    if n < count { return done }
+  }
+  return done
+}
+
+fn darwin-file-close(fd: Int) -> Int {
+  let host = darwin-file-host(fd)
+  if host < 3 { return -9 }
+  let result = vfs-close(host)
+  if result == 0 { store64(darwin-file-table + fd * 8, -9) }
+  return result
+}
+
+fn darwin-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
+  let host = darwin-file-host(fd)
+  if host < 3 { return -9 }
+  let ready = darwin-file-ready()
+  if ready < 0 { return ready }
+  if offset < -0x7FFFFFFF || offset > 0x7FFFFFFF { return -22 }
+  return vfs-lseek(host, offset, whence)
+}

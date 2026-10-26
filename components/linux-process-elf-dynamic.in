@@ -1,0 +1,24 @@
+package space.kernel
+
+// Direct self-relocating ET_DYN entry only. The foreign runtime owns relocation;
+// native UserAddressSpace owns all pages. No interpreter or dependency loader.
+fn linux-process-elf-bias(image:Int)->Int{
+ if linux-process-load16(image+16)==3{return 0x400000;}return 0;
+}
+fn linux-process-elf-dynamic(image:Int,size:Int,p:Int)->Int{
+ let offset=load64(p+8);let address=load64(p+16);let bytes=load64(p+32);
+ if offset<0 || bytes<16 || bytes>65536 || (bytes&15)!=0 || offset>size || bytes>size - offset{return -8;}
+ if load64(p+40)!=bytes{return -8;}
+ // Dynamic bytes must be the exact file-backed intersection of a LOAD segment.
+ let mapped=0;let i=0;while i<linux-process-load16(image+56){
+  let q=image+load64(image+32)+i*56;if load32(q)==1{
+   let start=load64(q+8);let count=load64(q+32);
+   if start>=0 && count>=0 && start<=size && count<=size - start && offset>=start && bytes<=count && offset - start<=count - bytes{
+    if load64(q+16)>=0 && address>=load64(q+16) && address - load64(q+16)==offset - start{mapped=1;}
+   }
+  }i+=1;
+ }if mapped==0{return -8;}
+ let n=0;while n<bytes{
+  let tag=load64(image+offset+n);if tag==0{return 0;}if tag==1{return -8;}n+=16;
+ }return -8;
+}

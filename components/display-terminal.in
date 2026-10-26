@@ -282,6 +282,6 @@ fn comp-draw-terminal-content(base: Int) -> void {
   let input-buf = comp-term-input-of(slot)
   comp-draw-label(input-x, prompt-y, input-buf, FB-COLOR-WHITE, COMP-COLOR-TERM-BG)
   let caret-off = text-caret-x(TEXT-ROLE-TERM-MONO, input-buf, comp-term-get-len(slot))
-  fb-fill-rect(input-x + caret-off, prompt-y + 2, 2 * fb-font-scale, 7 * fb-font-scale, COMP-COLOR-ACCENT)
+  fb-fill-rect(input-x + caret-off, prompt-y + 2, fb-font-scale, 7 * fb-font-scale, COMP-COLOR-ACCENT)
   return
 }

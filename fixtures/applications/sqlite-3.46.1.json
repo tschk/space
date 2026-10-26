@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "upstream": "https://www.sqlite.org/",
+  "version": "3.46.1",
+  "license": "Public domain (upstream SQLite)",
+  "source": {
+    "url": "https://www.sqlite.org/2024/sqlite-autoconf-3460100.tar.gz",
+    "sha256": "67d3fe6d268e6eaddcae3727fce58fcc8e9c53869bdd07a0c61e38ddf2965071",
+    "source_id": "2024-08-13 09:16:08 c9c2ab54ba1f5f46360f1b4f35d849cd3f080e6fc2b6c60e91b16c63f69a1e33",
+    "sqlite3_c_sha3_256": "186a1baa476b6d546de155160ca6d30ff7b7e6ee375f0bb6445e1a3d180a7dad",
+    "verification_reference": "https://www.sqlite.org/releaselog/3_46_1.html",
+    "verification": "Core sqlite3.c SHA3-256 and source ID match official release notes; archive SHA256 pinned after primary upstream acquisition.",
+    "modified": false
+  },
+  "build": {
+    "profile": "static x86_64 Linux, single-thread, no dynamic extension loading",
+    "command": [
+      "gcc",
+      "-O2",
+      "-static",
+      "-DSQLITE_THREADSAFE=0",
+      "-DSQLITE_OMIT_LOAD_EXTENSION",
+      "sqlite3.c",
+      "shell.c",
+      "-lm",
+      "-o",
+      "sqlite3"
+    ],
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "environment": {
+      "LC_ALL": "C",
+      "TZ": "UTC",
+      "SOURCE_DATE_EPOCH": "0"
+    },
+    "working_directory": "Fresh sqlite-autoconf-3460100 extraction; compiler inputs sqlite3.c and shell.c remain relative so __FILE__ has no build directory.",
+    "reproducibility": "Two independent clean extraction/build directories produced identical SHA256 and size; no source edits or path-specific remapping flags."
+  },
+  "apps": [
+    {
+      "id": "sqlite-3.46.1-linux-x86_64-static-single-thread",
+      "name": "sqlite3",
+      "version": "3.46.1",
+      "personality": "linux",
+      "filename": "sqlite3",
+      "sha256": "36e9f3eb66219d87d79dd62db4df7c04b69d3ee4f15bd00d632587072b50c507",
+      "size_bytes": 2436160,
+      "scenario": {
+        "args": [
+          ":memory:",
+          "select 6*7, sqlite_version();"
+        ],
+        "exit_code": 0,
+        "stdout": "42|3.46.1\n"
+      }
+    }
+  ],
+  "historical_artifacts": [
+    {
+      "sha256": "2787928c47bef7dd2011a8a87aa9770ef50eae405eec93ae8bde36464e83fb3e",
+      "size_bytes": 2436160,
+      "classification": "Historical initial test artifact; retained receipts apply to these bytes only.",
+      "build_provenance": "Initial acquisition compiled shell.c using its absolute /workspace/real-apps/sqlite-3.46.1/sqlite-autoconf-3460100/shell.c path; __FILE__ embedded that path. The former relative-input recipe did not reproduce these bytes.",
+      "superseded_by": "Canonical relative-input build below, verified identical in two independent clean directories."
+    }
+  ]
+}

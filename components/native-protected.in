@@ -1,0 +1,187 @@
+package space.kernel
+import "native-protected-services.in"
+var native-protected-opening: Int = 0
+
+fn native-protected-frame-budget(bytes: Int) -> Int {
+  if bytes <= 128 || bytes > 0x200000 { return -1 }
+  // 6 root/directory + 2048 leaf tables; 1024 heap backing; 16 user
+  // stack + 16 kernel TSS headroom; 2 capinfo/trap; 8 metadata/pools.
+  return 3120 + ((bytes + 4095) / 4096)
+}
+
+fn native-protected-info-reset(state: Int) -> void {
+  let extra = load64(state + 112)
+  let info = load64(state + 32)
+  let i = 0
+  while i < 96 { store64(info + i,load64(state + 128 + i)); i = i + 8 }
+  store64(info,load64(cap-table-base + load64(state + 16) * 16 + 8) & load64(load64(state + 8) + 24))
+  i = 0
+  while i < load64(extra + 976) { store8(info + 256 + i,load8(extra + 1024 + i)); i = i + 1 }
+  store8(info + 256 + i,0)
+  return
+}
+
+fn native-protected-open-owned(port: Int, image: Int, available: Int, name: Int, grants: Int, arguments: Int) -> Int {
+  if native-protected-opening != 1 || runtime-instance-kernel-context() == 0 || (invoke1(load64(0x4198),0) & 512) != 0 { return -1 }
+  let profile = native-protected-image-valid(image,available,grants)
+  if profile == 0 || cap-check(current-cap,load64(image + 8)) == 0 { return -1 }
+  let args = 0
+  let length = 0
+  if arguments != 0 { args = load64(arguments); length = load64(arguments + 8) }
+  if length < 0 || length > 1023 || (length != 0 && args == 0) { return -1 }
+  if runtime-instance-can-admit(1) == 0 || (runtime-instance-component-free == 0 && obj-arena-end - obj-arena-next < 64) { return -1 }
+  if profile == NATIVE-PROTECTED-GUI-PAGED && length != 48 { return -1 }
+  let budget = native-protected-frame-budget(available)
+  if profile == NATIVE-PROTECTED-GUI-PAGED { budget = budget + 581 }
+  if load64(0x4028) != 0 || runtime-instance-frame-capacity() < budget {
+    serial-write-cstr(port,"native: DENIED protected memory budget"); serial-nl(port); return -1
+  }
+  let state = runtime-instance-new()
+  store64(state + 120,NATIVE-PROTECTED-KIND)
+  let component = runtime-instance-component(name,load64(image + 16),load64(image + 8))
+  store64(state + 8,component)
+  let cap = runtime-instance-cap(component,load64(image + 8))
+  store64(state + 16,cap)
+  if cap < 0 { runtime-instance-dispose(state); return -1 }
+  let domain = domain-create-user()
+  if domain <= 0 { runtime-instance-dispose(state); return -1 }
+  store64(state,domain); store64(component + 40,domain); store64(domain-table + domain * 24 + 16,cap)
+  let extra = frame-alloc()
+  store64(state + 112,extra); store64(extra + 840,NATIVE-PROTECTED-EXTRA-MAGIC)
+  store64(extra + 800,profile)
+  store64(extra + 776,frame-alloc())
+  store64(extra + 984,frame-alloc())
+  store64(state + 32,frame-alloc())
+  store64(extra + 768,frame-alloc())
+  if runtime-instance-catalog == 0 { store64(state + 232,frame-alloc()) }
+  let pages = load64(state + 88)
+  let count = (available + 4095) / 4096
+  store64(state + 104,available)
+  let page = 0
+  while page < count {
+    let physical = frame-alloc(); store64(pages + page * 8,physical); store64(state + 96,page + 1)
+    let i = 0
+    while i < 4096 && page * 4096 + i < available { store8(physical + i,load8(image + page * 4096 + i)); i = i + 1 }
+    page = page + 1
+  }
+  let imports = load64(image + 48)
+  let table = image + load64(image + 56)
+  let i = 0
+  while i < imports {
+    let record = table + i * 16
+    let id = native-protected-import-id(image + load64(record))
+    let site = load64(record + 8)
+    let delta = NATIVE-PROTECTED-TRAPS + id * 16 - load64(image + 16) - site - 5
+    if runtime-instance-patch32(state,64 + site + 1,delta) != 0 { runtime-instance-dispose(state); return -1 }
+    store64(extra + 832,load64(extra + 832) | (1 << id))
+    i = i + 1
+  }
+  let tail = image + available - 64
+  let text-end = (64 + load64(tail + 32) + 4095) & -4096
+  let data = load64(tail + 40)
+  let data-end = (data + load64(tail + 48) + 4095) & -4096
+  page = 0
+  while page < count {
+    let physical = load64(pages + page * 8)
+    let offset = page * 4096
+    if offset < text-end { domain-map-user-code(domain,NATIVE-PROTECTED-IMAGE + offset,physical) } else {
+      if (profile == NATIVE-PROTECTED-PAGED || profile == NATIVE-PROTECTED-GUI-PAGED) && load64(tail + 48) > 0 && offset >= data && offset < data-end { domain-map-user-data(domain,NATIVE-PROTECTED-IMAGE + offset,physical) } else {
+        domain-map(domain,NATIVE-PROTECTED-IMAGE + offset,physical,PAGE-NX | 5)
+      }
+    }
+    page = page + 1
+  }
+  page = 0
+  while page < 512 {
+    let raw = frame-alloc(); store64(load64(state + 24) + page * 8,raw)
+    domain-map-user-data(domain,NATIVE-PROTECTED-HEAP + page * 4096,raw)
+    let allocated = frame-alloc(); store64(load64(extra + 984) + page * 8,allocated); store64(extra + 992,page + 1)
+    domain-map-user-data(domain,NATIVE-PROTECTED-ALLOC + page * 4096,allocated)
+    page = page + 1
+  }
+  store64(load64(extra + 776),0); store64(load64(extra + 776) + 8,NATIVE-PROTECTED-ALLOC-BYTES); store64(load64(extra + 776) + 16,1)
+  page = 0
+  while page < NATIVE-PROTECTED-STACK-PAGES {
+    let physical = frame-alloc(); store64(extra + 848 + page * 8,physical); store64(extra + 784,page + 1)
+    domain-map-user-data(domain,NATIVE-PROTECTED-STACK + page * 4096,physical); page = page + 1
+  }
+  let traps = load64(extra + 768)
+  let id = 0
+  while id <= 16 {
+    let stub = traps + id * 16
+    store8(stub,0x49); store8(stub + 1,0x89); store8(stub + 2,0xca)
+    store8(stub + 3,0xb8); store32(stub + 4,NATIVE-PROTECTED-SERVICE-BASE + id)
+    store8(stub + 8,0x0f); store8(stub + 9,0x05); store8(stub + 10,0xc3)
+    id = id + 1
+  }
+  let exit = traps + NATIVE-PROTECTED-EXIT-OFFSET
+  store8(exit,0x48); store8(exit + 1,0x89); store8(exit + 2,0xc7)
+  store8(exit + 3,0xe9); store32(exit + 4,-NATIVE-PROTECTED-EXIT-OFFSET - 8)
+  domain-map-user-code(domain,NATIVE-PROTECTED-TRAPS,traps)
+  domain-map-user-data(domain,NATIVE-PROTECTED-INFO,load64(state + 32))
+  let stack = NATIVE-PROTECTED-STACK + NATIVE-PROTECTED-STACK-PAGES * 4096 - 8
+  store64(extra + 792,stack)
+  store64(load64(extra + 848 + (NATIVE-PROTECTED-STACK-PAGES - 1) * 8) + 4088,NATIVE-PROTECTED-TRAPS + NATIVE-PROTECTED-EXIT-OFFSET)
+  store64(state + 128,load64(image + 8)); store64(state + 144,NATIVE-PROTECTED-HEAP); store64(state + 152,NATIVE-PROTECTED-HEAP-BYTES)
+  store64(state + 168,domain); store64(state + 176,80); store64(state + 184,25)
+  if length > 0 { store64(state + 192,NATIVE-PROTECTED-INFO + 256) }
+  store64(extra + 976,length)
+  i = 0
+  while i < length { store8(extra + 1024 + i,load8(args + i)); i = i + 1 }
+  if profile == NATIVE-PROTECTED-GUI-PAGED {
+    let ring = frame-alloc(); store64(extra + 1000,ring)
+    store64(ring + 16,508); store64(ring + 24,8)
+    domain-map(domain,COMP-SHARED-VIRT,ring,PAGE-NX | 5)
+    if runtime-instance-canvas-new(state) == 0 { runtime-instance-dispose(state); return -1 }
+    store64(state + 160,COMP-SHARED-VIRT)
+    store64(state + 200,COMP-PIXEL-VIRT); store64(state + 208,SCI-CANVAS-BYTES)
+  }
+  native-protected-info-reset(state)
+  domain-map-idt(domain); domain-map-kernel-stack(domain); domain-map-trampoline(domain)
+  let handle = runtime-instance-retain(state,load64(image + 16))
+  if handle == 0 { runtime-instance-dispose(state); return -1 }
+  return handle
+}
+
+fn native-protected-open(port: Int, image: Int, available: Int, name: Int, grants: Int, arguments: Int) -> Int {
+  if runtime-instance-kernel-context() == 0 || native-protected-opening != 0 || native-protected-active != 0 || user-budget-active != 0 || runtime-instance-launch-guard != 0 || load64(0x4198) == 0 { return -1 }
+  let flags = invoke1(load64(0x4198),0)
+  cli(); native-protected-opening = 1
+  let result = native-protected-open-owned(port,image,available,name,grants,arguments)
+  cli(); native-protected-opening = 0
+  if (flags & 512) != 0 { sti() }
+  return result
+}
+
+fn native-protected-run(handle: Int, budget: Int) -> Int {
+  if budget <= 0 || budget > 10000 { return -1 }
+  let record = runtime-instance-record(handle,1)
+  if record == 0 || native-protected-active != 0 { return -1 }
+  let state = load64(record)
+  if load64(state + 120) != NATIVE-PROTECTED-KIND || load64(state + 296) != 0 { return -1 }
+  let extra = load64(state + 112)
+  native-protected-info-reset(state)
+  store64(load64(extra + 848 + (NATIVE-PROTECTED-STACK-PAGES - 1) * 8) + 4088,NATIVE-PROTECTED-TRAPS + NATIVE-PROTECTED-EXIT-OFFSET)
+  if user-context-init(extra,768,load64(state),load64(state + 288),NATIVE-PROTECTED-INFO,load64(extra + 792)) != 0 { return -1 }
+  if load64(extra + 2320) == 0x7fffffffffffffff { return -1 }
+  let hook = domain-user-syscall-hook
+  store64(extra + 816,0); store64(extra + 808,0); store64(state + 296,1)
+  native-protected-active = state; domain-user-syscall-hook = native-protected-syscall
+  let kind = user-context-resume(extra,budget)
+  native-protected-active = 0; domain-user-syscall-hook = hook; store64(state + 296,0)
+  if kind < 0 { return kind }
+  store64(extra + 2320,load64(extra + 2320) + 1)
+  store64(extra + 808,kind)
+  if load64(extra + 816) != 0 { store64(extra + 808,5) }
+  if kind != USER-CONTEXT-EXIT || load64(extra + 816) != 0 { store64(record + 48,2) }
+  return load64(extra + 720)
+}
+
+fn native-protected-stop(handle: Int) -> Int {
+  let record = runtime-instance-record(handle,1)
+  if record == 0 { record = runtime-instance-record(handle,2) }
+  if record == 0 { return -1 }
+  let state = load64(record)
+  if load64(state + 120) != NATIVE-PROTECTED-KIND { return -1 }
+  return load64(load64(state + 112) + 808)
+}

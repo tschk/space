@@ -103,6 +103,26 @@ The Space loader (`components/sci-loader.in`) is the binder:
 v1 images (magic `0x5343490000000001`, 32-byte manifest, no symbol tables)
 keep loading unchanged; they are statically self-contained.
 
+### Explicit Space GUI canvas profile
+
+The readable native GUI slice adds a Space-owned optional64-byte trailer to
+SCI v2, after the compiler's code/data/tables/strings. The manifest image-size
+field includes the trailer; existing table offsets and generic v2 format stay
+unchanged. `pack-gui-sci.py` emits it only for exact named `GuiWindowCalc` and
+`GuiWindowEditor` metadata declaring `GuiDisplay(present, window)`. Their exact
+Space grant masks remain20 and52. Existing tiny `GuiCalc`/`GuiEditor` and other
+display clients keep their one-page profile and receive no trailer implicitly.
+
+The eight little-endian64-bit fields are magic `0x5350414345434E56`, version1,
+maximum width768, maximum height384, BGRA stride3072, bytes1179648, flags1,
+reserved0. Constants live in `protocol/gui-canvas.in`. The loader extension is
+owned by the runtime; it must validate the exact bounded profile, retained mode
+and granted memory/display rights before allocating or mapping. Individual
+physical pages are ledger-owned and may be noncontiguous; the server receives
+an owned contiguous virtual view, while the client sees its fixed granted pixel
+window. See the [readable GUI plan](docs/plans/2026-10-24-readable-native-gui.md)
+for implementation and acceptance status; packaging alone is not execution proof.
+
 ### Kernel exports and chained modules (dynamic nanokernel)
 
 The nanokernel itself is a dynamic-link provider. The boot emitter
@@ -121,9 +141,12 @@ uses. Registry entries are **provider records**:
 [name][fn virtual address][provider phys][provider virt base][provider size]
 ```
 
-Every successfully loaded component also registers its own export table, so
-binding composes: a module loaded later may import from earlier modules,
-shared libraries, or the kernel. `sci-bind-imports` maps each non-kernel
+Provider activation profiles register their complete export tables, so binding
+composes: a module loaded later may import from earlier providers, shared
+libraries, or the kernel. Ordinary synchronous ephemeral activation and explicit
+retained mode2 clients publish no flat exports; their private owned images may
+be reclaimed, so an unowned global provider address cannot outlive them.
+`sci-bind-imports` maps each non-kernel
 provider's image pages RX into the importing domain at the provider's fixed
 virtual base before patching call sites; kernel-provider entries carry zero
 provider fields (kernel text is already present in every kernel-clone
@@ -229,3 +252,10 @@ Future SCI versions may add:
 - `graph`: dependency and execution graph edges
 - `compat`: compatibility personality requirements
 - `gpu`: GPU/compute requirements and limits
+
+The optional Space boot-image kind25 (`BOOT-IMAGE-RUNTIME-SELFTEST`) carries an
+explicit native SCI diagnostic in runtime-component test images. The diagnostic
+hub runs it through owned transient admission and checks status42, preserving
+the loader regression without creating/overwriting a persistent `test.sci`.
+This trusted native SCI check is distinct from protected CPL3 application proof;
+ordinary distributable images do not gain that asset or a new application action.

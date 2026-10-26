@@ -228,8 +228,18 @@ fn sf-alloc-block() -> Int {
   while bno < total {
     if sf-block-used(bno) == 0 {
       sf-mark-used(bno)
+      // Reserve durably before publishing/zeroing data. Otherwise a remount
+      // can reuse a live file's blocks. This is not a crash-atomic transaction.
+      if sf-flush-bitmap() != 0 {
+        sf-mark-free(bno)
+        return -1
+      }
+      // Bitmap flushing uses the shared block buffer; restore its promised
+      // zeroed allocation state only after the reservation is on disk.
       sf-zero-block(sf-block-buf)
-      sf-write-block(bno, sf-block-buf)
+      if sf-write-block(bno, sf-block-buf) != 0 {
+        return -1
+      }
       return bno
     }
     bno = bno + 1

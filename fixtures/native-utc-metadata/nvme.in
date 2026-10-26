@@ -1,0 +1,46 @@
+package space.fixture
+import "../../components/fs-directory-snapshot.in"
+fn fun-check(expected:Int,actual:Int)->void{
+ if expected!=actual{serial-write-cstr(com1(),"native-utc-nvme: expected ");serial-write-dec-wide(com1(),expected);serial-write-cstr(com1()," actual ");serial-write-dec-wide(com1(),actual);serial-nl(com1());panic("native UTC NVMe contract");}
+}
+fn native-utc-nvme-check(port:Int)->void{
+ if nvme-ready!=1 || sf-mem-disk!=0 || volume-ready!=0{panic("native UTC real NVMe required");}
+ fun-check(-1,dyn-resolve-idx("nvme-private-read-u32"));
+ let storage=cap-mint(root-realm,cap-storage());let timer=cap-mint(root-realm,cap-timer());
+ let output=alloc(128);let scratch=alloc(4224);let bytes=alloc(16);
+ if FUN-STAGE>=3{
+  fun-check(0,sf-disk-ready);fun-check(0,sf-mount-id);fun-check(-3,fs-metadata-bind-clock(storage,timer));fun-check(-3,fs-directory-details-into("/timed",storage,output,128,scratch,4224));
+  serial-write-cstr(port,"native-utc-nvme: malformed volume refused");serial-nl(port);serial-write-cstr(port,"native-utc-nvme: boot PASS");serial-nl(port);return;
+ }
+
+ if FUN-STAGE==0{
+  let cid=nvme-cid;fun-check(-1,nvme-private-read-u32(-1,0));fun-check(-1,nvme-private-read-u32(0,-4));fun-check(-1,nvme-private-read-u32(0,509));fun-check(-1,nvme-private-read-u32(0,1));fun-check(cid,nvme-cid);
+  fun-check(-1,nvme-private-read-u32(262144,0));fun-check(0,nvme-private-read-u32(0,0));
+
+  fun-check(-1,fs-metadata-format-utc(32768,2048,storage,timer));fun-check(0,sf-disk-ready);
+  fun-check(0,fs-metadata-format-utc(16384,2048,storage,timer));
+  if fs-mkdir("/timed")<0{panic("native UTC NVMe mkdir");}fun-check(0,fs-write-file("/timed/file","boot-one",8));fun-check(0,fs-sync-path("/timed/file"));
+ }else{
+  fun-check(1,sf-disk-ready);fun-check(2,load32(sf-super+SF-SB-VERSION));
+  // Populate only the reserved Volume header from the real Space-written UTC
+  // superblock. The independent native filesystem remains at namespace LBA0.
+  if FUN-STAGE==1{fun-check(0,nvme-read(0,8,sf-nvme-buf));fun-check(0,nvme-write(VOLUME-NVME-LBA,8,sf-nvme-buf));fun-check(0,nvme-flush());}
+  let heap=heap-next;let free=free-list;let domains=domain-count;let owned=domain-user-owned;let caps=cap-count;
+  let image=boot-image-find(254);if image==0{panic("native UTC Volume fixture missing");}
+  fun-check(-1,sci-volume-rpc(port,image));fun-check(heap,heap-next);fun-check(free,free-list);fun-check(domains,domain-count);fun-check(owned,domain-user-owned);fun-check(caps,cap-count);fun-check(0,volume-ready);
+  serial-write-cstr(port,"native-utc-nvme: Volume v2 denial stable ownership");serial-nl(port);
+  fun-check(-1,fs-metadata-clock-authority);fun-check(-1,fs-write-file("/timed/file","bad",3));
+  if FUN-STAGE==1{
+   fun-check(0,fs-metadata-bind-clock(storage,timer));fun-check(8,fs-read-file("/timed/file",bytes,16));
+   let i=0;while i<8{fun-check(load8("boot-one"+i),load8(bytes+i));i+=1;}
+   fun-check(0,fs-write-file("/timed/file","boot-two",8));fun-check(0,fs-sync-path("/timed/file"));
+  }
+ }
+ fun-check(128,fs-directory-details-into("/timed",storage,output,128,scratch,4224));
+ fun-check(0x5346444952530002,load64(output));fun-check(1,load64(output+16));fun-check(96,load64(output+24));fun-check(1,load64(output+32));fun-check(8,load64(output+48));fun-check(4,load64(output+56));
+ let created=load64(output+96);let accessed=load64(output+104);let modified=load64(output+112);
+ if created<1792800000 || created>1792800060{panic("native UTC persisted creation");}
+ if FUN-STAGE!=0{if accessed<1792886400 || accessed>1792886460 || modified<1792886400 || modified>1792886460{panic("native UTC next boot timestamps");}}
+ serial-write-cstr(port,"native-utc-nvme: record ");let i=0;while i<128{serial-put(port,load8("0123456789abcdef"+(load8(output+i)>>4)));serial-put(port,load8("0123456789abcdef"+(load8(output+i)&15)));i+=1;}serial-nl(port);
+ serial-write-cstr(port,"native-utc-nvme: boot PASS");serial-nl(port);
+}

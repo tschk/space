@@ -1,0 +1,477 @@
+package space.kernel
+
+import "darwin-image-plan.in"
+import "darwin-protected.in"
+import "user-address-space.in"
+import "darwin-rune.in"
+
+// Private trusted supervisor state, not a guest buffer or isolated SCI service.
+const DARWIN-MAPPED-MAGIC = 0x44574D4150500001
+const DARWIN-MAPPED-IDENTITY = 0x4457414249000003
+const DARWIN-MAPPED-BYTES = 20480
+const DARWIN-MAPPED-STACK = 0x110000000
+const DARWIN-MAPPED-ERRNO = 0x110004000
+const DARWIN-MAPPED-ARGUMENTS = 0x110005000
+const DARWIN-MAPPED-RETURN = 0x130000000
+const DARWIN-MAPPED-CAPSULES = 0x130001000
+const DARWIN-MAPPED-RUNE = 0x130002000
+var darwin-mapped-active: Int = 0
+
+// Change detection for an immutable trusted source, not authentication.
+fn darwin-mapped-digest(image: Int, bytes: Int) -> Int {
+  let hash = -3750763034362895579
+  let i = 0
+  while i < bytes { hash = (hash ^ load8(image + i)) * 0x100000001B3;i += 1 }
+  return hash
+}
+
+fn darwin-mapped-state(state: Int, bytes: Int) -> Int {
+  if state < 65536 || (state & 15) != 0 || bytes != DARWIN-MAPPED-BYTES || state > heap-next || bytes > heap-next - state { return 0 }
+  return 1
+}
+
+fn darwin-mapped-prepare(image: Int, size: Int, state: Int, bytes: Int, identity: Int) -> Int {
+  if darwin-mapped-state(state,bytes) == 0 { return -14 }
+  if identity != DARWIN-MAPPED-IDENTITY { return -8 }
+  if load64(state) == DARWIN-MAPPED-MAGIC && (load64(state + 56) != 0 || load64(state + 64) != 0 || load64(state + 48) == 2) { return -16 }
+  let status = darwin-image-scan(image,size,0)
+  if status != 0 { return status }
+  if state < image + size && image < state + bytes { return -14 }
+  status = darwin-image-plan(image,size,state + 256,3840)
+  if status != 0 { return status }
+  cpu-mem-fill64(state,0,32)
+  store64(state + 8,identity);store64(state + 16,bytes);store64(state + 24,image);store64(state + 32,size)
+  store64(state + 40,darwin-mapped-digest(image,size));store64(state + 48,1)
+  store64(state,DARWIN-MAPPED-MAGIC)
+  return 0
+}
+
+fn darwin-mapped-symbol(image: Int, start: Int, end: Int) -> Int {
+  if darwin-protected-import-name(image,start,end,"_write") != 0 { return 1 }
+  if darwin-protected-import-name(image,start,end,"_exit") != 0 { return 2 }
+  if darwin-protected-import-name(image,start,end,"___error") != 0 { return 4 }
+  if darwin-image-string(image + start,image + end,"__DefaultRuneLocale") != 0 { return 8 }
+  if darwin-image-string(image + start,image + end,"__CurrentRuneLocale") != 0 { return 16 }
+  return 0
+}
+
+fn darwin-mapped-target(symbol: Int) -> Int {
+  if symbol == 8 { return DARWIN-MAPPED-RUNE }
+  if symbol == 16 { return DARWIN-MAPPED-RUNE + DARWIN-RUNE-CURRENT-OFFSET }
+  if symbol == 1 || symbol == 2 || symbol == 4 { return DARWIN-MAPPED-CAPSULES + darwin-protected-import-index(symbol) * 64 }
+  return 0
+}
+
+// Called only after structural/closed-symbol preflight; scalar provider query.
+fn darwin-mapped-data-needed(state: Int) -> Int {
+  let image = load64(state + 24)
+  let file = load64(state + 256 + 72)
+  let h = image + file
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let bytes = load64(state + 256 + 80)
+  let i = 0
+  while i < load32(h + 16) {
+    let name = load32(h + imports + i * 4) >> 9
+    let symbol = darwin-mapped-symbol(image,file + symbols + name,file + bytes)
+    if symbol == 8 || symbol == 16 { return 1 }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-mapped-preflight(state: Int) -> Int {
+  if darwin-mapped-state(state,DARWIN-MAPPED-BYTES) == 0 || load64(state) != DARWIN-MAPPED-MAGIC || load64(state + 8) != DARWIN-MAPPED-IDENTITY || load64(state + 16) != DARWIN-MAPPED-BYTES { return -8 }
+  let image = load64(state + 24)
+  let size = load64(state + 32)
+  let status = darwin-image-plan(image,size,state + 16384,3840)
+  if status != 0 { return status }
+  let n = 0
+  while n < 3840 { if load8(state + 256 + n) != load8(state + 16384 + n) { return -8 };n += 1 }
+  if darwin-mapped-digest(image,size) != load64(state + 40) { return -8 }
+  status = darwin-image-chain-preflight(state + 256)
+  if status != 0 { return status }
+  let file = load64(state + 256 + 72)
+  let bytes = load64(state + 256 + 80)
+  let h = image + file
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let count = load32(h + 16)
+  n = 0
+  while n < count {
+    let name = load32(h + imports + n * 4) >> 9
+    if darwin-mapped-symbol(image,file + symbols + name,file + bytes) == 0 { return -38 }
+    n += 1
+  }
+  return 0
+}
+
+fn darwin-mapped-native(state: Int, status: Int) -> Int {
+  if status >= 0 { return status }
+  store64(state + 152,status)
+  if status == -2 { return -13 }
+  if status == -3 { return -12 }
+  if status == -4 { return -16 }
+  if status == -1 { return -8 }
+  return -5
+}
+
+fn darwin-mapped-populate-source(state: Int, address: Int, offset: Int, count: Int) -> Int {
+  if darwin-image-range(load64(state + 32),offset,count) == 0 { return -8 }
+  let done = 0
+  while done < count {
+    let part = count - done
+    if part > 4096 { part = 4096 }
+    let i = 0
+    while i < part { store8(state + 8192 + i,load8(load64(state + 24) + offset + done + i));i += 1 }
+    let status = user-space-populate(load64(state + 56),load64(state + 72),address + done,state + 8192,part)
+    if status != 0 { return darwin-mapped-native(state,status) }
+    done += part
+  }
+  return 0
+}
+
+fn darwin-mapped-zero(state: Int, address: Int, count: Int) -> Int {
+  cpu-mem-fill64(state + 8192,0,512)
+  let done = 0
+  while done < count {
+    let part = count - done
+    if part > 4096 { part = 4096 }
+    let status = user-space-populate(load64(state + 56),load64(state + 72),address + done,state + 8192,part)
+    if status != 0 { return darwin-mapped-native(state,status) }
+    done += part
+  }
+  return 0
+}
+
+fn darwin-mapped-map(state: Int) -> Int {
+  let plan = state + 256
+  let i = 0
+  while i < load64(plan + 48) {
+    let segment = plan + 128 + i * 80
+    if load64(segment + 72) != 1 {
+      let permission = USER-SPACE-WRITE
+      if load64(segment + 48) == 5 { permission = USER-SPACE-EXECUTE }
+      if load64(segment + 48) == 1 { permission = USER-SPACE-READ }
+      let off = 0
+      while off < load64(segment + 16) {
+        let status = user-space-map-zero(load64(state + 56),load64(state + 72),load64(segment + 8) + off,permission)
+        if status != 0 { return darwin-mapped-native(state,status) }
+        off += 4096
+      }
+    }
+    i += 1
+  }
+  i = 0
+  while i < 8 {
+    let address = DARWIN-MAPPED-STACK + i * 4096
+    let permission = USER-SPACE-WRITE
+    if i >= 6 { address = DARWIN-MAPPED-RETURN + (i - 6) * 4096;permission = USER-SPACE-EXECUTE }
+    let status = user-space-map-zero(load64(state + 56),load64(state + 72),address,permission)
+    if status != 0 { return darwin-mapped-native(state,status) }
+    i += 1
+  }
+  if darwin-mapped-data-needed(state) != 0 {
+    let status = user-space-map-zero(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RUNE,USER-SPACE-READ)
+    if status != 0 { return darwin-mapped-native(state,status) }
+  }
+  return 0
+}
+
+fn darwin-mapped-populate(state: Int) -> Int {
+  let plan = state + 256
+  let i = 0
+  while i < load64(plan + 48) {
+    let segment = plan + 128 + i * 80
+    if load64(segment + 72) != 1 {
+      let status = darwin-mapped-populate-source(state,load64(segment + 8),load64(segment + 24),load64(segment + 32))
+      if status != 0 { return status }
+    }
+    i += 1
+  }
+  i = 0
+  while i < load64(plan + 56) {
+    let section = plan + 768 + i * 80
+    if load64(section + 72) == 9 {
+      let status = darwin-mapped-zero(state,load64(section + 8),load64(section + 16))
+      if status != 0 { return status }
+    }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-mapped-fixups(state: Int) -> Int {
+  // All source geometry/imports were checked before native object creation.
+  if darwin-mapped-digest(load64(state + 24),load64(state + 32)) != load64(state + 40) { return -8 }
+  let plan = state + 256
+  let image = load64(state + 24)
+  let file = load64(plan + 72)
+  let bytes = load64(plan + 80)
+  let h = image + file
+  let starts = load32(h + 4)
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let i = 0
+  while i < load64(plan + 48) {
+    let record = load32(h + starts + 4 + i * 4)
+    if record != 0 {
+      let at = starts + record
+      let segment = plan + 128 + i * 80
+      let page = 0
+      while page < load16(h + at + 20) {
+        let pos = load16(h + at + 22 + page * 2)
+        if pos != 65535 {
+          let done = 0
+          while done == 0 {
+            let relative = page * 4096 + pos
+            let raw = load64(image + load64(segment + 24) + relative)
+            let target = DARWIN-IMAGE-PREFERRED + (raw & 0xFFFFFFFFF)
+            if raw < 0 {
+              let name = load32(h + imports + (raw & 0xFFFFFF) * 4) >> 9
+              let symbol = darwin-mapped-symbol(image,file + symbols + name,file + bytes)
+              if symbol == 0 { return -38 }
+              target = darwin-mapped-target(symbol)
+              if target == 0 { return -38 }
+            }
+            store64(state + 8192,target)
+            let status = user-space-populate(load64(state + 56),load64(state + 72),load64(segment + 8) + relative,state + 8192,8)
+            if status != 0 { return darwin-mapped-native(state,status) }
+            let step = ((raw >> 51) & 4095) * 4
+            if step == 0 { done = 1 } else { pos += step }
+          }
+        }
+        page += 1
+      }
+    }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-mapped-startup(state: Int, input: Int) -> Int {
+  let bounce = state + 8192
+  cpu-mem-fill64(bounce,0,512)
+  let text = 512
+  let group = 0
+  while group < 3 {
+    let count = load64(input + group * 16)
+    let vector = load64(input + group * 16 + 8)
+    let i = 0
+    while i < count {
+      store64(bounce + group * 136 + i * 8,DARWIN-MAPPED-ARGUMENTS + text)
+      let source = load64(vector + i * 8)
+      let c = -1
+      let n = 0
+      while c != 0 { c = load8(source + n);store8(bounce + text,c);n += 1;text += 1 }
+      i += 1
+    }
+    group += 1
+  }
+  let status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-ARGUMENTS,bounce,4096)
+  if status != 0 { return darwin-mapped-native(state,status) }
+  store64(bounce,DARWIN-MAPPED-RETURN)
+  status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-STACK + 16376,bounce,8)
+  if status != 0 { return darwin-mapped-native(state,status) }
+  cpu-mem-fill64(bounce,0,512)
+  store8(bounce,0x48);store8(bounce + 1,0x89);store8(bounce + 2,0xC7)
+  store8(bounce + 3,0xB8);store32(bounce + 4,0x2000001);store8(bounce + 8,0x0F);store8(bounce + 9,0x05);store8(bounce + 10,0x0F);store8(bounce + 11,0x0B)
+  status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RETURN,bounce,4096)
+  if status != 0 { return darwin-mapped-native(state,status) }
+  cpu-mem-fill64(bounce,0,512)
+  let i = 0
+  while i < 3 {
+    let p = bounce + i * 64
+    if i == 2 { store8(p,0x48);store8(p + 1,0xB8);store64(p + 2,DARWIN-MAPPED-ERRNO);store8(p + 10,0xC3) }
+    else {
+      let number = 0x2000004
+      if i == 1 { number = 0x2000001 }
+      store8(p,0xB8);store32(p + 1,number);store8(p + 5,0x0F);store8(p + 6,0x05)
+      store8(p + 7,0x73);store8(p + 8,20)
+      store8(p + 9,0x49);store8(p + 10,0xBB);store64(p + 11,DARWIN-MAPPED-ERRNO)
+      store8(p + 19,0x41);store8(p + 20,0x89);store8(p + 21,0x03)
+      store8(p + 22,0x48);store8(p + 23,0xC7);store8(p + 24,0xC0);store32(p + 25,0xFFFFFFFF);store8(p + 29,0xC3)
+    }
+    i += 1
+  }
+  status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-CAPSULES,bounce,4096)
+  if status == 0 && darwin-mapped-data-needed(state) != 0 {
+    status = darwin-rune-populate(bounce,4096,DARWIN-MAPPED-RUNE)
+    if status == 0 { status = user-space-populate(load64(state + 56),load64(state + 72),DARWIN-MAPPED-RUNE,bounce,4096) }
+  }
+  return darwin-mapped-native(state,status)
+}
+
+fn darwin-mapped-seal(state: Int) -> Int {
+  let plan = state + 256
+  let i = 0
+  while i < load64(plan + 48) {
+    let segment = plan + 128 + i * 80
+    if load64(segment + 72) == 3 {
+      let offset = 0
+      while offset < load64(segment + 16) {
+        let status = user-space-protect(load64(state + 56),load64(state + 72),load64(segment + 8) + offset,USER-SPACE-READ)
+        if status != 0 { return darwin-mapped-native(state,status) }
+        offset += 4096
+      }
+    }
+    i += 1
+  }
+  return 0
+}
+
+// The native hook only stops; all checked I/O runs after kernel-root restore.
+fn darwin-mapped-trap(frame: Int) -> Int {
+  let state = darwin-mapped-active
+  if state == 0 || load64(state + 48) != 2 || domain-current != load64(state + 120) { store64(frame + 112,134);return 0 }
+  return 2
+}
+
+fn darwin-mapped-service(state: Int) -> Int {
+  let context = state + 4096
+  let number = load64(context + 112)
+  if number == 0x2000001 { store64(state + 96,load64(context + 72) & 255);store64(state + 160,USER-CONTEXT-EXIT);return 0 }
+  let result = -78
+  if number == 0x2000004 {
+    let fd = darwin-protected-int32(load64(context + 72))
+    let count = load64(context + 88)
+    if fd != 1 && fd != 2 { result = -9 }
+    else if cap-check(load64(state + 80),cap-serial()) == 0 || cap-check(load64(state + 72),cap-memory()) == 0 { result = -13 }
+    else if count < 0 || count > 4096 { result = -22 }
+    else {
+      let copied = user-space-copy-in(load64(state + 64),load64(state + 72),load64(context + 80),state + 8192,count)
+      if copied == 0 {
+        let i = 0
+        while i < count { serial-put(com1(),load8(state + 8192 + i));i += 1 }
+        result = count
+      } else if copied == -2 { result = -13 }
+      else if copied == -5 || copied == -6 { store64(state + 96,-5);store64(state + 152,copied);return 0 }
+      else { result = -14 }
+    }
+  }
+  let flags = load64(context + 136) & -2
+  if result < 0 { result = 0 - result;flags = flags | 1 }
+  store64(context + 112,result);store64(context + 136,flags)
+  return 1
+}
+
+fn darwin-mapped-cleanup(state: Int) -> Int {
+  let result = 0
+  let authority = load64(state + 72)
+  if load64(state + 64) == 0 { store64(state + 4096 + 736,0) }
+  if load64(state + 64) != 0 {
+    let binding = load64(state + 64)
+    let status = user-space-release-binding(binding,authority)
+    // Detach can commit before last-reference teardown quarantines the VM.
+    // Query native ownership rather than retrying a retired binding forever.
+    let phase = user-space-binding-phase(binding,authority)
+    if phase == -6 { store64(state + 64,0) }
+    if status != 0 && status != -6 { store64(state + 152,status);result = -5 }
+    if phase != -6 { result = -5 }
+  }
+  let vm = load64(state + 56)
+  if vm != 0 && load64(state + 168) == 1 {
+    let owned = user-space-constructor-owned(vm,authority)
+    if owned == 1 {
+      let status = user-space-release(vm,authority)
+      if status != 0 { store64(state + 152,status);result = -5 }
+      owned = user-space-constructor-owned(vm,authority)
+    }
+    if owned == 0 || owned == -6 { store64(state + 168,0) }
+    else { result = -5 }
+  }
+  if vm != 0 {
+    if user-space-phase(vm,authority) == -6 { store64(state + 56,0) }
+    else { result = -5 }
+  }
+  let phase = 3
+  if result != 0 { phase = 4 }
+  store64(state + 48,phase)
+  return result
+}
+
+// Explicit stopped recovery after native ownership invariants have been
+// repaired. This only destroys the retained invocation; it never resumes it.
+fn darwin-mapped-recover(state: Int) -> Int {
+  if darwin-mapped-state(state,DARWIN-MAPPED-BYTES) == 0 || load64(state) != DARWIN-MAPPED-MAGIC { return -8 }
+  if domain-current != 0 || user-context-active != 0 || domain-user-syscall-hook != 0 || darwin-mapped-active != 0 || load64(state + 48) != 4 { return -16 }
+  let cleaned = darwin-mapped-cleanup(state)
+  if cleaned == 0 { return 0 }
+  let vm = load64(state + 56)
+  let authority = load64(state + 72)
+  if vm <= 0 || load64(state + 64) != 0 || load64(state + 168) != 0 { return -5 }
+  if user-space-phase(vm,authority) != USER-SPACE-QUARANTINED || user-space-refs(vm,authority) != 0 { return -5 }
+  let result = user-space-recover(vm,authority)
+  if result != 0 { store64(state + 152,result);return -5 }
+  if user-space-phase(vm,authority) != -6 { return -5 }
+  store64(state + 56,0)
+  store64(state + 48,3)
+  return 0
+}
+
+fn darwin-mapped-run(state: Int, input: Int, bytes: Int, identity: Int, serial: Int, memory: Int, budget: Int) -> Int {
+  if identity != DARWIN-MAPPED-IDENTITY { return -8 }
+  if domain-current != 0 || domain-user-syscall-hook != 0 || user-context-active != 0 || darwin-mapped-active != 0 { return -16 }
+  if budget <= 0 || budget > 10000 { return -22 }
+  let status = darwin-mapped-preflight(state)
+  if status != 0 { return status }
+  if load64(state + 56) != 0 || load64(state + 64) != 0 || load64(state + 48) == 2 || load64(state + 48) == 4 { return -16 }
+  status = darwin-startup-input(input,bytes)
+  if status != 0 { return status }
+  if input < state + DARWIN-MAPPED-BYTES && state < input + bytes { return -14 }
+  if cap-check(memory,cap-memory()) == 0 || (serial >= 0 && cap-check(serial,cap-serial()) == 0) { return -13 }
+  if user-space-quarantined(memory) != 0 { return -5 }
+  store64(state + 72,memory);store64(state + 80,serial);store64(state + 88,0);store64(state + 96,0);store64(state + 104,budget);store64(state + 112,0);store64(state + 152,0);store64(state + 160,0);store64(state + 168,0)
+  let vm = user-space-create(memory,load64(state + 256 + 96) + 8 + darwin-mapped-data-needed(state))
+  if vm == 0 { return -5 }
+  if vm < 0 {
+    if vm == -5 { let retained = user-space-quarantined(memory);if retained > 0 { store64(state + 56,retained);store64(state + 168,1);store64(state + 48,4) } }
+    return darwin-mapped-native(state,vm)
+  }
+  store64(state + 56,vm);store64(state + 144,vm);store64(state + 168,1);store64(state + 48,2)
+  store64(state + 120,user-space-domain(vm,memory))
+  status = darwin-mapped-map(state)
+  if status == 0 { status = darwin-mapped-populate(state) }
+  if status == 0 { status = darwin-mapped-fixups(state) }
+  if status == 0 { status = darwin-mapped-startup(state,input) }
+  if status == 0 { status = darwin-mapped-seal(state) }
+  if status == 0 && darwin-mapped-digest(load64(state + 24),load64(state + 32)) != load64(state + 40) { status = -8 }
+  if status == 0 {
+    status = user-context-init(state + 4096,768,load64(state + 120),load64(state + 256 + 40),load64(input),DARWIN-MAPPED-STACK + 16376)
+    if status != 0 { status = -5 }
+    else {
+      store64(state + 4096 + 80,DARWIN-MAPPED-ARGUMENTS);store64(state + 4096 + 88,DARWIN-MAPPED-ARGUMENTS + 136);store64(state + 4096 + 96,DARWIN-MAPPED-ARGUMENTS + 272)
+      let binding = user-space-attach(vm,memory,state + 4096)
+      if binding < 0 { status = darwin-mapped-native(state,binding) }
+      else { store64(state + 64,binding);status = user-space-release(vm,memory);if status == 0 { store64(state + 168,0) } else { status = darwin-mapped-native(state,status) } }
+    }
+  }
+  if status == 0 {
+    darwin-mapped-active = state
+    domain-user-syscall-hook = darwin-mapped-trap
+    let finished = 0
+    while finished == 0 {
+      let kind = user-space-resume(load64(state + 64),memory,load64(state + 104))
+      store64(state + 88,kind)
+      if kind == USER-CONTEXT-SUSPEND {
+        store64(state + 104,user-context-remaining(state + 4096));store64(state + 112,load64(state + 112) + 1)
+        if load64(state + 112) > 1024 { status = -7;finished = 1 }
+        else if cap-check(memory,cap-memory()) == 0 { status = -13;finished = 1 }
+        else if darwin-mapped-service(state) == 0 { status = load64(state + 96);finished = 1 }
+        else if load64(state + 104) <= 0 { status = 124;finished = 1 }
+      } else {
+        finished = 1
+        if kind == USER-CONTEXT-FAULT { status = 128 + load64(state + 4096 + 696);store64(state + 160,kind) }
+        else if kind == USER-CONTEXT-DEADLINE { status = 124;store64(state + 160,kind) }
+        else if kind == USER-CONTEXT-EXIT { status = load64(state + 4096 + 720);store64(state + 160,kind) }
+        else { if kind < 0 { status = darwin-mapped-native(state,kind) } else { status = -5 } }
+      }
+    }
+    domain-user-syscall-hook = 0
+    darwin-mapped-active = 0
+  }
+  store64(state + 96,status)
+  let cleanup = darwin-mapped-cleanup(state)
+  if cleanup != 0 { return cleanup }
+  return status
+}

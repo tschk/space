@@ -1,0 +1,25 @@
+package space.app.gui
+import "gui-window-widget.in"
+import "gui-editor-model.in"
+
+component GuiWindowEditor {
+  target "x86_64-unknown-none"
+  capability memory: GuiMemory(map)
+  capability display: GuiDisplay(present, window)
+  capability storage: GuiNoteFile(read, write)
+}
+
+fn client-entry(info: Int) -> Int {
+  if window-info-valid(info) != 1 { return 1 }
+  let args = load64(info + 64)
+  if args != 0 {
+    if window-start(info) != 1 { return 2 }
+    gui-editor-load()
+  } else {
+    let code = window-event()
+    if code == -1 { return 3 }
+    if code == 27 { return widget-close() }
+    if code >= 0 { gui-editor-key(code) }
+  }
+  return window-draw(1)
+}

@@ -1,0 +1,22 @@
+package space.kernel
+
+// QPC uses the native discovered/validated counter provider. The native service
+// owns discovery, hardware period, monotonicity, overflow and unavailable state.
+fn windows-parameters-counter-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-time-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"QueryPerformanceCounter")!=0{return 18;}
+ if windows-protected-name(image,size,name+2,"QueryPerformanceFrequency")!=0{return 19;}
+ return -1;
+}
+fn windows-parameters-counter-dispatch(frame:Int,num:Int)->Int{
+ if windows-parameters-time-active==0 || cap-check(windows-parameters-time-authority,cap-timer())==0{windows-protected-error=5;return 0;}
+ let out=load64(frame+96);if windows-protected-span(out,8,1)==0{windows-protected-error=998;return 0;}
+ let value=-1;if num==0x100012{value=counter-read-authorized(windows-parameters-time-authority);}else{value=counter-frequency-authorized(windows-parameters-time-authority);}
+ if value<0{if value==-13{windows-protected-error=5;}else{windows-protected-error=31;}return 0;}
+ if num==0x100013 && value==0{windows-protected-error=31;return 0;}
+ windows-protected-store32(out,value);windows-protected-store32(out+4,value>>32);return 1;
+}
+fn windows-command-counter-run(image:Int,size:Int,authority:Int,storage:Int,timer:Int,line:Int,bytes:Int)->Int{
+ return windows-command-time-run-profile(image,size,authority,storage,timer,line,bytes,6);
+}

@@ -1,0 +1,192 @@
+package space.kernel
+import "user-address-space.in"
+import "../protocol/input.in"
+
+// Private synchronous native object, above the CPU capsule. Reuses the existing
+// single-word page ring; bytes, geometry and lifetime have no foreign ABI here.
+// Native callers run with stopped guests. This is not an exported SCI service.
+const TERMINAL-SESSION-ROW = 112
+const TERMINAL-SESSION-PAGE = 4096
+const TERMINAL-SESSION-CAPACITY = 508
+const TERMINAL-SESSION-WOULD-BLOCK = -7
+var terminal-session-table: Int = 0
+var terminal-session-queues: Int = 0
+var terminal-session-generation: Int = 0
+
+// Row: token, owner, owner-target, seat, seat-target, columns, rows, epoch,
+// phase, reserved, private receive scratch, reserved, reserved, reserved.
+fn terminal-session-row(handle: Int, owner: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if handle <= 0 || terminal-session-table == 0 { return -6 }
+  let slot = (handle & 255) - 1
+  if slot < 0 || slot >= 2 { return -6 }
+  let row = terminal-session-table + slot * TERMINAL-SESSION-ROW
+  if load64(row) != handle || load64(row + 64) != 1 { return -6 }
+  if load64(row + 8) != owner { return -2 }
+  return row
+}
+
+fn terminal-session-authorized(row: Int) -> Int {
+  let owner = load64(row + 8)
+  let seat = load64(row + 24)
+  if cap-check(owner,cap-memory()) == 0 || cap-check(seat,cap-input()) == 0 { return 0 }
+  if load64(cap-table-base + owner * 16) != load64(row + 16) || load64(cap-table-base + seat * 16) != load64(row + 32) { return 0 }
+  return 1
+}
+
+fn terminal-session-live(handle: Int, owner: Int) -> Int {
+  let row = terminal-session-row(handle,owner)
+  if row < 0 { return row }
+  if terminal-session-authorized(row) == 0 { return -2 }
+  return row
+}
+
+fn terminal-session-page(row: Int, queue: Int) -> Int {
+  let slot = (row - terminal-session-table) / TERMINAL-SESSION-ROW
+  return terminal-session-queues + (slot * 2 + queue) * TERMINAL-SESSION-PAGE
+}
+
+fn terminal-session-page-valid(page: Int) -> Int {
+  if load64(page + 16) != TERMINAL-SESSION-CAPACITY || load64(page + 24) != 8 { return 0 }
+  return input-page-header-valid(load64(page + 16),load64(page),load64(page + 8),8)
+}
+
+fn terminal-session-page-reset(page: Int) -> void {
+  cpu-mem-fill64(page,0,TERMINAL-SESSION-PAGE / 8)
+  store64(page + 16,TERMINAL-SESSION-CAPACITY)
+  store64(page + 24,8)
+}
+
+fn terminal-session-open(owner: Int, seat: Int, columns: Int, rows: Int) -> Int {
+  if user-space-kernel() == 0 { return -4 }
+  if cap-check(owner,cap-memory()) == 0 || cap-check(seat,cap-input()) == 0 { return -2 }
+  if columns < 1 || columns > 256 || rows < 1 || rows > 128 { return -1 }
+  if terminal-session-generation >= 0x7FFFFFFFFFFFFF { return -3 }
+  let slot = 0
+  while slot < 2 && terminal-session-table != 0 && load64(terminal-session-table + slot * TERMINAL-SESSION-ROW + 64) != 0 { slot += 1 }
+  if slot == 2 { return -3 }
+  if terminal-session-table == 0 {
+    let need = 2 * TERMINAL-SESSION-ROW + 4 * TERMINAL-SESSION-PAGE
+    if heap-next < 65536 || heap-next > heap-end || need > heap-end - heap-next { return -3 }
+    terminal-session-table = alloc(2 * TERMINAL-SESSION-ROW)
+    terminal-session-queues = alloc(4 * TERMINAL-SESSION-PAGE)
+    cpu-mem-fill64(terminal-session-table,0,2 * TERMINAL-SESSION-ROW / 8)
+  }
+  let row = terminal-session-table + slot * TERMINAL-SESSION-ROW
+  terminal-session-page-reset(terminal-session-page(row,0))
+  terminal-session-page-reset(terminal-session-page(row,1))
+  terminal-session-generation += 1
+  let handle = (terminal-session-generation << 8) | (slot + 1)
+  store64(row,handle)
+  store64(row + 8,owner)
+  store64(row + 16,load64(cap-table-base + owner * 16))
+  store64(row + 24,seat)
+  store64(row + 32,load64(cap-table-base + seat * 16))
+  store64(row + 40,columns)
+  store64(row + 48,rows)
+  store64(row + 56,1)
+  store64(row + 64,1)
+  return handle
+}
+
+// Scalar observations only: geometry, queue counts, mutation epoch, raw mode0.
+fn terminal-session-query(handle: Int, owner: Int, which: Int) -> Int {
+  if which < 0 || which > 5 { return -1 }
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if which == 0 { return load64(row + 40) }
+  if which == 1 { return load64(row + 48) }
+  if which == 4 { return load64(row + 56) }
+  if which == 5 { return 0 }
+  let page = terminal-session-page(row,which - 2)
+  if terminal-session-page-valid(page) == 0 { return -5 }
+  let count = load64(page) - load64(page + 8)
+  if count < 0 { count += TERMINAL-SESSION-CAPACITY }
+  return count
+}
+
+fn terminal-session-resize(handle: Int, owner: Int, columns: Int, rows: Int) -> Int {
+  if columns < 1 || columns > 256 || rows < 1 || rows > 128 { return -1 }
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if load64(row + 40) == columns && load64(row + 48) == rows { return 0 }
+  if load64(row + 56) == 0x7FFFFFFFFFFFFFFF { return -3 }
+  store64(row + 40,columns)
+  store64(row + 48,rows)
+  store64(row + 56,load64(row + 56) + 1)
+  return 0
+}
+
+fn terminal-session-seat-valid(handle: Int, owner: Int, seat: Int) -> Int {
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if seat != load64(row + 24) { return -2 }
+  return 0
+}
+
+// Whole-byte, nonblocking operations. Full/empty never invent an EOF or sleep.
+// A future execution supervisor translates WOULD-BLOCK into a saved CPU wait.
+fn terminal-session-transfer(handle: Int, owner: Int, seat: Int, queue: Int, send: Int, byte: Int) -> Int {
+  if queue < 0 || queue > 1 || send < 0 || send > 1 { return -1 }
+  if send != 0 && (byte < 0 || byte > 255) { return -1 }
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if queue == 0 && send == 1 && seat != load64(row + 24) { return -2 }
+  let page = terminal-session-page(row,queue)
+  if terminal-session-page-valid(page) == 0 { return -5 }
+  let head = load64(page)
+  let tail = load64(page + 8)
+  if send == 1 && (head + 1) % TERMINAL-SESSION-CAPACITY == tail { return TERMINAL-SESSION-WOULD-BLOCK }
+  if send == 0 && head == tail { return TERMINAL-SESSION-WOULD-BLOCK }
+  if load64(row + 56) == 0x7FFFFFFFFFFFFFFF { return -3 }
+  if send == 1 {
+    if input-page-send(page,byte) != 1 { return -5 }
+    byte = 0
+  } else {
+    let value = load64(page + 32 + tail * 8)
+    if value < 0 || value > 255 { return -5 }
+    if input-page-recv(page,row + 80) != 1 { return -5 }
+    byte = load64(row + 80)
+  }
+  store64(row + 56,load64(row + 56) + 1)
+  return byte
+}
+
+fn terminal-session-input(handle: Int, owner: Int, seat: Int, byte: Int) -> Int {
+  return terminal-session-transfer(handle,owner,seat,0,1,byte)
+}
+fn terminal-session-input-sequence(handle: Int, owner: Int, seat: Int, packed: Int, count: Int) -> Int {
+  if count < 1 || count > 8 { return -1 }
+  if count < 8 && (packed >> (count * 8)) != 0 { return -1 }
+  let row = terminal-session-live(handle,owner)
+  if row < 0 { return row }
+  if seat != load64(row + 24) { return -2 }
+  let page = terminal-session-page(row,0)
+  if terminal-session-page-valid(page) == 0 { return -5 }
+  if load64(row + 56) == 0x7FFFFFFFFFFFFFFF { return -3 }
+  let result = input-page-send-bytes(page,packed,count)
+  if result == 0 { return TERMINAL-SESSION-WOULD-BLOCK }
+  if result != 1 { return -5 }
+  store64(row + 56,load64(row + 56) + 1)
+  return 0
+}
+fn terminal-session-read(handle: Int, owner: Int) -> Int {
+  return terminal-session-transfer(handle,owner,-1,0,0,0)
+}
+fn terminal-session-write(handle: Int, owner: Int, byte: Int) -> Int {
+  return terminal-session-transfer(handle,owner,-1,1,1,byte)
+}
+fn terminal-session-output(handle: Int, owner: Int) -> Int {
+  return terminal-session-transfer(handle,owner,-1,1,0,0)
+}
+
+// Retirement remains possible after cap-revoke zeroes the bound cap targets.
+// The opaque generation and exact original owner ID still fence this object.
+fn terminal-session-close(handle: Int, owner: Int) -> Int {
+  let row = terminal-session-row(handle,owner)
+  if row < 0 { return row }
+  terminal-session-page-reset(terminal-session-page(row,0))
+  terminal-session-page-reset(terminal-session-page(row,1))
+  cpu-mem-fill64(row,0,TERMINAL-SESSION-ROW / 8)
+  return 0
+}

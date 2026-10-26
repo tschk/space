@@ -34,7 +34,7 @@ def main() -> int:
     storage = read("components/storage.in")
     network = read("components/network.in")
     dns = read("components/dns.in")
-    shell = read("components/shell.in")
+    shell = read("components/shell.in") + "\n" + read("components/shell-common.in")
     boot = read("boot/multiboot.asm")
 
     print("[1/5] Syscall / capability surface...")
@@ -58,8 +58,10 @@ def main() -> int:
 
     print("[2/5] Domain / memory / boot...")
     check(
-        "domain-create returns -1 when the table is full",
-        re.search(r"if domain-count >= MAX-DOMAINS \{\n    return -1\n  \}", domain) is not None,
+        "domain-create reuses only free slots and rejects ids beyond MAX-DOMAINS",
+        "while id < domain-count && load64(domain-table + id * 24 + 8) != DOMAIN-FREE" in domain
+        and "if id >= MAX-DOMAINS { return -1 }" in domain
+        and "if id == domain-count { domain-count = domain-count + 1 }" in domain,
     )
     check(
         "SCI mapping helpers exist (code RX / data RW NX)",
@@ -93,9 +95,30 @@ def main() -> int:
         is not None,
     )
     check("chan-valid exists before send/recv", "fn chan-valid" in channel)
+    io_submit = storage[storage.index("fn nvme-io-submit("):storage.index("// --- PCI initialization")]
     check(
-        "nvme-io-submit rejects count<=0 and clamps to 8 sectors",
-        "if count <= 0" in storage and "if count > 8" in storage and "count = 8" in storage,
+        "NVMe read/write reject outside 1..8 sectors before SQ publication",
+        "if opcode != NVME-CMD-READ && opcode != NVME-CMD-WRITE { return -1 }" in io_submit
+        and "if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }" in io_submit
+        and io_submit.index("count > 8") < io_submit.index("let sqe =")
+        and "count = 8" not in io_submit,
+    )
+    check(
+        "NVMe FLUSH accepts only zero LBA/count/buffer and encodes no data fields",
+        "if opcode == NVME-CMD-FLUSH" in io_submit
+        and "if lba != 0 || count != 0 || buf != 0 { return -1 }" in io_submit
+        and "while i < 16" in io_submit and "store32(sqe + i * 4, 0)" in io_submit
+        and "if opcode != NVME-CMD-FLUSH {" in io_submit
+        and "store32(sqe + 4, 1)" in io_submit
+        and io_submit.index("store32(sqe + i * 4, 0)") < io_submit.index("store32(sqe + 0, opcode"),
+    )
+    check(
+        "NVMe success checks CQ CID/SQID/status before its FLUSH witness",
+        "(dw3 & 0xFFFF) != nvme-cid" in io_submit
+        and "((load32(cqe + 8) >> 16) & 0xFFFF) != 1" in io_submit
+        and "if opcode == NVME-CMD-FLUSH && status == 0" in io_submit
+        and "storage-ready = 0" in io_submit
+        and (ROOT / "scripts/check-nvme-flush.py").is_file(),
     )
     check(
         "tcp-parse-data treats RST as failure",
@@ -129,10 +152,16 @@ def main() -> int:
     )
 
     print("[5/5] Isolation honesty...")
+    clone = domain[domain.index("fn create-shared-domain-pml4()"):domain.index("fn create-user-domain-pml4()")]
     check(
-        "SCI guests use exclusive user PML4s; shared domains still copy PDPT[0..3]",
-        "while j < 4" in domain
-        and "store64(dst-pd + k * 8, load64(src-pd + k * 8))" in domain
+        "SCI guests use exclusive trees; clone PDPT[0..3] owns copied mutable leaf tables",
+        "while j < 4" in clone
+        and "let entry = load64(src-pd + k * 8)" in clone
+        and "if (entry & 1) != 0 && (entry & 128) == 0" in clone
+        and "let leaf = frame-alloc()" in clone
+        and "cpu-mem-copy64(leaf, entry & PAGE-ADDRESS-MASK, 512)" in clone
+        and "entry = leaf | (entry & (-1 ^ PAGE-ADDRESS-MASK))" in clone
+        and "store64(dst-pd + k * 8, entry)" in clone
         and "fn domain-enter-user" in domain
         and "fn domain-create-user" in domain
         and "fn domain-map-trampoline" in domain
@@ -149,7 +178,7 @@ def main() -> int:
         and "invoke1(load64(0x4060)" not in domain,
     )
 
-    shell = read("components/shell.in")
+    shell = read("components/shell.in") + "\n" + read("components/shell-common.in")
     guest = shell[shell.index('let guest-comp = component-register("hard-guest"'):]
     guest = guest[:guest.index("// DNS parser")]
     check(

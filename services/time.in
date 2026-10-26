@@ -12,6 +12,11 @@ fn time-wallclock() -> Int {
 
 fn time-print(port: Int) -> void {
   let ts = time-wallclock()
+  if ts < 0 {
+    serial-write-cstr(port, "  time: coherent RTC unavailable")
+    serial-nl(port)
+    return
+  }
 
   // Reload from globals (inter-function data transfer)
   let y = time-component-y

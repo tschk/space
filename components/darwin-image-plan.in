@@ -1,0 +1,532 @@
+package space.kernel
+
+import "darwin-owned-heap.in"
+
+// Internal supervisor plan, not a guest pointer/registry service. The source
+// remains immutable until a trusted mapper has consumed the plan.
+const DARWIN-IMAGE-PLAN-MAGIC = 0x4457504C414E0001
+const DARWIN-IMAGE-PLAN-BYTES = 3840
+const DARWIN-IMAGE-PREFERRED = 0x100000000
+
+fn darwin-image-range(size: Int, offset: Int, bytes: Int) -> Int {
+  if offset < 0 || bytes < 0 || offset > size || bytes > size - offset { return 0 }
+  return 1
+}
+
+fn darwin-image-field(base: Int, name: String) -> Int {
+  let i = 0
+  let ended = 0
+  while i < 16 {
+    let wanted = 0
+    if ended == 0 { wanted = load8(name + i);if wanted == 0 { ended = 1 } }
+    if load8(base + i) != wanted { return 0 }
+    i += 1
+  }
+  return ended
+}
+
+fn darwin-image-string(base: Int, end: Int, name: String) -> Int {
+  let i = 0
+  while i < 256 {
+    if base + i >= end { return 0 }
+    let c = load8(name + i)
+    if load8(base + i) != c { return 0 }
+    if c == 0 { return 1 }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-image-name-end(base: Int, end: Int) -> Int {
+  let i = 0
+  while i < 256 && base + i < end {
+    let c = load8(base + i)
+    if c == 0 { return base + i + 1 }
+    if c < 33 || c > 126 { return -8 }
+    i += 1
+  }
+  return -8
+}
+
+fn darwin-image-zeros(base: Int, end: Int) -> Int {
+  while base < end { if load8(base) != 0 { return 0 };base += 1 }
+  return 1
+}
+
+fn darwin-image-uleb-end(base: Int, end: Int) -> Int {
+  let n = 0
+  while n < 9 && base + n < end {
+    if load8(base + n) < 128 { return base + n + 1 }
+    n += 1
+  }
+  return -8
+}
+
+fn darwin-image-uleb(base: Int, end: Int) -> Int {
+  let stop = darwin-image-uleb-end(base,end)
+  if stop < 0 { return -8 }
+  let value = 0
+  let shift = 0
+  while base < stop { value = value | ((load8(base) & 127) << shift);shift += 7;base += 1 }
+  return value
+}
+
+fn darwin-image-address(image: Int, address: Int, bytes: Int) -> Int {
+  if bytes <= 0 { return 0 }
+  let off = 32
+  let end = 32 + load32(image + 20)
+  while off < end {
+    let p = image + off
+    if load32(p) == 0x19 && darwin-image-segment-kind(p) != 1 {
+      let va = load64(p + 24)
+      let vm = load64(p + 32)
+      if address >= va && address - va <= vm && bytes <= vm - (address - va) { return 1 }
+    }
+    off += load32(p + 4)
+  }
+  return 0
+}
+
+// Closed executable exports are descriptive: no reexports/resolvers/dlsym.
+// Ordered, disjoint, forward child nodes bound traversal by the trie byte size.
+fn darwin-image-export-node(image: Int, base: Int, bytes: Int, offset: Int, depth: Int) -> Int {
+  if depth >= 32 || offset < 0 || offset >= bytes { return -8 }
+  let node = base + offset
+  let cursor = darwin-image-uleb-end(node,base + bytes)
+  let terminal = darwin-image-uleb(node,base + bytes)
+  if cursor < 0 || terminal < 0 || terminal > base + bytes - cursor { return -8 }
+  if terminal != 0 {
+    let flags = darwin-image-uleb(cursor,cursor + terminal)
+    let value-at = darwin-image-uleb-end(cursor,cursor + terminal)
+    if flags != 0 || value-at < 0 { return -38 }
+    let value-end = darwin-image-uleb-end(value-at,cursor + terminal)
+    let value = darwin-image-uleb(value-at,cursor + terminal)
+    if value < 0 || value >= 0x200000 || value-end != cursor + terminal || darwin-image-address(image,DARWIN-IMAGE-PREFERRED + value,1) == 0 { return -8 }
+  }
+  cursor += terminal
+  if cursor >= base + bytes { return -8 }
+  let children = load8(cursor)
+  cursor += 1
+  let header = cursor
+  let i = 0
+  while i < children {
+    let name-end = darwin-image-name-end(cursor,base + bytes)
+    if name-end < 0 || name-end == cursor + 1 { return -8 }
+    cursor = darwin-image-uleb-end(name-end,base + bytes)
+    if cursor < 0 { return -8 }
+    i += 1
+  }
+  let used-end = cursor
+  cursor = header
+  i = 0
+  while i < children {
+    let name-end = darwin-image-name-end(cursor,base + bytes)
+    let child = darwin-image-uleb(name-end,base + bytes)
+    cursor = darwin-image-uleb-end(name-end,base + bytes)
+    if child < used-end - base || child >= bytes || darwin-image-zeros(used-end,base + child) == 0 { return -8 }
+    used-end = darwin-image-export-node(image,base,bytes,child,depth + 1)
+    if used-end < 0 { return used-end }
+    i += 1
+  }
+  return used-end
+}
+
+fn darwin-image-segment-kind(command: Int) -> Int {
+  if darwin-image-field(command + 8,"__PAGEZERO") != 0 { return 1 }
+  if darwin-image-field(command + 8,"__TEXT") != 0 { return 2 }
+  if darwin-image-field(command + 8,"__DATA_CONST") != 0 { return 3 }
+  if darwin-image-field(command + 8,"__DATA") != 0 { return 4 }
+  if darwin-image-field(command + 8,"__LINKEDIT") != 0 { return 5 }
+  return 0
+}
+
+fn darwin-image-section-kind(section: Int) -> Int {
+  if darwin-image-field(section,"__text") != 0 { return 1 }
+  if darwin-image-field(section,"__stubs") != 0 { return 2 }
+  if darwin-image-field(section,"__const") != 0 { return 3 }
+  if darwin-image-field(section,"__cstring") != 0 { return 4 }
+  if darwin-image-field(section,"__ustring") != 0 { return 5 }
+  if darwin-image-field(section,"__unwind_info") != 0 { return 6 }
+  if darwin-image-field(section,"__got") != 0 { return 7 }
+  if darwin-image-field(section,"__data") != 0 { return 8 }
+  if darwin-image-field(section,"__bss") != 0 { return 9 }
+  return 0
+}
+
+// Validate first with out=0. A second pass fills descriptors; magic is published
+// only by darwin-image-plan after every check completes.
+fn darwin-image-scan(image: Int, size: Int, out: Int) -> Int {
+  if image <= 0 || size < 32 || size > 0x200000 || image > 0x100000000 - size { return -8 }
+  if load32(image) != 0xFEEDFACF || load32(image + 4) != 0x1000007 || load32(image + 12) != 2 || load32(image + 24) != 0x200085 || load32(image + 28) != 0 { return -8 }
+  if load32(image + 8) != 3 { return -38 }
+  let commands = load32(image + 16)
+  let command-bytes = load32(image + 20)
+  if commands < 1 || commands > 32 || command-bytes > 4096 || darwin-image-range(size,32,command-bytes) == 0 { return -8 }
+  let end = 32 + command-bytes
+  let off = 32
+  let index = 0
+  let segments = 0
+  let sections = 0
+  let pages = 0
+  let seen-segments = 0
+  let seen-commands = 0
+  let entry = 0
+  let text-base = 0
+  let text-size = 0
+  let text-code = 0
+  let text-code-size = 0
+  let link-file = 0
+  let link-size = 0
+  let symbols-command = 0
+  let indirect-command = 0
+  let fix-command = 0
+  let dependency = 0
+  while index < commands {
+    if darwin-image-range(end,off,8) == 0 { return -8 }
+    let p = image + off
+    let kind = load32(p)
+    let bytes = load32(p + 4)
+    if bytes < 8 || (bytes & 7) != 0 || darwin-image-range(end,off,bytes) == 0 { return -8 }
+    let mark = 0
+    if kind == 0x19 {
+      if bytes < 72 || segments >= 8 { return -8 }
+      let which = darwin-image-segment-kind(p)
+      if which == 0 { return -38 }
+      let bit = 1 << which
+      if (seen-segments & bit) != 0 { return -8 }
+      seen-segments = seen-segments | bit
+      let va = load64(p + 24)
+      let vm = load64(p + 32)
+      let file = load64(p + 40)
+      let file-bytes = load64(p + 48)
+      let maxprot = load32(p + 56)
+      let prot = load32(p + 60)
+      let count = load32(p + 64)
+      let flags = load32(p + 68)
+      if count > 32 - sections || bytes != 72 + count * 80 { return -8 }
+      if which == 1 {
+        if va != 0 || vm != DARWIN-IMAGE-PREFERRED || file != 0 || file-bytes != 0 || maxprot != 0 || prot != 0 || count != 0 || flags != 0 { return -8 }
+      } else {
+        if va < DARWIN-IMAGE-PREFERRED || va - DARWIN-IMAGE-PREFERRED > 0x200000 || vm <= 0 || vm > 0x200000 - (va - DARWIN-IMAGE-PREFERRED) || (va & 4095) != 0 || (vm & 4095) != 0 || (file & 4095) != 0 || file-bytes > vm || darwin-image-range(size,file,file-bytes) == 0 { return -8 }
+        let expected = 3
+        if which == 2 { expected = 5 }
+        if which == 5 { expected = 1 }
+        let wanted-flags = 0
+        if which == 3 { wanted-flags = 16 }
+        if prot != expected || maxprot != expected || flags != wanted-flags { return -38 }
+        if which == 2 { if file != 0 || file-bytes < end || va != DARWIN-IMAGE-PREFERRED { return -8 };text-base = va;text-size = file-bytes }
+        if which == 5 { if count != 0 { return -8 };link-file = file;link-size = file-bytes }
+        let previous = 32
+        while previous < off {
+          let q = image + previous
+          if load32(q) == 0x19 && darwin-image-segment-kind(q) != 1 {
+            let qva = load64(q + 24)
+            let qvm = load64(q + 32)
+            let qfile = load64(q + 40)
+            let qbytes = load64(q + 48)
+            if va < qva + qvm && qva < va + vm { return -8 }
+            if file-bytes != 0 && qbytes != 0 && file < qfile + qbytes && qfile < file + file-bytes { return -8 }
+          }
+          previous += load32(q + 4)
+        }
+        pages += vm / 4096
+        if pages > 512 { return -8 }
+      }
+      if out != 0 {
+        let row = out + 128 + segments * 80
+        store64(row,off);store64(row + 8,va);store64(row + 16,vm);store64(row + 24,file);store64(row + 32,file-bytes)
+        store64(row + 40,maxprot);store64(row + 48,prot);store64(row + 56,sections);store64(row + 64,count);store64(row + 72,which)
+      }
+      let n = 0
+      while n < count {
+        let s = p + 72 + n * 80
+        let sk = darwin-image-section-kind(s)
+        if sk == 0 { return -38 }
+        let j = 0
+        while j < 16 { if load8(s + 16 + j) != load8(p + 8 + j) { return -8 };j += 1 }
+        let address = load64(s + 32)
+        let amount = load64(s + 40)
+        let at = load32(s + 48)
+        let align = load32(s + 52)
+        let attributes = load32(s + 64)
+        let reserved1 = load32(s + 68)
+        let reserved2 = load32(s + 72)
+        if address < va || amount <= 0 || address - va > vm || amount > vm - (address - va) || align > 16 || (address & ((1 << align) - 1)) != 0 || load32(s + 56) != 0 || load32(s + 60) != 0 || load32(s + 76) != 0 { return -8 }
+        if sk == 9 {
+          if which != 4 || attributes != 1 || at != 0 || reserved1 != 0 || reserved2 != 0 { return -38 }
+        } else {
+          if darwin-image-range(size,at,amount) == 0 || at < file || at - file != address - va || at - file > file-bytes || amount > file-bytes - (at - file) { return -8 }
+          let wanted = 0
+          if sk == 1 { wanted = 0x80000400 }
+          if sk == 2 { wanted = 0x80000408 }
+          if sk == 4 { wanted = 2 }
+          if sk == 7 { wanted = 6 }
+          if attributes != wanted { return -38 }
+          if sk == 1 || sk == 2 || sk == 4 || sk == 5 || sk == 6 { if which != 2 { return -38 } }
+          if sk == 7 { if which != 3 || (amount & 7) != 0 || reserved2 != 0 { return -38 } }
+          else if sk == 2 { if reserved2 != 6 || amount % 6 != 0 { return -8 } }
+          else { if reserved1 != 0 || reserved2 != 0 { return -8 } }
+          if sk == 8 && which != 4 { return -38 }
+          if sk == 1 { if text-code != 0 { return -8 };text-code = address;text-code-size = amount }
+        }
+        let prior = 0
+        while prior < n {
+          let q = p + 72 + prior * 80
+          if address < load64(q + 32) + load64(q + 40) && load64(q + 32) < address + amount { return -8 }
+          prior += 1
+        }
+        if out != 0 {
+          let row = out + 768 + sections * 80
+          store64(row,off + 72 + n * 80);store64(row + 8,address);store64(row + 16,amount);store64(row + 24,at);store64(row + 32,attributes)
+          store64(row + 40,align);store64(row + 48,segments);store64(row + 56,reserved1);store64(row + 64,reserved2);store64(row + 72,sk)
+        }
+        sections += 1;n += 1
+      }
+      segments += 1
+    } else if kind == 0x80000034 { mark = 1;if bytes != 16 { return -8 };fix-command = off }
+    else if kind == 0x80000033 { mark = 2;if bytes != 16 { return -8 } }
+    else if kind == 2 { mark = 4;if bytes != 24 { return -8 };symbols-command = off }
+    else if kind == 11 { mark = 8;if bytes != 80 { return -8 };indirect-command = off }
+    else if kind == 14 {
+      mark = 16
+      if bytes != 32 || load32(p + 8) != 12 || darwin-image-string(p + 12,p + bytes,"/usr/lib/dyld") == 0 || darwin-image-zeros(p + 25,p + bytes) == 0 { return -38 }
+    } else if kind == 27 { mark = 32;if bytes != 24 { return -8 } }
+    else if kind == 50 {
+      mark = 64
+      if bytes != 32 || load32(p + 8) != 1 || load32(p + 12) != 0xE0000 || load32(p + 16) < load32(p + 12) || load32(p + 20) != 1 || load32(p + 24) != 3 { return -38 }
+    } else if kind == 42 { mark = 128;if bytes != 16 || load64(p + 8) != 0 { return -38 } }
+    else if kind == 0x80000028 { mark = 256;if bytes != 24 || load64(p + 16) != 0 { return -38 };entry = load64(p + 8) }
+    else if kind == 12 {
+      mark = 512
+      if bytes != 56 || load32(p + 8) != 24 || load32(p + 12) != 2 || load32(p + 20) != 0x10000 || load32(p + 16) < load32(p + 20) || darwin-image-string(p + 24,p + bytes,"/usr/lib/libSystem.B.dylib") == 0 || darwin-image-zeros(p + 50,p + bytes) == 0 { return -38 }
+      dependency = off
+    } else if kind == 38 { mark = 1024;if bytes != 16 { return -8 } }
+    else if kind == 41 { mark = 2048;if bytes != 16 || load32(p + 12) != 0 { return -38 } }
+    else { return -38 }
+    if mark != 0 { if (seen-commands & mark) != 0 { return -8 };seen-commands = seen-commands | mark }
+    if out != 0 { store64(out + 3328 + index * 16,off);store64(out + 3336 + index * 16,kind) }
+    off += bytes;index += 1
+  }
+  if off != end || seen-segments != 62 || seen-commands != 4095 || text-code == 0 || entry < text-code - text-base || entry >= text-code - text-base + text-code-size { return -8 }
+  let sym = image + symbols-command
+  let symbol-file = load32(sym + 8)
+  let symbol-count = load32(sym + 12)
+  let strings = load32(sym + 16)
+  let string-bytes = load32(sym + 20)
+  if symbol-count > 4096 || string-bytes > 65536 || symbol-file < link-file || strings < link-file || darwin-image-range(link-file + link-size,symbol-file,symbol-count * 16) == 0 || darwin-image-range(link-file + link-size,strings,string-bytes) == 0 || symbol-file + symbol-count * 16 > strings { return -8 }
+  let symbol = 0
+  while symbol < symbol-count {
+    let p = image + symbol-file + symbol * 16
+    let name = load32(p)
+    if name >= string-bytes || darwin-image-name-end(image + strings + name,image + strings + string-bytes) < 0 { return -8 }
+    let typ = load8(p + 4)
+    let section = load8(p + 5)
+    if typ == 1 { if section != 0 || load16(p + 6) != 256 || load64(p + 8) != 0 { return -38 } }
+    else if typ == 15 { if section < 1 || section > sections || load64(p + 8) < text-base || load64(p + 8) >= DARWIN-IMAGE-PREFERRED + 0x200000 { return -8 } }
+    // N_OSO/STAB value is descriptive object provenance, not a mapped VA.
+    else if typ == 60 { if section != 0 || load16(p + 6) != 0 { return -38 } }
+    else { return -38 }
+    symbol += 1
+  }
+  let dys = image + indirect-command
+  if load32(dys + 8) != 0 || load32(dys + 16) != load32(dys + 12) || load32(dys + 24) != load32(dys + 16) + load32(dys + 20) || load32(dys + 24) + load32(dys + 28) != symbol-count { return -8 }
+  symbol = 0
+  while symbol < symbol-count {
+    let typ = load8(image + symbol-file + symbol * 16 + 4)
+    if symbol < load32(dys + 12) { if typ != 60 { return -38 } }
+    else if symbol < load32(dys + 24) { if typ != 15 { return -38 } }
+    else { if typ != 1 { return -8 } }
+    symbol += 1
+  }
+  let word = 32
+  while word < 56 { if load32(dys + word) != 0 { return -38 };word += 4 }
+  word = 64
+  while word < 80 { if load32(dys + word) != 0 { return -38 };word += 4 }
+  let indirect = load32(dys + 56)
+  let indirect-count = load32(dys + 60)
+  if indirect-count > 8192 || indirect < link-file || darwin-image-range(link-file + link-size,indirect,indirect-count * 4) == 0 { return -8 }
+  let i = 0
+  while i < indirect-count { let value = load32(image + indirect + i * 4);if value >= symbol-count && value != 0x80000000 { return -8 };i += 1 }
+  off = 32
+  while off < end {
+    let p = image + off
+    let kind = load32(p)
+    if kind == 0x19 {
+      let n = 0
+      while n < load32(p + 64) {
+        let s = p + 72 + n * 80
+        let sk = darwin-image-section-kind(s)
+        if sk == 2 || sk == 7 {
+          let amount = load64(s + 40) / 8
+          if sk == 2 { amount = load64(s + 40) / 6 }
+          if load32(s + 68) > indirect-count || amount > indirect-count - load32(s + 68) { return -8 }
+        }
+        n += 1
+      }
+    }
+    if kind == 0x80000034 || kind == 0x80000033 || kind == 38 || kind == 41 {
+      let at = load32(p + 8)
+      let amount = load32(p + 12)
+      if at < link-file || darwin-image-range(link-file + link-size,at,amount) == 0 { return -8 }
+      if kind != 41 && amount == 0 { return -8 }
+      if kind == 38 {
+        let cursor = image + at
+        let stop = image + at + amount
+        let address = 0
+        let done = 0
+        while cursor < stop && done == 0 {
+          let delta = darwin-image-uleb(cursor,stop)
+          cursor = darwin-image-uleb-end(cursor,stop)
+          if delta < 0 || cursor < 0 || delta > text-size - address { return -8 }
+          if delta == 0 { done = 1 } else { address += delta;if address < text-code - text-base || address >= text-size { return -8 } }
+        }
+        if done == 0 || darwin-image-zeros(cursor,stop) == 0 { return -8 }
+      }
+      if kind == 0x80000033 {
+        if amount > 65536 { return -8 }
+        let used = darwin-image-export-node(image,image + at,amount,0,0)
+        if used < 0 { return used }
+        if darwin-image-zeros(used,image + at + amount) == 0 { return -8 }
+      }
+    }
+    off += load32(p + 4)
+  }
+  if out != 0 {
+    store64(out + 8,1);store64(out + 16,size);store64(out + 24,image);store64(out + 32,text-base);store64(out + 40,text-base + entry)
+    store64(out + 48,segments);store64(out + 56,sections);store64(out + 64,commands);store64(out + 72,load32(image + fix-command + 8));store64(out + 80,load32(image + fix-command + 12))
+    store64(out + 88,dependency);store64(out + 96,pages);store64(out + 104,DARWIN-IMAGE-PREFERRED);store64(out + 112,0x200085);store64(out + 120,DARWIN-IMAGE-PLAN-BYTES)
+  }
+  return 0
+}
+
+fn darwin-image-plan(image: Int, size: Int, out: Int, bytes: Int) -> Int {
+  if out <= 0 || bytes < DARWIN-IMAGE-PLAN-BYTES || bytes > 4096 || out > 0x100000000 - bytes { return -14 }
+  if image > 0 && size > 0 && out < image + size && image < out + bytes { return -14 }
+  let result = darwin-image-scan(image,size,0)
+  if result != 0 { return result }
+  let n = 0
+  while n < DARWIN-IMAGE-PLAN-BYTES { store8(out + n,0);n += 1 }
+  result = darwin-image-scan(image,size,out)
+  if result == 0 { store64(out,DARWIN-IMAGE-PLAN-MAGIC) }
+  return result
+}
+
+fn darwin-image-segment(image: Int, ordinal: Int) -> Int {
+  let off = 32
+  let index = 0
+  let end = 32 + load32(image + 20)
+  while off < end {
+    let p = image + off
+    if load32(p) == 0x19 { if index == ordinal { return p };index += 1 }
+    off += load32(p + 4)
+  }
+  return 0
+}
+
+// Full chained-format validation independent of the selected symbol provider.
+// Unsupported chain features return -38; this does not resolve/load libraries.
+fn darwin-image-chain-preflight(plan: Int) -> Int {
+  if plan <= 0 || plan > 0x100000000 - DARWIN-IMAGE-PLAN-BYTES || load64(plan) != DARWIN-IMAGE-PLAN-MAGIC || load64(plan + 8) != 1 || load64(plan + 120) != DARWIN-IMAGE-PLAN-BYTES { return -8 }
+  let image = load64(plan + 24)
+  let size = load64(plan + 16)
+  let check = darwin-image-scan(image,size,0)
+  if check != 0 { return check }
+  let file = load64(plan + 72)
+  let bytes = load64(plan + 80)
+  let command = 32
+  let command-end = 32 + load32(image + 20)
+  let matched = 0
+  while command < command-end {
+    if load32(image + command) == 0x80000034 {
+      if file != load32(image + command + 8) || bytes != load32(image + command + 12) { return -8 }
+      matched = 1
+    }
+    command += load32(image + command + 4)
+  }
+  if matched == 0 || load64(plan + 48) != 5 { return -8 }
+  if bytes < 32 || darwin-image-range(size,file,bytes) == 0 { return -8 }
+  let h = image + file
+  let starts = load32(h + 4)
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let count = load32(h + 16)
+  if load32(h) != 0 || starts != 32 || load32(h + 20) != 1 || load32(h + 24) != 0 || load32(h + 28) != 0 || count < 1 || count > 256 { return -8 }
+  let segment-count = load32(h + starts)
+  if segment-count != load64(plan + 48) || segment-count > 8 || darwin-image-range(bytes,starts + 4,segment-count * 4) == 0 || imports < starts + 4 + segment-count * 4 || darwin-image-range(bytes,imports,count * 4) == 0 || symbols < imports + count * 4 || symbols >= bytes { return -8 }
+  let i = 0
+  while i < count {
+    let item = load32(h + imports + i * 4)
+    let name = item >> 9
+    if (item & 511) != 1 || name >= bytes - symbols || darwin-image-name-end(h + symbols + name,h + bytes) < 0 { return -8 }
+    i += 1
+  }
+  let links = 0
+  i = 0
+  let last-record = starts + 4 + segment-count * 4
+  while i < segment-count {
+    let record = load32(h + starts + 4 + i * 4)
+    if record != 0 {
+      let at = starts + record
+      if at < last-record || darwin-image-range(imports,at,22) == 0 { return -8 }
+      let record-size = load32(h + at)
+      let pages = load16(h + at + 20)
+      let segment = darwin-image-segment(image,i)
+      if segment == 0 || darwin-image-segment-kind(segment) < 3 || darwin-image-segment-kind(segment) > 4 { return -8 }
+      if record-size != 22 + pages * 2 || darwin-image-range(imports,at,record-size) == 0 || load16(h + at + 4) != 4096 || load16(h + at + 6) != 6 || load64(h + at + 8) != load64(segment + 24) - DARWIN-IMAGE-PREFERRED || load32(h + at + 16) != 0 || pages != load64(segment + 32) / 4096 { return -8 }
+      last-record = at + record-size
+      let page = 0
+      while page < pages {
+        let position = load16(h + at + 22 + page * 2)
+        if position != 65535 {
+          if (position & 7) != 0 || position > 4088 { return -8 }
+          let done = 0
+          while done == 0 {
+            links += 1
+            if links > 4096 { return -8 }
+            let relative = page * 4096 + position
+            if relative > load64(segment + 48) - 8 { return -8 }
+            let raw = load64(image + load64(segment + 40) + relative)
+            if raw < 0 {
+              if (raw & 0xFFFFFF) >= count || ((raw >> 32) & 0x7FFFF) != 0 { return -8 }
+              if ((raw >> 24) & 255) != 0 { return -38 }
+            } else {
+              if ((raw >> 36) & 0x7FFF) != 0 || darwin-image-address(image,DARWIN-IMAGE-PREFERRED + (raw & 0xFFFFFFFFF),1) == 0 { return -8 }
+            }
+            let step = ((raw >> 51) & 4095) * 4
+            if step == 0 { done = 1 } else { if (step & 7) != 0 || step > 4088 - position { return -8 };position += step }
+          }
+        }
+        page += 1
+      }
+    }
+    i += 1
+  }
+  if links == 0 { return -8 }
+  return 0
+}
+
+// Preserve the original image/heap profile's closed import policy.
+fn darwin-image-import-preflight(plan: Int) -> Int {
+  let status = darwin-image-chain-preflight(plan)
+  if status != 0 { return status }
+  if darwin-image-unknown-import(plan) != 0 { return -38 }
+  return 0
+}
+
+fn darwin-image-unknown-import(plan: Int) -> Int {
+  // Call only after successful structural preflight of this immutable plan.
+  if plan <= 0 || plan > 0x100000000 - DARWIN-IMAGE-PLAN-BYTES || load64(plan) != DARWIN-IMAGE-PLAN-MAGIC || load64(plan + 8) != 1 { return 0 }
+  let image = load64(plan + 24)
+  let h = image + load64(plan + 72)
+  let bytes = load64(plan + 80)
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let count = load32(h + 16)
+  let i = 0
+  while i < count {
+    let name = load32(h + imports + i * 4) >> 9
+    if darwin-heap-symbol(image,load64(plan + 72) + symbols + name,load64(plan + 72) + bytes) == 0 { return h + symbols + name }
+    i += 1
+  }
+  return 0
+}

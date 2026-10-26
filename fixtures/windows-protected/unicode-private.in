@@ -1,0 +1,16 @@
+package space.fixture
+component PrivateUnicodeImport {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ export entry: PrivateEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface PrivateEntry { fn private-entry(info:Int)->Int }
+interrupt fn windows-command-unicode-run(image:Int,size:Int,config:Int)->Int{}
+interrupt fn serial-write-cstr(port:Int,text:Int)->void{}
+fn private-entry(info:Int)->Int{
+ serial-write-cstr(0x3f8,"INVALID private composed entry");
+ return windows-command-unicode-run(0,0,0);
+}

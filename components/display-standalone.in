@@ -13,6 +13,11 @@ import "display.in"
 // (build-runtime-components.sh). The kernel build links display.in directly
 // against the kernel's own modules.
 
+// This standalone renderer has no native GUI application supervisor binding.
+// Keep that command unavailable rather than importing private launch authority.
+fn gui-desktop-available()->Int{return 0;}
+fn gui-desktop-command(port:Int)->Int{return 0;}
+
 const COM1-PORT = 0x3F8
 const SPACE-VERSION-MAJOR = 0
 const SPACE-VERSION-MINOR = 1
@@ -23,6 +28,8 @@ fn com1() -> Int {
 }
 
 // --- nanokernel service imports (bound by the loader) ------------------------
+interrupt fn cpu-mem-fill64(dst:Int,value:Int,qwords:Int)->void{}
+interrupt fn cpu-mem-copy64(dst:Int,src:Int,qwords:Int)->void{}
 interrupt fn serial-wait-tx(port: Int) -> void {
 }
 

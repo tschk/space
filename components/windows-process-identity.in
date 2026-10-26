@@ -1,0 +1,17 @@
+package space.kernel
+
+// Single live thread in this bounded activation. These return guest process
+// metadata/pseudo handles, never native capabilities or scheduler pointers.
+fn windows-parameters-identity-name(id: Int) -> Int {
+  if id == 14 { return "GetCurrentThreadId" }
+  if id == 15 { return "GetCurrentProcess" }
+  if id == 16 { return "SetLastError" }
+  return ""
+}
+
+fn windows-parameters-identity(frame: Int, num: Int) -> Int {
+  if num == 0x10000E { return load64(windows-protected-physical(WINDOWS-STARTUP-TEB + 72)) & 0xFFFFFFFF }
+  if num == 0x10000F { return -1 }
+  windows-protected-error = load64(frame + 96) & 0xFFFFFFFF
+  return 0
+}

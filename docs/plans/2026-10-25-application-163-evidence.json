@@ -1,0 +1,1055 @@
+{
+  "goal_status": "OPEN",
+  "lab_status": "passed",
+  "passed": 163,
+  "failed": 0,
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "finished_utc": "2026-10-24T19:22:14.127383+00:00",
+  "applications": [
+    {
+      "id": "jq-1.8.1-linux-x86_64",
+      "path": "/workspace/real-apps/jq-1.8.1/jq-linux-amd64",
+      "sha256": "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+      "size_bytes": 2255816
+    },
+    {
+      "id": "jq-1.8.1-darwin-x86_64",
+      "path": "/workspace/real-apps/jq-1.8.1/jq-macos-amd64",
+      "sha256": "e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f",
+      "size_bytes": 855272
+    },
+    {
+      "id": "jq-1.8.1-windows-x86_64",
+      "path": "/workspace/real-apps/jq-1.8.1/jq-win64.exe",
+      "sha256": "23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334",
+      "size_bytes": 1026560
+    },
+    {
+      "id": "lua-5.4.7-linux-x86_64-generic-static",
+      "path": "/workspace/real-apps/lua-5.4.7/lua-5.4.7/src/lua",
+      "sha256": "941f7a886bdc40a4403dd6991390158fcacb1698905f228fc2b78ee486cb382d",
+      "size_bytes": 1458872
+    },
+    {
+      "id": "busybox-1.36.1-linux-x86_64-minimal-static",
+      "path": "/tmp/space-busybox-complete-build/busybox",
+      "sha256": "f8ffdbe7aba9e92515a65e0262d454b3a3bfffc9278823d327378b018e9ee032",
+      "size_bytes": 1168080
+    },
+    {
+      "id": "sqlite-3.46.1-linux-x86_64-static-single-thread",
+      "path": "/tmp/space-sqlite-builder-canonical/sqlite3",
+      "sha256": "36e9f3eb66219d87d79dd62db4df7c04b69d3ee4f15bd00d632587072b50c507",
+      "size_bytes": 2436160
+    },
+    {
+      "id": "fbv-1.1-linux-x86_64-bmp-static",
+      "path": "/workspace/real-apps/fbv-builder-clean3/fbv",
+      "sha256": "8de38de2f88ede5b276aa4ad4f965e22e139357a5a747b1ab1a87e45717fa984",
+      "size_bytes": 828736
+    },
+    {
+      "id": "busybox-1.36.1-linux-x86_64-xargs-static",
+      "path": "/workspace/busybox-vfork-clean2/busybox",
+      "sha256": "b1c758ba922f7c06a741f3d5e77a2d6ef6baba226bda04c56385244f457ab727",
+      "size_bytes": 1172176
+    },
+    {
+      "id": "busybox-1.36.1-linux-x86_64-static-vi",
+      "path": "/workspace/busybox-vi-build4/busybox",
+      "sha256": "22e06756b81d069041080e5582854a7cd0bbf63e50f3002703d2b9a1035d8c5e",
+      "size_bytes": 1192656
+    }
+  ],
+  "scope": "Bounded native workflows, upstream Linux jq/Lua/BusyBox/SQLite execution including SQLite NVMe durability, original fbv CLI entry with counted-argument startup fixtures plus an explicit single-canvas BMP viewer profile, protected Linux pipes, generic compiler ELF execution, protected Darwin/Windows fixtures, native clocks and readable GUI workflows. Bounded BusyBox copied children, shared-vfork xargs and blocking pipelines are included, along with native owned address spaces, protected native SCI ownership, explicit trusted GUI baselines and the default protected GUI. Windows Unicode and composed APIs have separate runtime/model gates. Finite root Find imports have real CPL3 RAM and readonly NVMe reboot gates. Native immutable file observations supply original fbv pixels and original fbv/BusyBox/Lua CLI across v1/UTC NVMe reboots, with separate argv/executable identity. Original BusyBox vi EX edit/save and separate-process reopen run on both native roots and both NVMe schemas, with distinct own poll/resize fixtures. Exact mature-font desktop coverage and visual interactions are included. Arbitrary upstream Darwin/Windows applications, interactive foreign TUI/GUI/FLTK/X11 and general fbdev remain open.",
+  "source_commit": "8f70aaf812452ba4d60861fd25b887ab0f52da94",
+  "source_files": 782,
+  "receipt": "/workspace/lab163/report.json",
+  "receipt_sha256": "0f47089ddbd877f7bfe71b0f6c2c64c050d2fb4c06cb13068e55f5d56645b82b",
+  "integrity": {
+    "source": "passed",
+    "compiler": "passed",
+    "applications": "passed"
+  },
+  "gates": [
+    {
+      "name": "fixture-boot-layout",
+      "status": "passed",
+      "elapsed_seconds": 0.242,
+      "log": "/workspace/lab163/fixture-boot-layout.log"
+    },
+    {
+      "name": "terminal-session-model",
+      "status": "passed",
+      "elapsed_seconds": 26.167,
+      "log": "/workspace/lab163/terminal-session-model.log"
+    },
+    {
+      "name": "terminal-session-native",
+      "status": "passed",
+      "elapsed_seconds": 6.12,
+      "log": "/workspace/lab163/terminal-session-native.log"
+    },
+    {
+      "name": "linux-terminal-retained",
+      "status": "passed",
+      "elapsed_seconds": 7.322,
+      "log": "/workspace/lab163/linux-terminal-retained.log"
+    },
+    {
+      "name": "linux-terminal-vi-keyboard-standard",
+      "status": "passed",
+      "elapsed_seconds": 10.225,
+      "log": "/workspace/lab163/linux-terminal-vi-keyboard-standard.log"
+    },
+    {
+      "name": "linux-terminal-vi-keyboard-minimal",
+      "status": "passed",
+      "elapsed_seconds": 5.107,
+      "log": "/workspace/lab163/linux-terminal-vi-keyboard-minimal.log"
+    },
+    {
+      "name": "terminal-screen-model",
+      "status": "passed",
+      "elapsed_seconds": 5.308,
+      "log": "/workspace/lab163/terminal-screen-model.log"
+    },
+    {
+      "name": "linux-terminal-vi-view",
+      "status": "passed",
+      "elapsed_seconds": 13.082,
+      "log": "/workspace/lab163/linux-terminal-vi-view.log"
+    },
+    {
+      "name": "linux-terminal-vi-navigation-view",
+      "status": "passed",
+      "elapsed_seconds": 14.532,
+      "log": "/workspace/lab163/linux-terminal-vi-navigation-view.log"
+    },
+    {
+      "name": "linux-terminal-vi-navigation-minimal",
+      "status": "passed",
+      "elapsed_seconds": 6.161,
+      "log": "/workspace/lab163/linux-terminal-vi-navigation-minimal.log"
+    },
+    {
+      "name": "images",
+      "status": "passed",
+      "elapsed_seconds": 5.455,
+      "log": "/workspace/lab163/images.log"
+    },
+    {
+      "name": "native-standard",
+      "status": "passed",
+      "elapsed_seconds": 3.756,
+      "log": "/workspace/lab163/native-standard.log"
+    },
+    {
+      "name": "native-minimal",
+      "status": "passed",
+      "elapsed_seconds": 0.648,
+      "log": "/workspace/lab163/native-minimal.log"
+    },
+    {
+      "name": "linux-file-control-model",
+      "status": "passed",
+      "elapsed_seconds": 2.096,
+      "log": "/workspace/lab163/linux-file-control-model.log"
+    },
+    {
+      "name": "linux-vi-batch-standard",
+      "status": "passed",
+      "elapsed_seconds": 12.728,
+      "log": "/workspace/lab163/linux-vi-batch-standard.log"
+    },
+    {
+      "name": "linux-vi-batch-minimal",
+      "status": "passed",
+      "elapsed_seconds": 8.863,
+      "log": "/workspace/lab163/linux-vi-batch-minimal.log"
+    },
+    {
+      "name": "linux-vi-batch-nvme-v1",
+      "status": "passed",
+      "elapsed_seconds": 19.914,
+      "log": "/workspace/lab163/linux-vi-batch-nvme-v1.log"
+    },
+    {
+      "name": "linux-vi-batch-nvme-utc",
+      "status": "passed",
+      "elapsed_seconds": 19.903,
+      "log": "/workspace/lab163/linux-vi-batch-nvme-utc.log"
+    },
+    {
+      "name": "native-persistence",
+      "status": "passed",
+      "elapsed_seconds": 10.768,
+      "log": "/workspace/lab163/native-persistence.log"
+    },
+    {
+      "name": "linux-jq",
+      "status": "passed",
+      "elapsed_seconds": 28.074,
+      "log": "/workspace/lab163/linux-jq.log"
+    },
+    {
+      "name": "linux-lua",
+      "status": "passed",
+      "elapsed_seconds": 40.8,
+      "log": "/workspace/lab163/linux-lua.log"
+    },
+    {
+      "name": "linux-busybox",
+      "status": "passed",
+      "elapsed_seconds": 18.882,
+      "log": "/workspace/lab163/linux-busybox.log"
+    },
+    {
+      "name": "linux-sqlite-memory",
+      "status": "passed",
+      "elapsed_seconds": 15.704,
+      "log": "/workspace/lab163/linux-sqlite-memory.log"
+    },
+    {
+      "name": "linux-sqlite-files",
+      "status": "passed",
+      "elapsed_seconds": 58.701,
+      "log": "/workspace/lab163/linux-sqlite-files.log"
+    },
+    {
+      "name": "linux-sqlite-nvme",
+      "status": "passed",
+      "elapsed_seconds": 13.282,
+      "log": "/workspace/lab163/linux-sqlite-nvme.log"
+    },
+    {
+      "name": "linux-jq-minimal",
+      "status": "passed",
+      "elapsed_seconds": 23.749,
+      "log": "/workspace/lab163/linux-jq-minimal.log"
+    },
+    {
+      "name": "linux-lua-minimal",
+      "status": "passed",
+      "elapsed_seconds": 36.601,
+      "log": "/workspace/lab163/linux-lua-minimal.log"
+    },
+    {
+      "name": "linux-busybox-minimal",
+      "status": "passed",
+      "elapsed_seconds": 13.625,
+      "log": "/workspace/lab163/linux-busybox-minimal.log"
+    },
+    {
+      "name": "linux-sqlite-minimal",
+      "status": "passed",
+      "elapsed_seconds": 57.799,
+      "log": "/workspace/lab163/linux-sqlite-minimal.log"
+    },
+    {
+      "name": "linux-pipes-standard",
+      "status": "passed",
+      "elapsed_seconds": 10.746,
+      "log": "/workspace/lab163/linux-pipes-standard.log"
+    },
+    {
+      "name": "linux-pipes-minimal",
+      "status": "passed",
+      "elapsed_seconds": 5.549,
+      "log": "/workspace/lab163/linux-pipes-minimal.log"
+    },
+    {
+      "name": "linux-children-standard",
+      "status": "passed",
+      "elapsed_seconds": 45.643,
+      "log": "/workspace/lab163/linux-children-standard.log"
+    },
+    {
+      "name": "linux-blocking-standard",
+      "status": "passed",
+      "elapsed_seconds": 21.798,
+      "log": "/workspace/lab163/linux-blocking-standard.log"
+    },
+    {
+      "name": "linux-busybox-blocking-standard",
+      "status": "passed",
+      "elapsed_seconds": 63.035,
+      "log": "/workspace/lab163/linux-busybox-blocking-standard.log"
+    },
+    {
+      "name": "linux-busybox-children-standard",
+      "status": "passed",
+      "elapsed_seconds": 21.498,
+      "log": "/workspace/lab163/linux-busybox-children-standard.log"
+    },
+    {
+      "name": "linux-children-minimal",
+      "status": "passed",
+      "elapsed_seconds": 40.889,
+      "log": "/workspace/lab163/linux-children-minimal.log"
+    },
+    {
+      "name": "linux-blocking-minimal",
+      "status": "passed",
+      "elapsed_seconds": 16.543,
+      "log": "/workspace/lab163/linux-blocking-minimal.log"
+    },
+    {
+      "name": "linux-busybox-blocking-minimal",
+      "status": "passed",
+      "elapsed_seconds": 46.308,
+      "log": "/workspace/lab163/linux-busybox-blocking-minimal.log"
+    },
+    {
+      "name": "linux-busybox-children-minimal",
+      "status": "passed",
+      "elapsed_seconds": 16.605,
+      "log": "/workspace/lab163/linux-busybox-children-minimal.log"
+    },
+    {
+      "name": "compiler-linux-standard",
+      "status": "passed",
+      "elapsed_seconds": 9.664,
+      "log": "/workspace/lab163/compiler-linux-standard.log"
+    },
+    {
+      "name": "compiler-linux-minimal",
+      "status": "passed",
+      "elapsed_seconds": 4.399,
+      "log": "/workspace/lab163/compiler-linux-minimal.log"
+    },
+    {
+      "name": "linux-vm-owned-standard",
+      "status": "passed",
+      "elapsed_seconds": 7.018,
+      "log": "/workspace/lab163/linux-vm-owned-standard.log"
+    },
+    {
+      "name": "linux-vm-exec-capacity-standard",
+      "status": "passed",
+      "elapsed_seconds": 6.956,
+      "log": "/workspace/lab163/linux-vm-exec-capacity-standard.log"
+    },
+    {
+      "name": "linux-vm-constructor-standard",
+      "status": "passed",
+      "elapsed_seconds": 6.71,
+      "log": "/workspace/lab163/linux-vm-constructor-standard.log"
+    },
+    {
+      "name": "linux-vm-owned-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.941,
+      "log": "/workspace/lab163/linux-vm-owned-minimal.log"
+    },
+    {
+      "name": "linux-vm-exec-capacity-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.951,
+      "log": "/workspace/lab163/linux-vm-exec-capacity-minimal.log"
+    },
+    {
+      "name": "linux-vm-constructor-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.542,
+      "log": "/workspace/lab163/linux-vm-constructor-minimal.log"
+    },
+    {
+      "name": "linux-vfork-shared-standard",
+      "status": "passed",
+      "elapsed_seconds": 7.304,
+      "log": "/workspace/lab163/linux-vfork-shared-standard.log"
+    },
+    {
+      "name": "linux-vfork-deadline-standard",
+      "status": "passed",
+      "elapsed_seconds": 9.864,
+      "log": "/workspace/lab163/linux-vfork-deadline-standard.log"
+    },
+    {
+      "name": "linux-vfork-fd-standard",
+      "status": "passed",
+      "elapsed_seconds": 7.461,
+      "log": "/workspace/lab163/linux-vfork-fd-standard.log"
+    },
+    {
+      "name": "linux-busybox-vfork-standard",
+      "status": "passed",
+      "elapsed_seconds": 16.333,
+      "log": "/workspace/lab163/linux-busybox-vfork-standard.log"
+    },
+    {
+      "name": "linux-vfork-shared-minimal",
+      "status": "passed",
+      "elapsed_seconds": 2.142,
+      "log": "/workspace/lab163/linux-vfork-shared-minimal.log"
+    },
+    {
+      "name": "linux-vfork-deadline-minimal",
+      "status": "passed",
+      "elapsed_seconds": 4.809,
+      "log": "/workspace/lab163/linux-vfork-deadline-minimal.log"
+    },
+    {
+      "name": "linux-vfork-fd-minimal",
+      "status": "passed",
+      "elapsed_seconds": 2.355,
+      "log": "/workspace/lab163/linux-vfork-fd-minimal.log"
+    },
+    {
+      "name": "linux-busybox-vfork-minimal",
+      "status": "passed",
+      "elapsed_seconds": 11.418,
+      "log": "/workspace/lab163/linux-busybox-vfork-minimal.log"
+    },
+    {
+      "name": "linux-fbv-cli-standard",
+      "status": "passed",
+      "elapsed_seconds": 11.127,
+      "log": "/workspace/lab163/linux-fbv-cli-standard.log"
+    },
+    {
+      "name": "linux-fbv-cli-minimal",
+      "status": "passed",
+      "elapsed_seconds": 6.06,
+      "log": "/workspace/lab163/linux-fbv-cli-minimal.log"
+    },
+    {
+      "name": "linux-framebuffer",
+      "status": "passed",
+      "elapsed_seconds": 13.175,
+      "log": "/workspace/lab163/linux-framebuffer.log"
+    },
+    {
+      "name": "stored-fbv-ram",
+      "status": "passed",
+      "elapsed_seconds": 15.577,
+      "log": "/workspace/lab163/stored-fbv-ram.log"
+    },
+    {
+      "name": "stored-fbv-nvme-v1",
+      "status": "passed",
+      "elapsed_seconds": 38.848,
+      "log": "/workspace/lab163/stored-fbv-nvme-v1.log"
+    },
+    {
+      "name": "stored-cli-nvme-v1",
+      "status": "passed",
+      "elapsed_seconds": 65.859,
+      "log": "/workspace/lab163/stored-cli-nvme-v1.log"
+    },
+    {
+      "name": "stored-fbv-nvme-utc",
+      "status": "passed",
+      "elapsed_seconds": 40.608,
+      "log": "/workspace/lab163/stored-fbv-nvme-utc.log"
+    },
+    {
+      "name": "stored-cli-nvme-utc",
+      "status": "passed",
+      "elapsed_seconds": 67.048,
+      "log": "/workspace/lab163/stored-cli-nvme-utc.log"
+    },
+    {
+      "name": "native-canvas",
+      "status": "passed",
+      "elapsed_seconds": 7.997,
+      "log": "/workspace/lab163/native-canvas.log"
+    },
+    {
+      "name": "darwin-process",
+      "status": "passed",
+      "elapsed_seconds": 8.178,
+      "log": "/workspace/lab163/darwin-process.log"
+    },
+    {
+      "name": "darwin-startup-owner",
+      "status": "passed",
+      "elapsed_seconds": 0.442,
+      "log": "/workspace/lab163/darwin-startup-owner.log"
+    },
+    {
+      "name": "darwin-startup",
+      "status": "passed",
+      "elapsed_seconds": 6.958,
+      "log": "/workspace/lab163/darwin-startup.log"
+    },
+    {
+      "name": "darwin-eager-owner",
+      "status": "passed",
+      "elapsed_seconds": 0.434,
+      "log": "/workspace/lab163/darwin-eager-owner.log"
+    },
+    {
+      "name": "darwin-eager",
+      "status": "passed",
+      "elapsed_seconds": 6.107,
+      "log": "/workspace/lab163/darwin-eager.log"
+    },
+    {
+      "name": "darwin-heap-owner",
+      "status": "passed",
+      "elapsed_seconds": 0.936,
+      "log": "/workspace/lab163/darwin-heap-owner.log"
+    },
+    {
+      "name": "darwin-heap-import-baseline",
+      "status": "passed",
+      "elapsed_seconds": 5.05,
+      "log": "/workspace/lab163/darwin-heap-import-baseline.log"
+    },
+    {
+      "name": "darwin-heap",
+      "status": "passed",
+      "elapsed_seconds": 6.203,
+      "log": "/workspace/lab163/darwin-heap.log"
+    },
+    {
+      "name": "darwin-mapped-standard",
+      "status": "passed",
+      "elapsed_seconds": 7.963,
+      "log": "/workspace/lab163/darwin-mapped-standard.log"
+    },
+    {
+      "name": "darwin-rune-standard",
+      "status": "passed",
+      "elapsed_seconds": 6.412,
+      "log": "/workspace/lab163/darwin-rune-standard.log"
+    },
+    {
+      "name": "darwin-mapped-minimal",
+      "status": "passed",
+      "elapsed_seconds": 3.697,
+      "log": "/workspace/lab163/darwin-mapped-minimal.log"
+    },
+    {
+      "name": "darwin-rune-minimal",
+      "status": "passed",
+      "elapsed_seconds": 2.294,
+      "log": "/workspace/lab163/darwin-rune-minimal.log"
+    },
+    {
+      "name": "darwin-files",
+      "status": "passed",
+      "elapsed_seconds": 6.812,
+      "log": "/workspace/lab163/darwin-files.log"
+    },
+    {
+      "name": "windows-process",
+      "status": "passed",
+      "elapsed_seconds": 5.669,
+      "log": "/workspace/lab163/windows-process.log"
+    },
+    {
+      "name": "windows-general",
+      "status": "passed",
+      "elapsed_seconds": 6.56,
+      "log": "/workspace/lab163/windows-general.log"
+    },
+    {
+      "name": "windows-startup",
+      "status": "passed",
+      "elapsed_seconds": 6.261,
+      "log": "/workspace/lab163/windows-startup.log"
+    },
+    {
+      "name": "windows-parameters",
+      "status": "passed",
+      "elapsed_seconds": 6.759,
+      "log": "/workspace/lab163/windows-parameters.log"
+    },
+    {
+      "name": "windows-identity",
+      "status": "passed",
+      "elapsed_seconds": 6.053,
+      "log": "/workspace/lab163/windows-identity.log"
+    },
+    {
+      "name": "windows-pe-view",
+      "status": "passed",
+      "elapsed_seconds": 12.928,
+      "log": "/workspace/lab163/windows-pe-view.log"
+    },
+    {
+      "name": "windows-filetime",
+      "status": "passed",
+      "elapsed_seconds": 15.195,
+      "log": "/workspace/lab163/windows-filetime.log"
+    },
+    {
+      "name": "windows-environment",
+      "status": "passed",
+      "elapsed_seconds": 7.111,
+      "log": "/workspace/lab163/windows-environment.log"
+    },
+    {
+      "name": "windows-counter",
+      "status": "passed",
+      "elapsed_seconds": 8.817,
+      "log": "/workspace/lab163/windows-counter.log"
+    },
+    {
+      "name": "windows-heap",
+      "status": "passed",
+      "elapsed_seconds": 9.231,
+      "log": "/workspace/lab163/windows-heap.log"
+    },
+    {
+      "name": "windows-local",
+      "status": "passed",
+      "elapsed_seconds": 9.464,
+      "log": "/workspace/lab163/windows-local.log"
+    },
+    {
+      "name": "windows-critical",
+      "status": "passed",
+      "elapsed_seconds": 9.916,
+      "log": "/workspace/lab163/windows-critical.log"
+    },
+    {
+      "name": "windows-composed",
+      "status": "passed",
+      "elapsed_seconds": 20.101,
+      "log": "/workspace/lab163/windows-composed.log"
+    },
+    {
+      "name": "windows-unicode",
+      "status": "passed",
+      "elapsed_seconds": 45.93,
+      "log": "/workspace/lab163/windows-unicode.log"
+    },
+    {
+      "name": "unicode-scalars",
+      "status": "passed",
+      "elapsed_seconds": 0.395,
+      "log": "/workspace/lab163/unicode-scalars.log"
+    },
+    {
+      "name": "windows-unicode-mixed",
+      "status": "passed",
+      "elapsed_seconds": 24.96,
+      "log": "/workspace/lab163/windows-unicode-mixed.log"
+    },
+    {
+      "name": "native-path-normalization",
+      "status": "passed",
+      "elapsed_seconds": 0.496,
+      "log": "/workspace/lab163/native-path-normalization.log"
+    },
+    {
+      "name": "windows-paths",
+      "status": "passed",
+      "elapsed_seconds": 21.511,
+      "log": "/workspace/lab163/windows-paths.log"
+    },
+    {
+      "name": "windows-paths-nvme",
+      "status": "passed",
+      "elapsed_seconds": 6.981,
+      "log": "/workspace/lab163/windows-paths-nvme.log"
+    },
+    {
+      "name": "windows-find",
+      "status": "passed",
+      "elapsed_seconds": 18.389,
+      "log": "/workspace/lab163/windows-find.log"
+    },
+    {
+      "name": "windows-find-nvme",
+      "status": "passed",
+      "elapsed_seconds": 35.489,
+      "log": "/workspace/lab163/windows-find-nvme.log"
+    },
+    {
+      "name": "native-utc-metadata",
+      "status": "passed",
+      "elapsed_seconds": 20.626,
+      "log": "/workspace/lab163/native-utc-metadata.log"
+    },
+    {
+      "name": "native-utc-persistence",
+      "status": "passed",
+      "elapsed_seconds": 41.004,
+      "log": "/workspace/lab163/native-utc-persistence.log"
+    },
+    {
+      "name": "native-directory",
+      "status": "passed",
+      "elapsed_seconds": 10.282,
+      "log": "/workspace/lab163/native-directory.log"
+    },
+    {
+      "name": "native-directory-nvme",
+      "status": "passed",
+      "elapsed_seconds": 29.976,
+      "log": "/workspace/lab163/native-directory-nvme.log"
+    },
+    {
+      "name": "windows-files",
+      "status": "passed",
+      "elapsed_seconds": 7.008,
+      "log": "/workspace/lab163/windows-files.log"
+    },
+    {
+      "name": "windows-write",
+      "status": "passed",
+      "elapsed_seconds": 7.263,
+      "log": "/workspace/lab163/windows-write.log"
+    },
+    {
+      "name": "windows-nvme",
+      "status": "passed",
+      "elapsed_seconds": 7.862,
+      "log": "/workspace/lab163/windows-nvme.log"
+    },
+    {
+      "name": "native-large-files",
+      "status": "passed",
+      "elapsed_seconds": 16.793,
+      "log": "/workspace/lab163/native-large-files.log"
+    },
+    {
+      "name": "native-file-services",
+      "status": "passed",
+      "elapsed_seconds": 22.72,
+      "log": "/workspace/lab163/native-file-services.log"
+    },
+    {
+      "name": "native-range-leases",
+      "status": "passed",
+      "elapsed_seconds": 1.196,
+      "log": "/workspace/lab163/native-range-leases.log"
+    },
+    {
+      "name": "native-stat-identity",
+      "status": "passed",
+      "elapsed_seconds": 0.189,
+      "log": "/workspace/lab163/native-stat-identity.log"
+    },
+    {
+      "name": "native-nvme-flush",
+      "status": "passed",
+      "elapsed_seconds": 0.562,
+      "log": "/workspace/lab163/native-nvme-flush.log"
+    },
+    {
+      "name": "native-time-model",
+      "status": "passed",
+      "elapsed_seconds": 0.454,
+      "log": "/workspace/lab163/native-time-model.log"
+    },
+    {
+      "name": "native-time-rtc",
+      "status": "passed",
+      "elapsed_seconds": 8.779,
+      "log": "/workspace/lab163/native-time-rtc.log"
+    },
+    {
+      "name": "native-counter-owner",
+      "status": "passed",
+      "elapsed_seconds": 0.537,
+      "log": "/workspace/lab163/native-counter-owner.log"
+    },
+    {
+      "name": "native-counter-hardware",
+      "status": "passed",
+      "elapsed_seconds": 15.046,
+      "log": "/workspace/lab163/native-counter-hardware.log"
+    },
+    {
+      "name": "native-discard-owner",
+      "status": "passed",
+      "elapsed_seconds": 0.536,
+      "log": "/workspace/lab163/native-discard-owner.log"
+    },
+    {
+      "name": "native-discard-runtime",
+      "status": "passed",
+      "elapsed_seconds": 5.105,
+      "log": "/workspace/lab163/native-discard-runtime.log"
+    },
+    {
+      "name": "native-lifecycle",
+      "status": "passed",
+      "elapsed_seconds": 17.041,
+      "log": "/workspace/lab163/native-lifecycle.log"
+    },
+    {
+      "name": "native-retained",
+      "status": "passed",
+      "elapsed_seconds": 7.96,
+      "log": "/workspace/lab163/native-retained.log"
+    },
+    {
+      "name": "native-protected-immutable",
+      "status": "passed",
+      "elapsed_seconds": 8.922,
+      "log": "/workspace/lab163/native-protected-immutable.log"
+    },
+    {
+      "name": "native-protected-paged",
+      "status": "passed",
+      "elapsed_seconds": 9.369,
+      "log": "/workspace/lab163/native-protected-paged.log"
+    },
+    {
+      "name": "native-protected-oom",
+      "status": "passed",
+      "elapsed_seconds": 5.304,
+      "log": "/workspace/lab163/native-protected-oom.log"
+    },
+    {
+      "name": "native-protected-gui-full",
+      "status": "passed",
+      "elapsed_seconds": 9.734,
+      "log": "/workspace/lab163/native-protected-gui-full.log"
+    },
+    {
+      "name": "native-protected-gui-oom",
+      "status": "passed",
+      "elapsed_seconds": 5.686,
+      "log": "/workspace/lab163/native-protected-gui-oom.log"
+    },
+    {
+      "name": "gui-protected-package",
+      "status": "passed",
+      "elapsed_seconds": 0.39,
+      "log": "/workspace/lab163/gui-protected-package.log"
+    },
+    {
+      "name": "keyboard-editing-models",
+      "status": "passed",
+      "elapsed_seconds": 2.954,
+      "log": "/workspace/lab163/keyboard-editing-models.log"
+    },
+    {
+      "name": "gui-protected-client-model",
+      "status": "passed",
+      "elapsed_seconds": 0.36,
+      "log": "/workspace/lab163/gui-protected-client-model.log"
+    },
+    {
+      "name": "gui-protected-windows",
+      "status": "passed",
+      "elapsed_seconds": 31.822,
+      "log": "/workspace/lab163/gui-protected-windows.log"
+    },
+    {
+      "name": "gui-protected-persistence",
+      "status": "passed",
+      "elapsed_seconds": 18.736,
+      "log": "/workspace/lab163/gui-protected-persistence.log"
+    },
+    {
+      "name": "gui-protected-lifetime",
+      "status": "passed",
+      "elapsed_seconds": 45.075,
+      "log": "/workspace/lab163/gui-protected-lifetime.log"
+    },
+    {
+      "name": "gui-protected-faults",
+      "status": "passed",
+      "elapsed_seconds": 12.758,
+      "log": "/workspace/lab163/gui-protected-faults.log"
+    },
+    {
+      "name": "desktop-launcher",
+      "status": "passed",
+      "elapsed_seconds": 86.351,
+      "log": "/workspace/lab163/desktop-launcher.log"
+    },
+    {
+      "name": "desktop-font-coverage",
+      "status": "passed",
+      "elapsed_seconds": 6.639,
+      "log": "/workspace/lab163/desktop-font-coverage.log"
+    },
+    {
+      "name": "desktop-visual",
+      "status": "passed",
+      "elapsed_seconds": 15.001,
+      "log": "/workspace/lab163/desktop-visual.log"
+    },
+    {
+      "name": "desktop-damage",
+      "status": "passed",
+      "elapsed_seconds": 1.342,
+      "log": "/workspace/lab163/desktop-damage.log"
+    },
+    {
+      "name": "gui-default",
+      "status": "passed",
+      "elapsed_seconds": 43.025,
+      "log": "/workspace/lab163/gui-default.log"
+    },
+    {
+      "name": "gui-default-faults",
+      "status": "passed",
+      "elapsed_seconds": 14.729,
+      "log": "/workspace/lab163/gui-default-faults.log"
+    },
+    {
+      "name": "gui-default-persistence",
+      "status": "passed",
+      "elapsed_seconds": 36.052,
+      "log": "/workspace/lab163/gui-default-persistence.log"
+    },
+    {
+      "name": "gui-default-lifecycle",
+      "status": "passed",
+      "elapsed_seconds": 158.21,
+      "log": "/workspace/lab163/gui-default-lifecycle.log"
+    },
+    {
+      "name": "standard-gui",
+      "status": "passed",
+      "elapsed_seconds": 16.899,
+      "log": "/workspace/lab163/standard-gui.log"
+    },
+    {
+      "name": "native-gui-apps",
+      "status": "passed",
+      "elapsed_seconds": 11.279,
+      "log": "/workspace/lab163/native-gui-apps.log"
+    },
+    {
+      "name": "gui-persistence",
+      "status": "passed",
+      "elapsed_seconds": 39.303,
+      "log": "/workspace/lab163/gui-persistence.log"
+    },
+    {
+      "name": "gui-lifecycle",
+      "status": "passed",
+      "elapsed_seconds": 156.214,
+      "log": "/workspace/lab163/gui-lifecycle.log"
+    },
+    {
+      "name": "gui-canvas-profile",
+      "status": "passed",
+      "elapsed_seconds": 0.188,
+      "log": "/workspace/lab163/gui-canvas-profile.log"
+    },
+    {
+      "name": "gui-window-layout",
+      "status": "passed",
+      "elapsed_seconds": 0.187,
+      "log": "/workspace/lab163/gui-window-layout.log"
+    },
+    {
+      "name": "gui-window-contracts",
+      "status": "passed",
+      "elapsed_seconds": 0.241,
+      "log": "/workspace/lab163/gui-window-contracts.log"
+    },
+    {
+      "name": "gui-window-replies",
+      "status": "passed",
+      "elapsed_seconds": 0.286,
+      "log": "/workspace/lab163/gui-window-replies.log"
+    },
+    {
+      "name": "input-output",
+      "status": "passed",
+      "elapsed_seconds": 0.239,
+      "log": "/workspace/lab163/input-output.log"
+    },
+    {
+      "name": "gui-canvas",
+      "status": "passed",
+      "elapsed_seconds": 7.064,
+      "log": "/workspace/lab163/gui-canvas.log"
+    },
+    {
+      "name": "gui-canvas-oom",
+      "status": "passed",
+      "elapsed_seconds": 5.358,
+      "log": "/workspace/lab163/gui-canvas-oom.log"
+    },
+    {
+      "name": "gui-readable-matrix",
+      "status": "passed",
+      "elapsed_seconds": 32.595,
+      "log": "/workspace/lab163/gui-readable-matrix.log"
+    },
+    {
+      "name": "sci-byte-validation",
+      "status": "passed",
+      "elapsed_seconds": 3.243,
+      "log": "/workspace/lab163/sci-byte-validation.log"
+    },
+    {
+      "name": "sci-bindings",
+      "status": "passed",
+      "elapsed_seconds": 0.284,
+      "log": "/workspace/lab163/sci-bindings.log"
+    },
+    {
+      "name": "sci-admission",
+      "status": "passed",
+      "elapsed_seconds": 12.774,
+      "log": "/workspace/lab163/sci-admission.log"
+    },
+    {
+      "name": "user-context-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 5.249,
+      "log": "/workspace/lab163/user-context-qemu64.log"
+    },
+    {
+      "name": "sanitized-registers-qemu64",
+      "status": "passed",
+      "elapsed_seconds": 5.2,
+      "log": "/workspace/lab163/sanitized-registers-qemu64.log"
+    },
+    {
+      "name": "user-context-max",
+      "status": "passed",
+      "elapsed_seconds": 5.197,
+      "log": "/workspace/lab163/user-context-max.log"
+    },
+    {
+      "name": "sanitized-registers-max",
+      "status": "passed",
+      "elapsed_seconds": 5.154,
+      "log": "/workspace/lab163/sanitized-registers-max.log"
+    },
+    {
+      "name": "user-space-standard",
+      "status": "passed",
+      "elapsed_seconds": 5.602,
+      "log": "/workspace/lab163/user-space-standard.log"
+    },
+    {
+      "name": "user-space-claim-standard",
+      "status": "passed",
+      "elapsed_seconds": 5.346,
+      "log": "/workspace/lab163/user-space-claim-standard.log"
+    },
+    {
+      "name": "user-space-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.391,
+      "log": "/workspace/lab163/user-space-minimal.log"
+    },
+    {
+      "name": "user-space-claim-minimal",
+      "status": "passed",
+      "elapsed_seconds": 1.136,
+      "log": "/workspace/lab163/user-space-claim-minimal.log"
+    },
+    {
+      "name": "runtime-failure",
+      "status": "passed",
+      "elapsed_seconds": 6.408,
+      "log": "/workspace/lab163/runtime-failure.log"
+    },
+    {
+      "name": "user-budget",
+      "status": "passed",
+      "elapsed_seconds": 6.055,
+      "log": "/workspace/lab163/user-budget.log"
+    }
+  ],
+  "later_changes": "Two interactive vi cold-boot gates are independently verified at82f4210/4b170b6; current165 gate definitions have not been run as one matrix. No runtime changes after this frozen163-gate source."
+}

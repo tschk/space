@@ -1,0 +1,84 @@
+package space.kernel
+
+// Six public critical-section APIs for one execution-local native thread.
+// No kernel event, diagnostic pointer or scheduler object is exposed to guests.
+var windows-parameters-critical-data:Int=0
+fn windows-parameters-critical-import(image:Int,size:Int,name:Int)->Int{
+ let id=windows-parameters-heap-import(image,size,name);if id>=0{return id;}
+ if windows-protected-rva(image,size,name,2)<0{return -1;}
+ if windows-protected-name(image,size,name+2,"InitializeCriticalSection")!=0{return 37;}
+ if windows-protected-name(image,size,name+2,"InitializeCriticalSectionAndSpinCount")!=0{return 38;}
+ if windows-protected-name(image,size,name+2,"EnterCriticalSection")!=0{return 39;}
+ if windows-protected-name(image,size,name+2,"TryEnterCriticalSection")!=0{return 40;}
+ if windows-protected-name(image,size,name+2,"LeaveCriticalSection")!=0{return 41;}
+ if windows-protected-name(image,size,name+2,"DeleteCriticalSection")!=0{return 42;}
+ return -1;
+}
+fn windows-parameters-critical-prepare()->void{windows-parameters-critical-data=frame-alloc();}
+fn windows-parameters-critical-release()->void{if windows-parameters-critical-data!=0{frame-free(windows-parameters-critical-data);windows-parameters-critical-data=0;}}
+fn windows-parameters-critical-result(frame:Int,value:Int)->Int{
+ store32(windows-protected-physical(WINDOWS-STARTUP-TEB+104),windows-protected-error);store64(frame+112,value);return 1;
+}
+fn windows-parameters-critical-fail(frame:Int,num:Int,error:Int,status:Int)->Int{
+ if num==0x100026 || num==0x100028{windows-protected-error=error;return windows-parameters-critical-result(frame,0);}
+ store64(frame+112,status);return 0;
+}
+fn windows-parameters-critical-find(address:Int)->Int{
+ let i=0;while i<64{let row=windows-parameters-critical-data+i*32;if load64(row)==address{return row;}i=i+1;}return 0;
+}
+fn windows-parameters-critical-write(row:Int)->void{
+ let address=load64(row);let recursion=load64(row+8);
+ windows-protected-store32(address,-1);windows-protected-store32(address+4,-1);
+ windows-protected-store32(address+8,recursion - 1);windows-protected-store32(address+12,recursion);
+ windows-protected-store32(address+16,load64(row+24));windows-protected-store32(address+20,0);
+ windows-protected-store32(address+24,0);windows-protected-store32(address+28,0);
+ windows-protected-store32(address+32,load64(row+16));windows-protected-store32(address+36,0);
+}
+fn windows-parameters-critical-valid(row:Int)->Int{
+ let address=load64(row);let recursion=load64(row+8);let owner=load64(row+24);
+ if recursion<0 || recursion>0x7fffffff || (recursion==0 && owner!=0) || (recursion>0 && owner==0){return 0;}
+ if windows-protected-load64(address)!=-1 || windows-protected-load64(address+24)!=0 || windows-protected-load64(address+32)!=load64(row+16){return 0;}
+ let counts=windows-protected-load64(address+8);
+ if (counts&0xffffffff)!=((recursion - 1)&0xffffffff) || (counts>>32)!=recursion || windows-protected-load64(address+16)!=owner{return 0;}
+ return 1;
+}
+fn windows-parameters-critical-dispatch(frame:Int,num:Int)->Int{
+ if cap-check(windows-parameters-heap-authority,cap-memory())==0{return windows-parameters-critical-fail(frame,num,5,126);}
+ let address=load64(frame+96);
+ if windows-protected-span(address,40,1)==0{return windows-parameters-critical-fail(frame,num,998,142);}
+ if (address&7)!=0 || windows-parameters-critical-data==0{return windows-parameters-critical-fail(frame,num,87,127);}
+ let row=windows-parameters-critical-find(address);
+ if num==0x100025 || num==0x100026{
+  if row!=0{return windows-parameters-critical-fail(frame,num,87,127);}
+  let spin=0;if num==0x100026{spin=load64(frame+88)&0xffffffff;}
+  if spin>0x7fffffff{return windows-parameters-critical-fail(frame,num,87,127);}
+  let empty=0;let i=0;while i<64{
+   let candidate=windows-parameters-critical-data+i*32;let other=load64(candidate);
+   if other!=0 && address<other+40 && other<address+40{return windows-parameters-critical-fail(frame,num,87,127);}
+   if other==0 && empty==0{empty=candidate;}i=i+1;
+  }
+  if empty==0{return windows-parameters-critical-fail(frame,num,8,127);}
+  // Windows ignores spin count with one processor. There is no nonexistent
+  // multi-thread wait/event to claim; high-bit event requests were refused.
+  store64(empty,address);store64(empty+8,0);store64(empty+16,0);store64(empty+24,0);windows-parameters-critical-write(empty);
+  let result=0;if num==0x100026{result=1;}return windows-parameters-critical-result(frame,result);
+ }
+ if row==0 || windows-parameters-critical-valid(row)==0{return windows-parameters-critical-fail(frame,num,87,127);}
+ let recursion=load64(row+8);let owner=load64(row+24);
+ if num==0x100027 || num==0x100028{
+  if owner!=0 && owner!=1{if num==0x100028{return windows-parameters-critical-result(frame,0);}return windows-parameters-critical-fail(frame,num,170,127);}
+  if recursion==0x7fffffff{return windows-parameters-critical-fail(frame,num,534,127);}
+  store64(row+8,recursion+1);store64(row+24,1);windows-parameters-critical-write(row);
+  let result=0;if num==0x100028{result=1;}return windows-parameters-critical-result(frame,result);
+ }
+ if num==0x100029{
+  if owner!=1 || recursion<=0{return windows-parameters-critical-fail(frame,num,87,127);}
+  store64(row+8,recursion - 1);if recursion==1{store64(row+24,0);}windows-parameters-critical-write(row);return windows-parameters-critical-result(frame,0);
+ }
+ if recursion!=0 || owner!=0{return windows-parameters-critical-fail(frame,num,170,127);}
+ windows-protected-store32(address,0);windows-protected-store32(address+4,0);
+ store64(row,0);store64(row+8,0);store64(row+16,0);store64(row+24,0);return windows-parameters-critical-result(frame,0);
+}
+fn windows-command-critical-run(image:Int,size:Int,authority:Int,storage:Int,memory:Int,line:Int,bytes:Int)->Int{
+ return windows-command-heap-run-profile(image,size,authority,storage,memory,line,bytes,9);
+}

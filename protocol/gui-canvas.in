@@ -1,0 +1,11 @@
+// Space's explicitly declared native GUI canvas profile. This trailer follows
+// the generic SCI v2 image; the manifest size includes its64 bytes. Ordinary
+// one-page SCI display clients have no trailer and keep their existing ABI.
+const SCI-CANVAS-MAGIC = 0x5350414345434E56
+const SCI-CANVAS-VERSION = 1
+const SCI-CANVAS-WIDTH = 768
+const SCI-CANVAS-HEIGHT = 384
+const SCI-CANVAS-STRIDE = 3072
+const SCI-CANVAS-BYTES = 1179648
+const SCI-CANVAS-FLAGS = 1
+const SCI-CANVAS-TRAILER-BYTES = 64

@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "classification": "Explicit no-HPET profile: real wall clock/files/language; native monotonic/select waits refuse -95",
+  "infinite_argv": [
+    "/qjs",
+    "-e",
+    "while(true){}"
+  ],
+  "cases": [
+    {
+      "name": "arithmetic",
+      "argv": [
+        "/qjs",
+        "-e",
+        "print(6*7)"
+      ],
+      "expected_stdout": "42\n",
+      "expected_exit": 0
+    },
+    {
+      "name": "bigint",
+      "argv": [
+        "/qjs",
+        "-e",
+        "let n=1n;for(let i=1n;i<=100n;i++)n*=i;print(n.toString())"
+      ],
+      "expected_stdout": "93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\n",
+      "expected_exit": 0
+    },
+    {
+      "name": "array-json",
+      "argv": [
+        "/qjs",
+        "-e",
+        "print(JSON.stringify({sum:Array.from({length:2000},(_,i)=>i).reduce((a,b)=>a+b,0),sort:[3,1,2].sort()}))"
+      ],
+      "expected_stdout": "{\"sum\":1999000,\"sort\":[1,2,3]}\n",
+      "expected_exit": 0
+    },
+    {
+      "name": "unicode-regex",
+      "argv": [
+        "/qjs",
+        "-e",
+        "print(JSON.stringify('abc123def'.match(/(?<digits>[0-9]+)/).groups));print(String.fromCodePoint(955,128578))"
+      ],
+      "expected_stdout": "{\"digits\":\"123\"}\nλ🙂\n",
+      "expected_exit": 0
+    },
+    {
+      "name": "promise-jobs",
+      "argv": [
+        "/qjs",
+        "-e",
+        "Promise.resolve(21).then(x=>x*2).then(print)"
+      ],
+      "expected_stdout": "42\n",
+      "expected_exit": 0
+    },
+    {
+      "name": "date-real-clock",
+      "argv": [
+        "/qjs",
+        "-e",
+        "let t=Date.now();if(!(t>1700000000000&&t<2000000000000))throw Error('no-real-clock');print('clock-ok')"
+      ],
+      "expected_stdout": "clock-ok\n"
+    },
+    {
+      "name": "read-file",
+      "argv": [
+        "/qjs",
+        "-e",
+        "import('std').then(std=>{let f=std.open('@FILE@','r');if(!f)throw Error('open');print(f.getline());print(f.getline());f.close()})"
+      ],
+      "file": "first line\nsecond line\n",
+      "expected_stdout": "first line\nsecond line\n"
+    },
+    {
+      "name": "create-reopen",
+      "argv": [
+        "/qjs",
+        "-e",
+        "import('std').then(std=>{let f=std.open('@FILE@','w');if(!f)throw Error('create');f.puts('saved by original QuickJS\\n');f.close();let g=std.open('@FILE@','r');print(g.getline());g.close()})"
+      ],
+      "file": "",
+      "create": true,
+      "expected_stdout": "saved by original QuickJS\n",
+      "repeat": true
+    },
+    {
+      "name": "caught-error",
+      "argv": [
+        "/qjs",
+        "-e",
+        "try{JSON.parse('{bad json}')}catch(e){print(e instanceof SyntaxError)}"
+      ],
+      "expected_stdout": "true\n"
+    },
+    {
+      "name": "argument-vector-content",
+      "argv": [
+        "/qjs",
+        "--std",
+        "-e",
+        "print(scriptArgs.join('|'))",
+        "one",
+        "two"
+      ],
+      "expected_stdout": "one|two\n"
+    },
+    {
+      "name": "sixteen-arguments",
+      "argv": [
+        "/qjs",
+        "-e",
+        "print(scriptArgs.length,scriptArgs[0],scriptArgs[12])",
+        "arg0",
+        "arg1",
+        "arg2",
+        "arg3",
+        "arg4",
+        "arg5",
+        "arg6",
+        "arg7",
+        "arg8",
+        "arg9",
+        "arg10",
+        "arg11",
+        "arg12"
+      ],
+      "expected_stdout": "13 arg0 arg12\n"
+    }
+  ]
+}

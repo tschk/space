@@ -1,0 +1,53 @@
+package space.kernel
+
+// Optional stopped-terminal edge. Ordinary protected CLI roots import only this
+// bounded request adapter, not native terminal/seat policy or queue allocation.
+// The explicitly imported profile installs a private nonthrowing machine-ABI
+// Int->Int entry, preserving callee-saved registers. No SCI/raw guest exposure.
+const LINUX-PROCESS-TERMINAL-WAIT = 261
+var linux-process-terminal-token: Int = 0
+var linux-process-terminal-phase: Int = 0
+var linux-process-terminal-result: Int = 0
+var linux-process-terminal-entry: Int = 0
+var linux-process-terminal-request: Int = 0
+var linux-process-terminal-busy: Int = 0
+
+fn linux-process-terminal-call(operation: Int, a: Int, b: Int, c: Int, d: Int) -> Int {
+  if linux-process-terminal-entry == 0 { if operation == 0 { return 0 } return -38 }
+  if linux-process-terminal-request == 0 || linux-process-terminal-busy != 0 { return -16 }
+  let request = linux-process-terminal-request
+  store64(request,operation);store64(request + 8,a);store64(request + 16,b)
+  store64(request + 24,c);store64(request + 32,d)
+  linux-process-terminal-busy = 1
+  let result = invoke1(linux-process-terminal-entry,request)
+  linux-process-terminal-busy = 0
+  return result
+}
+
+fn linux-process-terminal-pending(frame: Int, number: Int) -> Int {
+  if linux-process-terminal-entry == 0 { return 0 }
+  return linux-process-terminal-call(0,frame,number,0,0)
+}
+
+fn linux-process-terminal-io(operation: Int, fd: Int, buffer: Int, count: Int) -> Int {
+  return linux-process-terminal-call(1,operation,fd,buffer,count)
+}
+
+fn linux-process-terminal-control(number: Int, fd: Int, command: Int, argument: Int) -> Int {
+  return linux-process-terminal-call(2,number,fd,command,argument)
+}
+fn linux-process-terminal-poll(address: Int, count: Int, timeout: Int) -> Int {
+  return linux-process-terminal-call(3,address,count,timeout,0)
+}
+
+fn linux-process-terminal-waiting() -> Int {
+  if linux-process-terminal-token == 0 { return 0 }
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    let operation = load64(row + LPS-PENDING)
+    if load64(row + LPS-STATUS) == LINUX-STATE-BLOCKED && ((operation >= 9 && operation <= 12) || operation==14) { return 1 }
+    i += 1
+  }
+  return 0
+}

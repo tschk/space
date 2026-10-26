@@ -3,7 +3,7 @@ package space.kernel
 import "storage.in"
 
 // Kernel-side stub for the extracted Storage component. The real NVMe driver
-// lives in components/storage.in and runs in its own isolated domain. This file
+// lives in components/storage.in and runs in its own trusted CPL0 clone domain. This file
 // starts the component and forwards NVMe read/write requests over the
 // cross-domain mailbox shared page.
 
@@ -60,18 +60,25 @@ fn nvme-start-storage-component(port: Int) -> Int {
 }
 
 fn nvme-submit(op: Int, lba: Int, count: Int) -> Int {
+  let waiting = 0
   while load64(storage-mailbox + STORAGE-OP-OFF) != 0 {
+    if waiting >= 5000000 { return -1 }
+    pause()
+    waiting = waiting + 1
   }
   store64(storage-mailbox + STORAGE-LBA-OFF, lba)
   store64(storage-mailbox + STORAGE-COUNT-OFF, count)
   store64(storage-mailbox + STORAGE-STATUS-OFF, 0)
   store64(storage-mailbox + STORAGE-OP-OFF, op)
-  // Save caller domain so nested RPC from Volume (or POSIX) restores CR3
-  // correctly instead of always dropping back to domain 0.
+  // Logical caller identity and actual CR3 differ during CPL3 syscall policy.
   let prev = domain-get-current()
+  let caller-root = cr3-read()
+  let caller-cap = current-cap
   domain-switch(storage-domain)
   storage-service()
-  domain-switch(prev)
+  if domain-restore-service-context(prev,caller-cap,caller-root) != 0 {
+    panic("NVMe RPC caller context restore failed")
+  }
   return load64(storage-mailbox + STORAGE-STATUS-OFF)
 }
 
@@ -90,6 +97,7 @@ fn nvme-init() -> Int {
 }
 
 fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
+  if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }
   if nvme-ready == 0 {
     if nvme-init() != 0 {
       return -1
@@ -107,6 +115,7 @@ fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
 }
 
 fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
+  if lba < 0 || count <= 0 || count > 8 || buf <= 0 { return -1 }
   if nvme-ready == 0 {
     if nvme-init() != 0 {
       return -1
@@ -120,6 +129,13 @@ fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
     }
   }
   return nvme-submit(STORAGE-OP-WRITE, lba, count)
+}
+
+// Real namespace FLUSH, no DMA buffer or logical block range.
+// Preserve controller completion status for callers to check explicitly.
+fn nvme-flush() -> Int {
+  if nvme-ready == 0 || storage-ready != 1 { return -1 }
+  return nvme-submit(STORAGE-OP-FLUSH, 0, 0)
 }
 
 fn nvme-dump16(port: Int, buf: Int) -> void {
@@ -140,4 +156,13 @@ fn nvme-shell-read(port: Int, lba: Int) -> void {
   serial-write-cstr(port, "  nvme: storage component shell read not implemented")
   serial-nl(port)
   return
+}
+
+// Private synchronous scalar projection for native admission checks. The driver
+// owns its existing DMA page; no pointer, allocation or new channel escapes.
+// Reads one512-byte sector; returns unsigned LE32 or-1 on actual I/O failure.
+fn nvme-private-read-u32(lba:Int,offset:Int)->Int{
+ if lba<0 || offset<0 || offset>508 || (offset&3)!=0 || nvme-ready!=1 || storage-ready!=1{return -1;}
+ if nvme-read(lba,1,storage-data-page)!=0{return -1;}
+ return load32(storage-data-page+offset);
 }

@@ -4,12 +4,9 @@ set -euo pipefail
 # build-runtime-components.sh — Compile Space display/input components into
 # SCI binaries and assemble them into a combined boot image after the nanokernel.
 #
-# The kernel probes fixed physical addresses for SCI manifests:
-#   display component at 0x1a0000
-#   input component   at 0x1e0000
-#
-# These are embedded in the boot image file at file offsets physical-0x100000
-# because the multiboot loader loads the image at physical 0x100000.
+# pack-sci-image.py places bounded artifacts and publishes the typed boot table.
+# The optional selftest is an explicit read-only SCI artifact; it never needs a
+# persistent filesystem diagnostic file to be created or overwritten.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
@@ -19,9 +16,6 @@ INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-runtime}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
 
-DISPLAY_PHYS=0x1a0000
-INPUT_PHYS=0x1e0000
-VOLUME_PHYS=0x220000
 DISPLAY_BASE=0x40000000
 INPUT_BASE=0x50000000
 VOLUME_BASE=0x60000000
@@ -50,9 +44,13 @@ NASM="${NASM:-nasm}"
   --target native --target-triple x86_64-unknown-none --emit sci \
   --base "$VOLUME_BASE" --out "$BUILD_DIR/volume.sci"
 
+"$IN" compile --path "$SPACE_DIR/fixtures/runtime-components/selftest.in" --entry runtime-selftest-entry \
+  --target native --target-triple x86_64-unknown-none --emit sci \
+  --base 0x63000000 --out "$BUILD_DIR/selftest.sci"
+
 echo "[3/3] Assembling combined boot image..."
 python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel.bin" "$BUILD_DIR/combined.bin" \
-  "2:$BUILD_DIR/display.sci" "3:$BUILD_DIR/input.sci" "4:$BUILD_DIR/volume.sci"
+  "2:$BUILD_DIR/display.sci" "3:$BUILD_DIR/input.sci" "4:$BUILD_DIR/volume.sci" "25:$BUILD_DIR/selftest.sci"
 
 echo "Done. Boot with:"
 echo "  qemu-system-x86_64 -kernel $BUILD_DIR/combined.bin -m 512M -rtc base=utc -vga std -serial stdio -display none"

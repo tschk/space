@@ -1,0 +1,269 @@
+package space.kernel
+import "linux-process-state.in"
+import "linux-process-exec.in"
+
+// Bounded foreign process policy. CPU suspension/resume and private page-table
+// ownership are native mechanisms; clone flags, PIDs and wait encodings remain
+// in this edge component. Children run first; no parallel scheduler is claimed.
+fn linux-process-child-slot() -> Int {
+  let i = 1
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-FREE { return row }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-clone-request(flags: Int, stack: Int, childtid: Int) -> Int {
+  if linux-process-current-record == 0 { return -38 }
+  let signal = flags & 255
+  if signal > 64 { return -22 }
+  if signal != 17 || stack != 0 || (flags & 0x1200011) != flags { return -38 }
+  if (flags & 0x1200000) != 0 && linux-process-range(childtid,4,1) == 0 { return -14 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if load64(linux-process-current-record + LPS-DEPTH) + 1 >= LINUX-STATE-DEPTH || linux-process-child-slot() == 0 { return -11 }
+  if linux-process-preparations >= LINUX-PROCESS-PREPARATION-MAX { return -11 }
+  linux-process-preparations = linux-process-preparations + 1
+  store64(linux-process-current-record + LPS-CLONE-FLAGS,flags)
+  store64(linux-process-current-record + LPS-CHILD-TID,childtid)
+  store64(linux-process-current-record + LPS-PENDING,1)
+  return 0
+}
+
+fn linux-process-signal-mask-call(how: Int, set: Int, old: Int, size: Int) -> Int {
+  if size != 8 { return -22 }
+  if set != 0 && how != 0 && how != 1 && how != 2 { return -22 }
+  if set != 0 && linux-process-range(set,8,0) == 0 { return -14 }
+  if old != 0 && linux-process-range(old,8,1) == 0 { return -14 }
+  let mask = linux-process-signal-mask
+  let next = mask
+  if set != 0 {
+    let value = 0
+    let i = 0
+    while i < 8 { value = value | (linux-process-read8(set + i) << (i * 8));i = i + 1 }
+    // SIGKILL and SIGSTOP can never be blocked.
+    value = value & (-1 ^ ((1 << 8) | (1 << 18)))
+    if how == 0 { next = mask | value }
+    else if how == 1 { next = mask & (-1 ^ value) }
+    else { next = value }
+  }
+  if old != 0 { linux-process-store64(old,mask) }
+  linux-process-signal-mask = next
+  return 0
+}
+
+fn linux-process-signal-deliver() -> Int {
+  let bit = 1 << 12
+  if linux-process-pipe-signal == 13 {
+    linux-process-signal-pending = linux-process-signal-pending | bit
+    linux-process-pipe-signal = 0
+    linux-process-pipe-last-signal = 0
+  }
+  if (linux-process-signal-pending & bit) == 0 { return 0 }
+  if linux-process-pipe-action == 1 { linux-process-signal-pending = linux-process-signal-pending & (-1 ^ bit);return 0 }
+  if (linux-process-signal-mask & bit) != 0 { return 0 }
+  linux-process-signal-pending = linux-process-signal-pending & (-1 ^ bit)
+  linux-process-pipe-signal = 13
+  linux-process-pipe-last-signal = 13
+  return 13
+}
+
+fn linux-process-wait(pid: Int, status: Int, options: Int, usage: Int) -> Int {
+  if linux-process-current-record == 0 { return -38 }
+  if pid != -1 && pid <= 0 { return -38 }
+  if options != 0 && options != 1 { return -38 }
+  if status != 0 && linux-process-range(status,4,1) == 0 { return -14 }
+  if usage != 0 {
+    if linux-process-range(usage,144,1) == 0 { return -14 }
+    return -38
+  }
+  let child = linux-process-state-find-child(linux-process-current-pid,pid)
+  if child == 0 { return -10 }
+  if load64(child + LPS-STATUS) != LINUX-STATE-ZOMBIE {
+    if options == 1 { return 0 }
+    linux-process-block-io(5,pid,status,options,usage)
+    return 0
+  }
+  if status != 0 {
+    let value = load64(child + LPS-WAIT-STATUS)
+    let i = 0
+    while i < 4 { linux-process-store8(status + i,(value >> (i * 8)) & 255);i = i + 1 }
+  }
+  store64(child + LPS-STATUS,LINUX-STATE-REAPED)
+  return load64(child + LPS-PID)
+}
+
+fn linux-process-child-wait-status(kind: Int, context: Int) -> Int {
+  if kind < 0 { return 9 }
+  if linux-process-pipe-last-signal == 13 { return 13 }
+  if kind == USER-CONTEXT-DEADLINE { return 9 }
+  if kind == USER-CONTEXT-FAULT {
+    let vector = load64(context + 696)
+    if vector == 6 { return 4 }
+    if vector == 0 || vector == 16 || vector == 19 { return 8 }
+    return 11
+  }
+  return (load64(context + 720) & 255) << 8
+}
+
+fn linux-process-child-clear-tid() -> void {
+  if linux-process-clear-tid != 0 && linux-process-range(linux-process-clear-tid,4,1) != 0 {
+    let i = 0
+    while i < 4 { linux-process-store8(linux-process-clear-tid + i,0);i = i + 1 }
+  }
+}
+
+fn linux-process-child-discard(row: Int) -> Int {
+  if linux-process-state-load(row) != 0 { return linux-process-state-refuse(row) }
+  linux-process-child-clear-tid()
+  // Close native references while the record's domain/family identity remains
+  // valid, then revoke mappings and reclaim its owned backing frames.
+  linux-process-files-release()
+  linux-process-pipes-release()
+  if linux-process-state-drop-pages(row) != 0 { return -5 }
+  return 0
+}
+
+fn linux-process-child-copy(parent: Int) -> Int {
+  let child = linux-process-child-slot()
+  if child == 0 { return -11 }
+  linux-process-state-inherit(parent,child)
+  let token = linux-process-vm-create(load64(parent + LPS-AUTHORITY))
+  store64(child + LPS-VM-OBJECT,linux-process-vm-created)
+  if token <= 0 {
+    if linux-process-vm-created > 0 { linux-process-cleanup-failed = 1;store64(child + LPS-STATUS,LINUX-STATE-QUARANTINED) }
+    else { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
+    return token
+  }
+  let domain = user-space-domain(token,load64(parent + LPS-AUTHORITY))
+  store64(child + LPS-DOMAIN,domain)
+  let pid = linux-process-state-register(child,load64(parent + LPS-PID),domain,load64(parent + LPS-DEPTH) + 1)
+  if pid < 0 {
+    let cleanup = linux-process-state-drop-pages(child)
+    if cleanup != 0 { return -5 }
+    store64(child + LPS-STATUS,LINUX-STATE-FREE)
+    return pid
+  }
+  domain-set-cap(domain,-1)
+  let result = linux-process-state-copy-pages(parent,child)
+  if result == 0 { result = linux-process-state-copy-files(parent,child) }
+  if result == 0 { result = user-context-clone(load64(child + LPS-USER-CONTEXT),768,load64(parent + LPS-USER-CONTEXT),domain) }
+  if result == 0 {
+    let binding = user-space-attach(token,load64(parent + LPS-AUTHORITY),load64(child + LPS-USER-CONTEXT))
+    if binding <= 0 { store64(load64(child + LPS-USER-CONTEXT) + 736,0);result = linux-process-vm-error(binding) }
+    else { store64(child + LPS-VM-BINDING,binding) }
+  }
+  if result != 0 {
+    let cleanup = linux-process-child-discard(child)
+    if cleanup == 0 { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
+    if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
+    if cleanup != 0 { return -5 }
+    return result
+  }
+  if linux-process-state-load(child) != 0 { return linux-process-state-refuse(child) }
+  let flags = load64(parent + LPS-CLONE-FLAGS)
+  let tid = load64(parent + LPS-CHILD-TID)
+  if (flags & 0x1000000) != 0 {
+    let i = 0
+    while i < 4 { linux-process-store8(tid + i,(pid >> (i * 8)) & 255);i = i + 1 }
+  }
+  if (flags & 0x200000) != 0 { linux-process-clear-tid = tid }
+  if linux-process-state-save(child) != 0 { return linux-process-state-refuse(child) }
+  store64(child + LPS-STATUS,LINUX-STATE-READY)
+  if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
+  return child
+}
+
+// Trusted supervisor-only recovery: retry retained teardown after the native
+// invariant has been repaired. This never runs concurrently with guest CPU
+// execution, and admission remains closed until every quarantine is reclaimed.
+fn linux-process-cleanup-recover() -> Int {
+  if domain-current != 0 || user-context-active != 0 || linux-process-active != 0 { return -16 }
+  if cr3-read() != load64(domain-table) { return -16 }
+  if linux-process-cleanup-failed == 0 { return 0 }
+  if linux-process-states == 0 { return -5 }
+  if linux-process-domain > 0 {
+    if linux-process-current-record == 0 { return -5 }
+    if load64(linux-process-current-record + LPS-STATUS) != LINUX-STATE-QUARANTINED { return -16 }
+  }
+  let i = 0
+  let result = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-QUARANTINED {
+      let cleanup = linux-process-child-discard(row)
+      if cleanup != 0 { result = -5 }
+      else { store64(row + LPS-STATUS,LINUX-STATE-REAPED) }
+    }
+    i = i + 1
+  }
+  linux-process-domain = 0
+  linux-process-pages = 0
+  linux-process-vm = 0;linux-process-binding = 0
+  linux-process-active = 0
+  linux-process-authority = -1
+  linux-process-exe = 0
+  linux-process-current-record = 0
+  linux-process-current-pid = 0
+  linux-process-signal-mask = 0
+  linux-process-signal-pending = 0
+  if result == 0 { linux-process-cleanup-failed = 0 }
+  return result
+}
+
+// vfork suspends the parent CPU, sharing the sole native VM and Linux break
+// companion. Descriptor tables retain independent bindings to shared objects.
+fn linux-process-vfork-request() -> Int {
+  if linux-process-current-record == 0 { return -38 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if load64(linux-process-current-record + LPS-DEPTH) + 1 >= LINUX-STATE-DEPTH || linux-process-child-slot() == 0 { return -11 }
+  if linux-process-preparations >= LINUX-PROCESS-PREPARATION-MAX { return -11 }
+  linux-process-preparations = linux-process-preparations + 1
+  store64(linux-process-current-record + LPS-PENDING,8)
+  return 0
+}
+
+fn linux-process-vfork-child(parent: Int) -> Int {
+  let child = linux-process-child-slot()
+  if child == 0 { return -11 }
+  linux-process-state-inherit(parent,child)
+  let token = load64(parent + LPS-VM-OBJECT)
+  let domain = load64(parent + LPS-DOMAIN)
+  let pid = linux-process-state-register(child,load64(parent + LPS-PID),domain,load64(parent + LPS-DEPTH) + 1)
+  if pid < 0 { store64(child + LPS-VM-OBJECT,0);store64(child + LPS-STATUS,LINUX-STATE-FREE);return pid }
+  let result = linux-process-state-copy-files(parent,child)
+  if result == 0 {
+    let binding = user-space-clone-binding(load64(parent + LPS-VM-BINDING),load64(parent + LPS-AUTHORITY),load64(child + LPS-USER-CONTEXT),768)
+    if binding <= 0 { result = linux-process-vm-error(binding) }
+    else { store64(child + LPS-VM-OBJECT,token);store64(child + LPS-VM-BINDING,binding) }
+  }
+  if result != 0 {
+    // No child VM ownership was acquired until a binding was published. Never
+    // consume the shared object's constructor for failed descriptor preparation.
+    if load64(child + LPS-VM-BINDING) == 0 { store64(child + LPS-VM-OBJECT,0);store64(child + LPS-DOMAIN,0);store64(child + LPS-PAGES,0) }
+    let cleanup = linux-process-child-discard(child)
+    if cleanup == 0 { store64(child + LPS-STATUS,LINUX-STATE-FREE) }
+    if linux-process-state-load(parent) != 0 { return linux-process-state-refuse(parent) }
+    if cleanup != 0 { return -5 }
+    if result == -5 { return linux-process-state-refuse(parent) }
+    return result
+  }
+  store64(child + LPS-CLEAR-TID,0)
+  store64(child + LPS-STATUS,LINUX-STATE-READY)
+  store64(parent + LPS-IO-FD,pid)
+  store64(parent + LPS-STATUS,LINUX-STATE-VFORK-WAIT)
+  return child
+}
+
+fn linux-process-vfork-release(child: Int) -> void {
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    if load64(row + LPS-STATUS) == LINUX-STATE-VFORK-WAIT && load64(row + LPS-IO-FD) == load64(child + LPS-PID) && load64(row + LPS-PID) == load64(child + LPS-PARENT) {
+      store64(row + LPS-IO-FD,0)
+      store64(row + LPS-STATUS,LINUX-STATE-READY)
+    }
+    i = i + 1
+  }
+}

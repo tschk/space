@@ -1,0 +1,64 @@
+package space.fixture
+component ProtectedNative {
+ target "x86_64-unknown-none"
+ deterministic true
+ checkpoint none
+ capability serial: DebugConsole(write)
+ capability memory: NativeMemory(allocate)
+ export entry: NativeEntry
+}
+interface DebugConsole { fn write(msg:String)->void }
+interface NativeMemory { fn allocate(bytes:Int)->Int }
+interface NativeEntry { fn native-entry(info:Int)->Int }
+interrupt fn serial-write-cstr(port:Int,pointer:Int)->Int{}
+interrupt fn serial-write-dec-wide(port:Int,value:Int)->void{}
+interrupt fn serial-nl(port:Int)->void{}
+interrupt fn malloc(bytes:Int)->Int{}
+interrupt fn calloc(count:Int,size:Int)->Int{}
+interrupt fn realloc(pointer:Int,bytes:Int)->Int{}
+interrupt fn free(pointer:Int)->Int{}
+var native-counter:Int=10
+fn native-entry(info:Int)->Int{
+ let heap=load64(info+16);let mode=load64(heap+8);
+ if info!=0x6b000000 || load64(info+8)!=0 || heap!=0x69000000 || load64(info+24)!=0x200000{return -101;}
+ if mode==1{store8(0x60000040,0);return -102;}
+ if mode==2{store8(heap+128,0xc3);return invoke-native1(heap+128,0);}
+ if mode==3{store64(heap+16,load64(0x100000));return -103;}
+ if mode==4{store64(heap+16,load64(load64(heap+24)));return -104;}
+ if mode==5{outb(0x80,1);return -105;}
+ if mode==6{
+  let values=[3,5,8];let total=0;let i=0;
+  while i<3{total=total+values[i];i=i+1;}
+  store64(heap+16,0xdeadbeef);return total;
+ }
+ if mode==7{while true{}return -107;}
+ if mode==8{store8(0x68000080,0xc3);return invoke-native1(0x68000080,0);}
+ if mode==9{
+  if serial-write-cstr(0x3f8,0x100000)!=-14 || serial-write-cstr(0x2f8,"INVALID port output")!=-1{return -109;}
+  if invoke-native1(0x6c0000b0,info)!=-38{return -110;}
+  return 42;
+ }
+ if mode==10{
+  store64(info,5);
+  if serial-write-cstr(0x3f8,"INVALID forged capability output")!=-1{return -111;}
+  if malloc(16)!=0 || calloc(1,16)!=0 || realloc(0,16)!=0{return -118;}
+  return 42;
+ }
+ if mode==11{native-counter=native-counter+1;return native-counter;}
+ if mode==12{store8(load64(heap+24),0);return -112;}
+ if mode==13{store64(0x100000,0);return -113;}
+ if mode==14{store64(load64(heap+24),0);return -114;}
+ if mode==16{return invoke-native1(load64(heap+24),0);}
+ if mode==15{
+  if free(0x100000)!=-1 || realloc(0x100000,32)!=0 || malloc(-1)!=0 || calloc(0x7fffffffffffffff,16)!=0{return -115;}
+  return 42;
+ }
+ let pointer=calloc(4,8);
+ if pointer<0x6a000000 || pointer>=0x6a200000 || load64(pointer)!=0{return -116;}
+ store64(pointer,0x1122334455667788);
+ let larger=realloc(pointer,4096);
+ if larger==0 || load64(larger)!=0x1122334455667788 || free(larger)!=0{return -117;}
+ store64(heap,load64(heap)+1);
+ serial-write-cstr(0x3f8,"protected-native: owned heap ");serial-write-dec-wide(0x3f8,load64(heap));serial-nl(0x3f8);
+ return 100+load64(heap);
+}

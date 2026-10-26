@@ -1,0 +1,41 @@
+package space.kernel
+
+// Boot-owned private launch scope, initialized once, never reminted on revoke.
+var gui-protected-launch-initialized: Int = 0
+var gui-protected-launch-cap: Int = -1
+var gui-protected-launch-object: Int = 0
+var gui-protected-launch-id: Int = 0
+var gui-protected-launch-realm: Int = 0
+const GUI-PROTECTED-SUPERVISOR = 0x475549
+
+fn gui-protected-bootstrap() -> Int {
+  if domain-get-current() != 0 || gui-protected-launch-initialized != 0 || root-realm == 0 { return 0 }
+  if current-cap < 0 || current-cap >= cap-count || cap-require(12) != 1 { return 0 }
+  if load64(cap-table-base + current-cap * 16) != root-realm { return 0 }
+  gui-protected-launch-initialized = 1
+  gui-protected-launch-realm = root-realm
+  gui-protected-launch-object = obj-alloc(GUI-PROTECTED-SUPERVISOR)
+  gui-protected-launch-id = obj-id(gui-protected-launch-object)
+  store64(gui-protected-launch-object + 16, root-realm)
+  gui-protected-launch-cap = cap-mint(gui-protected-launch-object, 52)
+  return gui-protected-launch-valid()
+}
+
+fn gui-protected-launch-valid() -> Int {
+  if domain-get-current() != 0 || gui-protected-launch-initialized != 1 || gui-protected-launch-realm != root-realm { return 0 }
+  let object = gui-protected-launch-object
+  let cap = gui-protected-launch-cap
+  if object == 0 || cap < 0 || cap >= cap-count { return 0 }
+  if obj-id(object) != gui-protected-launch-id || load64(object + 8) != GUI-PROTECTED-SUPERVISOR || load64(object + 16) != root-realm { return 0 }
+  if load64(cap-table-base + cap * 16) != object || load64(cap-table-base + cap * 16 + 8) != 52 { return 0 }
+  return cap-check(cap, 52)
+}
+
+fn gui-protected-launch(port: Int, image: Int, available: Int, grants: Int, arguments: Int) -> Int {
+  if gui-protected-launch-valid() != 1 || (grants != 20 && grants != 52) { return -1 }
+  let caller = current-cap
+  current-cap = gui-protected-launch-cap
+  let handle = native-protected-open(port, image, available, "protected-window", grants, arguments)
+  current-cap = caller
+  return handle
+}

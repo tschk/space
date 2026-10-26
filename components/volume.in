@@ -761,19 +761,21 @@ fn vol-sparkfs-init() -> void {
   vol-name-c = alloc(SF-NAME-MAX + 1)
   vol-tmp4 = alloc(4)
   vol-sf-disk-ready = 1
+  if vol-mount-existing != 0 && load32(vol-sf-mem-disk+SF-SB-MAGIC)!=SF-MAGIC{vol-sf-disk-ready=0;return;}
   if vol-mount-existing != 0 && load32(vol-sf-mem-disk + SF-SB-MAGIC) == SF-MAGIC {
     let k = 0
     while k < SF-BLOCK-SIZE {
       store8(vol-sf-super + k, load8(vol-sf-mem-disk + k))
       k = k + 1
     }
+    // This standalone provider has boot-tick metadata only. Never reinterpret
+    // another filesystem version or reformat it as an initialization fallback.
+    if load32(vol-sf-super+SF-SB-VERSION)!=SF-VERSION || load32(vol-sf-super+SF-SB-BLOCK-SIZE)!=SF-BLOCK-SIZE{vol-sf-disk-ready=0;return;}
     let total = load64(vol-sf-super + SF-SB-TOTAL-BLOCKS)
     let ino-count = load32(vol-sf-super + SF-SB-INODE-COUNT)
-    if total < 2 || total > SF-MAX-TOTAL-BLOCKS || ino-count < 1 || ino-count > SF-MAX-INODE-COUNT {
-      vol-sparkfs-format-mem-disk()
-      vol-vfs-init()
-      return
-    }
+    // Legacy Volume's admitted backing is its own fixed1MiB/256-inode profile.
+    // Other layouts remain unavailable; no fallback reformat of existing data.
+    if total!=SF-MEM-DISK-BLOCKS || ino-count!=SF-DEFAULT-INODE-COUNT || load64(vol-sf-super+SF-SB-BITMAP-START)!=1 || load64(vol-sf-super+SF-SB-JOURNAL-START)!=2 || load64(vol-sf-super+SF-SB-INODE-TABLE-START)!=4 || load64(vol-sf-super+SF-SB-DATA-START)!=20 || load32(vol-sf-super+SF-SB-ROOT-INODE)!=0{vol-sf-disk-ready=0;return;}
     let bitmap-bytes = (total + 7) / 8
     let bitmap-start = load64(vol-sf-super + SF-SB-BITMAP-START)
     vol-sf-bitmap = alloc(bitmap-bytes)
@@ -1660,6 +1662,7 @@ fn volume-entry(cap-info: Int) -> Int {
   vol-mount-existing = load64(cap-info + 40)
   vol-heap-init(heap, heap-size)
   vol-sparkfs-init()
+  if vol-sf-disk-ready!=1{return -1;}
   volume-dispatch-once(page)
   store64(page + VOL-OFF-REQ-READY, 0)
   store64(page + VOL-OFF-RESP-READY, 1)

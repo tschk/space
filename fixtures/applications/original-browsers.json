@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "scope": "Original Helium and Firefox required targets; no successful Space browser execution",
+  "apps": [
+    {
+      "id": "helium",
+      "name": "Helium",
+      "repo": "imputnet/helium-linux",
+      "version": "0.20.1.1",
+      "archive": {
+        "name": "helium-0.20.1.1-x86_64_linux.tar.xz",
+        "browser_download_url": "https://github.com/imputnet/helium-linux/releases/download/0.20.1.1/helium-0.20.1.1-x86_64_linux.tar.xz",
+        "sha256": "2023fa44cefa0fbd3e19071c87e90d61275f08ba8f5b48d58c235215565e9b53",
+        "size": 120819468
+      },
+      "checksum_provenance": "GitHub published asset digest",
+      "sha256": "7ea3fa71ff0d14cb8d802575ebcb438274a41fd0afb24617b770fd7e51884646",
+      "size_bytes": 294059232,
+      "binary_relative_to_package": "helium",
+      "personality": "linux",
+      "required_scenarios": [
+        "real browser process startup",
+        "HTML/CSS/JavaScript page",
+        "controlled HTTP and HTTPS with certificates/errors",
+        "keyboard and pointer",
+        "focus and resize/scale",
+        "close/reopen and two instances",
+        "20 repeated ownership cycles"
+      ]
+    },
+    {
+      "id": "firefox",
+      "name": "Firefox",
+      "repo": "mozilla-firefox/firefox",
+      "version": "158.0.1",
+      "archive": {
+        "name": "firefox.tar.xz",
+        "browser_download_url": "https://download-installer.cdn.mozilla.net/pub/firefox/releases/158.0.1/linux-x86_64/en-US/firefox-158.0.1.tar.xz",
+        "sha256": "dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a",
+        "size": 90546260
+      },
+      "checksum_provenance": "measured official Mozilla download; not independently authenticated",
+      "sha256": "46e2c204ab769f1cb49fea4918e134c84829d2ab38278fb087a072f77b6e7294",
+      "size_bytes": 659992,
+      "binary_relative_to_package": "firefox-bin",
+      "personality": "linux",
+      "required_scenarios": [
+        "real browser process startup",
+        "HTML/CSS/JavaScript page",
+        "controlled HTTP and HTTPS with certificates/errors",
+        "keyboard and pointer",
+        "focus and resize/scale",
+        "close/reopen and two instances",
+        "20 repeated ownership cycles"
+      ]
+    }
+  ]
+}

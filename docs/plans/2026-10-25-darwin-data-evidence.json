@@ -1,0 +1,56 @@
+{
+  "goal_status": "OPEN",
+  "scope": "Focused typed Darwin data checks; independent of the frozen161-gate run at3ac91e0",
+  "original_macos_jq_entries": 0,
+  "next_unavailable_import": "____chkstk_darwin",
+  "checks": [
+    {
+      "name": "rune-standard",
+      "source_commit": "d75525dc9e4b76f6a1d74e694dcc717cf38bbfbc",
+      "receipt": "/workspace/darwin-rune-owned-final-standard/report.json",
+      "sha256": "3412065397a000d82ffcc8fb8ff0fd2ae9062e00016bde94dba0a16d2d1dec92",
+      "own_cpl3_entries": 184,
+      "setup_refusals": 69,
+      "original_application_entries": 0
+    },
+    {
+      "name": "rune-minimal",
+      "source_commit": "d75525dc9e4b76f6a1d74e694dcc717cf38bbfbc",
+      "receipt": "/workspace/darwin-rune-owned-final-minimal/report.json",
+      "sha256": "9f6278e0804391af28c168cd7f8ef005845499107ab248ad37fe331ca5844aaf",
+      "own_cpl3_entries": 184,
+      "setup_refusals": 69,
+      "original_application_entries": 0
+    },
+    {
+      "name": "mapped-standard",
+      "source_commit": "072169e5ddbd7bd3a2ba7dd837688e20555d042a",
+      "receipt": "/workspace/darwin-rune-regression-mapped-standard/report.json",
+      "sha256": "10b3364706fac483aaaa846883f991b697b1c924a1534351882538bf36ebf3e8",
+      "own_cpl3_entries": 318,
+      "setup_refusals": 147,
+      "original_application_entries": 0
+    },
+    {
+      "name": "mapped-minimal",
+      "source_commit": "072169e5ddbd7bd3a2ba7dd837688e20555d042a",
+      "receipt": "/workspace/darwin-rune-regression-mapped-minimal/report.json",
+      "sha256": "e0e889d6fea91a06c8c771c0232c83c70b3f2892f7ab53dc5145a359c024a90b",
+      "own_cpl3_entries": 318,
+      "setup_refusals": 147,
+      "original_application_entries": 0
+    },
+    {
+      "name": "desktop-launcher",
+      "source_commit": "d75525dc9e4b76f6a1d74e694dcc717cf38bbfbc",
+      "log": "/workspace/darwin-rune-desktop-launcher.log",
+      "sha256": "207262dff1a6fb1668d86825d3b78c04f7e87fbbe56a5573176d77b793ff221e"
+    },
+    {
+      "name": "desktop-damage",
+      "source_commit": "d75525dc9e4b76f6a1d74e694dcc717cf38bbfbc",
+      "log": "/workspace/darwin-rune-desktop-damage.log",
+      "sha256": "f5e7721c1dedc0d53449cb4de404abc91f666646d26134f7d38786eb607ea331"
+    }
+  ]
+}

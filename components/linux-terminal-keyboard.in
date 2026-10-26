@@ -1,0 +1,27 @@
+package space.personality.linux
+import "terminal-seat.in"
+import "../protocol/keyboard.in"
+
+// Linux terminal encoding at the personality edge. Low8 is sequence length;
+// following bytes are packed in order. Native seat/queues have no VT key policy.
+fn linux-terminal-key-encoding(key:Int)->Int{
+  if key>=0 && key<128{return 1|(key<<8);}
+  let last=0
+  if key==KEY-UP{last=65;}
+  else if key==KEY-DOWN{last=66;}
+  else if key==KEY-RIGHT{last=67;}
+  else if key==KEY-LEFT{last=68;}
+  else if key==KEY-HOME{last=72;}
+  else if key==KEY-END{last=70;}
+  if last!=0{return 3|(27<<8)|(91<<16)|(last<<24);}
+  if key==KEY-DELETE{last=51;}
+  else if key==KEY-PAGE-UP{last=53;}
+  else if key==KEY-PAGE-DOWN{last=54;}
+  if last!=0{return 4|(27<<8)|(91<<16)|(last<<24)|(126<<32);}
+  return -1
+}
+fn linux-terminal-deliver-key(seat:Int,key:Int)->Int{
+  let encoded=linux-terminal-key-encoding(key)
+  if encoded<0{return -1;}
+  return terminal-seat-deliver-sequence(seat,encoded>>8,encoded&255)
+}

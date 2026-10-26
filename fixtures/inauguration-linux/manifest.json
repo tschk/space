@@ -1,0 +1,66 @@
+{
+  "category": "synthetic compiler corpus; not upstream applications",
+  "target": "x86_64-unknown-linux-gnu",
+  "profiles": [
+    "default",
+    "lean",
+    "harden"
+  ],
+  "cases": [
+    {
+      "name": "globals",
+      "source": "globals.in",
+      "host_exit": 73,
+      "space_exit": 73,
+      "syscalls": [
+        60
+      ],
+      "outcome_kind": "normal-exit"
+    },
+    {
+      "name": "unicode",
+      "source": "unicode.in",
+      "host_exit": 41,
+      "space_exit": 41,
+      "syscalls": [
+        60
+      ],
+      "outcome_kind": "normal-exit"
+    },
+    {
+      "name": "array-copy",
+      "source": "array-copy.rs",
+      "host_exit": 42,
+      "space_exit": 42,
+      "syscalls": [
+        9,
+        60
+      ],
+      "owned_memcpy": true,
+      "outcome_kind": "normal-exit"
+    },
+    {
+      "name": "owned-abort",
+      "source": "owned-abort.in",
+      "host_exit": 134,
+      "space_exit": 134,
+      "syscalls": [
+        231
+      ],
+      "forbidden_syscalls": [
+        60
+      ],
+      "outcome_kind": "owned-abort"
+    },
+    {
+      "name": "privileged",
+      "source": "privileged.in",
+      "host_exit": -11,
+      "space_exit": 141,
+      "syscalls": [],
+      "fault_vector": 13,
+      "negative_control": true,
+      "outcome_kind": "hardware-negative"
+    }
+  ]
+}

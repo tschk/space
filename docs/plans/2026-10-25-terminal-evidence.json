@@ -1,0 +1,90 @@
+{
+  "goal_status": "OPEN",
+  "scope": "Separate focused terminal/desktop continuation. Not a new complete 161-gate application-lab run.",
+  "historical_full_lab": {
+    "passed": 152,
+    "source_commit": "c40874677336f08b1508a4a06956ef7c53da5f25"
+  },
+  "checks": [
+    {
+      "name": "native-screen-model",
+      "source_commit": "adba514bf84e78ec79b5e8e78a2ab85a4d117630",
+      "receipt": "/workspace/terminal-view-final-model/report.json",
+      "sha256": "cca71fae56f6492de3e618383534e3e159d985f69b86e612e264f8f1baec354d"
+    },
+    {
+      "name": "original-vi-view",
+      "source_commit": "adba514bf84e78ec79b5e8e78a2ab85a4d117630",
+      "receipt": "/workspace/terminal-view-final-live/report.json",
+      "sha256": "933552d0736c03845e0258d60b4ae4dcff027e6d1625610d376db02ddc08c242"
+    },
+    {
+      "name": "protected-native-windows",
+      "source_commit": "adba514bf84e78ec79b5e8e78a2ab85a4d117630",
+      "receipt": "/workspace/terminal-view-final-windows/report.json",
+      "sha256": "80352c284d575d7c556ddc232ccbee3615831d93f5455c688b2ca74003ffdea6"
+    },
+    {
+      "name": "protected-linux-app-regressions",
+      "source_commit": "adba514bf84e78ec79b5e8e78a2ab85a4d117630",
+      "receipt": "/workspace/terminal-view-final-regressions/apps.json",
+      "sha256": "91a74f6d90a7ad08135ff04a72d13416e6711fcd0c665e68527e3779d4059d26"
+    },
+    {
+      "name": "protected-linux-process-regressions",
+      "source_commit": "adba514bf84e78ec79b5e8e78a2ab85a4d117630",
+      "receipt": "/workspace/terminal-view-final-regressions/processes.json",
+      "sha256": "2827cff0694bb4b55f085ab3b0ba045dceab9b331d81ccd41f5755971c6b422b"
+    },
+    {
+      "name": "native-input-model",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "receipt": "/workspace/terminal-navigation-final-model/report.json",
+      "sha256": "f3a9c9829bf20ed5f89c45867d61161cd9b50276e2327305b4260e7228d78695"
+    },
+    {
+      "name": "original-vi-navigation-view",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "receipt": "/workspace/terminal-navigation-final-view/report.json",
+      "sha256": "744cee224f7c1c91197ffabf04a55bd388ce7d9b0c857c2a3cefb19d6c14ea93"
+    },
+    {
+      "name": "original-vi-navigation-minimal",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "receipt": "/workspace/terminal-navigation-final-minimal/report.json",
+      "sha256": "c61f44606ad5873f8a5714e01d3c4b3bd2aa1493829a1472f07c9de97ffad718"
+    },
+    {
+      "name": "retained-terminal-and-five-imports",
+      "source_commit": "35b2bb26126e541111773892b2a0f12fc1838d1c",
+      "receipt": "/workspace/terminal-denial-final-retained/report.json",
+      "sha256": "007a4075403bffcf97bc75393a04b2adbf0bf8e845ccb20620d1fc4fa4eccbb7"
+    },
+    {
+      "name": "native-terminal-and-five-imports",
+      "source_commit": "35b2bb26126e541111773892b2a0f12fc1838d1c",
+      "receipt": "/workspace/terminal-denial-final-native/report.json",
+      "sha256": "41071e900f19d1d942356154bbeb69f1649f5e9c0d713928c058be8d3af892d8"
+    },
+    {
+      "name": "desktop-launcher",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "log": "/workspace/terminal-navigation-final-launcher.log",
+      "sha256": "8c7e35ae998c6224b04d37276fd946a4283b4219df1b0625cbb170b8b073b5bd"
+    },
+    {
+      "name": "desktop-damage",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "log": "/workspace/terminal-navigation-final-damage.log",
+      "sha256": "776531723549f31c8ce73ddffb51fd5036039acc9b83318590538530772fb297"
+    },
+    {
+      "name": "desktop-images",
+      "source_commit": "32484b09b51b37710a7f0aaa17e10833a08a3d46",
+      "log": "/workspace/terminal-navigation-final-images.log",
+      "sha256": "12f629fe4361ca7b9e2c4d9eb0c12e8330778d2147a09561bda55b0bffda6424"
+    }
+  ],
+  "known_failed_probe": "/workspace/terminal-navigation-final-controls/report.json",
+  "corrected_probe": "/workspace/terminal-denial-final-retained/report.json"
+}

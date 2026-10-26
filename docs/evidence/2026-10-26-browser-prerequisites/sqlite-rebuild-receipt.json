@@ -1,0 +1,193 @@
+{
+  "source_url": "https://www.sqlite.org/2024/sqlite-autoconf-3460100.tar.gz",
+  "source_sha256": "67d3fe6d268e6eaddcae3727fce58fcc8e9c53869bdd07a0c61e38ddf2965071",
+  "verification_reference": "https://www.sqlite.org/releaselog/3_46_1.html",
+  "sqlite3_c_sha3_256": "186a1baa476b6d546de155160ca6d30ff7b7e6ee375f0bb6445e1a3d180a7dad",
+  "source_id": "2024-08-13 09:16:08 c9c2ab54ba1f5f46360f1b4f35d849cd3f080e6fc2b6c60e91b16c63f69a1e33",
+  "source_modified": false,
+  "license": "Public domain (upstream SQLite)",
+  "license_reference": "https://www.sqlite.org/copyright.html",
+  "license_declaration": "/******************************************************************************\n** This file is an amalgamation of many separate C source files from SQLite\n** version 3.46.1.  By combining all the individual C code files into this\n** single large file, the entire code can be compiled as a single translation\n** unit.  This allows many compilers to do optimizations that would not be\n** possible if the files were compiled separately.  Performance improvements\n** of 5% or more are commonly seen when SQLite is compiled as a single\n** translation unit.\n**\n** This file is all you need to compile SQLite.  To use SQLite in other\n** programs, you need this file and the \"sqlite3.h\" header file that defines\n** the programming interface to the SQLite library.  (If you do not have\n** the \"sqlite3.h\" header file at hand, you will find a copy embedded within\n** the text of this file.  Search for \"Begin file sqlite3.h\" to find the start\n** of the embedded sqlite3.h header file.) Additional code files may be needed\n** if you want a wrapper to interface SQLite with your choice of programming\n** language. The code for the \"sqlite3\" command-line shell is also in a\n** separate file. This file contains only code for the core SQLite library.\n**\n** The content in this amalgamation comes from Fossil check-in\n** c9c2ab54ba1f5f46360f1b4f35d849cd3f08.\n*/",
+  "command": [
+    "gcc",
+    "-O2",
+    "-static",
+    "-DSQLITE_THREADSAFE=0",
+    "-DSQLITE_OMIT_LOAD_EXTENSION",
+    "sqlite3.c",
+    "shell.c",
+    "-lm",
+    "-o",
+    "sqlite3"
+  ],
+  "environment": {
+    "LC_ALL": "C",
+    "TZ": "UTC",
+    "SOURCE_DATE_EPOCH": "0"
+  },
+  "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+  "linker": "GNU ld (GNU Binutils for Debian) 2.44",
+  "compile_options": [
+    "ATOMIC_INTRINSICS=1",
+    "COMPILER=gcc-14.2.0",
+    "DEFAULT_AUTOVACUUM",
+    "DEFAULT_CACHE_SIZE=-2000",
+    "DEFAULT_FILE_FORMAT=4",
+    "DEFAULT_JOURNAL_SIZE_LIMIT=-1",
+    "DEFAULT_MMAP_SIZE=0",
+    "DEFAULT_PAGE_SIZE=4096",
+    "DEFAULT_PCACHE_INITSZ=20",
+    "DEFAULT_RECURSIVE_TRIGGERS",
+    "DEFAULT_SECTOR_SIZE=4096",
+    "DEFAULT_SYNCHRONOUS=2",
+    "DEFAULT_WAL_AUTOCHECKPOINT=1000",
+    "DEFAULT_WAL_SYNCHRONOUS=2",
+    "DEFAULT_WORKER_THREADS=0",
+    "DIRECT_OVERFLOW_READ",
+    "MALLOC_SOFT_LIMIT=1024",
+    "MAX_ATTACHED=10",
+    "MAX_COLUMN=2000",
+    "MAX_COMPOUND_SELECT=500",
+    "MAX_DEFAULT_PAGE_SIZE=8192",
+    "MAX_EXPR_DEPTH=1000",
+    "MAX_FUNCTION_ARG=127",
+    "MAX_LENGTH=1000000000",
+    "MAX_LIKE_PATTERN_LENGTH=50000",
+    "MAX_MMAP_SIZE=0x7fff0000",
+    "MAX_PAGE_COUNT=0xfffffffe",
+    "MAX_PAGE_SIZE=65536",
+    "MAX_SQL_LENGTH=1000000000",
+    "MAX_TRIGGER_DEPTH=1000",
+    "MAX_VARIABLE_NUMBER=32766",
+    "MAX_VDBE_OP=250000000",
+    "MAX_WORKER_THREADS=0",
+    "MUTEX_OMIT",
+    "OMIT_LOAD_EXTENSION",
+    "SYSTEM_MALLOC",
+    "TEMP_STORE=1",
+    "THREADSAFE=0"
+  ],
+  "elf_program_headers": "\nElf file type is EXEC (Executable file)\nEntry point 0x404060\nThere are 11 program headers, starting at offset 64\n\nProgram Headers:\n  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align\n  LOAD           0x000000 0x0000000000400000 0x0000000000400000 0x000590 0x000590 R   0x1000\n  LOAD           0x001000 0x0000000000401000 0x0000000000401000 0x1abc45 0x1abc45 R E 0x1000\n  LOAD           0x1ad000 0x00000000005ad000 0x00000000005ad000 0x064b5c 0x064b5c R   0x1000\n  LOAD           0x2129a8 0x00000000006129a8 0x00000000006129a8 0x00c9dc 0x013040 RW  0x1000\n  NOTE           0x0002a8 0x00000000004002a8 0x00000000004002a8 0x000020 0x000020 R   0x8\n  NOTE           0x0002c8 0x00000000004002c8 0x00000000004002c8 0x000024 0x000024 R   0x4\n  NOTE           0x211b3c 0x0000000000611b3c 0x0000000000611b3c 0x000020 0x000020 R   0x4\n  TLS            0x2129a8 0x00000000006129a8 0x00000000006129a8 0x000038 0x00006c R   0x8\n  GNU_PROPERTY   0x0002a8 0x00000000004002a8 0x00000000004002a8 0x000020 0x000020 R   0x8\n  GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x10\n  GNU_RELRO      0x2129a8 0x00000000006129a8 0x00000000006129a8 0x007658 0x007658 R   0x1\n\n Section to Segment mapping:\n  Segment Sections...\n   00     .note.gnu.property .note.gnu.build-id .rela.plt \n   01     .init .plt .text .fini \n   02     .rodata rodata.cst32 .eh_frame .gcc_except_table .note.ABI-tag \n   03     .tdata .init_array .fini_array .data.rel.ro .got .got.plt .data .bss \n   04     .note.gnu.property \n   05     .note.gnu.build-id \n   06     .note.ABI-tag \n   07     .tdata .tbss \n   08     .note.gnu.property \n   09     \n   10     .tdata .init_array .fini_array .data.rel.ro .got \n",
+  "binary": "/workspace/browser-entry-sqlite-build/sqlite3",
+  "binary_sha256": "36e9f3eb66219d87d79dd62db4df7c04b69d3ee4f15bd00d632587072b50c507",
+  "binary_size": 2436160,
+  "matches_pinned_build": true,
+  "host_cases": [
+    {
+      "name": "arithmetic-version",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select 6*7, sqlite_version();"
+      ],
+      "exit": 0,
+      "stdout": "42|3.46.1\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "relational-sort",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(n integer); insert into t values(3),(1),(2); select sum(n),count(*) from t; select group_concat(n,'|') from(select n from t order by n);"
+      ],
+      "exit": 0,
+      "stdout": "6|3\n1|2|3\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "recursive-sum",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "WITH RECURSIVE t(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM t WHERE x<1000) SELECT sum(x) FROM t;"
+      ],
+      "exit": 0,
+      "stdout": "500500\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "json",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select json_extract('{\"a\":[1,2,3]}','$.a[1]'),json_array(1,'two',null);"
+      ],
+      "exit": 0,
+      "stdout": "2|[1,\"two\",null]\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "unicode",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select char(955,128578),length(char(955,128578));"
+      ],
+      "exit": 0,
+      "stdout": "\u03bb\ud83d\ude42|2\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "transaction-rollback",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(x);begin;insert into t values(1);rollback;select count(*) from t;"
+      ],
+      "exit": 0,
+      "stdout": "0\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "blob",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select hex(x'0001ff'),length(zeroblob(9000));"
+      ],
+      "exit": 0,
+      "stdout": "0001FF|9000\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "window",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "with t(x)as(values(3),(1),(2))select x,sum(x)over(order by x)from t order by x;"
+      ],
+      "exit": 0,
+      "stdout": "1|1\n2|3\n3|6\n",
+      "stderr": "",
+      "passed": true
+    },
+    {
+      "name": "syntax-error",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select from;"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n",
+      "passed": true
+    }
+  ],
+  "corpus_scope": "memory database cases only; file database execution is a separate runtime gate",
+  "excluded_file_cases": [
+    "file-transaction",
+    "file-reopen",
+    "file-large-transaction",
+    "file-large-reopen",
+    "file-rollback"
+  ]
+}

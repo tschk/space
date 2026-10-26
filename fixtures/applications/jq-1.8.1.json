@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "upstream": "https://github.com/jqlang/jq",
+  "license": "MIT; inspect upstream dependency licenses before redistribution",
+  "checksums_url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/sha256sum.txt",
+  "apps": [
+    {
+      "id": "jq-1.8.1-linux-x86_64",
+      "name": "jq",
+      "version": "1.8.1",
+      "personality": "linux",
+      "filename": "jq-linux-amd64",
+      "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+      "sha256": "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+      "size_bytes": 2255816,
+      "scenario": {
+        "args": [
+          "-nc",
+          "[range(10)] | add"
+        ],
+        "exit_code": 0,
+        "stdout": "45\n"
+      }
+    },
+    {
+      "id": "jq-1.8.1-darwin-x86_64",
+      "name": "jq",
+      "version": "1.8.1",
+      "personality": "darwin",
+      "filename": "jq-macos-amd64",
+      "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64",
+      "sha256": "e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f",
+      "size_bytes": 855272,
+      "scenario": {
+        "args": [
+          "-nc",
+          "[range(10)] | add"
+        ],
+        "exit_code": 0,
+        "stdout": "45\n"
+      }
+    },
+    {
+      "id": "jq-1.8.1-windows-x86_64",
+      "name": "jq",
+      "version": "1.8.1",
+      "personality": "windows",
+      "filename": "jq-win64.exe",
+      "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-win64.exe",
+      "sha256": "23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334",
+      "size_bytes": 1026560,
+      "scenario": {
+        "args": [
+          "-nc",
+          "[range(10)] | add"
+        ],
+        "exit_code": 0,
+        "stdout": "45\n"
+      }
+    }
+  ]
+}

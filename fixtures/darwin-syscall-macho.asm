@@ -1,6 +1,6 @@
 ; Trusted x86_64 Mach-O fixture using Darwin BSD syscall numbers and carry errno.
 BITS 64
-ORG 0x280000
+ORG 0x2f0000
 image:
     dd 0xfeedfacf, 0x01000007, 3, 2
     dd 2, 96, 1, 0

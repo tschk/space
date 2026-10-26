@@ -1,0 +1,50 @@
+package space.app.gui
+import "gui-window-state.in"
+import "font.in"
+import "gui-window-draw.in"
+
+// Existing bounded bitmap raster path, now targeting the granted canvas stride.
+// Font assets and advances come from font.in; this adds no font parser/engine.
+fn window-fill(x: Int, y: Int, width: Int, height: Int, color: Int) -> void {
+  if x < 0 || y < 0 || width < 0 || height < 0 || x > window-width || y > window-height { return }
+  if width > window-width - x || height > window-height - y { return }
+  let row = 0
+  while row < height {
+    let column = 0
+    while column < width {
+      store32(0x70001000 + (y + row) * SCI-CANVAS-STRIDE + (x + column) * 4, color)
+      column += 1
+    }
+    row += 1
+  }
+}
+
+fn window-text(face: Int, x: Int, y: Int, text: Int, maximum: Int, color: Int) -> void {
+  let index = 0
+  let cursor = x
+  while index < maximum && index < 64 {
+    let ch = load8(text + index)
+    if ch == 0 { return }
+    if ch < 32 || ch > 126 { ch = 63 }
+    let advance = 8
+    let bitmap = fb-font
+    if face == FONT-FACE-SANS { bitmap = fb-font-sans; advance = load8(fb-font-sans-adv + ch) }
+    if cursor + 8 * window-scale > window-width { return }
+    let row = 0
+    while row < 8 {
+      let bits = load8(bitmap + ch * 8 + row)
+      let column = 0
+      while column < 8 {
+        if (bits & (128 >> column)) != 0 {
+          window-fill(cursor + column * window-scale, y + row * window-scale, window-scale, window-scale, color)
+        }
+        column += 1
+      }
+      row += 1
+    }
+    cursor += advance * window-scale
+    index += 1
+  }
+}
+
+fn window-text-cell()->Int{return 8 * window-scale;}

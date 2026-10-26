@@ -1,0 +1,178 @@
+package space.kernel
+import "user-address-space.in"
+
+// Foreign VM policy is keyed by the native object's generation-bearing handle.
+// This record is the sole mutable Linux break state, never a backing ledger.
+const LINUX-VM-BYTES = 64
+var linux-process-vms: Int = 0
+var linux-process-vm: Int = 0
+var linux-process-binding: Int = 0
+var linux-process-vm-buffer: Int = 0
+var linux-process-vm-scalar: Int = 0
+var linux-process-vm-created: Int = 0
+var linux-process-memory-failed: Int = 0
+var linux-process-startup: Int = 0
+var linux-process-startup-error: Int = 0
+
+fn linux-process-vm-init() -> void {
+  if linux-process-vms != 0 { return }
+  linux-process-vms = alloc(USER-SPACE-MAX * LINUX-VM-BYTES)
+  cpu-mem-fill64(linux-process-vms,0,USER-SPACE-MAX * 8)
+  linux-process-vm-buffer = alloc(4096)
+  linux-process-vm-scalar = alloc(16)
+}
+
+fn linux-process-vm-row(token: Int) -> Int {
+  if token <= 0 || linux-process-vms == 0 { return 0 }
+  let i = 0
+  while i < USER-SPACE-MAX {
+    let row = linux-process-vms + i * LINUX-VM-BYTES
+    if load64(row) == token { return row }
+    i = i + 1
+  }
+  return 0
+}
+
+fn linux-process-vm-create(authority: Int) -> Int {
+  linux-process-vm-created = 0
+  if user-space-kernel() == 0 { return -16 }
+  if cap-check(authority,cap-memory()) == 0 { return -13 }
+  // Do not adopt an unrelated retained object through first-quarantine discovery.
+  if user-space-quarantined(authority) > 0 { return -5 }
+  linux-process-vm-init()
+  let i = 0
+  while i < USER-SPACE-MAX && load64(linux-process-vms + i * LINUX-VM-BYTES) != 0 { i = i + 1 }
+  if i == USER-SPACE-MAX { return -12 }
+  let handle = user-space-create-addressed(authority,LINUX-PROCESS-MAX-PAGES,65536)
+  let failure = 0
+  if handle == -5 { failure = -5;handle = user-space-quarantined(authority) }
+  if handle <= 0 { if failure != 0 { return failure } return linux-process-vm-error(handle) }
+  let row = linux-process-vms + i * LINUX-VM-BYTES
+  cpu-mem-fill64(row,0,8)
+  store64(row,handle);store64(row + 8,authority)
+  store64(row + 16,LINUX-PROCESS-BRK-BASE);store64(row + 24,LINUX-PROCESS-BRK-BASE)
+  linux-process-vm-created = handle
+  if failure != 0 { return failure }
+  return handle
+}
+
+fn linux-process-vm-error(error: Int) -> Int {
+  if error == -2 { return -13 }
+  if error == -3 { return -12 }
+  if error == -4 { return -16 }
+  return error
+}
+
+fn linux-process-vm-use(token: Int, binding: Int) -> Int {
+  if binding < 0 { return -22 }
+  let row = linux-process-vm-row(token)
+  if row == 0 { return -5 }
+  let authority = load64(row + 8)
+  if binding > 0 && user-space-binding-space(binding,authority) != token { return -5 }
+  let domain = user-space-domain(token,authority)
+  let pages = user-space-pages(token,authority)
+  if domain <= 0 || pages < 0 { return -5 }
+  linux-process-vm = token;linux-process-binding = binding
+  linux-process-domain = domain;linux-process-authority = authority
+  linux-process-pages = pages;linux-process-ledger = 0
+  linux-process-brk = load64(row + 16);linux-process-brk-mapped = load64(row + 24)
+  return 0
+}
+
+fn linux-process-vm-sync() -> Int {
+  return linux-process-vm-use(linux-process-vm,linux-process-binding)
+}
+
+fn linux-process-vm-map(address: Int, protection: Int) -> Int {
+  let permission = USER-SPACE-WRITE
+  if protection == 4 { permission = USER-SPACE-READ }
+  else if protection == 5 { permission = USER-SPACE-EXECUTE }
+  else if protection != 6 { return -22 }
+  let status = user-space-map-zero(linux-process-vm,linux-process-authority,address,permission)
+  if status != 0 { return linux-process-vm-error(status) }
+  return linux-process-vm-sync()
+}
+
+fn linux-process-vm-populate(address: Int, source: Int, count: Int) -> Int {
+  return linux-process-vm-error(user-space-populate(linux-process-vm,linux-process-authority,address,source,count))
+}
+
+fn linux-process-vm-attach(context: Int, entry: Int, stack: Int) -> Int {
+  let status = user-context-init(context,768,linux-process-domain,entry,0,stack)
+  if status != 0 { return -5 }
+  let binding = user-space-attach(linux-process-vm,linux-process-authority,context)
+  if binding <= 0 { store64(context + 736,0);return linux-process-vm-error(binding) }
+  linux-process-binding = binding
+  return binding
+}
+
+// Release results can commit detach before reporting retained VM quarantine.
+// Public native projections decide which ownership remains; no private rows.
+fn linux-process-vm-drop(token: Int, binding: Int) -> Int {
+  if binding < 0 { return -22 }
+  let row = linux-process-vm-row(token)
+  if row == 0 { if token == 0 && binding == 0 { return 0 } return -5 }
+  let authority = load64(row + 8)
+  if binding > 0 {
+    let phase = user-space-binding-phase(binding,authority)
+    if phase > 0 {
+      if user-space-binding-space(binding,authority) != token { return -5 }
+      user-space-release-binding(binding,authority)
+      if user-space-binding-phase(binding,authority) != -6 { return -5 }
+    } else if phase != -6 { return -5 }
+  }
+  let constructor = user-space-constructor-owned(token,authority)
+  if constructor == 1 { user-space-release(token,authority) }
+  if user-space-phase(token,authority) == USER-SPACE-QUARANTINED {
+    // This process detach has committed. A peer binding now owns the retained
+    // quarantine; do not strand a second row waiting for already-retired refs.
+    if user-space-refs(token,authority) > 0 {
+      if user-space-constructor-owned(token,authority) == 0 { return 0 }
+      return -5
+    }
+    if user-space-refs(token,authority) != 0 { return -5 }
+    if user-space-recover(token,authority) != 0 { return -5 }
+  }
+  // A detached process may leave independently counted peer bindings alive.
+  // The constructor is object-owned and commits release exactly once above.
+  if user-space-phase(token,authority) != -6 {
+    if user-space-constructor-owned(token,authority) == 0 && user-space-refs(token,authority) > 0 { return 0 }
+    return -5
+  }
+  cpu-mem-fill64(row,0,8)
+  return 0
+}
+
+fn linux-process-vm-copy(target: Int, source: Int, authority: Int) -> Int {
+  let result = user-space-copy-into(target,source,authority)
+  if result != 0 { return linux-process-vm-error(result) }
+  let origin = linux-process-vm-row(source)
+  let destination = linux-process-vm-row(target)
+  if origin == 0 || destination == 0 { return -5 }
+  store64(destination + 16,load64(origin + 16));store64(destination + 24,load64(origin + 24))
+  return 0
+}
+
+fn linux-process-copy-in(address: Int, buffer: Int, count: Int) -> Int {
+  let result = user-space-copy-in(linux-process-binding,linux-process-authority,address,buffer,count)
+  if result == -5 { linux-process-memory-failed = 1 }
+  if result != 0 && linux-process-startup != 0 && linux-process-startup-error == 0 { linux-process-startup-error = result }
+  return result
+}
+fn linux-process-copy-out(address: Int, buffer: Int, count: Int) -> Int {
+  let result = user-space-copy-out(linux-process-binding,linux-process-authority,address,buffer,count)
+  if result == -5 { linux-process-memory-failed = 1 }
+  if result != 0 && linux-process-startup != 0 && linux-process-startup-error == 0 { linux-process-startup-error = result }
+  return result
+}
+
+fn linux-process-startup-result(result: Int) -> Int {
+  linux-process-startup = 0
+  let error = linux-process-startup-error
+  if error != 0 {
+    if error == -1 { return -14 }
+    if error == -6 { return -5 }
+    return linux-process-vm-error(error)
+  }
+  return result
+}

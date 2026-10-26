@@ -1,0 +1,51 @@
+package space.kernel
+import "../protocol/gui-window.in"
+
+// Pure bounded product tiling. Positions are physical framebuffer coordinates;
+// content dimensions/scale are delivered explicitly to each SCI client.
+const GUI-WINDOW-LAYOUT-BYTES = 64
+
+// [magic,generation,width,height,scale,left,right,top]. Caller owns64 bytes.
+fn gui-window-layout-fill(layout: Int, output-width: Int, output-height: Int, scale: Int, generation: Int) -> Int {
+  if layout == 0 || generation <= 0 || (scale != 2 && scale != 3) { return 0 }
+  if output-width < 320 * scale || output-height < 200 * scale || output-width > 4096 || output-height > 4096 { return 0 }
+  let gap = 8 * scale
+  let width = (output-width - 3 * gap) / 2 / scale * scale
+  let height = 128 * scale
+  if width > 256 * scale { width = 256 * scale }
+  let top = 16 * scale
+  if height > output-height - top - gap { height = (output-height - top - gap) / scale * scale }
+  if width < 128 * scale || width > SCI-CANVAS-WIDTH || height < 64 * scale || height > SCI-CANVAS-HEIGHT { return 0 }
+  let left = (output-width - 2 * width - gap) / 2
+  let right = left + width + gap
+  if left < 0 || right + width > output-width || top + height > output-height { return 0 }
+  store64(layout, GUI-WINDOW-CONFIG-MAGIC)
+  store64(layout + 8, generation)
+  store64(layout + 16, width)
+  store64(layout + 24, height)
+  store64(layout + 32, scale)
+  store64(layout + 40, left)
+  store64(layout + 48, right)
+  store64(layout + 56, top)
+  return 1
+}
+
+fn gui-window-layout-hit(layout: Int, x: Int, y: Int) -> Int {
+  if layout == 0 || load64(layout) != GUI-WINDOW-CONFIG-MAGIC { return -1 }
+  let width = load64(layout + 16)
+  let height = load64(layout + 24)
+  let top = load64(layout + 56)
+  if y < top || y >= top + height { return -1 }
+  let left = load64(layout + 40)
+  if x >= left && x < left + width { return 0 }
+  let right = load64(layout + 48)
+  if x >= right && x < right + width { return 1 }
+  return -1
+}
+
+fn gui-window-local-x(layout: Int, slot: Int, x: Int, y: Int) -> Int {
+  if slot < 0 || slot > 1 || gui-window-layout-hit(layout, x, y) != slot { return -1 }
+  let scale = load64(layout + 32)
+  if scale != 2 && scale != 3 { return -1 }
+  return (x - load64(layout + 40 + slot * 8)) / scale
+}

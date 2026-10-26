@@ -1,0 +1,259 @@
+package space.counter
+
+// Native timer authority; firmware/MMIO policy belongs to this provider.
+// Boot-root linking is current scaffolding, not an isolated hardware domain.
+component Counter {
+  target "x86_64-unknown-none"
+  deterministic false
+  checkpoint none
+  capability timer: MonotonicCounter(read, frequency)
+  capability memory: CounterMemory(map)
+}
+interface CounterMemory {
+  fn map(physical: Int, bytes: Int) -> Int
+}
+interface MonotonicCounter {
+  fn read() -> Int
+  fn frequency() -> Int
+}
+
+var counter-ready: Int = 0
+var counter-base: Int = 0
+var counter-hz: Int = 0
+var counter-last: Int = 0
+var counter-mmap: Int = 0
+var counter-mmap-size: Int = 0
+var counter-rsdp: Int = 0
+var counter-hpet-table: Int = 0
+
+// Multiboot's descriptor/map are trusted loader inputs; every traversal is
+// bounded and checked before following any firmware table pointer.
+fn counter-memory-map(mb: Int) -> Int {
+  counter-mmap = 0
+  counter-mmap-size = 0
+  if mb < 4096 || mb > 0x100000000 - 52 { return -1 }
+  if (load32(mb) & 0x40) == 0 { return -1 }
+  let bytes = load32(mb + 44)
+  let map = load32(mb + 48)
+  if bytes < 24 || bytes > 8192 || map < 4096 || map > 0x100000000 - bytes { return -1 }
+  let pos = 0
+  let count = 0
+  while pos < bytes {
+    if bytes - pos < 24 || count >= 128 { return -1 }
+    let size = load32(map + pos)
+    if size < 20 || size > 256 || size > bytes - pos - 4 { return -1 }
+    let base = load64(map + pos + 4)
+    let length = load64(map + pos + 12)
+    if base < 0 || length <= 0 || base > 9223372036854775807 - length { return -1 }
+    pos = pos + size + 4
+    count = count + 1
+  }
+  if pos != bytes { return -1 }
+  counter-mmap = map
+  counter-mmap-size = bytes
+  return 0
+}
+
+fn counter-firmware-range(address: Int, length: Int) -> Int {
+  if address < 4096 || length <= 0 || address > 0x100000000 - length { return 0 }
+  // ACPI's legacy BIOS search window is a defined firmware region even when
+  // a Multiboot map omits individual option-ROM/EBDA reservations.
+  if address >= 0xE0000 && address + length <= 0x100000 { return 1 }
+  let pos = 0
+  while pos < counter-mmap-size {
+    let entry = counter-mmap + pos
+    let base = load64(entry + 4)
+    let size = load64(entry + 12)
+    let kind = load32(entry + 20)
+    if kind >= 1 && kind <= 4 && address >= base && length <= size && address - base <= size - length { return 1 }
+    pos = pos + load32(entry) + 4
+  }
+  return 0
+}
+
+fn counter-checksum(address: Int, length: Int) -> Int {
+  let sum = 0
+  let i = 0
+  while i < length { sum = (sum + load8(address + i)) & 255; i = i + 1 }
+  return sum
+}
+
+fn counter-rsdp-valid(address: Int) -> Int {
+  if counter-firmware-range(address,20) == 0 { return 0 }
+  if load64(address) != 0x2052545020445352 || counter-checksum(address,20) != 0 { return 0 }
+  let revision = load8(address + 15)
+  if revision == 1 { return 0 }
+  if revision >= 2 {
+    if counter-firmware-range(address,36) == 0 { return 0 }
+    let length = load32(address + 20)
+    if length < 36 || length > 4096 || counter-firmware-range(address,length) == 0 { return 0 }
+    if counter-checksum(address,length) != 0 { return 0 }
+  }
+  return 1
+}
+
+fn counter-scan-rsdp(start: Int, length: Int) -> Int {
+  let i = 0
+  while i <= length - 20 {
+    if counter-rsdp-valid(start + i) != 0 { return start + i }
+    i = i + 16
+  }
+  return 0
+}
+
+fn counter-table-length(address: Int, signature: Int) -> Int {
+  if counter-firmware-range(address,36) == 0 { return 0 }
+  if load32(address) != signature { return 0 }
+  let length = load32(address + 4)
+  if length < 36 || length > 65536 || counter-firmware-range(address,length) == 0 { return 0 }
+  if counter-checksum(address,length) != 0 { return 0 }
+  return length
+}
+
+fn counter-find-hpet(rsdp: Int) -> Int {
+  let root = load32(rsdp + 16)
+  let width = 4
+  let signature = 0x54445352
+  if load8(rsdp + 15) >= 2 && load64(rsdp + 24) != 0 {
+    root = load64(rsdp + 24)
+    width = 8
+    signature = 0x54445358
+  }
+  let length = counter-table-length(root,signature)
+  if length < 36 || (length - 36) % width != 0 || (length - 36) / width > 128 { return 0 }
+  let pos = 36
+  let found = 0
+  while pos < length {
+    let table = load32(root + pos)
+    if width == 8 { table = load64(root + pos) }
+    if counter-firmware-range(table,36) == 0 { return 0 }
+    if load32(table) == 0x54455048 {
+      if found != 0 || counter-table-length(table,0x54455048) != 56 { return 0 }
+      found = table
+    }
+    pos = pos + width
+  }
+  return found
+}
+
+// This profile accepts aligned HPET registers in the upper PCI/MMIO window,
+// never RAM, ACPI reclaim/NVS or the legacy firmware ROM search area.
+fn counter-mmio-valid(base: Int) -> Int {
+  if base < 0xC0000000 || base > 0xFFFFF000 || (base & 4095) != 0 { return 0 }
+  let pos = 0
+  while pos < counter-mmap-size {
+    let entry = counter-mmap + pos
+    let address = load64(entry + 4)
+    let length = load64(entry + 12)
+    let kind = load32(entry + 20)
+    if kind == 1 || kind == 3 || kind == 4 {
+      if address < base + 4096 && address + length > base { return 0 }
+    }
+    pos = pos + load32(entry) + 4
+  }
+  return 1
+}
+
+fn counter-init(mb: Int) -> Int {
+  if counter-ready == 1 { return 0 }
+  counter-base = 0
+  counter-hz = 0
+  counter-rsdp = 0
+  counter-hpet-table = 0
+  if counter-memory-map(mb) != 0 { return -1 }
+  let ebda = load16(0x40E) * 16
+  let rsdp = 0
+  if ebda >= 0x80000 && ebda <= 0x9FC00 { rsdp = counter-scan-rsdp(ebda,1024) }
+  if rsdp == 0 { rsdp = counter-scan-rsdp(0xE0000,0x20000) }
+  if rsdp == 0 { return -1 }
+  let table = counter-find-hpet(rsdp)
+  if table == 0 || load8(table + 8) != 1 { return -1 }
+  // HPET GAS permits unspecified width/access size, as emitted by SeaBIOS.
+  if load8(table + 40) != 0 || (load8(table + 41) != 0 && load8(table + 41) != 64) || load8(table + 42) != 0 || (load8(table + 43) != 0 && load8(table + 43) != 4) { return -1 }
+  if load8(table + 52) != 0 { return -1 }
+  let base = load64(table + 44)
+  if counter-mmio-valid(base) == 0 { return -1 }
+  map-page(base,base,PAGE-NX | 27)
+  let caps = load64(base)
+  let period = (caps >> 32) & 0xFFFFFFFF
+  // Exact integer Hz only; no invented or rounded frequency. A 32-bit HPET
+  // cannot guarantee wrap extension without a bounded maximum sampling gap.
+  if load32(base) != load32(table + 36) || (caps & 0x2000) == 0 || (caps & 255) == 0 { return -1 }
+  let vendor = (caps >> 16) & 0xFFFF
+  if vendor == 0 || vendor == 0xFFFF || period <= 0 || period > 100000000 || 1000000000000000 % period != 0 { return -1 }
+  let config = load64(base + 0x10)
+  if (config & 2) != 0 { return -1 }
+  let timers = ((caps >> 8) & 31) + 1
+  let i = 0
+  while i < timers {
+    if (load64(base + 0x100 + i * 32) & 0x4004) != 0 { return -1 }
+    i = i + 1
+  }
+  let first = load64(base + 0xF0)
+  if first < 0 { return -1 }
+  if (config & 1) == 0 { store64(base + 0x10,config | 1) }
+  let changed = 0
+  let last = first
+  i = 0
+  while i < 100000 && changed == 0 {
+    last = load64(base + 0xF0)
+    if last < first { break }
+    if last > first { changed = 1 }
+    i = i + 1
+  }
+  if changed == 0 || last < 0 {
+    if (config & 1) == 0 { store64(base + 0x10,config) }
+    return -1
+  }
+  counter-base = base
+  counter-hz = 1000000000000000 / period
+  counter-last = last
+  counter-rsdp = rsdp
+  counter-hpet-table = table
+  counter-ready = 1
+  return 0
+}
+
+fn counter-frequency() -> Int {
+  if counter-ready != 1 { return -1 }
+  return counter-hz
+}
+fn counter-read() -> Int {
+  if counter-ready != 1 { return -1 }
+  // Serialize sample and publication against native IF1 client preemption.
+  // The existing CPU capsule reads flags; no new architecture stub is needed.
+  let flags-stub = load64(0x4198)
+  if flags-stub == 0 { return -1 }
+  let flags = invoke1(flags-stub,0)
+  cli()
+  let result = -1
+  if counter-ready == 1 {
+    let value = load64(counter-base + 0xF0)
+    if value < 0 || value < counter-last {
+      counter-ready = 0
+    } else {
+      counter-last = value
+      result = value
+    }
+  }
+  if (flags & 512) != 0 { sti() }
+  return result
+}
+fn counter-frequency-authorized(timer: Int) -> Int {
+  if cap-check(timer,cap-timer()) == 0 { return -13 }
+  return counter-frequency()
+}
+fn counter-read-authorized(timer: Int) -> Int {
+  if cap-check(timer,cap-timer()) == 0 { return -13 }
+  return counter-read()
+}
+
+// Registry clients cannot supply or guess another realm's cap index.
+// These gates consume current-cap in the native mask vocabulary. SCI manifest
+// component-local ordinal bits are not translated into provider rights here.
+fn counter-service-read() -> Int {
+  return counter-read-authorized(current-cap)
+}
+fn counter-service-frequency() -> Int {
+  return counter-frequency-authorized(current-cap)
+}

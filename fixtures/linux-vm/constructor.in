@@ -1,0 +1,33 @@
+package space.fixture
+
+// The provider consults this only in the explicitly modified test snapshot.
+// Production domain.in has no fault injection hook.
+var lvm-claim-control-armed: Int = 0
+fn lvm-constructor-control(image:Int,size:Int)->void {
+ linux-process-state-pool-init();linux-process-vm-init();lvm-check(0,user-space-init());
+ // Warm actual unowned table frames, separately from the retained object cache.
+ let warm=domain-create-user();if warm<=0{panic("constructor control table warmup");}
+ domain-map-idt(warm);domain-map-kernel-stack(warm);domain-map-trampoline(warm);
+ lvm-check(0,domain-destroy-user(warm));
+ let heap=heap-next;let free=lvm-free-count();let domains=domain-count;let owned=domain-user-owned;
+ lvm-claim-control-armed=1;
+ lvm-check(-5,linux-process-run(image,size,"/constructor-control","","",lvm-authority));
+ lvm-check(0,lvm-claim-control-armed);lvm-check(1,linux-process-cleanup-failed);
+ let row=linux-process-states;let token=load64(row+LPS-VM-OBJECT);
+ if token<=0{panic("constructor lost native ownership");}
+ lvm-check(token,linux-process-vm-created);lvm-check(token,user-space-quarantined(lvm-authority));
+ lvm-check(0,load64(row+LPS-VM-BINDING));lvm-check(LINUX-STATE-QUARANTINED,load64(row+LPS-STATUS));
+ lvm-check(1,user-space-constructor-owned(token,lvm-authority));lvm-check(1,user-space-refs(token,lvm-authority));
+ lvm-check(USER-SPACE-QUARANTINED,user-space-phase(token,lvm-authority));
+ let domain=user-space-domain(token,lvm-authority);let retained=lvm-free-count();let retained-owned=domain-user-owned;
+ lvm-check(-5,linux-process-run(image,size,"/closed","","",lvm-authority));
+ lvm-check(-5,linux-process-cleanup-recover());
+ lvm-check(token,load64(row+LPS-VM-OBJECT));lvm-check(0,user-space-constructor-owned(token,lvm-authority));
+ lvm-check(0,user-space-refs(token,lvm-authority));lvm-check(retained,lvm-free-count());
+ lvm-check(retained-owned,domain-user-owned);lvm-check(heap,heap-next);
+ lvm-check(0,domain-user-object-claim(domain,token));lvm-check(0,linux-process-cleanup-recover());
+ lvm-check(0,linux-process-cleanup-failed);lvm-check(0,load64(row+LPS-VM-OBJECT));
+ lvm-check(-6,user-space-phase(token,lvm-authority));lvm-check(0,user-space-quarantined(lvm-authority));
+ lvm-check(heap,heap-next);lvm-check(free,lvm-free-count());lvm-check(domains,domain-count);lvm-check(owned,domain-user-owned);
+ serial-write-cstr(com1(),"linux-vm: controlled constructor refusal retains companion and native recovery PASS");serial-nl(com1());
+}

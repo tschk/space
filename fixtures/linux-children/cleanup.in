@@ -1,0 +1,74 @@
+package space.kernel
+
+// Trusted fault injection into actual owned native page tables. Both original
+// and prepared exec ownership must survive refusal. Physical frame queries here
+// are retention diagnostics only; normal guest I/O uses checked copy bridges.
+fn child-check-cleanup-pde(domain:Int,address:Int)->Int {
+ let root=load64(domain-table+domain*24);
+ let pdpt=load64(root+((address>>39)&511)*8)&PAGE-ADDRESS-MASK;
+ let pd=load64(pdpt+((address>>30)&511)*8)&PAGE-ADDRESS-MASK;
+ return pd+((address>>21)&511)*8;
+}
+fn child-check-cleanup-retention()->void {
+ linux-process-state-pool-init();let iteration=0;
+ while iteration<2{
+  let baseline-heap=heap-next;let baseline-free=linux-check-free-count();
+  let baseline-owned=domain-user-owned;let baseline-domains=domain-count;
+  let native=pipe-check-native-count();
+  linux-fixture-begin(pipe-check-authority);
+  let row=linux-process-current-record;let primary=linux-process-vm;
+  let primary-binding=linux-process-binding;let domain=linux-process-domain;
+  linux-process-store64(0x20000000,0x123456789ABCDEF);
+  linux-check(0,linux-process-state-save(row));
+  let secondary=linux-process-vm-create(pipe-check-authority);
+  if secondary<=0{panic("cleanup prepared native VM");}
+  linux-check(0,linux-process-vm-use(secondary,0));
+  linux-check(0,linux-process-vm-map(0x20000000,6));
+  linux-check(0,linux-process-vm-map(0x20001000,5));
+  linux-check(0,linux-process-vm-populate(0x20001000,linux-fixture-buffer,16));
+  let spare-binding=linux-process-vm-attach(load64(row+LPS-SPARE-CONTEXT),0x20001000,0x20000FF0);
+  if spare-binding<=0{panic("cleanup prepared actual binding");}
+  let secondary-domain=linux-process-domain;
+  linux-process-store64(0x20000000,0x76543210ABCDEF);
+  store64(row+LPS-SPARE-VM,secondary);store64(row+LPS-SPARE-BINDING,spare-binding);
+  store64(row+LPS-SPARE-DOMAIN,secondary-domain);store64(row+LPS-SPARE-PAGES,2);
+  linux-check(0,linux-process-state-load(row));
+  let frame=user-space-frame(primary,pipe-check-authority,0x20000000);
+  let spare=user-space-frame(secondary,pipe-check-authority,0x20000000);
+  let first-pde=child-check-cleanup-pde(domain,0x20000000);let first-entry=load64(first-pde);
+  let second-pde=child-check-cleanup-pde(secondary-domain,0x20000000);let second-entry=load64(second-pde);
+  let heap=heap-next;let free=linux-check-free-count();let owned=domain-user-owned;let domains=domain-count;
+  store64(first-pde,first-entry|128);store64(second-pde,second-entry|128);
+  linux-check(-5,linux-process-state-drop-pages(row));
+  linux-check(1,linux-process-cleanup-failed);linux-check(LINUX-STATE-QUARANTINED,load64(row+LPS-STATUS));
+  linux-check(primary,load64(row+LPS-VM-OBJECT));linux-check(secondary,load64(row+LPS-SPARE-VM));
+  linux-check(domain,load64(row+LPS-DOMAIN));linux-check(secondary-domain,load64(row+LPS-SPARE-DOMAIN));
+  linux-check(3,load64(row+LPS-PAGES));linux-check(2,load64(row+LPS-SPARE-PAGES));
+  linux-check(-6,user-space-binding-phase(primary-binding,pipe-check-authority));
+  linux-check(0,user-space-constructor-owned(primary,pipe-check-authority));
+  linux-check(USER-SPACE-QUARANTINED,user-space-phase(primary,pipe-check-authority));
+  linux-check(0,user-space-refs(primary,pipe-check-authority));
+  linux-check(1,user-space-binding-phase(spare-binding,pipe-check-authority));
+  linux-check(1,user-space-constructor-owned(secondary,pipe-check-authority));
+  linux-check(2,user-space-refs(secondary,pipe-check-authority));
+  linux-check(frame,user-space-frame(primary,pipe-check-authority,0x20000000));
+  linux-check(spare,user-space-frame(secondary,pipe-check-authority,0x20000000));
+  linux-check(0,load64(load64(row+LPS-USER-CONTEXT)+736));
+  linux-check(0x123456789ABCDEF,load64(frame));linux-check(0x76543210ABCDEF,load64(spare));
+  linux-check(-5,linux-process-run(0,0,"/refused","","",pipe-check-authority));
+  linux-check(heap,heap-next);linux-check(free,linux-check-free-count());
+  linux-check(owned,domain-user-owned);linux-check(domains,domain-count);linux-check(native,pipe-check-native-count());
+  store64(first-pde,first-entry);store64(second-pde,second-entry);
+  linux-process-active=0;linux-check(0,linux-process-cleanup-recover());
+  linux-check(0,linux-process-cleanup-failed);
+  linux-check(0,load64(row+LPS-VM-OBJECT));linux-check(0,load64(row+LPS-SPARE-VM));
+  linux-check(0,load64(row+LPS-VM-BINDING));linux-check(0,load64(row+LPS-SPARE-BINDING));
+  linux-check(0,load64(row+LPS-DOMAIN));linux-check(0,load64(row+LPS-SPARE-DOMAIN));
+  linux-check(0,load64(row+LPS-PAGES));linux-check(0,load64(row+LPS-SPARE-PAGES));
+  linux-check(-6,user-space-phase(primary,pipe-check-authority));linux-check(-6,user-space-phase(secondary,pipe-check-authority));
+  linux-check(baseline-owned,domain-user-owned);linux-check(native,pipe-check-native-count());
+  if iteration!=0{linux-check(baseline-heap,heap-next);linux-check(baseline-free,linux-check-free-count());linux-check(baseline-domains,domain-count);}
+  iteration=iteration+1;
+ }
+ serial-write-cstr(com1(),"child-corpus: retained teardown refusal and recovery passed");serial-nl(com1());
+}

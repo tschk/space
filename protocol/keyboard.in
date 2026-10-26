@@ -1,0 +1,65 @@
+// Pure US ASCII modifier normalization shared by kernel and SCI PS/2 decoders.
+// Shift is a left/right bitmask; Caps Lock changes letters only. Ctrl letters
+// preserve the existing control-code contract. No raw modifier events are sent.
+fn ps2-modified-ascii(ch: Int, shift: Int, caps: Int, ctrl: Int) -> Int {
+  if ch < 0 { return -1 }
+  if ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
+  if ch >= 97 && ch <= 122 {
+    let upper = caps
+    if shift != 0 { upper = upper ^ 1 }
+    if upper != 0 { return ch - 32 }
+    return ch
+  }
+  if shift != 0 {
+    if ch == 49 { return 33 }
+    if ch == 50 { return 64 }
+    if ch == 51 { return 35 }
+    if ch == 52 { return 36 }
+    if ch == 53 { return 37 }
+    if ch == 54 { return 94 }
+    if ch == 55 { return 38 }
+    if ch == 56 { return 42 }
+    if ch == 57 { return 40 }
+    if ch == 48 { return 41 }
+    if ch == 45 { return 95 }
+    if ch == 61 { return 43 }
+    if ch == 91 { return 123 }
+    if ch == 93 { return 125 }
+    if ch == 59 { return 58 }
+    if ch == 39 { return 34 }
+    if ch == 96 { return 126 }
+    if ch == 92 { return 124 }
+    if ch == 44 { return 60 }
+    if ch == 46 { return 62 }
+    if ch == 47 { return 63 }
+  }
+  return ch
+}
+
+// Normalized non-text keys, preserving the desktop's existing arrow values.
+// ASCII controls/printable bytes retain their existing values; these are not
+// Unicode scalars. Page navigation has distinct codes rather than arrow aliases.
+const KEY-UP = 128
+const KEY-LEFT = 129
+const KEY-RIGHT = 130
+const KEY-DOWN = 131
+const KEY-HOME = 132
+const KEY-END = 133
+const KEY-DELETE = 134
+const KEY-PAGE-UP = 135
+const KEY-PAGE-DOWN = 136
+
+fn ps2-extended-ascii(sc: Int) -> Int {
+  if sc == 0x48 { return KEY-UP }
+  if sc == 0x4B { return KEY-LEFT }
+  if sc == 0x4D { return KEY-RIGHT }
+  if sc == 0x50 { return KEY-DOWN }
+  if sc == 0x47 { return KEY-HOME }
+  if sc == 0x4F { return KEY-END }
+  if sc == 0x53 { return KEY-DELETE }
+  if sc == 0x49 { return KEY-PAGE-UP }
+  if sc == 0x51 { return KEY-PAGE-DOWN }
+  if sc == 0x1C { return 10 }
+  if sc == 0x35 { return 47 }
+  return -1
+}

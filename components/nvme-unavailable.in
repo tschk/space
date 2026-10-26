@@ -1,0 +1,21 @@
+package space.kernel
+
+// Minimal image transport binding: no device or Storage component is present.
+// The shared filesystem chooses its real RAM SparkFS backend while ready is 0.
+// These error-only operations are never advertised as a working NVMe service.
+var nvme-ready: Int = 0
+var storage-data-page: Int = 0
+
+fn nvme-read(lba: Int, count: Int, buf: Int) -> Int {
+  return -19
+}
+
+fn nvme-write(lba: Int, count: Int, buf: Int) -> Int {
+  return -19
+}
+
+fn nvme-flush() -> Int {
+  return -19
+}
+
+fn nvme-private-read-u32(lba:Int,offset:Int)->Int{return -1;}

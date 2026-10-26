@@ -55,8 +55,16 @@ interrupt fn lib-write-dec(port: Int, value: Int) -> void {
 fn hd-byte(port: Int, v: Int) -> void {
   let hi = (v >> 4) & 0xF
   let lo = v & 0xF
-  lib-put(port, hi + 87)
-  lib-put(port, lo + 87)
+  if hi < 10 {
+    lib-put(port, hi + 48)
+  } else {
+    lib-put(port, hi + 87)
+  }
+  if lo < 10 {
+    lib-put(port, lo + 48)
+  } else {
+    lib-put(port, lo + 87)
+  }
   return
 }
 

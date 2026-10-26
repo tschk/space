@@ -1,0 +1,448 @@
+package space.kernel
+
+import "darwin-eager-dependency.in"
+
+// Darwin allocator policy over native owned backing; metadata is never mapped
+// into the user arena and no guest allocation header is read or trusted.
+const DARWIN-HEAP-BASE = 0x4D000000
+const DARWIN-HEAP-BYTES = 65536
+const DARWIN-HEAP-RECORDS = 128
+const DARWIN-HEAP-IDENTITY = 0x4457414249000002
+var darwin-heap-metadata: Int = 0
+var darwin-heap-authority: Int = -1
+var darwin-heap-owner: Int = 0
+var darwin-heap-active: Int = 0
+var darwin-heap-context: Int = 0
+var darwin-heap-last-kind: Int = 0
+
+// Record: [arena offset, requested bytes, reserved extent, state 0/1free/2live].
+fn darwin-heap-find(pointer: Int) -> Int {
+  if darwin-heap-metadata == 0 || pointer < DARWIN-HEAP-BASE || pointer - DARWIN-HEAP-BASE >= DARWIN-HEAP-BYTES { return 0 }
+  let i = 0
+  while i < DARWIN-HEAP-RECORDS {
+    let row = darwin-heap-metadata + i * 32
+    if load64(row + 24) == 2 && load64(row) == pointer - DARWIN-HEAP-BASE { return row }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-heap-span(pointer: Int, bytes: Int) -> Int {
+  if pointer < DARWIN-HEAP-BASE || bytes < 0 || bytes > DARWIN-HEAP-BYTES || pointer - DARWIN-HEAP-BASE > DARWIN-HEAP-BYTES - bytes { return 0 }
+  let done = 0
+  while done < bytes {
+    if darwin-protected-physical(pointer + done) == 0 { return 0 }
+    let step = 4096 - ((pointer + done) & 4095)
+    if step > bytes - done { step = bytes - done }
+    done += step
+  }
+  return 1
+}
+
+fn darwin-heap-zero(pointer: Int, bytes: Int) -> Int {
+  if darwin-heap-span(pointer,bytes) == 0 { return -1 }
+  let done = 0
+  while done < bytes {
+    let physical = darwin-protected-physical(pointer + done)
+    let count = 4096 - ((pointer + done) & 4095)
+    if count > bytes - done { count = bytes - done }
+    let i = 0
+    while i < count { store8(physical + i,0); i += 1 }
+    done += count
+  }
+  return 0
+}
+
+fn darwin-heap-copy(target: Int, source: Int, bytes: Int) -> Int {
+  if darwin-heap-span(target,bytes) == 0 || darwin-heap-span(source,bytes) == 0 { return -1 }
+  let done = 0
+  while done < bytes {
+    let dest = darwin-protected-physical(target + done)
+    let from = darwin-protected-physical(source + done)
+    let count = 4096 - ((target + done) & 4095)
+    let other = 4096 - ((source + done) & 4095)
+    if other < count { count = other }
+    if count > bytes - done { count = bytes - done }
+    let i = 0
+    while i < count { store8(dest + i,load8(from + i)); i += 1 }
+    done += count
+  }
+  return 0
+}
+
+fn darwin-heap-malloc(bytes: Int) -> Int {
+  if darwin-heap-metadata == 0 || bytes < 0 || bytes > DARWIN-HEAP-BYTES { return 0 }
+  let amount = (bytes + 15) & -16
+  if amount == 0 { amount = 16 }
+  let i = 0
+  while i < DARWIN-HEAP-RECORDS {
+    let row = darwin-heap-metadata + i * 32
+    let extent = load64(row + 16)
+    if load64(row + 24) == 1 && extent >= amount {
+      let empty = 0
+      if extent > amount {
+        let j = 0
+        while j < DARWIN-HEAP-RECORDS && empty == 0 {
+          if load64(darwin-heap-metadata + j * 32 + 24) == 0 { empty = darwin-heap-metadata + j * 32 }
+          j += 1
+        }
+        if empty == 0 { return 0 }
+      }
+      let address = DARWIN-HEAP-BASE + load64(row)
+      // Check/clear only free bytes before publishing metadata. Failure leaves
+      // every live allocation and free extent unchanged.
+      if darwin-heap-zero(address,amount) != 0 { return 0 }
+      if empty != 0 {
+        store64(empty,load64(row) + amount);store64(empty + 8,0)
+        store64(empty + 16,extent - amount);store64(empty + 24,1)
+      }
+      store64(row + 8,bytes);store64(row + 16,amount);store64(row + 24,2)
+      return address
+    }
+    i += 1
+  }
+  return 0
+}
+
+fn darwin-heap-free(pointer: Int) -> Int {
+  if pointer == 0 { return 0 }
+  let row = darwin-heap-find(pointer)
+  if row == 0 { return -1 }
+  store64(row + 8,0);store64(row + 24,1)
+  let i = 0
+  while i < DARWIN-HEAP-RECORDS {
+    let other = darwin-heap-metadata + i * 32
+    let merged = 0
+    if other != row && load64(other + 24) == 1 {
+      if load64(row) + load64(row + 16) == load64(other) {
+        store64(row + 16,load64(row + 16) + load64(other + 16));merged = 1
+      } else {
+        if load64(other) + load64(other + 16) == load64(row) {
+          store64(row,load64(other));store64(row + 16,load64(row + 16) + load64(other + 16));merged = 1
+        }
+      }
+      if merged != 0 { store64(other,0);store64(other + 8,0);store64(other + 16,0);store64(other + 24,0) }
+    }
+    if merged != 0 { i = 0 } else { i += 1 }
+  }
+  return 0
+}
+
+fn darwin-heap-calloc(count: Int, size: Int) -> Int {
+  if count == 0 || size == 0 { return darwin-heap-malloc(0) }
+  if count < 0 || size < 0 || count > DARWIN-HEAP-BYTES || size > DARWIN-HEAP-BYTES / count { return 0 }
+  return darwin-heap-malloc(count * size)
+}
+
+fn darwin-heap-realloc(pointer: Int, bytes: Int) -> Int {
+  if pointer == 0 { return darwin-heap-malloc(bytes) }
+  let row = darwin-heap-find(pointer)
+  if row == 0 { return -1 }
+  if bytes < 0 || bytes > DARWIN-HEAP-BYTES { return 0 }
+  let old = load64(row + 8)
+  if bytes != 0 && bytes <= load64(row + 16) {
+    if bytes > old && darwin-heap-zero(pointer + old,bytes - old) != 0 { return 0 }
+    store64(row + 8,bytes)
+    return pointer
+  }
+  // Darwin realloc(p,0) obtains a fresh minimum block before releasing p.
+  let next = darwin-heap-malloc(bytes)
+  if next == 0 { return 0 }
+  let copy = old
+  if bytes < copy { copy = bytes }
+  if darwin-heap-copy(next,pointer,copy) != 0 { darwin-heap-free(next);return 0 }
+  darwin-heap-free(pointer)
+  return next
+}
+
+fn darwin-heap-error(frame: Int, error: Int) -> Int {
+  let errno = darwin-protected-physical(0x4F004000)
+  if errno == 0 { store64(frame + 112,134);return 0 }
+  store32(errno,error);store64(frame + 112,0)
+  store64(frame + 136,load64(frame + 136) & -2)
+  return 1
+}
+
+// Space-private C-ABI capsule operations, not claimed Darwin syscall numbers.
+fn darwin-heap-dispatch(frame: Int) -> Int {
+  let num = load64(frame + 112)
+  if num < 0x3000010 || num > 0x3000013 { return darwin-protected-dispatch(frame) }
+  if darwin-heap-active == 0 || darwin-heap-owner != domain-current || domain-current != darwin-protected-domain || darwin-protected-busy == 0 { store64(frame + 112,134);return 0 }
+  let expected = 0x40007000 + (7 + num - 0x3000010) * 64 + 7
+  if load64(frame + 120) != expected { return darwin-heap-error(frame,22) }
+  let pointer = load64(frame + 72)
+  if num == 0x3000013 && pointer == 0 { store64(frame + 112,0);store64(frame + 136,load64(frame + 136) & -2);return 1 }
+  if cap-check(darwin-heap-authority,cap-memory()) == 0 { return darwin-heap-error(frame,13) }
+  let result = 0
+  if num == 0x3000010 { result = darwin-heap-malloc(pointer) }
+  else if num == 0x3000011 { result = darwin-heap-calloc(pointer,load64(frame + 80)) }
+  else if num == 0x3000012 { result = darwin-heap-realloc(pointer,load64(frame + 80)) }
+  else { result = darwin-heap-free(pointer) }
+  if result < 0 { store64(frame + 112,134);return 0 }
+  if result == 0 && num != 0x3000013 { return darwin-heap-error(frame,12) }
+  store64(frame + 112,result);store64(frame + 136,load64(frame + 136) & -2)
+  return 1
+}
+
+fn darwin-heap-symbol(image: Int, start: Int, end: Int) -> Int {
+  let previous = darwin-eager-symbol(image,start,end)
+  if previous != 0 { return previous }
+  if darwin-protected-import-name(image,start,end,"_malloc") != 0 { return 128 }
+  if darwin-protected-import-name(image,start,end,"_calloc") != 0 { return 256 }
+  if darwin-protected-import-name(image,start,end,"_realloc") != 0 { return 512 }
+  if darwin-protected-import-name(image,start,end,"_free") != 0 { return 1024 }
+  return 0
+}
+
+fn darwin-heap-capsules(frame: Int) -> void {
+  darwin-protected-build-imports(frame)
+  let i = 0
+  while i < 4 {
+    let p = frame + (7 + i) * 64
+    store8(p,0xB8);store32(p + 1,0x3000010 + i)
+    store8(p + 5,0xCD);store8(p + 6,0x80);store8(p + 7,0xC3)
+    i += 1
+  }
+  return
+}
+
+fn darwin-heap-entry(image: Int, size: Int, identity: Int) -> Int {
+  if identity != DARWIN-HEAP-IDENTITY { return -8 }
+  if image <= 0 || size < 272 || size > 0x200000 || image > 0x100000000 - size { return -8 }
+  if load32(image) != 0xFEEDFACF || load32(image + 4) != 0x1000007 || load32(image + 8) != 3 || load32(image + 12) != 2 { return -8 }
+  if load32(image + 16) != 5 || load32(image + 20) != 240 || load32(image + 24) != 1 || load32(image + 28) != 0 { return -8 }
+  let off = 32
+  while off < 176 {
+    let p = image + off
+    let prot = 5
+    if off == 104 { prot = 3 }
+    if load32(p) != 0x19 || load32(p + 4) != 72 || load32(p + 56) != prot || load32(p + 60) != prot || load64(p + 64) != 0 { return -8 }
+    let va = load64(p + 24)
+    let vm = load64(p + 32)
+    let file = load64(p + 40)
+    let bytes = load64(p + 48)
+    if va < DARWIN-PROTECTED-LOW || vm <= 0 || vm > DARWIN-PROTECTED-MAX-SEGMENT || va > DARWIN-PROTECTED-HIGH - vm || (va & 4095) != 0 || (vm & 4095) != 0 { return -8 }
+    if file < 0 || file > size || bytes < 0 || bytes > vm || bytes > size - file { return -8 }
+    if off == 32 && (file != 0 || bytes < 272) { return -8 }
+    off += 72
+  }
+  let tv = load64(image + 56)
+  let ts = load64(image + 64)
+  let dv = load64(image + 128)
+  let ds = load64(image + 136)
+  if tv < dv + ds && dv < tv + ts { return -8 }
+  if load64(image + 152) > 0 && load64(image + 144) < load64(image + 80) { return -8 }
+  if load32(image + 176) != 0x80000028 || load32(image + 180) != 24 || load64(image + 192) != 0 { return -8 }
+  let entry = load64(image + 184)
+  if entry < 272 || entry >= load64(image + 80) { return -8 }
+  if load32(image + 200) != 0x80000034 || load32(image + 204) != 16 { return -8 }
+  if load32(image + 216) != 0xC || load32(image + 220) != 56 || load32(image + 224) != 24 || load32(image + 228) != 0 { return -8 }
+  // This descriptor's finite ABI revision, not a claim about Apple's library.
+  if load32(image + 232) != 0x20000 || load32(image + 236) != 0x20000 { return -8 }
+  let name = "/usr/lib/libSystem.B.dylib"
+  let i = 0
+  while i < 26 { if load8(image + 240 + i) != load8(name + i) { return -8 }; i += 1 }
+  while i < 32 { if load8(image + 240 + i) != 0 { return -8 }; i += 1 }
+  if darwin-heap-fixups(image,size,0) != 0 { return -8 }
+  return tv + entry
+}
+
+fn darwin-heap-fixups(image: Int, size: Int, apply: Int) -> Int {
+  let file = load32(image + 208)
+  let bytes = load32(image + 212)
+  if bytes < 68 || bytes > 4096 || file < load64(image + 80) || file < load64(image + 144) + load64(image + 152) || file > size - bytes { return -8 }
+  let h = image + file
+  if load32(h) != 0 || load32(h + 4) != 32 || load32(h + 20) != 1 || load64(h + 24) != 0 { return -8 }
+  let imports = load32(h + 8)
+  let symbols = load32(h + 12)
+  let count = load32(h + 16)
+  let pages = load64(image + 136) / 4096
+  let record = 44
+  let record-size = 22 + pages * 2
+  if count <= 0 || count > 16 || imports < record + record-size || (imports & 3) != 0 || imports > bytes - count * 4 || symbols < imports + count * 4 || symbols >= bytes { return -8 }
+  if load32(h + 32) != 2 || load32(h + 36) != 0 || load32(h + 40) != 12 { return -8 }
+  if load32(h + record) != record-size || load16(h + record + 4) != 4096 || load16(h + record + 6) != 6 { return -8 }
+  if load64(h + record + 8) != load64(image + 128) - load64(image + 56) || load32(h + record + 16) != 0 || load16(h + record + 20) != pages { return -8 }
+  let i = 0
+  while i < count {
+    let item = load32(h + imports + i * 4)
+    if (item & 511) != 1 { return -8 }
+    let name = item >> 9
+    if name >= bytes - symbols || darwin-heap-symbol(image,file + symbols + name,file + bytes) == 0 { return -8 }
+    i += 1
+  }
+  let total = 0
+  let page = 0
+  while page < pages {
+    let start = load16(h + record + 22 + page * 2)
+    if start != 65535 {
+      if start > 4088 || (start & 7) != 0 { return -8 }
+      let slot = start
+      let done = 0
+      while done == 0 {
+        total += 1
+        if total > 512 { return -8 }
+        let offset = page * 4096 + slot
+        if offset > load64(image + 152) - 8 { return -8 }
+        let raw = load64(image + load64(image + 144) + offset)
+        let next = (raw >> 51) & 4095
+        let value = 0
+        if raw < 0 {
+          if ((raw >> 24) & 0x7FFFFFF) != 0 { return -8 }
+          let ordinal = raw & 0xFFFFFF
+          if ordinal >= count { return -8 }
+          let item = load32(h + imports + ordinal * 4)
+          let symbol = darwin-heap-symbol(image,file + symbols + (item >> 9),file + bytes)
+          value = 0x40007000 + darwin-protected-import-index(symbol) * 64
+        } else {
+          if ((raw >> 36) & 0x7FFF) != 0 { return -8 }
+          let target = raw & 0xFFFFFFFFF
+          let tv = load64(image + 56)
+          let dv = load64(image + 128)
+          value = tv + target
+          if (value < tv || value >= tv + load64(image + 64)) && (value < dv || value >= dv + load64(image + 136)) { return -8 }
+        }
+        if apply != 0 {
+          let target = darwin-protected-physical(load64(image + 128) + offset)
+          if target == 0 { return -8 }
+          store64(target,value)
+        }
+        if next == 0 { done = 1 }
+        else {
+          let step = next * 4
+          if step < 8 || (step & 7) != 0 || step > 4088 - slot { return -8 }
+          slot += step
+        }
+      }
+    }
+    page += 1
+  }
+  if total == 0 { return -8 }
+  return 0
+}
+
+fn darwin-heap-run(image: Int, size: Int, input: Int, bytes: Int, identity: Int, serial: Int, storage: Int, memory: Int, budget: Int) -> Int {
+  if budget <= 0 || budget > 10000 { return -22 }
+  let entry = darwin-heap-entry(image,size,identity)
+  if entry < 0 { return entry }
+  let valid = darwin-startup-input(input,bytes)
+  if valid != 0 { return valid }
+  if domain-current != 0 || darwin-protected-busy != 0 || domain-user-syscall-hook != 0 || user-context-active != 0 || darwin-heap-metadata != 0 || darwin-heap-active != 0 || darwin-heap-owner != 0 { return -16 }
+  if serial >= 0 && cap-check(serial,cap-serial()) == 0 { return -13 }
+  if storage >= 0 && cap-check(storage,cap-storage()) == 0 { return -13 }
+  if cap-check(memory,cap-memory()) == 0 { return -13 }
+  if load64(0x41a8) == 0 { return -38 }
+  // Retained scratch uses the bump allocator, not the frame free list. Reserve
+  // its exact rounded bytes separately, including first-use file-service state.
+  let retained = 0
+  if darwin-protected-frames == 0 { retained += DARWIN-PROTECTED-MAX-FRAMES * 16 + 32 }
+  if darwin-heap-context == 0 { retained += (USER-CONTEXT-BYTES + 30) & -16 }
+  if storage >= 0 && darwin-file-table == 0 { retained += VFS-MAX-FDS * 264 + 4096 }
+  if heap-next < 0 || heap-next > heap-end || retained > heap-end - heap-next { return -12 }
+  // At most 56 owned pages, one private metadata frame and 18 page-table
+  // frames, plus conservative slack.
+  // Count complete frame space only after reserving the retained bump bytes.
+  let available = (heap-end - ((heap-next + retained + 4095) & -4096)) / 4096
+  let free = free-list
+  while free != 0 && available < 96 { available += 1; free = load64(free) }
+  if available < 96 { return -12 }
+  if darwin-protected-frames == 0 {
+    darwin-protected-frames = alloc(DARWIN-PROTECTED-MAX-FRAMES * 8)
+    darwin-protected-context = alloc(32)
+    darwin-protected-virtuals = alloc(DARWIN-PROTECTED-MAX-FRAMES * 8)
+  }
+  if darwin-heap-context == 0 { darwin-heap-context = (alloc(USER-CONTEXT-BYTES + 15) + 15) & -16 }
+  let domain = domain-create-user()
+  if domain <= 0 { return -12 }
+  darwin-protected-busy = 1
+  darwin-protected-domain = domain
+  darwin-protected-last-domain = domain
+  darwin-protected-count = 0
+  darwin-protected-authority = serial
+  darwin-protected-storage = storage
+  darwin-heap-owner = domain
+  darwin-heap-authority = memory
+  if storage >= 0 { darwin-file-init() }
+  domain-set-cap(domain,-1)
+  let status = darwin-protected-map-segment(image,32,domain)
+  if status == 0 { status = darwin-protected-map-segment(image,104,domain) }
+  let page = 0
+  while status == 0 && page < 6 {
+    let frame = darwin-protected-take-frame()
+    if frame == 0 { status = -12 }
+    else {
+      let va = 0x4F000000 + page * 4096
+      domain-map-user-data(domain,va,frame)
+      store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,va)
+    }
+    page += 1
+  }
+  if status == 0 {
+    darwin-heap-metadata = frame-alloc()
+    store64(darwin-heap-metadata + 16,DARWIN-HEAP-BYTES)
+    store64(darwin-heap-metadata + 24,1)
+    let heap-page = 0
+    while status == 0 && heap-page < 16 {
+      let backing = darwin-protected-take-frame()
+      if backing == 0 { status = -12 } else {
+        let va = DARWIN-HEAP-BASE + heap-page * 4096
+        domain-map-user-data(domain,va,backing)
+        store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,va)
+      }
+      heap-page += 1
+    }
+  }
+  if status == 0 {
+    let stub = darwin-protected-take-frame()
+    if stub == 0 { status = -12 } else {
+      // mov rdi,rax; mov eax,0x2000001; syscall; ud2, owned user exit.
+      store8(stub,0x48);store8(stub + 1,0x89);store8(stub + 2,0xC7)
+      store8(stub + 3,0xB8);store32(stub + 4,0x2000001)
+      store8(stub + 8,0x0F);store8(stub + 9,0x05);store8(stub + 10,0x0F);store8(stub + 11,0x0B)
+      domain-map-user-code(domain,0x40006000,stub)
+      store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,0x40006000)
+      let imports = darwin-protected-take-frame()
+      if imports == 0 { status = -12 } else {
+        darwin-heap-capsules(imports)
+        domain-map-user-code(domain,0x40007000,imports)
+        store64(darwin-protected-virtuals + (darwin-protected-count - 1) * 8,0x40007000)
+        status = darwin-heap-fixups(image,size,1)
+      }
+      if status == 0 {
+        darwin-startup-copy(input)
+        let stack = 0x4F003FF8
+        let argc = load64(input)
+        store64(darwin-protected-physical(stack),0x40006000)
+        status = user-context-init(darwin-heap-context,USER-CONTEXT-BYTES,domain,entry,0,stack)
+        if status == 0 {
+          if load32(image + 176) == 0x80000028 {
+            store64(darwin-heap-context + 72,argc)
+            store64(darwin-heap-context + 80,DARWIN-STARTUP-DATA)
+            store64(darwin-heap-context + 88,DARWIN-STARTUP-DATA + 136)
+            store64(darwin-heap-context + 96,DARWIN-STARTUP-DATA + 272)
+          }
+          darwin-heap-active = 1
+          domain-user-syscall-hook = darwin-heap-dispatch
+          darwin-heap-last-kind = user-context-resume(darwin-heap-context,budget)
+          domain-user-syscall-hook = 0
+          darwin-heap-active = 0
+          if darwin-heap-last-kind == USER-CONTEXT-EXIT { status = load64(darwin-heap-context + 720) }
+          else if darwin-heap-last-kind == USER-CONTEXT-DEADLINE { status = 124 }
+          else if darwin-heap-last-kind == USER-CONTEXT-FAULT { status = 128 + load64(darwin-heap-context + 696) }
+          else { status = -5 }
+        }
+      }
+    }
+  }
+  darwin-file-release()
+  if darwin-protected-release(domain) != 0 { return -5 }
+  if darwin-heap-metadata != 0 { frame-free(darwin-heap-metadata);darwin-heap-metadata = 0 }
+  darwin-heap-owner = 0
+  darwin-heap-authority = -1
+  darwin-heap-active = 0
+  darwin-protected-busy = 0
+  darwin-protected-domain = 0
+  darwin-protected-authority = -1
+  darwin-protected-storage = -1
+  return status
+}

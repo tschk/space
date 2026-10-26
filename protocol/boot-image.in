@@ -23,3 +23,16 @@ const BOOT-IMAGE-APP-CLOCK = 16
 const BOOT-IMAGE-APP-SUM = 17
 const BOOT-IMAGE-APP-MAN = 18
 const BOOT-IMAGE-APP-SYSINFO = 19
+// Optional standard-image synchronous native GUI session. Its seat input is
+// launched on demand; kind3 remains the separate asynchronous boot input role.
+const BOOT-IMAGE-GUI-CALC = 20
+const BOOT-IMAGE-GUI-EDITOR = 21
+const BOOT-IMAGE-GUI-SEAT = 22
+
+// Default standard GUI: protected CPL3 paged clients. Kinds20/21 remain the
+// explicit trusted legacy/window profiles; no admission fallback between them.
+const BOOT-IMAGE-GUI-PROTECTED-CALC = 23
+const BOOT-IMAGE-GUI-PROTECTED-EDITOR = 24
+
+// Optional read-only native SCI boot diagnostic, independent of user files.
+const BOOT-IMAGE-RUNTIME-SELFTEST = 25

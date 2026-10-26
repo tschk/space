@@ -1,5 +1,7 @@
 package space.input
 
+import "../protocol/keyboard.in"
+
 import "../protocol/input.in"
 
 // Standalone input component for the Space nanokernel.
@@ -611,23 +613,31 @@ fn hid-to-ascii(usage: Int) -> Int {
   if usage == 0x26 { return 57 }
   if usage == 0x27 { return 48 }
   if usage == 0x28 { return 10 }
-  if usage == 0x2A { return 32 }
+  if usage == 0x29 { return 27 }
+  if usage == 0x2A { return 8 }
   if usage == 0x2B { return 9 }
-  if usage == 0x2C { return 45 }
-  if usage == 0x2D { return 61 }
-  if usage == 0x2E { return 91 }
-  if usage == 0x2F { return 93 }
-  if usage == 0x30 { return 92 }
+  if usage == 0x2C { return 32 }
+  if usage == 0x2D { return 45 }
+  if usage == 0x2E { return 61 }
+  if usage == 0x2F { return 91 }
+  if usage == 0x30 { return 93 }
+  if usage == 0x31 { return 92 }
   if usage == 0x33 { return 59 }
   if usage == 0x34 { return 39 }
   if usage == 0x35 { return 96 }
   if usage == 0x36 { return 44 }
   if usage == 0x37 { return 46 }
   if usage == 0x38 { return 47 }
-  if usage == 0x4C { return 10 }
-  if usage == 0x4B { return 128 } // PageUp
-  if usage == 0x4E { return 129 } // PageDown
-  return 0
+  if usage == 0x4A { return KEY-HOME }
+  if usage == 0x4B { return KEY-PAGE-UP }
+  if usage == 0x4C { return KEY-DELETE }
+  if usage == 0x4D { return KEY-END }
+  if usage == 0x4E { return KEY-PAGE-DOWN }
+  if usage == 0x4F { return KEY-RIGHT }
+  if usage == 0x50 { return KEY-LEFT }
+  if usage == 0x51 { return KEY-DOWN }
+  if usage == 0x52 { return KEY-UP }
+  return -1
 }
 
 fn xhci-kbd-report-ascii() -> Int {
@@ -659,12 +669,9 @@ fn xhci-kbd-report-ascii() -> Int {
     ch = hid-to-ascii(k5)
   }
   xhci-kbd-prev = (k0) | (k1 << 8) | (k2 << 16) | (k3 << 24) | (k4 << 32) | (k5 << 40)
-  if ch >= 97 && ch <= 122 {
-    if (mod & 0x22) != 0 {
-      ch = ch - 32
-    }
-  }
-  return ch
+  // Reuse the same US shift/control normalization as PS/2. USB Caps Lock
+  // and multi-key delivery remain outside this bounded polling profile.
+  return ps2-modified-ascii(ch, mod & 0x22, 0, mod & 0x11)
 }
 
 fn usb-kbd-getchar() -> Int {
@@ -838,13 +845,23 @@ fn mouse-right-pressed() -> Int {
   return mouse-buttons & 0x02
 }
 
+var ps2-kbd-shift: Int = 0
+var ps2-kbd-caps: Int = 0
+var ps2-kbd-caps-held: Int = 0
 var ps2-kbd-ctrl: Int = 0
+var ps2-kbd-extended: Int = 0
+var ps2-kbd-pause: Int = 0
 
 fn ps2-kbd-init() -> Int {
   ps2-cmd(0xAE)
   mouse-wait-input()
   outb(PS2-DATA, 0xF4)
+  ps2-kbd-shift = 0
+  ps2-kbd-caps = 0
+  ps2-kbd-caps-held = 0
   ps2-kbd-ctrl = 0
+  ps2-kbd-extended = 0
+  ps2-kbd-pause = 0
   return 0
 }
 
@@ -859,6 +876,7 @@ fn ps2-kbd-has-data() -> Int {
 fn ps2-scancode-ascii(sc: Int) -> Int {
   if sc == 0x01 { return 27 }
   if sc == 0x0E { return 8 }
+  if sc == 0x0F { return 9 }
   if sc == 0x1C { return 10 }
   if sc == 0x49 { return 128 } // PageUp
   if sc == 0x51 { return 129 } // PageDown
@@ -914,21 +932,33 @@ fn ps2-scancode-ascii(sc: Int) -> Int {
 }
 
 fn ps2-kbd-getchar() -> Int {
-  if ps2-kbd-has-data() == 0 {
-    return -1
-  }
+  if ps2-kbd-has-data() == 0 { return -1 }
   let sc = inb(PS2-DATA)
-  if sc == 0x1D { ps2-kbd-ctrl = 1; return -1 }
-  if sc == 0x9D { ps2-kbd-ctrl = 0; return -1 }
-  if sc == 0x2A || sc == 0x36 || sc == 0xAA || sc == 0xB6 {
+  // Set1 Pause is E1 plus five bytes; do not interpret its embedded Ctrl bytes.
+  if ps2-kbd-pause > 0 { ps2-kbd-pause -= 1; return -1 }
+  if sc == 0xE1 { ps2-kbd-pause = 5; ps2-kbd-extended = 0; return -1 }
+  if sc == 0xE0 { ps2-kbd-extended = 1; return -1 }
+  if ps2-kbd-extended == 1 {
+    ps2-kbd-extended = 0
+    if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 2; return -1 }
+    if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -3; return -1 }
+    // PrintScreen's synthetic E0 Shift bytes and all break codes are ignored.
+    return ps2-extended-ascii(sc)
+  }
+  if sc == 0x1D { ps2-kbd-ctrl = ps2-kbd-ctrl | 1; return -1 }
+  if sc == 0x9D { ps2-kbd-ctrl = ps2-kbd-ctrl & -2; return -1 }
+  if sc == 0x2A { ps2-kbd-shift = ps2-kbd-shift | 1; return -1 }
+  if sc == 0x36 { ps2-kbd-shift = ps2-kbd-shift | 2; return -1 }
+  if sc == 0xAA { ps2-kbd-shift = ps2-kbd-shift & -2; return -1 }
+  if sc == 0xB6 { ps2-kbd-shift = ps2-kbd-shift & -3; return -1 }
+  if sc == 0x3A {
+    if ps2-kbd-caps-held == 0 { ps2-kbd-caps = ps2-kbd-caps ^ 1 }
+    ps2-kbd-caps-held = 1
     return -1
   }
-  if (sc & 0x80) != 0 {
-    return -1
-  }
-  let ch = ps2-scancode-ascii(sc)
-  if ps2-kbd-ctrl != 0 && ch >= 97 && ch <= 122 { return ch - 96 }
-  return ch
+  if sc == 0xBA { ps2-kbd-caps-held = 0; return -1 }
+  if (sc & 0x80) != 0 { return -1 }
+  return ps2-modified-ascii(ps2-scancode-ascii(sc), ps2-kbd-shift, ps2-kbd-caps, ps2-kbd-ctrl)
 }
 
 // --- component entry --------------------------------------------------------
@@ -977,7 +1007,17 @@ fn input-initialize(cap-info: Int) -> Int {
 // Synchronous input-service proof entry. Existing hardware initialization waits
 // run once; only subsequent poll steps are bounded. Decoder/button state persists.
 fn input-poll-entry(cap-info: Int) -> Int {
+  let output = load64(cap-info + 64)
+  let output-width = (output >> 32) & 65535
+  let output-height = (output >> 16) & 65535
+  if output != 0 && input-output-argument(output-width, output-height) != output { return -1 }
   if input-initialized == 0 { input-initialize(cap-info) }
+  if output != 0 {
+    mouse-screen-w = output-width
+    mouse-screen-h = output-height
+    if mouse-x >= mouse-screen-w { mouse-x = mouse-screen-w - 1 }
+    if mouse-y >= mouse-screen-h { mouse-y = mouse-screen-h - 1 }
+  }
   let shared = load64(cap-info + 32)
   if usb-kbd-ready() != 0 {
     let key = usb-kbd-getchar()

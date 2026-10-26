@@ -1,0 +1,47 @@
+package space.kernel
+fn fasmg-dc-argv(command:String,target:Int)->Int{let n=strlen(command);let i=0;while i<n{let c=load8(command+i);if c==32{c=0;}store8(target+i,c);i+=1;}store8(target+n,0);return n+1;}
+fn fasmg-dc-free()->Int{let n=0;let p=free-list;while p!=0 && n<32768{n+=1;p=load64(p);}return n;}
+fn fasmg-dc-denied(s:Int,image:Int,size:Int,offset:Int,value:Int,expected:Int,argv:Int,n:Int,serial:Int,storage:Int,memory:Int,timer:Int)->void{let old=load32(image+offset);let heap=heap-next;let free=free-list;let domains=domain-count;let caps=cap-count;store32(image+offset,value);let status=dc-process-run(s,image,size,argv,n,serial,storage,memory,timer,1000);store32(image+offset,old);if status!=expected || heap-next!=heap || free-list!=free || domain-count!=domains || cap-count!=caps{panic("Classic Mach-O refused metadata allocated");}}
+fn fasmg-dc-check(port:Int)->void{
+ if heap-next>=0x10000000{panic("Original macOS source collision");}heap-end=0x10000000;
+ let s=alloc(32768);cpu-mem-fill64(s,0,4096);let argv=alloc(2048);let buffer=alloc(4096);
+ let serial=cap-mint(root-realm,cap-serial());let storage=cap-mint(root-realm,cap-storage());let memory=cap-mint(root-realm,cap-memory());let timer=cap-mint(root-realm,cap-timer());
+ let image=0x10000000;let size=78185;let entry=dc-image-check(image,size);serial-write-cstr(port,"original-mac: entry ");serial-write-hex(port,entry);serial-nl(port);if entry<0{panic("Original macOS Mach-O not admitted");}
+ let n=fasmg-dc-argv("fasmg",argv);serial-write-cstr(port,"original-mac: BEGIN help");serial-nl(port);
+ let status=dc-process-run(s,image,size,argv,n,serial,storage,memory,timer,1000);
+ serial-write-cstr(port,"original-mac: END help status ");serial-write-dec-wide(port,status);serial-write-cstr(port," calls ");serial-write-dec-wide(port,load64(s+168));serial-nl(port);if status!=1{panic("Original macOS help failed");}
+ let input="db 'Space',10\nrepeat 4\n dw % * 257\nend repeat\n";if fs-write-file("/input.asm",input,strlen(input))!=0{panic("Original macOS source seed");}
+ n=fasmg-dc-argv("fasmg input.asm output.bin",argv);serial-write-cstr(port,"original-mac: BEGIN assemble");serial-nl(port);
+ status=dc-process-run(s,image,size,argv,n,serial,storage,memory,timer,1000);
+ serial-write-cstr(port,"original-mac: END assemble status ");serial-write-dec-wide(port,status);serial-write-cstr(port," calls ");serial-write-dec-wide(port,load64(s+168));serial-nl(port);
+ if status!=0{serial-write-cstr(port,"original-mac: RIP/operation ");serial-write-hex(port,load64(s+256+120));serial-write-hex(port,load64(s+256+112));serial-nl(port);panic("Original macOS assembly failed");}
+ if fs-read-file("/output.bin",buffer,4096)!=14{panic("Original macOS output size");}
+ let expected="Space\n";let i=0;while i<6{if load8(buffer+i)!=load8(expected+i){panic("Original macOS output text");}i+=1;}i=0;while i<4{if load16(buffer+6+i*2)!=(i+1)*257{panic("Original macOS output arithmetic");}i+=1;}
+ let seen=load64(s+176);let specimen=alloc(size);i=0;while i<size{store8(specimen+i,load8(image+i));i+=1;}
+ fasmg-dc-denied(s,specimen,size,4,7,-8,argv,n,serial,storage,memory,timer);
+ fasmg-dc-denied(s,specimen,size,20,size,-8,argv,n,serial,storage,memory,timer);
+ fasmg-dc-denied(s,specimen,size,32+4,0,-8,argv,n,serial,storage,memory,timer);
+ let thread=dc-command(specimen,5) - specimen;
+ fasmg-dc-denied(s,specimen,size,thread+16+16*8,0,-8,argv,n,serial,storage,memory,timer);
+ let sym=dc-command(specimen,2);let symbol=load32(sym+8);let name=load32(sym+16)+load32(specimen+symbol);
+ fasmg-dc-denied(s,specimen,size,name,0x78787878,-38,argv,n,serial,storage,memory,timer);
+ let text=dc-command(specimen,25);let cursor=specimen+32;while cursor<specimen+32+load32(specimen+20){if load32(cursor)==25 && load32(cursor+60)==5{text=cursor;}cursor+=load32(cursor+4);}
+ fasmg-dc-denied(s,specimen,size,text - specimen+60,7,-8,argv,n,serial,storage,memory,timer);
+ let bad="this_is_not_an_instruction\n";if fs-write-file("/bad.asm",bad,strlen(bad))!=0{panic("Original macOS invalid source seed");}
+ let heap=heap-next;let free=fasmg-dc-free();let domains=domain-count;let caps=cap-count;let fd=vfs-fd-alloc();let entries=2;
+ let cycle=0;while cycle<21{let mode=0;while mode<3{
+  let command="fasmg input.asm output.bin";let expectedstatus=0;
+  if mode==1{command="fasmg /bad.asm rejected.bin";expectedstatus=2;}if mode==2{command="fasmg missing.asm missing.bin";expectedstatus=2;}
+  n=fasmg-dc-argv(command,argv);status=dc-process-run(s,image,size,argv,n,serial,storage,memory,timer,1000);
+  if status!=expectedstatus{serial-write-dec-wide(port,status);panic("Original macOS compiler success/error exit");}
+  if load64(s+168)<=0 || load64(s+256+128)!=0x1b{panic("Original macOS actual CPL3 activation missing");}entries+=1;seen=seen|load64(s+176);
+  if mode==0{if fs-read-file("/output.bin",buffer,4096)!=14{panic("Original macOS repeated output size");}i=0;while i<6{if load8(buffer+i)!=load8(expected+i){panic("Original macOS repeated output text");}i+=1;}i=0;while i<4{if load16(buffer+6+i*2)!=(i+1)*257{panic("Original macOS repeated output arithmetic");}i+=1;}}
+  else{let path="/rejected.bin";if mode==2{path="/missing.bin";}if fs-stat(path,buffer)>=0{panic("Original macOS error produced output");}}
+  if heap-next!=heap || fasmg-dc-free()!=free || domain-count!=domains || cap-count!=caps || vfs-fd-alloc()!=fd || dc-active!=0 || domain-user-syscall-hook!=0 || user-context-active!=0 || user-budget-active!=0 || user-space-quarantined(memory)!=0{panic("Original macOS repeated ownership leak");}
+  mode+=1;
+ }cycle+=1;}
+ serial-write-cstr(port,"original-mac: completed original application entries ");serial-write-dec-wide(port,entries);serial-nl(port);
+ serial-write-cstr(port,"original-mac: observed import mask ");serial-write-hex(port,seen);serial-nl(port);
+ cap-revoke(timer);cap-revoke(memory);cap-revoke(storage);cap-revoke(serial);
+ serial-write-cstr(port,"original-mac: original Mach-O assembler generated exact 14-byte macro/arithmetic file inside Space PASS");serial-nl(port);
+}

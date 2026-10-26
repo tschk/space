@@ -1,0 +1,321 @@
+{
+  "goal_status": "OPEN",
+  "runtime_source": "8ed40f3d2280220915bafc62a35a62864fabbf37",
+  "scope": "Original unchanged-source QuickJS and GNU sed on two Space roots, actual native waits/clock/argv and private SCI refusal controls; no REPL/GUI claim in this checkpoint.",
+  "compiler_sha256": "d2ac79b39f5ea98c5d776e88f550cf4327e89539ceaaf0d9ce591c53aa88ed75",
+  "cohorts": [
+    {
+      "receipt": "/workspace/broader-cli-cohort/report.json",
+      "sha256": "4569a3b4649f1bff831540ca26a4f035c1219e386d1c86172549f2fbd4e15946",
+      "passed": 6,
+      "source_files": 838,
+      "integrity_status": "passed"
+    },
+    {
+      "receipt": "/workspace/broader-cross-os-cohort/report.json",
+      "sha256": "30a50ab76efa07d472befdb0ba6e342049311a3555bfade613985c51dcb60236",
+      "passed": 11,
+      "source_files": 838,
+      "integrity_status": "passed"
+    }
+  ],
+  "applications": [
+    {
+      "name": "original-quickjs-standard",
+      "receipt": "/workspace/broader-cli-cohort/original-quickjs-standard/report.json",
+      "sha256": "a816948f631fce52c5b4cba4ab35bdd4bfba87f05e18036a6e9864e4357e9e3d",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 80,
+      "native_irq_waits": 91,
+      "cases": 14,
+      "repeat_cycles": 21,
+      "kernel_sha256": "b910c7f17fa34668fb96128b2e057dbf9647363a7d072d5bf5e1c926308e1dba",
+      "clock_provider_controls": true
+    },
+    {
+      "name": "original-quickjs-minimal",
+      "receipt": "/workspace/broader-cli-cohort/original-quickjs-minimal/report.json",
+      "sha256": "0388fd33ffb775dec7fc1ad29a6f187c03541c566cc9e77c6e5eefa8220366ec",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 80,
+      "native_irq_waits": 89,
+      "cases": 14,
+      "repeat_cycles": 21,
+      "kernel_sha256": "4c4a133629d237e725015d9f14dba336db6ff87e6592fb7b0667a1b3294f4bea",
+      "clock_provider_controls": true
+    },
+    {
+      "name": "original-sed-standard",
+      "receipt": "/workspace/broader-cli-cohort/original-sed-standard/report.json",
+      "sha256": "9a18d4856005eee08f0d75dc16bfe39f15f5379bb32951bc90506c3ef2cea355",
+      "application_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "original_application_entries": 74,
+      "native_irq_waits": 0,
+      "cases": 8,
+      "repeat_cycles": 21,
+      "kernel_sha256": "2884eb7e7bab2943006fd47d20f87df02fe863a49564894e1066d38515424ecb",
+      "clock_provider_controls": true
+    },
+    {
+      "name": "original-sed-minimal",
+      "receipt": "/workspace/broader-cli-cohort/original-sed-minimal/report.json",
+      "sha256": "8e524f7008e8b9ce01b8aa6c7dd20fdc41409b71b6fec1333122d54f9a5ec8fb",
+      "application_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "original_application_entries": 74,
+      "native_irq_waits": 0,
+      "cases": 8,
+      "repeat_cycles": 21,
+      "kernel_sha256": "6b6e0d3b975ff68698d677be7e784c9aed486e3e231a5589a51c0b3b133cc9c1",
+      "clock_provider_controls": true
+    },
+    {
+      "name": "original-quickjs-no-hpet",
+      "receipt": "/workspace/broader-cli-cohort/original-quickjs-no-hpet/report.json",
+      "sha256": "281ff81450a9905ca2d41d74f3a873f43194b882bf8b1e98dc5d901080acf05e",
+      "application_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "original_application_entries": 55,
+      "native_irq_waits": 0,
+      "cases": 11,
+      "repeat_cycles": 21,
+      "kernel_sha256": "2c1a42c0c8052d72d6315478c3322d54ced252d7e77d8bf179e83fa28b8ac9b5",
+      "clock_provider_controls": true
+    },
+    {
+      "name": "original-fasmg-linux-max",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-linux-max/report.json",
+      "sha256": "32611a64d7651cdd8c33463d79b036f7d574c7665b898dd24dd736b22bf1b113",
+      "application_sha256": "db544ed5a530dde139ef01ddc3fbc352bdec89fdda7fc1e9553e7da9361ac2e3",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "f40a49ce5f45a99daf7eba50676cbd95a5302fa440129a6a87e88ec1fc80aa55"
+    },
+    {
+      "name": "original-fasmg-linux-qemu64-rdrand",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-linux-qemu64-rdrand/report.json",
+      "sha256": "d7d66d0f506c700bfe2143e5b8f68b06194f783348d28617edc52cb9f53dc83b",
+      "application_sha256": "db544ed5a530dde139ef01ddc3fbc352bdec89fdda7fc1e9553e7da9361ac2e3",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "f40a49ce5f45a99daf7eba50676cbd95a5302fa440129a6a87e88ec1fc80aa55"
+    },
+    {
+      "name": "original-fasmg-darwin-max",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-darwin-max/report.json",
+      "sha256": "a1fb01960d9bd6cdbc32ed5a7008cbba987d71b0a2a4a3dcdb1eef41fc9b69fc",
+      "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "04b477c9663b54f9bfa0118464d97e87e88a8b0b6e4f1f604dccc528d1a205a5"
+    },
+    {
+      "name": "original-fasmg-darwin-qemu64",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-darwin-qemu64/report.json",
+      "sha256": "dfaa448b25160b905a38b25f39e920de386af60b5f469fc6e6f047083b46fe00",
+      "application_sha256": "0c83fddcc57357c57c51079c92e99614b0281a2aaf4ec1dcbf4fe6c174ca27f0",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "04b477c9663b54f9bfa0118464d97e87e88a8b0b6e4f1f604dccc528d1a205a5"
+    },
+    {
+      "name": "original-fasmg-windows-max",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-windows-max/report.json",
+      "sha256": "b5a536170357b8dc14bae75ff2cfbf95580a33b11f3ec3e6b531a49311bb5563",
+      "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "0958bce78bcbcec078df0887eab57b09f5b960071e8e356d5e8f22a0db20597a"
+    },
+    {
+      "name": "original-fasmg-windows-qemu64",
+      "receipt": "/workspace/broader-cross-os-cohort/original-fasmg-windows-qemu64/report.json",
+      "sha256": "c17e88407f98de910e6e4e1b16ee3805481ec9d13982830be30dbbc78a4e44af",
+      "application_sha256": "9d63b1c9ddacd958b31e9991f55871839f10115b32009ca0a4edc53f8827ac77",
+      "original_application_entries": 65,
+      "original_error_exits": 42,
+      "lifetime_cycles": 21,
+      "kernel_sha256": "0958bce78bcbcec078df0887eab57b09f5b960071e8e356d5e8f22a0db20597a"
+    }
+  ],
+  "regressions": [
+    {
+      "name": "jq",
+      "group_receipt": "/workspace/broader-cli-regressions/linux.json",
+      "group_sha256": "e374c3fe4228af94252ea1e4cbf1446e95cb8dab739fc868a69c02945a154900",
+      "status": "passed",
+      "log_sha256": "943f7e88edc16a2691a28a25686d61f62de3162d2ff6f8f398b15c5f610ba765"
+    },
+    {
+      "name": "lua",
+      "group_receipt": "/workspace/broader-cli-regressions/linux.json",
+      "group_sha256": "e374c3fe4228af94252ea1e4cbf1446e95cb8dab739fc868a69c02945a154900",
+      "status": "passed",
+      "log_sha256": "c25592cfe5630c7b0d6c3b9954592848175a2ed4534e11148fe0c1f92c5106ea"
+    },
+    {
+      "name": "sqlite",
+      "group_receipt": "/workspace/broader-cli-regressions/linux.json",
+      "group_sha256": "e374c3fe4228af94252ea1e4cbf1446e95cb8dab739fc868a69c02945a154900",
+      "status": "passed",
+      "log_sha256": "af1bb7f316f3994133f33b1c565a891d7eff2cb78b0b1edc2eb709fdf9cd21f6"
+    },
+    {
+      "name": "user-space-standard",
+      "group_receipt": "/workspace/broader-cli-regressions/native-gui.json",
+      "group_sha256": "445a45c324696e7b7423d435b52f230a86eee12d317d963500c1eadd0044e5d7",
+      "status": "passed",
+      "log_sha256": "dd2d7009bdb1b64269ca0d853b8dede7accd65171b92dce8f66cc724668f85b7"
+    },
+    {
+      "name": "user-space-minimal",
+      "group_receipt": "/workspace/broader-cli-regressions/native-gui.json",
+      "group_sha256": "445a45c324696e7b7423d435b52f230a86eee12d317d963500c1eadd0044e5d7",
+      "status": "passed",
+      "log_sha256": "5d38ad59ee5fc29ce81805d7001856ef943e8c865911b4d3ca0971b8ff2856ac"
+    },
+    {
+      "name": "desktop-launcher",
+      "group_receipt": "/workspace/broader-cli-regressions/native-gui.json",
+      "group_sha256": "445a45c324696e7b7423d435b52f230a86eee12d317d963500c1eadd0044e5d7",
+      "status": "passed",
+      "log_sha256": "6669441b3fc676fa360a5191b2ef2bc20a1c97bc5b15de4d53e41b6a497e16d8"
+    },
+    {
+      "name": "desktop-damage",
+      "group_receipt": "/workspace/broader-cli-regressions/native-gui.json",
+      "group_sha256": "445a45c324696e7b7423d435b52f230a86eee12d317d963500c1eadd0044e5d7",
+      "status": "passed",
+      "log_sha256": "bcee5030a25a2c440e496bbcfba7306d5f4eaa35d79b33d09d2ec60de4a9f6b0"
+    },
+    {
+      "name": "blocking-standard",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "c6b8a8275bd51d97599e5032ede0730ce6facc0cf128ea3cfad7907ffeec7951"
+    },
+    {
+      "name": "blocking-minimal",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "5ee0197768c121bbf5146b1d0d2e2b7e4f38d37976043026e8e0bd5f068aea3d"
+    },
+    {
+      "name": "vm",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "408ced750c1dbfd58bf0a6c8cbc64f26c60b71289b3f5d941820ba8b71c33da8"
+    },
+    {
+      "name": "vfork",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "671c588005a2aed3e0145eb4bafe26faa39b79f8f1be185faed61a0f63c4c8ce"
+    },
+    {
+      "name": "terminal-retained",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "a21e9540b87833d49e2834677210970dde79b723c593d3ed8cd9214291eb7280"
+    },
+    {
+      "name": "vi-view",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "38dcd5673c39d04434cc2bd734c537a2da47a7792c975c3e6bbf055cfbf3ad48"
+    },
+    {
+      "name": "vi-minimal",
+      "group_receipt": "/workspace/broader-cli-regressions/pipes.json",
+      "group_sha256": "c17af12c3db080d77091c9b5b32e002a4c32a0839e33bd924e8b96585bc94cc8",
+      "status": "passed",
+      "log_sha256": "38dcd5673c39d04434cc2bd734c537a2da47a7792c975c3e6bbf055cfbf3ad48"
+    },
+    {
+      "name": "architecture-contract",
+      "status": "passed",
+      "log": "/workspace/broader-architecture-contract.log",
+      "sha256": "3a7693bec868ed3e6070c89f328eb509bd153c19e1bce91c192988f18a68e881"
+    },
+    {
+      "name": "sci-contract",
+      "status": "passed",
+      "log": "/workspace/broader-sci-contract.log",
+      "sha256": "41f6ab82cdf02a323d59e22e4958091c9141579b07b6c37299cad6197d57de39"
+    },
+    {
+      "name": "personality-abi",
+      "status": "passed",
+      "log": "/workspace/broader-personality-abi.log",
+      "sha256": "62231edc3df4f299f1a62635e430f9f1c71482882f27c2bca829b3d61d7215b9"
+    }
+  ],
+  "builds": [
+    {
+      "application": "quickjs",
+      "receipt": "/workspace/quickjs-portable-build1/report.json",
+      "sha256": "e2d2af2b7e37dddf2c74f44f8cb8b900a7b69c789e85f53f1354e09942000157",
+      "status": "failed",
+      "binary_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "unchanged_source_files": 49,
+      "license_sha256": "f41baf09eef895d468d18c23055d74f711e4b8b2641cef279b5d71285c07bfe8",
+      "error": "built artifact differs from pinned diagnostic build; review retained output before updating pin"
+    },
+    {
+      "application": "quickjs",
+      "receipt": "/workspace/quickjs-portable-build2/report.json",
+      "sha256": "d5a51c352ced72296459a4a2de96c574e0e2980a53295a154d555b922d86cdea",
+      "status": "passed",
+      "binary_sha256": "916c0e3e85da7158dfd17d192a8704f0173b1e469dc1d379ee25d5dad48aa1ac",
+      "unchanged_source_files": 49,
+      "license_sha256": "f41baf09eef895d468d18c23055d74f711e4b8b2641cef279b5d71285c07bfe8",
+      "error": null
+    },
+    {
+      "application": "sed",
+      "receipt": "/workspace/sed-portable-build1/report.json",
+      "sha256": "dcb003780ec7935f2fbdc1c1d30d343ac772f3df155cc2bdbb7faba4bb7944c0",
+      "status": "failed",
+      "binary_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "unchanged_source_files": 508,
+      "license_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "error": "built artifact differs from pinned diagnostic build; review retained output before updating pin"
+    },
+    {
+      "application": "sed",
+      "receipt": "/workspace/sed-portable-build2/report.json",
+      "sha256": "f02cbb846266fcf1ab1d8205683a0bb65c9e34776bae62d3a64b9e42ed0a37e4",
+      "status": "passed",
+      "binary_sha256": "e8b189b409ed67fcefac5f7d0e415d221ee4dd66926be3e8ba32656a7b4f7e4d",
+      "unchanged_source_files": 508,
+      "license_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "error": null
+    }
+  ],
+  "cli_original_entries": 363,
+  "cross_os_original_entries": 390,
+  "preserved_failures": [
+    "/workspace/quickjs-clock-files-first/report.json",
+    "/workspace/private-execution-first/report.json",
+    "/workspace/quickjs-nohpet-first/qemu.log"
+  ],
+  "published_logs": [
+    {
+      "path": "docs/evidence/2026-10-25-broader-cli/quickjs-standard.serial.txt",
+      "sha256": "73293ed2392b5f3a893f96c89a2c92f98bc7dc34dfd4a21be7aaa1049644e8e7"
+    },
+    {
+      "path": "docs/evidence/2026-10-25-broader-cli/sed-standard.serial.txt",
+      "sha256": "aa67b1d0c1e07612f1c81257c30e5ad3a2266e13f697602711c74360d654724b"
+    }
+  ]
+}

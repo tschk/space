@@ -1,0 +1,489 @@
+package space.kernel
+
+// Bounded Linux process records. Native context/page-table mechanisms remain
+// separate; these rows own foreign process identity, descriptors and policy.
+// Cached buffers live for the component;
+// native VM objects/bindings and descriptor references have activation lifetimes.
+const LINUX-STATE-MAX = 8
+const LINUX-STATE-BYTES = 512
+const LINUX-STATE-DEPTH = 4
+const LINUX-STATE-ARGS = 16
+const LINUX-STATE-STRINGS = 8192
+const LINUX-PROCESS-PREPARATION-MAX = 32
+const LINUX-STATE-FREE = 0
+const LINUX-STATE-PREPARING = 1
+const LINUX-STATE-READY = 2
+const LINUX-STATE-RUNNING = 3
+const LINUX-STATE-ZOMBIE = 4
+const LINUX-STATE-REAPED = 5
+const LINUX-STATE-QUARANTINED = 6
+const LINUX-STATE-BLOCKED = 7
+const LINUX-STATE-VFORK-WAIT = 8
+const LINUX-PROCESS-STOP-DEADLOCK = -35
+const LINUX-PROCESS-STOP-JOB-END = -125
+const LINUX-PROCESS-STOP-SIGPIPE = -13
+const LINUX-PROCESS-STATUS-DEADLOCK = 125
+const LINUX-PROCESS-STOP-POLICY = -7
+const LINUX-PROCESS-STATUS-POLICY = 126
+const LINUX-PROCESS-WORK-MAX = 4096
+const LPS-PID = 0
+const LPS-PARENT = 8
+const LPS-STATUS = 16
+const LPS-DOMAIN = 24
+const LPS-LEDGER = 32
+const LPS-PAGES = 40
+const LPS-AUTHORITY = 48
+const LPS-EXE = 56
+const LPS-BRK = 64
+const LPS-BRK-MAPPED = 72
+const LPS-CLEAR-TID = 80
+const LPS-STDOUT = 88
+const LPS-STDERR = 96
+const LPS-OUTPUT = 104
+const LPS-SYSCALLS = 112
+const LPS-FILES = 120
+const LPS-PATHS = 128
+const LPS-BUFFER = 136
+const LPS-IDENTITIES = 144
+const LPS-PIPE-FDFLAGS = 152
+const LPS-PIPE-ACTION = 160
+const LPS-PIPE-ACTION-FLAGS = 168
+const LPS-PIPE-RESTORER = 176
+const LPS-PIPE-MASK = 184
+const LPS-PIPE-SIGNAL = 192
+const LPS-PIPE-LAST-SIGNAL = 200
+const LPS-PIPE-FAMILY = 208
+const LPS-KERNEL-CONTEXT = 216
+const LPS-USER-CONTEXT = 224
+const LPS-IMAGE = 232
+const LPS-IMAGE-SIZE = 240
+const LPS-DEPTH = 248
+const LPS-WAIT-STATUS = 256
+const LPS-STOP-KIND = 264
+const LPS-STOP-DETAIL = 272
+const LPS-PENDING = 280
+const LPS-ARGC = 288
+const LPS-ARGV = 296
+const LPS-ENVC = 304
+const LPS-ENV = 312
+const LPS-EXEC-PATH = 320
+const LPS-SIGNAL-MASK = 328
+const LPS-SIGNAL-PENDING = 336
+const LPS-CLONE-FLAGS = 344
+const LPS-CHILD-TID = 352
+const LPS-ARG-BUFFER = 360
+const LPS-ENV-BUFFER = 368
+const LPS-ENTRY = 376
+const LPS-STACK = 384
+const LPS-BUDGET = 392
+const LPS-VM-OBJECT = 400
+const LPS-FD-FLAGS = 408
+const LPS-SPARE-LEDGER = 416
+const LPS-EXEC-COUNT = 424
+const LPS-SPARE-CONTEXT = 432
+const LPS-SPARE-DOMAIN = 440
+const LPS-SPARE-PAGES = 448
+// Pending I/O/wait union, private to this stopped process record.
+const LPS-IO-FD = 456
+const LPS-IO-BUFFER = 464
+const LPS-IO-COUNT = 472
+const LPS-IO-DONE = 480
+const LPS-VM-BINDING = 488
+const LPS-SPARE-VM = 496
+const LPS-SPARE-BINDING = 504
+
+var linux-process-states: Int = 0
+var linux-process-current-record: Int = 0
+var linux-process-current-pid: Int = 0
+var linux-process-next-pid: Int = 1001
+var linux-process-file-fdflags: Int = 0
+var linux-process-signal-mask: Int = 0
+var linux-process-signal-pending: Int = 0
+// A failed native teardown retains its record and blocks further activations.
+// Only explicit supervisor recovery after repair may clear this condition.
+var linux-process-cleanup-failed: Int = 0
+// Diagnostic counts of actual published native references rolled back by the
+// most recent failed copy, retained through later successful child launches.
+var linux-process-copy-rollback-refs: Int = 0
+var linux-process-copy-rollbacks: Int = 0
+var linux-process-preparations: Int = 0
+var linux-process-work: Int = 0
+var linux-process-work-exhausted: Int = 0
+
+// Activation-wide admission for syscall services, scheduler turns and pending
+// retries. This bounds policy work separately from delivered guest IRQ ticks.
+fn linux-process-work-take() -> Int {
+  if linux-process-work >= LINUX-PROCESS-WORK-MAX {
+    linux-process-work-exhausted = 1
+    return 0
+  }
+  linux-process-work = linux-process-work + 1
+  return 1
+}
+
+fn linux-process-state-valid(row: Int) -> Int {
+  if linux-process-states == 0 || row < linux-process-states { return 0 }
+  let offset = row - linux-process-states
+  if offset >= LINUX-STATE-MAX * LINUX-STATE-BYTES || offset % LINUX-STATE-BYTES != 0 { return 0 }
+  return 1
+}
+
+fn linux-process-state-zero(address: Int, bytes: Int) -> void {
+  let i = 0
+  while i < bytes { store8(address + i,0);i = i + 1 }
+}
+
+fn linux-process-state-copy(dest: Int, source: Int, bytes: Int) -> void {
+  let i = 0
+  while i < bytes { store8(dest + i,load8(source + i));i = i + 1 }
+}
+
+fn linux-process-state-pool-init() -> void {
+  if linux-process-states != 0 { return }
+  linux-process-states = alloc(LINUX-STATE-MAX * LINUX-STATE-BYTES)
+  linux-process-state-zero(linux-process-states,LINUX-STATE-MAX * LINUX-STATE-BYTES)
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    store64(row + LPS-KERNEL-CONTEXT,alloc(48))
+    store64(row + LPS-SPARE-CONTEXT,(alloc(831) + 63) & -64)
+    linux-process-state-zero(load64(row + LPS-SPARE-CONTEXT),768)
+    store64(row + LPS-FILES,alloc(VFS-MAX-FDS * 8))
+    store64(row + LPS-PATHS,alloc(VFS-MAX-FDS * 256))
+    store64(row + LPS-BUFFER,alloc(4096))
+    store64(row + LPS-IDENTITIES,alloc(VFS-MAX-FDS * 16))
+    store64(row + LPS-PIPE-FDFLAGS,alloc(VFS-MAX-FDS * 8))
+    store64(row + LPS-FD-FLAGS,alloc(VFS-MAX-FDS * 8))
+    store64(row + LPS-ARGV,alloc(LINUX-STATE-ARGS * 8))
+    store64(row + LPS-ENV,alloc(LINUX-STATE-ARGS * 8))
+    store64(row + LPS-ARG-BUFFER,alloc(LINUX-STATE-STRINGS))
+    store64(row + LPS-ENV-BUFFER,alloc(LINUX-STATE-STRINGS))
+    // Native contexts are private supervisor buffers, aligned64 and validated
+    // by the native CPU owner before any user-state restoration.
+    let context = (alloc(831) + 63) & -64
+    store64(row + LPS-USER-CONTEXT,context)
+    linux-process-state-zero(context,768)
+    i = i + 1
+  }
+}
+
+// Select only cached buffers during preparation; does not publish a process
+// identity, activate a CPU domain, or manufacture a successful clone result.
+fn linux-process-state-use-cache(row: Int) -> Int {
+  if linux-process-state-valid(row) == 0 { return -22 }
+  linux-process-ledger = 0
+  linux-process-context = load64(row + LPS-KERNEL-CONTEXT)
+  linux-process-files = load64(row + LPS-FILES)
+  linux-process-file-paths = load64(row + LPS-PATHS)
+  linux-process-file-buffer = load64(row + LPS-BUFFER)
+  linux-process-file-identities = load64(row + LPS-IDENTITIES)
+  linux-process-pipe-fdflags = load64(row + LPS-PIPE-FDFLAGS)
+  linux-process-file-fdflags = load64(row + LPS-FD-FLAGS)
+  return 0
+}
+
+fn linux-process-state-save(row: Int) -> Int {
+  if linux-process-state-valid(row) == 0 { return -22 }
+  if linux-process-current-record != row { return -5 }
+  if linux-process-vm > 0 {
+    let status = linux-process-vm-sync()
+    if status != 0 { return status }
+  } else if linux-process-binding != 0 || linux-process-domain != 0 || linux-process-pages != 0 { return -5 }
+  store64(row + LPS-VM-OBJECT,linux-process-vm)
+  store64(row + LPS-VM-BINDING,linux-process-binding)
+  store64(row + LPS-DOMAIN,linux-process-domain)
+  store64(row + LPS-LEDGER,0)
+  store64(row + LPS-PAGES,linux-process-pages)
+  store64(row + LPS-AUTHORITY,linux-process-authority)
+  store64(row + LPS-EXE,linux-process-exe)
+  store64(row + LPS-BRK,linux-process-brk)
+  store64(row + LPS-BRK-MAPPED,linux-process-brk-mapped)
+  store64(row + LPS-CLEAR-TID,linux-process-clear-tid)
+  store64(row + LPS-STDOUT,linux-process-stdout-open)
+  store64(row + LPS-STDERR,linux-process-stderr-open)
+  store64(row + LPS-OUTPUT,linux-process-output-bytes)
+  store64(row + LPS-SYSCALLS,linux-process-syscalls)
+  store64(row + LPS-FILES,linux-process-files)
+  store64(row + LPS-PATHS,linux-process-file-paths)
+  store64(row + LPS-BUFFER,linux-process-file-buffer)
+  store64(row + LPS-IDENTITIES,linux-process-file-identities)
+  store64(row + LPS-PIPE-FDFLAGS,linux-process-pipe-fdflags)
+  store64(row + LPS-PIPE-ACTION,linux-process-pipe-action)
+  store64(row + LPS-PIPE-ACTION-FLAGS,linux-process-pipe-action-flags)
+  store64(row + LPS-PIPE-RESTORER,linux-process-pipe-action-restorer)
+  store64(row + LPS-PIPE-MASK,linux-process-pipe-action-mask)
+  store64(row + LPS-PIPE-SIGNAL,linux-process-pipe-signal)
+  store64(row + LPS-PIPE-LAST-SIGNAL,linux-process-pipe-last-signal)
+  store64(row + LPS-PIPE-FAMILY,linux-process-pipe-family)
+  store64(row + LPS-KERNEL-CONTEXT,linux-process-context)
+  store64(row + LPS-FD-FLAGS,linux-process-file-fdflags)
+  store64(row + LPS-SIGNAL-MASK,linux-process-signal-mask)
+  store64(row + LPS-SIGNAL-PENDING,linux-process-signal-pending)
+  return 0
+}
+
+fn linux-process-state-load(row: Int) -> Int {
+  if linux-process-state-valid(row) == 0 { return -22 }
+  let token = load64(row + LPS-VM-OBJECT)
+  let binding = load64(row + LPS-VM-BINDING)
+  // Validate/select the authoritative pair before changing any selected view.
+  if token > 0 {
+    let status = linux-process-vm-use(token,binding)
+    if status != 0 { return status }
+  } else {
+    if token != 0 || binding != 0 || load64(row + LPS-DOMAIN) != 0 || load64(row + LPS-PAGES) != 0 { return -5 }
+    linux-process-vm = 0;linux-process-binding = 0;linux-process-domain = 0
+    linux-process-pages = 0;linux-process-ledger = 0
+    linux-process-authority = load64(row + LPS-AUTHORITY)
+    linux-process-brk = LINUX-PROCESS-BRK-BASE;linux-process-brk-mapped = LINUX-PROCESS-BRK-BASE
+  }
+  linux-process-exe = load64(row + LPS-EXE)
+  linux-process-clear-tid = load64(row + LPS-CLEAR-TID)
+  linux-process-stdout-open = load64(row + LPS-STDOUT)
+  linux-process-stderr-open = load64(row + LPS-STDERR)
+  linux-process-output-bytes = load64(row + LPS-OUTPUT)
+  linux-process-syscalls = load64(row + LPS-SYSCALLS)
+  linux-process-files = load64(row + LPS-FILES)
+  linux-process-file-paths = load64(row + LPS-PATHS)
+  linux-process-file-buffer = load64(row + LPS-BUFFER)
+  linux-process-file-identities = load64(row + LPS-IDENTITIES)
+  linux-process-pipe-fdflags = load64(row + LPS-PIPE-FDFLAGS)
+  linux-process-pipe-action = load64(row + LPS-PIPE-ACTION)
+  linux-process-pipe-action-flags = load64(row + LPS-PIPE-ACTION-FLAGS)
+  linux-process-pipe-action-restorer = load64(row + LPS-PIPE-RESTORER)
+  linux-process-pipe-action-mask = load64(row + LPS-PIPE-MASK)
+  linux-process-pipe-signal = load64(row + LPS-PIPE-SIGNAL)
+  linux-process-pipe-last-signal = load64(row + LPS-PIPE-LAST-SIGNAL)
+  linux-process-pipe-family = load64(row + LPS-PIPE-FAMILY)
+  linux-process-context = load64(row + LPS-KERNEL-CONTEXT)
+  linux-process-file-fdflags = load64(row + LPS-FD-FLAGS)
+  linux-process-signal-mask = load64(row + LPS-SIGNAL-MASK)
+  linux-process-signal-pending = load64(row + LPS-SIGNAL-PENDING)
+  linux-process-current-record = row
+  linux-process-current-pid = load64(row + LPS-PID)
+  linux-process-active = 1
+  return 0
+}
+
+// Close the whole owned job on an uncertain adapter association. Preserve every
+// identity for repair; never invalidate or detach a possibly unrelated binding.
+fn linux-process-state-refuse(row: Int) -> Int {
+  linux-process-cleanup-failed = 1
+  linux-process-active = 0
+  let i = 0
+  while i < LINUX-STATE-MAX && linux-process-states != 0 {
+    let owned = linux-process-states + i * LINUX-STATE-BYTES
+    let phase = load64(owned + LPS-STATUS)
+    if phase != LINUX-STATE-FREE && phase != LINUX-STATE-REAPED { store64(owned + LPS-STATUS,LINUX-STATE-QUARANTINED) }
+    i = i + 1
+  }
+  return -5
+}
+
+fn linux-process-state-id() -> Int {
+  if linux-process-current-pid > 0 { return linux-process-current-pid }
+  // Existing test-only direct domain fixtures have no registered process row.
+  return 1000 + linux-process-domain
+}
+
+fn linux-process-state-register(row: Int, parent: Int, domain: Int, depth: Int) -> Int {
+  if linux-process-state-valid(row) == 0 || domain <= 0 || domain >= domain-count || domain >= MAX-DOMAINS { return -22 }
+  if (domain-user-owned & (1 << domain)) == 0 || load64(domain-table + domain * 24 + 8) != DOMAIN-ACTIVE { return -22 }
+  if depth < 0 || depth >= LINUX-STATE-DEPTH { return -11 }
+  if linux-process-next-pid >= 0x7FFFFFFF { return -11 }
+  let pid = linux-process-next-pid
+  linux-process-next-pid = pid + 1
+  store64(row + LPS-PID,pid)
+  store64(row + LPS-PARENT,parent)
+  store64(row + LPS-DOMAIN,domain)
+  store64(row + LPS-DEPTH,depth)
+  store64(row + LPS-STATUS,LINUX-STATE-PREPARING)
+  store64(row + LPS-WAIT-STATUS,0)
+  store64(row + LPS-STOP-KIND,0)
+  store64(row + LPS-STOP-DETAIL,0)
+  store64(row + LPS-PENDING,0)
+  return pid
+}
+
+fn linux-process-state-find-child(parent: Int, pid: Int) -> Int {
+  let first = 0
+  let i = 1
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    let status = load64(row + LPS-STATUS)
+    if status != LINUX-STATE-FREE && status != LINUX-STATE-REAPED && load64(row + LPS-PARENT) == parent {
+      if pid == -1 || load64(row + LPS-PID) == pid {
+        if status == LINUX-STATE-ZOMBIE { return row }
+        if first == 0 { first = row }
+      }
+    }
+    i = i + 1
+  }
+  return first
+}
+
+// Native owned copying preserves page permissions and independent backing.
+// The source execution remains genuinely suspended throughout preparation.
+fn linux-process-state-copy-pages(source: Int, target: Int) -> Int {
+  if linux-process-state-valid(source) == 0 || linux-process-state-valid(target) == 0 || source == target { return -22 }
+  // Preserve the admitted external ELF's lifetime against the bump arena.
+  // These are loader bounds, not ownership of native backing or a second ledger.
+  let pages = user-space-pages(load64(source + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))
+  if pages < 0 { return -5 }
+  let reserve = pages * 8192 + 0x100000
+  if heap-end - heap-next < reserve { return -12 }
+  let image = load64(source + LPS-IMAGE)
+  let size = load64(source + LPS-IMAGE-SIZE)
+  if image < heap-next + reserve && image + size > heap-next { return -12 }
+  let status = linux-process-vm-copy(load64(target + LPS-VM-OBJECT),load64(source + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))
+  if status == 0 { store64(target + LPS-PAGES,user-space-pages(load64(target + LPS-VM-OBJECT),load64(source + LPS-AUTHORITY))) }
+  return status
+}
+
+// Duplicate native references while retaining shared open-file descriptions.
+// Every ordinary-file path is rebound to this record's own bounded path slot,
+// because native VFS borrows that string until the final descriptor is closed.
+// Stream generation/family admission is checked through the current parent.
+fn linux-process-state-copy-files(source: Int, target: Int) -> Int {
+  if linux-process-state-valid(source) == 0 || linux-process-state-valid(target) == 0 || source == target { return -22 }
+  if linux-process-current-record != source { return -22 }
+  let table = load64(target + LPS-FILES)
+  let copied = 0
+  let i = 0
+  while i < VFS-MAX-FDS { store64(table + i * 8,-9);i = i + 1 }
+  linux-process-state-copy(load64(target + LPS-IDENTITIES),load64(source + LPS-IDENTITIES),VFS-MAX-FDS * 16)
+  linux-process-state-copy(load64(target + LPS-PIPE-FDFLAGS),load64(source + LPS-PIPE-FDFLAGS),VFS-MAX-FDS * 8)
+  linux-process-state-copy(load64(target + LPS-FD-FLAGS),load64(source + LPS-FD-FLAGS),VFS-MAX-FDS * 8)
+  i = 0
+  while i < VFS-MAX-FDS {
+    let host = load64(load64(source + LPS-FILES) + i * 8)
+    if host >= 3 {
+      let own = -9
+      if vfs-stream-valid(host) != 0 {
+        if linux-process-pipe-host(i) != host { return -9 }
+        own = vfs-stream-dup(host)
+        if own >= 3 {
+          // Native dup publishes a new endpoint; retain actual shared status.
+          store64(vfs-fd-table + own * 32 + 16,load64(vfs-fd-table + host * 32 + 16))
+        }
+      } else {
+        own = vfs-dup-file(host)
+        if own >= 3 && vfs-discard-valid(own) == 0 {
+          let path = load64(vfs-fd-table + host * 32)
+          let dest = load64(target + LPS-PATHS) + i * 256
+          let n = 0
+          while n < 256 && load8(path + n) != 0 { store8(dest + n,load8(path + n));n = n + 1 }
+          if n == 256 { vfs-close(own);return -36 }
+          store8(dest + n,0)
+          store64(vfs-fd-table + own * 32,dest)
+        }
+      }
+      if own < 3 {
+        linux-process-copy-rollback-refs = copied
+        linux-process-copy-rollbacks = linux-process-copy-rollbacks + 1
+        if own == -16 { return -24 }
+        return own
+      }
+      store64(table + i * 8,own)
+      copied = copied + 1
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Native release owns revocation/freeing. Retain the object/binding identities
+// on uncertain teardown, including partial failed preparation.
+fn linux-process-state-drop-primary(row: Int) -> Int {
+  if linux-process-state-valid(row) == 0 { return -22 }
+  let token = load64(row + LPS-VM-OBJECT)
+  let binding = load64(row + LPS-VM-BINDING)
+  if token > 0 {
+    let status = linux-process-vm-drop(token,binding)
+    if status != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-VM-BINDING,0) }
+      linux-process-cleanup-failed = 1
+      store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      return -5
+    }
+  }
+  store64(row + LPS-VM-OBJECT,0);store64(row + LPS-VM-BINDING,0)
+  store64(row + LPS-DOMAIN,0);store64(row + LPS-PAGES,0)
+  return 0
+}
+
+fn linux-process-state-cache-field(offset: Int) -> Int {
+  if offset == LPS-FILES || offset == LPS-PATHS || offset == LPS-BUFFER || offset == LPS-IDENTITIES || offset == LPS-PIPE-FDFLAGS || offset == LPS-KERNEL-CONTEXT || offset == LPS-USER-CONTEXT || offset == LPS-ARGV || offset == LPS-ENV || offset == LPS-ARG-BUFFER || offset == LPS-ENV-BUFFER || offset == LPS-FD-FLAGS || offset == LPS-SPARE-CONTEXT { return 1 }
+  return 0
+}
+
+fn linux-process-state-inherit(source: Int, target: Int) -> Int {
+  if linux-process-state-valid(source) == 0 || linux-process-state-valid(target) == 0 || source == target { return -22 }
+  let i = 0
+  while i < LINUX-STATE-BYTES {
+    if linux-process-state-cache-field(i) == 0 { store64(target + i,load64(source + i)) }
+    i = i + 8
+  }
+  store64(target + LPS-PID,0)
+  store64(target + LPS-DOMAIN,0)
+  store64(target + LPS-PAGES,0)
+  store64(target + LPS-VM-OBJECT,0);store64(target + LPS-VM-BINDING,0)
+  store64(target + LPS-SPARE-VM,0);store64(target + LPS-SPARE-BINDING,0)
+  store64(target + LPS-STATUS,LINUX-STATE-PREPARING)
+  store64(target + LPS-CLEAR-TID,0)
+  store64(target + LPS-SIGNAL-PENDING,0)
+  store64(target + LPS-PIPE-SIGNAL,0)
+  store64(target + LPS-PIPE-LAST-SIGNAL,0)
+  store64(target + LPS-SYSCALLS,0)
+  store64(target + LPS-OUTPUT,0)
+  store64(target + LPS-PENDING,0)
+  let table = load64(target + LPS-FILES)
+  i = 0
+  while i < VFS-MAX-FDS { store64(table + i * 8,-9);i = i + 1 }
+  return 0
+}
+
+fn linux-process-state-reset() -> void {
+  linux-process-memory-failed = 0
+  linux-process-startup = 0;linux-process-startup-error = 0
+  linux-process-copy-rollback-refs = 0
+  linux-process-copy-rollbacks = 0
+  linux-process-preparations = 0
+  linux-process-work = 0
+  linux-process-work-exhausted = 0
+  linux-process-state-pool-init()
+  let i = 0
+  while i < LINUX-STATE-MAX {
+    let row = linux-process-states + i * LINUX-STATE-BYTES
+    let offset = 0
+    while offset < LINUX-STATE-BYTES {
+      if linux-process-state-cache-field(offset) == 0 { store64(row + offset,0) }
+      offset = offset + 8
+    }
+    i = i + 1
+  }
+  linux-process-current-record = 0
+  linux-process-current-pid = 0
+  linux-process-signal-mask = 0
+  linux-process-signal-pending = 0
+}
+
+// A fully prepared exec VM is retained separately until old-VM revocation
+// commits. If revocation refuses, recovery owns both domains explicitly.
+fn linux-process-state-drop-pages(row: Int) -> Int {
+  let result = linux-process-state-drop-primary(row)
+  if result != 0 { return result }
+  let token = load64(row + LPS-SPARE-VM)
+  let binding = load64(row + LPS-SPARE-BINDING)
+  if token > 0 {
+    if linux-process-vm-drop(token,binding) != 0 {
+      if binding > 0 && user-space-binding-phase(binding,load64(row + LPS-AUTHORITY)) == -6 { store64(row + LPS-SPARE-BINDING,0) }
+      linux-process-cleanup-failed = 1
+      store64(row + LPS-STATUS,LINUX-STATE-QUARANTINED)
+      return -5
+    }
+  }
+  store64(row + LPS-SPARE-VM,0);store64(row + LPS-SPARE-BINDING,0)
+  store64(row + LPS-SPARE-DOMAIN,0);store64(row + LPS-SPARE-PAGES,0)
+  return 0
+}

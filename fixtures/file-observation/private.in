@@ -1,0 +1,3 @@
+package space.fixture
+interrupt fn file-observation-open(path:Int,owner:Int)->Int{}
+fn private-entry(info:Int)->Int{return file-observation-open(0,info);}

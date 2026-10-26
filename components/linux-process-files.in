@@ -1,0 +1,322 @@
+package space.kernel
+
+// Execution-owned guest descriptor -> VFS descriptor translation. The VFS owns
+// file offsets and SparkFS data; this component owns duplicated/open handles,
+// bounded path slots and a private copy buffer. No guest address reaches VFS.
+var linux-process-files: Int = 0
+var linux-process-file-paths: Int = 0
+var linux-process-file-buffer: Int = 0
+var linux-process-file-identities: Int = 0
+
+fn linux-process-files-ready() -> Int {
+  if cap-check(linux-process-authority, cap-storage()) == 0 { return -13 }
+  // Guest execution has IF1 under its budget. Kernel syscall service entry
+  // masks interrupts, so asynchronous volume RPC cannot run in this context.
+  if volume-ready != 0 { return -38 }
+  if sf-disk-ready != 1 { return -5 }
+  // Direct NVMe uses bounded synchronous service calls, including checked
+  // namespace FLUSH for fsync. An offline controller is an actual I/O error.
+  if sf-mem-disk == 0 && nvme-ready != 1 { return -5 }
+  return 0
+}
+
+fn linux-process-file-host(fd: Int) -> Int {
+  if linux-process-files == 0 || fd < 0 || fd >= VFS-MAX-FDS { return -9 }
+  return load64(linux-process-files + fd * 8)
+}
+
+fn linux-process-descriptor-flags(fd: Int) -> Int {
+  if linux-process-device-is(fd)!=0{return linux-process-device-flags(fd);}
+  if linux-process-pipe-is(fd) != 0 { return linux-process-pipe-flags(fd) }
+  let host = linux-process-file-host(fd)
+  if host < 3 {
+    if fd == 1 && linux-process-stdout-open != 0 { return VFS-O-WRONLY }
+    if fd == 2 && linux-process-stderr-open != 0 { return VFS-O-WRONLY }
+    return -9
+  }
+  if vfs-discard-valid(host) != 0 && cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  // Access mode, append and nonblocking are implemented open-file status flags.
+  // Creation/truncation and CLOEXEC are not F_GETFL status bits.
+  return load64(vfs-fd-table + host * 32 + 16) & (3 | 0xC00)
+}
+
+fn linux-process-files-init(input: Int) -> Int {
+  if linux-process-files == 0 {
+    linux-process-files = alloc(VFS-MAX-FDS * 8)
+    linux-process-file-paths = alloc(VFS-MAX-FDS * 256)
+    linux-process-file-buffer = alloc(4096)
+    linux-process-file-identities = alloc(VFS-MAX-FDS * 16)
+  }
+  if linux-process-file-fdflags == 0 { linux-process-file-fdflags = alloc(VFS-MAX-FDS * 8) }
+  let i = 0
+  while i < VFS-MAX-FDS {
+    store64(linux-process-file-fdflags + i * 8,0)
+    store64(linux-process-files + i * 8,-9)
+    store64(linux-process-file-identities + i * 16,0)
+    store64(linux-process-file-identities + i * 16 + 8,0)
+    i = i + 1
+  }
+  if input == -1 { return 0 }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  if input < 3 || vfs-fd-valid(input) == 0 || vfs-stream-valid(input) != 0 { return -9 }
+  let row = vfs-fd-table + input * 32
+  if load64(row + 24) != 0 || (load64(row + 16) & 3) != VFS-O-RDONLY { return -9 }
+  let own = vfs-dup-file(input)
+  if own < 0 { if own == -16 { return -24 } return own }
+  store64(linux-process-files, own)
+  if linux-process-file-bind-identity(0,own) < 0 { vfs-close(own);store64(linux-process-files,-9);return -5 }
+  return 0
+}
+
+fn linux-process-files-release() -> void {
+  if linux-process-files == 0 { return }
+  fs-range-release-owner(linux-process-state-id())
+  let i = 0
+  while i < VFS-MAX-FDS {
+    let fd = linux-process-file-host(i)
+    if fd >= 3 { vfs-close(fd) }
+    store64(linux-process-files + i * 8, -9)
+    store64(linux-process-file-identities + i * 16,0)
+    store64(linux-process-file-identities + i * 16 + 8,0)
+    store64(linux-process-file-fdflags + i * 8,0)
+    i = i + 1
+  }
+  return
+}
+
+fn linux-process-file-open(path: Int, flags: Int) -> Int {
+  return linux-process-file-open-mode(path,flags,0x1B6)
+}
+
+fn linux-process-file-copy-path(path: Int, dest: Int) -> Int {
+  let i = 0
+  let written = 0
+  while i < 256 {
+    if linux-process-range(path + i, 1, 0) == 0 { return -14 }
+    let ch = linux-process-read8(path + i)
+    // Linux treats repeated slashes as the same path separator. In
+    // particular HOME=/ yields //.sqliterc, which must remain a file lookup.
+    if ch != 47 || written == 0 || load8(dest + written - 1) != 47 {
+      store8(dest + written,ch)
+      if ch != 0 { written = written + 1 }
+    }
+    if ch == 0 {
+      if written == 0 { return -2 }
+      if sf-path-name-valid(dest) == 0 { return -36 }
+      return written
+    }
+    i = i + 1
+  }
+  return -36
+}
+
+fn linux-process-file-open-mode(path: Int, flags: Int, permissions: Int) -> Int {
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  let normalized = linux-process-file-copy-path(path,linux-process-file-buffer + 256)
+  if normalized < 0 { return normalized }
+  if linux-process-device-entry!=0{let device=linux-process-device-open(linux-process-file-buffer+256,flags);if device!=-19{return device;}}
+  if strcmp(linux-process-file-buffer + 256,"/dev/null") == 0 { return linux-process-discard-open(flags) }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  let mode = flags & 3
+  // Native SparkFS has no symlink objects: NOFOLLOW therefore accepts only
+  // real regular files/directories, without following a foreign symlink.
+  if mode == 3 || (flags & 0xB06C3) != flags { return -22 }
+  if (flags & 0x200) != 0 && mode == VFS-O-RDONLY { return -22 }
+  if (flags & 0x80) != 0 && (flags & VFS-O-CREAT) == 0 { return -22 }
+  let slot = 3
+  while slot < VFS-MAX-FDS && linux-process-pipe-slot-used(slot)!=0 { slot = slot + 1 }
+  if slot == VFS-MAX-FDS { return -24 }
+  if vfs-fd-alloc() < 3 { return -24 }
+  let dest = linux-process-file-paths + slot * 256
+  let copied = linux-process-file-copy-path(path,dest)
+  if copied < 0 { return copied }
+  let directory = 0
+  let exists = fs-stat(dest,linux-process-file-buffer)
+  if exists < 0 {
+    if (flags & VFS-O-CREAT) == 0 { return -2 }
+    if (flags & 0x10000) != 0 || (copied > 1 && load8(dest + copied - 1) == 47) { return -20 }
+    if permissions < 0 || permissions > 0x1FF { return -22 }
+  } else {
+    let kind = load32(linux-process-file-buffer + SF-ST-TYPE)
+    if kind == SF-TYPE-DIR {
+      if mode != VFS-O-RDONLY || (flags & (VFS-O-CREAT | 0x200 | 0x400)) != 0 { return -21 }
+      directory = 0x10000
+    } else if kind == SF-TYPE-FILE {
+      if (flags & 0x10000) != 0 || (copied > 1 && load8(dest + copied - 1) == 47) { return -20 }
+    } else { return -38 }
+    if (flags & 0x80) != 0 { return -17 }
+    if (flags & 0x200) != 0 {
+      if fs-write-file(dest,linux-process-file-buffer,0) != 0 { return -5 }
+    }
+  }
+  let fd = vfs-open-borrowed-path(dest,mode | directory | (flags & (VFS-O-CREAT | 0x400)))
+  if fd == -16 { return -24 }
+  if fd >= 3 {
+    if exists < 0 && fs-set-mode(dest,permissions & 0x1ED) < 0 {
+      vfs-close(fd);fs-delete(dest);return -5
+    }
+    if linux-process-file-bind-identity(slot,fd) < 0 { vfs-close(fd);return -5 }
+    store64(linux-process-files + slot * 8,fd)
+    store64(linux-process-file-fdflags + slot * 8,(flags >> 19) & 1)
+    return slot
+  }
+  return fd
+}
+
+fn linux-process-file-access(path: Int, mode: Int) -> Int {
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  // F_OK queries real existence. Permission/identity policy is not emulated.
+  if (mode & 7) != mode { return -22 }
+  if mode != 0 { return -38 }
+  let dest = linux-process-file-buffer + 256
+  let copied = linux-process-file-copy-path(path,dest)
+  if copied < 0 { return copied }
+  if fs-stat(dest,linux-process-file-buffer) < 0 { return -2 }
+  return 0
+}
+
+fn linux-process-file-unlink(path: Int) -> Int {
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  let dest = linux-process-file-buffer + 256
+  let copied = linux-process-file-copy-path(path,dest)
+  if copied < 0 { return copied }
+  if fs-stat(dest,linux-process-file-buffer) < 0 { return -2 }
+  if load32(linux-process-file-buffer + SF-ST-TYPE) != SF-TYPE-FILE { return -21 }
+  let inode = load64(linux-process-file-buffer + SF-ST-INODE)
+  let mount = load64(linux-process-file-buffer + SF-ST-MOUNT)
+  // Native VFS currently resolves paths on each operation. Refuse unlink of
+  // any open binding instead of claiming Unix open-inode lifetime semantics.
+  let i = 3
+  while i < VFS-MAX-FDS {
+    if vfs-fd-valid(i) != 0 && vfs-stream-valid(i) == 0 {
+      if fs-stat(load64(vfs-fd-table + i * 32),linux-process-file-buffer) == 0 {
+        if load64(linux-process-file-buffer + SF-ST-INODE) == inode && load64(linux-process-file-buffer + SF-ST-MOUNT) == mount { return -16 }
+      }
+    }
+    i = i + 1
+  }
+  if fs-delete(dest) < 0 { return -5 }
+  return 0
+}
+
+fn linux-process-file-read(fd: Int, buffer: Int, length: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,0) }
+  if (load64(vfs-fd-table + host * 32 + 16) & 0x10000) != 0 { return -21 }
+  if length < 0 || length > 65536 { return -22 }
+  if linux-process-range(buffer, length, 1) == 0 { return -14 }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  let done = 0
+  while done < length {
+    let count = length - done
+    if count > 4096 { count = 4096 }
+    let n = vfs-read(host, linux-process-file-buffer, count)
+    if n < 0 { if done > 0 { return done } return n }
+    if n > count { return -5 }
+    if linux-process-copy-out(buffer + done,linux-process-file-buffer,n) != 0 { return -14 }
+    done = done + n
+    if n < count { return done }
+  }
+  return done
+}
+
+fn linux-process-file-seek(fd: Int, offset: Int, whence: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  if vfs-discard-valid(host) != 0 {
+    if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+    return vfs-lseek(host,offset,whence)
+  }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  if offset < -0x7FFFFFFF || offset > 0x7FFFFFFF { return -22 }
+  return vfs-lseek(host, offset, whence)
+}
+
+fn linux-process-file-write(fd: Int, buffer: Int, length: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-io(fd,buffer,length,1) }
+  let flags = load64(vfs-fd-table + host * 32 + 16)
+  if (flags & 3) == VFS-O-RDONLY { return -9 }
+  if length < 0 || length > 65536 { return -22 }
+  if linux-process-range(buffer, length, 0) == 0 { return -14 }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  if length == 0 { return 0 }
+  if (flags & 0x400) != 0 {
+    let end = vfs-lseek(host,0,2)
+    if end < 0 { return end }
+  }
+  let done = 0
+  while done < length {
+    let count = length - done
+    if count > 4096 { count = 4096 }
+    if linux-process-copy-in(buffer + done,linux-process-file-buffer,count) != 0 { return -14 }
+    let n = vfs-write(host,linux-process-file-buffer,count)
+    if n < 0 { if done > 0 { return done } return n }
+    if n > count { return -5 }
+    done = done + n
+    if n < count { return done }
+  }
+  return done
+}
+
+fn linux-process-file-close(fd: Int) -> Int {
+  if linux-process-device-is(fd)!=0{return linux-process-device-close(fd);}
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  let result = vfs-close(host)
+  if result == 0 { linux-process-file-unlock-close(fd);store64(linux-process-files + fd * 8, -9);store64(linux-process-file-fdflags + fd * 8,0) }
+  return result
+}
+
+// Kernel services are synchronous with IF0 and this personality admits one
+// active CPU execution at a time. Temporarily selecting an offset has no competing
+// observer. Restore the shared open-file offset even after short/error I/O.
+fn linux-process-file-positional(fd: Int, buffer: Int, length: Int, offset: Int, writing: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if vfs-discard-valid(host) != 0 {
+    if offset < 0 { return -22 }
+    return linux-process-discard-io(fd,buffer,length,writing)
+  }
+  let flags = load64(vfs-fd-table + host * 32 + 16)
+  if writing != 0 && (flags & 3) == VFS-O-RDONLY { return -9 }
+  if writing == 0 && (flags & 3) == VFS-O-WRONLY { return -9 }
+  if length < 0 || length > 65536 || offset < 0 || offset > 0x7FFFFFFF { return -22 }
+  let writable = 1
+  if writing != 0 { writable = 0 }
+  if linux-process-range(buffer,length,writable) == 0 { return -14 }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  let saved = vfs-fd-offset(host)
+  let selected = vfs-lseek(host,offset,0)
+  if selected < 0 { return selected }
+  let result = 0
+  if writing != 0 { result = linux-process-file-write(fd,buffer,length) }
+  else { result = linux-process-file-read(fd,buffer,length) }
+  if vfs-lseek(host,saved,0) != saved { return -5 }
+  return result
+}
+
+fn linux-process-file-stat(fd: Int, buffer: Int) -> Int {
+  let host = linux-process-file-host(fd)
+  if host < 3 { return -9 }
+  if cap-check(linux-process-authority,cap-memory()) == 0 { return -13 }
+  if vfs-discard-valid(host) != 0 { return linux-process-discard-stat(fd,buffer) }
+  if linux-process-range(buffer, 144, 1) == 0 { return -14 }
+  let ready = linux-process-files-ready()
+  if ready < 0 { return ready }
+  if fs-stat(load64(vfs-fd-table + host * 32), linux-process-file-buffer) < 0 { return -5 }
+  return linux-process-file-copy-stat(buffer)
+}

@@ -1,0 +1,36 @@
+package space.fixture
+
+var lvm-capacity-vm: Int = 0
+var lvm-capacity-bindings: Int = 0
+var lvm-capacity-contexts: Int = 0
+fn lvm-stage-open()->void {
+ lvm-capacity-bindings=alloc(31*8);lvm-capacity-contexts=alloc(31*8);
+ let vm=user-space-create(lvm-authority,2);if vm<=0{panic("stage capacity native witness");}
+ lvm-capacity-vm=vm;
+ lvm-check(0,user-space-map-zero(vm,lvm-authority,0x62000000,USER-SPACE-EXECUTE));
+ lvm-check(0,user-space-map-zero(vm,lvm-authority,0x63000000,USER-SPACE-WRITE));
+ let i=0;
+ while i<31{
+  let context=(alloc(831)+63)&-64;store64(lvm-capacity-contexts+i*8,context);
+  lvm-check(0,user-context-init(context,768,user-space-domain(vm,lvm-authority),0x62000000,0,0x63000FF0));
+  let binding=user-space-attach(vm,lvm-authority,context);if binding<=0{panic("stage capacity native binding");}
+  store64(lvm-capacity-bindings+i*8,binding);i=i+1;
+ }
+ lvm-check(32,user-space-refs(vm,lvm-authority));
+ serial-write-cstr(com1(),"linux-vm: genuine native binding capacity witness31 PASS");serial-nl(com1());
+}
+fn lvm-stage-close()->void {
+ lvm-check(32,user-space-refs(lvm-capacity-vm,lvm-authority));
+ // Failed-stage init cannot leave a valid, unbound CPU image after VM cleanup.
+ lvm-check(0,load64(load64(linux-process-states+LPS-SPARE-CONTEXT)+736));
+ let i=0;while i<31{
+  let binding=load64(lvm-capacity-bindings+i*8);
+  lvm-check(lvm-capacity-vm,user-space-binding-space(binding,lvm-authority));
+  lvm-check(0,user-space-release-binding(binding,lvm-authority));
+  lvm-check(-6,user-space-binding-space(binding,lvm-authority));
+  lvm-check(0,load64(load64(lvm-capacity-contexts+i*8)+736));i=i+1;
+ }
+ lvm-check(0,user-space-release(lvm-capacity-vm,lvm-authority));
+ lvm-check(-6,user-space-phase(lvm-capacity-vm,lvm-authority));
+ serial-write-cstr(com1(),"linux-vm: actual exec stage capacity refusal old image and descriptors retained PASS");serial-nl(com1());
+}

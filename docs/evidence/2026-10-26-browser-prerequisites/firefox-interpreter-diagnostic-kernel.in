@@ -1,0 +1,294 @@
+import "/workspace/browser-entry-frozen-standard/source/components/linux-process.in"
+import "/workspace/browser-entry-frozen-standard/source/components/counter.in"
+package space.kernel
+
+// =============================================================================
+// CENTRAL NANOKERNEL HUB ("Space Central Station")
+// =============================================================================
+// Core hardware enforcement, execution & IPC fabric:
+import "/workspace/browser-entry-frozen-standard/source/components/native-call.in"
+import "/workspace/browser-entry-frozen-standard/source/components/cpu.in"
+import "/workspace/browser-entry-frozen-standard/source/components/pci.in"
+import "/workspace/browser-entry-frozen-standard/source/components/channel.in"
+import "/workspace/browser-entry-frozen-standard/source/components/domain.in"
+import "/workspace/browser-entry-frozen-standard/source/components/libc.in"
+import "/workspace/browser-entry-frozen-standard/source/components/serial.in"
+import "/workspace/browser-entry-frozen-standard/source/components/memory.in"
+import "/workspace/browser-entry-frozen-standard/source/components/object.in"
+import "/workspace/browser-entry-frozen-standard/source/components/interrupts.in"
+import "/workspace/browser-entry-frozen-standard/source/components/syscall.in"
+import "/workspace/browser-entry-frozen-standard/source/components/sched.in"
+
+// Spoke Subsystem Hubs ("Metro Lines" radiating from the Central Nanokernel Hub):
+// 1. Network Metro Line (e1000, netstack, DHCP, DNS)
+import "/workspace/browser-entry-frozen-standard/source/components/net-hub.in"
+// 2. Storage & VFS Metro Line (NVMe, SparkFS fs2-*, filesystem, VFS, time)
+import "/workspace/browser-entry-frozen-standard/source/components/storage-hub.in"
+// 3. Runtime & SCI Metro Line (supervisor, preempt, sci-loader, boot-image, process)
+import "/workspace/browser-entry-frozen-standard/source/components/runtime-hub.in"
+// 4. Personalities Metro Line (Linux/POSIX, Darwin/Mach-O, Windows/PE32+, foreign-exec)
+import "/workspace/browser-entry-frozen-standard/source/components/personality-hub.in"
+// 5. Desktop & Display Metro Line (USB xHCI/HID, display stations, PS/2 mouse)
+import "/workspace/browser-entry-frozen-standard/source/components/desktop-hub.in"
+// 6. Diagnostics, Shell & Verification Metro Line (shell, editor, diagnostics, selftests)
+import "/workspace/browser-entry-frozen-standard/source/components/diagnostics-hub.in"
+
+
+// The nanokernel root component.
+component KernelRoot {
+  target "x86_64-unknown-none"
+  deterministic true
+  checkpoint none
+
+  export boot: BootEntry
+
+  capability serial: DebugConsole(write)
+  capability memory: PhysicalMemory(discover, map)
+  capability tables: PageTables(create, activate)
+  capability traps: TrapTable(install)
+  capability caps: CapabilityTable(create-root, mint-kernel)
+  capability storage: BlockStorage(read, write)
+  capability input: InputDevice(publish)
+  capability network: NetworkDevice(tx, rx, configure)
+  capability display: DisplayDevice(map, present)
+  capability volume: Volume(read, write)
+}
+
+struct KernelState {
+  Int root-table-id
+  Int realm-id
+  Bool cpu-ready
+}
+
+interface BootEntry {
+  fn start(mb-info: Int) -> Int
+}
+
+interface DebugConsole {
+  fn write(msg: String) -> void
+}
+
+interface BlockStorage {
+  fn read(lba: Int, count: Int, buf: Int) -> Int
+  fn write(lba: Int, count: Int, buf: Int) -> Int
+}
+
+interface InputDevice {
+  fn publish(evt: Int) -> void
+}
+
+interface NetworkDevice {
+  fn tx(len: Int) -> void
+  fn rx() -> Int
+  fn configure() -> Int
+}
+
+interface DisplayDevice {
+  fn map(phys: Int, size: Int) -> void
+  fn present() -> void
+}
+
+interface Volume {
+  fn read(fd: Int, buf: Int, count: Int) -> Int
+  fn write(fd: Int, buf: Int, count: Int) -> Int
+}
+
+// --- nanokernel state -------------------------------------------------------
+var heap-next: Int = 0
+var heap-end: Int = 0
+var total-ram: Int = 0
+var region-count: Int = 0
+var obj-counter: Int = 0
+var cap-table-base: Int = 0
+var cap-count: Int = 0
+var root-realm: Int = 0
+var ticks: Int = 0
+var idt-base: Int = 0
+var realm-grants: Int = 0
+var boot-quiet: Int = 1
+var redir-buf: Int = 0
+var redir-pos: Int = 0
+var redir-max: Int = 0
+
+// --- kernel accessors (published via the kernel export table) ---------------
+// Dynamic apps bind these to read live kernel state; the underlying values
+// are kernel-owned globals that data imports cannot reach.
+
+fn ticks-now() -> Int {
+  return ticks
+}
+
+fn mem-heap-free() -> Int {
+  return heap-end - heap-next
+}
+
+// --- kernel entry -----------------------------------------------------------
+fn kernel-entry(mb-info: Int) -> Int {
+  let port = com1()
+  serial-init(port)
+  serial-write-cstr(port, "space: kernel root entered (Space 0.1.0)")
+  serial-nl(port)
+
+  // Writable globals, including their initial values, are loaded in the boot image.
+  boot-quiet = 1
+
+  discover-memory(mb-info)
+  counter-init(mb-info)
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: available RAM bytes 0x")
+    serial-write-hex(port, total-ram)
+    serial-write-cstr(port, " across regions 0x")
+    serial-write-hex(port, region-count)
+    serial-nl(port)
+    serial-write-cstr(port, "space: heap window 0x")
+    serial-write-hex(port, heap-next)
+    serial-write-cstr(port, " .. 0x")
+    serial-write-hex(port, heap-end)
+    serial-nl(port)
+  }
+
+  obj-arena-init(65536)
+  cap-table-init(64)
+  let cap-table-obj = obj-alloc(2)
+  root-realm = obj-alloc(1)
+  store64(root-realm + 16, cap-table-obj)
+  let kernel-cap = cap-mint(root-realm, 0xF)
+
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: bootstrap realm object id 0x")
+    serial-write-hex(port, obj-id(root-realm))
+    serial-nl(port)
+    serial-write-cstr(port, "space: root cap table at 0x")
+    serial-write-hex(port, cap-table-base)
+    serial-write-cstr(port, " caps 0x")
+    serial-write-hex(port, cap-count)
+    serial-nl(port)
+    serial-write-cstr(port, "space: objects allocated 0x")
+    serial-write-hex(port, obj-counter)
+    serial-nl(port)
+  }
+
+  domain-init()
+  store64(domain-table + 16, kernel-cap)
+  current-cap = kernel-cap
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: domain subsystem init, ")
+    serial-write-dec-wide(port, domain-count)
+    serial-write-cstr(port, " domains (kernel + ")
+    let available-domains = 63
+    serial-write-dec-wide(port, available-domains)
+    serial-write-cstr(port, " available)")
+    serial-nl(port)
+  }
+
+  interrupts-init()
+  if boot-quiet == 0 {
+    serial-write-cstr(port, "space: interrupts enabled (PIC remapped, PIT 100Hz)")
+    serial-nl(port)
+  }
+
+  let shown = 0
+  while shown < 1 {
+    hlt()
+    if ticks >= (shown + 1) * 2 {
+      if boot-quiet == 0 {
+        serial-write-cstr(port, "space: timer ticks 0x")
+        serial-write-hex(port, ticks)
+        serial-nl(port)
+      }
+      shown = shown + 1
+    }
+  }
+
+  // Activate Spoke Hubs ("Metro Lines") from the Central Nanokernel Hub:
+  runtime-hub-early-init(port)
+  net-hub-init(port)
+  storage-hub-nvme-init(port)
+  let usb-rc = desktop-hub-usb-init(port)
+  runtime-hub-arena-init(port)
+  storage-hub-fs-init(port)
+  diagnostics-hub-sci-selftest(port)
+  personality-hub-init(port)
+  desktop-hub-init(port, mb-info, usb-rc)
+
+  // Optional runtime-loaded Display / Input components (probed at fixed
+  // physical addresses). If present, they are started in isolated domains.
+  preempt-start(port)
+  runtime-hub-load-components(port)
+
+  // Let preemptive display/input print boot markers, then stop the timer
+  // scheduler so the serial shell owns the CPU (input/display hlt forever).
+  if preempt-count > 0 {
+    let grace = ticks + 300
+    while ticks < grace {
+      hlt()
+    }
+  }
+  preempt-stop(port)
+
+  browser-runtime-probe(port)
+  shell(port)
+
+  serial-write-cstr(port, "space: nanokernel ready, total ticks 0x")
+  serial-write-hex(port, ticks)
+  serial-nl(port)
+  serial-write-cstr(port, "space: halting")
+  serial-nl(port)
+  cli()
+  while true {
+    hlt()
+  }
+  return 0
+}
+
+fn dynamic-entry-free()->Int{let n=0;let p=free-list;while p!=0 && n<131072{n+=1;p=load64(p);}if p!=0{panic("ET_DYN free-list cycle");}return n;}
+fn dynamic-entry-run(port:Int)->void{
+ if heap-next>=0x10000000{panic("ET_DYN source collision");}heap-end=0x10000000;
+ let copy=alloc(225672);let authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage()|cap-timer());
+ let heap=heap-next;let free=dynamic-entry-free();let domains=domain-count;let caps=cap-count;
+ cpu-mem-copy64(copy,0x10000000,28209);store16(copy+16,1);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed wrong-type");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+32,0);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed bad-phdr");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+24,-1);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed negative-entry");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+24,0);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed non-executable-entry");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+136,9223372036854775807);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed overflow-va");}
+cpu-mem-copy64(copy,0x10000000,28209);store32(copy+124,7);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed writable-executable");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+168,3);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed bad-alignment");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+96,0);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed unmapped-phdr");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+136,0);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed overlap");}
+cpu-mem-copy64(copy,0x10000000,28209);store32(copy+288,3);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed interpreter");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+220760,1);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed needed-library");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+320,16);store64(copy+328,16);store64(copy+220760,7);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed unterminated-dynamic");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+296,225672);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed dynamic-file-bounds");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+304,1);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed dynamic-va-mismatch");}
+cpu-mem-copy64(copy,0x10000000,28209);store8(copy+344,2);store8(copy+345,0);store8(copy+346,0);store8(copy+347,0);store8(copy+348,6);store8(copy+349,0);store8(copy+350,0);store8(copy+351,0);store8(copy+352,88);store8(copy+353,94);store8(copy+354,3);store8(copy+355,0);store8(copy+356,0);store8(copy+357,0);store8(copy+358,0);store8(copy+359,0);store8(copy+360,88);store8(copy+361,94);store8(copy+362,3);store8(copy+363,0);store8(copy+364,0);store8(copy+365,0);store8(copy+366,0);store8(copy+367,0);store8(copy+368,88);store8(copy+369,94);store8(copy+370,3);store8(copy+371,0);store8(copy+372,0);store8(copy+373,0);store8(copy+374,0);store8(copy+375,0);store8(copy+376,128);store8(copy+377,1);store8(copy+378,0);store8(copy+379,0);store8(copy+380,0);store8(copy+381,0);store8(copy+382,0);store8(copy+383,0);store8(copy+384,128);store8(copy+385,1);store8(copy+386,0);store8(copy+387,0);store8(copy+388,0);store8(copy+389,0);store8(copy+390,0);store8(copy+391,0);store8(copy+392,8);store8(copy+393,0);store8(copy+394,0);store8(copy+395,0);store8(copy+396,0);store8(copy+397,0);store8(copy+398,0);store8(copy+399,0);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed duplicate-dynamic");}
+cpu-mem-copy64(copy,0x10000000,28209);store64(copy+320,17);store64(copy+328,17);if linux-process-elf-entry(copy,225672)!=-8{panic("ET_DYN malformed dynamic-stride");}
+ if linux-process-run-counted-input(0x10000000,225672,"/ld.so","--version","",-1,-1,2)!=-13{panic("ET_DYN denied grant");}
+ if heap-next!=heap || dynamic-entry-free()!=free || domain-count!=domains || cap-count!=caps{panic("ET_DYN preflight mutated ownership");}
+ let calls=linux-process-syscalls;
+ if linux-process-run-counted-input(0x12000000,659992,"/firefox","--version","",authority,-1,2)!=-8{panic("Firefox actual entry result changed");}
+ if linux-process-run-counted-input(0x20000000,294059232,"/helium","--version","",authority,-1,2)!=-8{panic("Helium actual entry result changed");}
+ if linux-process-syscalls!=calls || heap-next!=heap || domain-count!=domains || dynamic-entry-free()!=free{panic("Browser refusal entered or allocated");}
+ serial-write-cstr(port,"browser-entry: original Firefox and Helium refused before execution");serial-nl(port);
+ let fs=rdmsr(0xc0000100);let gs=rdmsr(0xc0000101);let cap=current-cap;
+ let cycle=0;while cycle<21{
+  let which=0;while which<3{
+   let option="--help";let expected=0;if which==1{option="--version";}if which==2{option="--space-invalid-option";expected=1;}
+   serial-write-cstr(port,"ld-entry: begin ");serial-write-dec-wide(port,cycle);serial-put(port,32);serial-write-dec-wide(port,which);serial-nl(port);
+   let status=linux-process-run-counted-input(0x10000000,225672,"/ld.so",option,"",authority,-1,2);
+   serial-write-cstr(port,"ld-entry: end ");serial-write-dec-wide(port,cycle);serial-put(port,32);serial-write-dec-wide(port,which);serial-put(port,32);serial-write-dec-wide(port,status);serial-nl(port);
+   if status!=expected{panic("Original runtime linker status");}which+=1;
+  }
+  if linux-process-run-counted-input(0x14000000,14072,"/probe","first","",authority,-1,2)!=42{panic("ET_DYN auxv self-exec and writev control");}
+  if domain-current!=0 || user-context-active!=0 || user-budget-active!=0 || domain-user-syscall-hook!=0 || rdmsr(0xc0000100)!=fs || rdmsr(0xc0000101)!=gs || current-cap!=cap || linux-process-active!=0 || linux-process-cleanup-failed!=0 || cap-count!=caps{panic("ET_DYN supervisor restoration");}
+  if cycle==0{heap=heap-next;free=dynamic-entry-free();domains=domain-count;}else if heap-next!=heap || dynamic-entry-free()!=free || domain-count!=domains{panic("ET_DYN repeated ownership growth");}cycle+=1;
+ }
+ serial-write-cstr(port,"ld-entry: 63 original loader entries and 42 own auxv/exec/writev entries PASS");serial-nl(port);
+}
+
+fn browser-runtime-probe(port:Int)->void{
+ let authority=cap-mint(root-realm,cap-memory()|cap-serial()|cap-storage()|cap-timer());
+ serial-write-cstr(port,"firefox-original: filesystem install status ");serial-write-dec-wide(port,fs-write-file("/firefox",0x12000000,659992));serial-nl(port);
+ linux-process-trace=1;
+ let status=linux-process-run-counted-input(0x10000000,225672,"/ld.so","--verify","/firefox",authority,-1,3);
+ serial-write-cstr(port,"firefox-original: interpreter verify status ");serial-write-dec-wide(port,status);serial-nl(port);
+}

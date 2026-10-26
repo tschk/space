@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "classification": "unmodified upstream SQLite static Linux executable; memory and synchronous RAM file databases",
+  "infinite_argv": [
+    "/sqlite3",
+    ":memory:",
+    "WITH RECURSIVE t(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM t) SELECT sum(x) FROM t;"
+  ],
+  "cases": [
+    {
+      "name": "arithmetic-version",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select 6*7, sqlite_version();"
+      ],
+      "expected_stdout": "42|3.46.1\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "relational-sort",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(n integer); insert into t values(3),(1),(2); select sum(n),count(*) from t; select group_concat(n,'|') from(select n from t order by n);"
+      ],
+      "expected_stdout": "6|3\n1|2|3\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "recursive-sum",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "WITH RECURSIVE t(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM t WHERE x<1000) SELECT sum(x) FROM t;"
+      ],
+      "expected_stdout": "500500\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "json",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select json_extract('{\"a\":[1,2,3]}','$.a[1]'),json_array(1,'two',null);"
+      ],
+      "expected_stdout": "2|[1,\"two\",null]\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "unicode",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select char(955,128578),length(char(955,128578));"
+      ],
+      "expected_stdout": "λ🙂|2\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "transaction-rollback",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "create table t(x);begin;insert into t values(1);rollback;select count(*) from t;"
+      ],
+      "expected_stdout": "0\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "blob",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select hex(x'0001ff'),length(zeroblob(9000));"
+      ],
+      "expected_stdout": "0001FF|9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "window",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "with t(x)as(values(3),(1),(2))select x,sum(x)over(order by x)from t order by x;"
+      ],
+      "expected_stdout": "1|1\n2|3\n3|6\n",
+      "expected_stderr": "",
+      "expected_exit": 0
+    },
+    {
+      "name": "syntax-error",
+      "argv": [
+        "/sqlite3",
+        ":memory:",
+        "select from;"
+      ],
+      "expected_stdout": "",
+      "expected_stderr": "Error: in prepare, near \"from\": syntax error\n  select from;\n         ^--- error here\n",
+      "expected_exit": 1
+    },
+    {
+      "name": "file-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists t(x);begin immediate;delete from t;insert into t values(42);commit;select sum(x) from t;"
+      ],
+      "expected_stdout": "42\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select sum(x) from t;"
+      ],
+      "expected_stdout": "42\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-large-transaction",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "create table if not exists big(x);begin immediate;delete from big;insert into big values(zeroblob(9000));commit;select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-large-reopen",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    },
+    {
+      "name": "file-rollback",
+      "argv": [
+        "/sqlite3",
+        "@FILE@",
+        "begin immediate;update big set x=zeroblob(18000);rollback;select length(x) from big;"
+      ],
+      "expected_stdout": "9000\n",
+      "expected_stderr": "",
+      "expected_exit": 0,
+      "file": "",
+      "create": true,
+      "repeat": true,
+      "file_slot": 9
+    }
+  ],
+  "pending_scenarios": [
+    "Arbitrary power-loss/crash recovery beyond the separately verified three-boot direct NVMe transaction/update/rollback gate",
+    "WAL/shared-memory coordination, open-unlinked file lifetime and arbitrary file truncation remain unsupported"
+  ]
+}

@@ -1,0 +1,174 @@
+package space.kernel
+import "gui-window-layout.in"
+
+// Readable product profile over the same private generation records/lifetime
+// fence as the one-page fixture. Trusted CPL0 clients borrow their48-byte visual
+// configuration read-only during startup; later updates use scalar SPDP events.
+// No manager record, capability or instance-handle pointer is passed to a client.
+var gui-window-layout: Int = 0
+var gui-window-configs: Int = 0
+const GUI-WINDOW-CONFIG = 136
+
+fn gui-window-prepare(generation: Int) -> Int {
+  if domain-get-current() != 0 || gui-reopen() != 1 { return 0 }
+  if gui-window-layout == 0 { gui-window-layout = alloc(GUI-WINDOW-LAYOUT-BYTES) }
+  if gui-window-configs == 0 { gui-window-configs = alloc(96) }
+  let scale = fb-font-scale
+  if gui-window-layout-fill(gui-window-layout, fb-width, fb-height, scale, generation) != 1 { return 0 }
+  let slot = 0
+  while slot < 2 {
+    let config = gui-window-configs + slot * 48
+    let i = 0
+    while i < 40 { store64(config + i, load64(gui-window-layout + i)); i += 8 }
+    store64(config + 40, 1 - slot)
+    slot += 1
+  }
+  dsp-background = 0x0011161F
+  return 1
+}
+
+fn gui-window-config(record: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 || gui-window-configs == 0 { return 0 }
+  if record != gui-records && record != gui-records + GUI-RECORD-SIZE { return 0 }
+  let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let config = load64(record + GUI-WINDOW-CONFIG)
+  if config != gui-window-configs + slot * 48 || load64(config) != GUI-WINDOW-CONFIG-MAGIC { return 0 }
+  return config
+}
+
+// Complete bounded reply validation precedes any compositor mutation. Configure
+// acknowledgements carry the exact generation and proposed dimensions/scale.
+fn gui-window-reply(record: Int, initial: Int, closing: Int, configured: Int) -> Int {
+  let config = gui-window-config(record)
+  if config == 0 || initial < 0 || initial > 1 || closing < 0 || closing > 1 || configured < 0 || configured > 1 || initial + closing + configured > 1 { return 0 }
+  if load64(record + GUI-HANDLE) != sci-sync-handle || sci-sync-pixel-size != SCI-CANVAS-BYTES || sci-sync-provenance-valid(sci-sync-domain, 4) != 1 { return 0 }
+  if load64(record + 8) != sci-sync-page || load64(record + 16) != sci-sync-domain || load64(record + 32) != sci-sync-pixel-phys || load64(record + 88) != sci-sync-cap { return 0 }
+  let width = load64(config + 16)
+  let height = load64(config + 24)
+  let geometry = (width << 16) | height
+  let word = gui-window-config-word(width, height, load64(config + 32))
+  if word == 0 { return 0 }
+  let count = 3 + initial + configured
+  if closing == 1 { count = 2 }
+  let page = sci-sync-page
+  if chan-page-frame-valid(page) == 0 { return 0 }
+  let capacity = load64(page + 16)
+  let head = load64(page)
+  if load64(page + 8) != (head + count * 4) % capacity { return 0 }
+  let i = 0
+  while i < count {
+    if chan-page-recv-frame(page, gui-replies + i * 32) != 1 { return 0 }
+    i += 1
+  }
+  i = 0
+  while i < count {
+    let message = gui-replies + i * 32
+    let object = SPDP-OBJ-SURFACE
+    let opcode = SPDP-SURFACE-ATTACH
+    let arg0 = 0
+    let arg1 = 0
+    if closing == 1 {
+      opcode = SPDP-SURFACE-DESTROY
+      if i == 1 { object = SPDP-OBJ-SHM; opcode = SPDP-SHM-POOL-DESTROY }
+    } else {
+      let index = i - initial - configured
+      if index == -1 {
+        if initial == 1 { object = SPDP-OBJ-COMPOSITOR; opcode = SPDP-COMPOSITOR-CREATE-SURFACE }
+        else { opcode = SPDP-SURFACE-CONFIGURE-ACK-V1; arg0 = load64(config + 8); arg1 = word }
+      }
+      if index == 1 { opcode = SPDP-SURFACE-DAMAGE; arg1 = geometry }
+      if index == 2 { opcode = SPDP-SURFACE-COMMIT }
+    }
+    if load64(message) != object || load64(message + 8) != opcode || load64(message + 16) != arg0 || load64(message + 24) != arg1 { return 0 }
+    i += 1
+  }
+  if closing == 1 { return gui-retire(record) }
+  let slot = (record - gui-records) / GUI-RECORD-SIZE
+  let sid = load64(record + GUI-SURFACE)
+  if initial == 1 {
+    sid = dsp-create-surface()
+    if sid < 0 { return 0 }
+    store64(record + GUI-SURFACE, sid)
+    store64(dsp-pools + slot * 8, sci-sync-pixel-phys)
+    store64(dsp-pool-sizes + slot * 8, SCI-CANVAS-BYTES)
+  }
+  dsp-surface-attach(sid, slot << 32)
+  if dsp-surface-stride(sid, SCI-CANVAS-STRIDE) != 1 { return 0 }
+  let x = load64(gui-window-layout + 40 + slot * 8)
+  let y = load64(gui-window-layout + 56)
+  dsp-surface-geometry(sid, (x << 48) | (y << 32) | geometry)
+  dsp-surface-commit(sid)
+  dsp-composite()
+  return 1
+}
+
+fn gui-window-admit(slot: Int) -> Int {
+  if domain-get-current() != 0 || gui-records == 0 || slot < 0 || slot > 1 || gui-window-configs == 0 { return 0 }
+  let record = gui-records + slot * GUI-RECORD-SIZE
+  if load64(record + GUI-TOKEN) != 0 || runtime-instance-record(sci-sync-handle, 1) == 0 || sci-sync-pixel-size != SCI-CANVAS-BYTES { return 0 }
+  if sci-sync-provenance-valid(sci-sync-domain, 4) != 1 || (sci-sync-grants != 20 && sci-sync-grants != 52) { return 0 }
+  let other = gui-records + (1 - slot) * GUI-RECORD-SIZE
+  if load64(other + GUI-TOKEN) != 0 && (load64(other + 8) == sci-sync-page || load64(other + 16) == sci-sync-domain || load64(other + 32) == sci-sync-pixel-phys) { return 0 }
+  store64(record, sci-sync-ring-unit)
+  store64(record + 8, sci-sync-page)
+  store64(record + 16, sci-sync-domain)
+  store64(record + 24, sci-sync-grants)
+  store64(record + 32, sci-sync-pixel-phys)
+  store64(record + 40, sci-sync-pixel-size)
+  store64(record + 48, sci-sync-pixel-pool)
+  store64(record + 56, sci-sync-entry)
+  store64(record + 64, sci-sync-code-start)
+  store64(record + 72, sci-sync-code-end)
+  store64(record + 80, sci-sync-info)
+  store64(record + 88, sci-sync-cap)
+  store64(record + 96, sci-sync-object)
+  store64(record + GUI-HANDLE, sci-sync-handle)
+  store64(record + GUI-SURFACE, -1)
+  store64(record + GUI-WINDOW-CONFIG, gui-window-configs + slot * 48)
+  if gui-window-reply(record, 1, 0, 0) != 1 { gui-retire(record); return 0 }
+  gui-generation += 1
+  let token = gui-generation
+  store64(record + GUI-TOKEN, token)
+  store64(record + GUI-ACTIVE, 1)
+  if gui-focused == 0 { gui-focused = token }
+  return token
+}
+
+fn gui-window-event(token: Int, object: Int, opcode: Int, arg0: Int, arg1: Int) -> Int {
+  if domain-get-current() != 0 || gui-restore(token) != 1 { return 0 }
+  let record = gui-record(token)
+  if gui-window-config(record) == 0 { return 0 }
+  if object == SPDP-OBJ-SEAT {
+    if opcode == SPDP-SEAT-KEYBOARD-KEY || opcode == SPDP-SEAT-POINTER-BUTTON {
+      if token != gui-focused || arg0 < 0 || (arg1 >> 32) != 1 { return 0 }
+    } else if opcode != SPDP-SEAT-FOCUS-V1 { return 0 }
+  } else if object != SPDP-OBJ-SURFACE || opcode != SPDP-SURFACE-CONFIGURE-V1 { return 0 }
+  let page = sci-sync-page
+  if chan-page-frame-valid(page) == 0 || load64(page) != load64(page + 8) { return 0 }
+  let capacity = load64(page + 16)
+  let consumed = (load64(page) + 4) % capacity
+  if chan-page-send-frame(page, object, opcode, arg0, arg1) != 1 { return 0 }
+  if sci-sync-enter(sci-sync-domain, 0) != 42 { gui-retire(record); return 0 }
+  if load64(page + 16) != capacity || load64(page) != consumed { gui-retire(record); return 0 }
+  let closing = 0
+  let configured = 0
+  if object == SPDP-OBJ-SEAT && opcode == SPDP-SEAT-KEYBOARD-KEY && (arg1 & 0xFFFFFFFF) == 27 { closing = 1 }
+  if object == SPDP-OBJ-SURFACE { configured = 1 }
+  if gui-window-reply(record, 0, closing, configured) != 1 { gui-retire(record); return 0 }
+  return 1
+}
+
+fn gui-window-focus(token: Int) -> Int {
+  if domain-get-current() != 0 || gui-record(token) == 0 { return 0 }
+  let old = gui-record(gui-focused)
+  if old != 0 && gui-focused != token {
+    let config = gui-window-config(old)
+    if config == 0 || gui-window-event(gui-focused, SPDP-OBJ-SEAT, SPDP-SEAT-FOCUS-V1, load64(config + 8), 0) != 1 { return 0 }
+    store64(config + 40, 0)
+  }
+  gui-focused = token
+  let config = gui-window-config(gui-record(token))
+  if config == 0 || gui-window-event(token, SPDP-OBJ-SEAT, SPDP-SEAT-FOCUS-V1, load64(config + 8), 1) != 1 { return 0 }
+  store64(config + 40, 1)
+  return 1
+}

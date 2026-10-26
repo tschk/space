@@ -11,6 +11,21 @@ set -euo pipefail
 # Apps are preinstalled dynamic modules (boot kinds 9-13) that bind kernel
 # services and libspace at load time and run on demand via `runapp`.
 
+# Default remains the full two-image build. A targeted build never certifies
+# the other variant; this allows standard-app testing while minimal is broken.
+VARIANT=all
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != --variant ]; then
+    echo "usage: $0 [--variant all|standard|minimal]" >&2
+    exit 2
+  fi
+  VARIANT="$2"
+fi
+case "$VARIANT" in
+  all|standard|minimal) ;;
+  *) echo "unknown image variant: $VARIANT" >&2; exit 2 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPACE_DIR="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=inauguration-dir.sh
@@ -18,6 +33,11 @@ source "$SCRIPT_DIR/inauguration-dir.sh"
 INAUG_DIR="$(inauguration_dir "$SPACE_DIR")"
 BUILD_DIR="${BUILD_DIR:-/tmp/space-images}"
 IN="${IN:-$INAUG_DIR/in-cli/target/release/in}"
+GUI_PROFILE="${GUI_PROFILE:-protected}"
+case "$GUI_PROFILE" in
+  legacy|window|protected) ;;
+  *) echo "unknown native GUI profile: $GUI_PROFILE" >&2; exit 2 ;;
+esac
 
 LIB_BASE=0x3F000000
 API_BASE=0x3E000000
@@ -66,6 +86,39 @@ sci "$SPACE_DIR/components/app-man.in" app-man-entry "$MAN_BASE" "$BUILD_DIR/app
 sci "$SPACE_DIR/components/app-sysinfo.in" app-sysinfo-entry "$SYSINFO_BASE" "$BUILD_DIR/app-sysinfo.sci"
 
 echo "[3/3] Compiling kernels and assembling images..."
+if [ "$VARIANT" != minimal ]; then
+# Optional native GUI artifacts are only built and packed into standard.
+sci "$SPACE_DIR/components/input.in" input-poll-entry 0x50000000 "$BUILD_DIR/gui-seat.sci"
+GUI_CALC_SOURCE=app-gui-calc.in
+GUI_EDITOR_SOURCE=app-gui-editor.in
+if [ "$GUI_PROFILE" = window ]; then
+  GUI_CALC_SOURCE=app-window-calc.in
+  GUI_EDITOR_SOURCE=app-window-editor.in
+fi
+GUI_CALC_BASE=0x48000000
+GUI_EDITOR_BASE=0x49000000
+GUI_CALC_KIND=20
+GUI_EDITOR_KIND=21
+GUI_PACK_ARGS=()
+if [ "$GUI_PROFILE" = protected ]; then
+  GUI_CALC_SOURCE=app-protected-window-calc.in
+  GUI_EDITOR_SOURCE=app-protected-window-editor.in
+  GUI_CALC_BASE=0x60000000
+  GUI_EDITOR_BASE=0x60000000
+  GUI_CALC_KIND=23
+  GUI_EDITOR_KIND=24
+  GUI_PACK_ARGS=(--protected)
+fi
+sci "$SPACE_DIR/components/$GUI_CALC_SOURCE" client-entry "$GUI_CALC_BASE" "$BUILD_DIR/gui-calc.raw.sci"
+sci "$SPACE_DIR/components/$GUI_EDITOR_SOURCE" client-entry "$GUI_EDITOR_BASE" "$BUILD_DIR/gui-editor.raw.sci"
+for GUI_APP in calc editor; do
+  if ! python3 "$SCRIPT_DIR/pack-gui-sci.py" "$BUILD_DIR/gui-$GUI_APP.raw.sci" "$BUILD_DIR/gui-$GUI_APP.raw.component-metadata.json" "$BUILD_DIR/gui-$GUI_APP.sci" "${GUI_PACK_ARGS[@]}"; then
+    if [ "$GUI_PROFILE" = protected ]; then
+      echo "Protected GUI packaging refused this compiler/artifact. Set IN to a source-built Inauguration0.9.325+ with valid hash-bound page-aligned sci_layout metadata, or explicitly choose GUI_PROFILE=window/legacy for a trusted baseline." >&2
+    fi
+    exit 1
+  fi
+done
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -76,8 +129,12 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-standard.bin" "$BUILD
   "8:$BUILD_DIR/dynmod.sci" "9:$BUILD_DIR/app-calc.sci" "10:$BUILD_DIR/app-notes.sci" \
   "11:$BUILD_DIR/app-hd.sci" "12:$BUILD_DIR/app-sysmon.sci" "13:$BUILD_DIR/app-bench.sci" \
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
-  "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci"
+  "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci" \
+  "$GUI_CALC_KIND:$BUILD_DIR/gui-calc.sci" "$GUI_EDITOR_KIND:$BUILD_DIR/gui-editor.sci" "22:$BUILD_DIR/gui-seat.sci"
 
+fi
+
+if [ "$VARIANT" != standard ]; then
 "$IN" compile --path "$SPACE_DIR/kernel/kernel-root-minimal.in" --entry kernel-entry --emit boot \
   --trampoline "$BUILD_DIR/trampoline.bin" \
   --target native --target-triple x86_64-unknown-none --linkage static-lib \
@@ -89,7 +146,14 @@ python3 "$SCRIPT_DIR/pack-sci-image.py" "$BUILD_DIR/kernel-minimal.bin" "$BUILD_
   "15:$BUILD_DIR/app-files.sci" "16:$BUILD_DIR/app-clock.sci" "17:$BUILD_DIR/app-sum.sci" \
   "18:$BUILD_DIR/app-man.sci" "19:$BUILD_DIR/app-sysinfo.sci"
 
-ls -lh "$BUILD_DIR/standard.bin" "$BUILD_DIR/minimal.bin"
-echo "Done. Boot with:"
-echo "  qemu-system-x86_64 -kernel $BUILD_DIR/standard.bin -m 256M -nographic -no-reboot -serial stdio"
-echo "  qemu-system-x86_64 -kernel $BUILD_DIR/minimal.bin  -m 256M -nographic -no-reboot -serial stdio"
+fi
+
+echo "Done: requested image variant $VARIANT. Boot with:"
+if [ "$VARIANT" != minimal ]; then
+  ls -lh "$BUILD_DIR/standard.bin"
+  echo "  qemu-system-x86_64 -kernel $BUILD_DIR/standard.bin -m 256M -nographic -no-reboot -serial stdio"
+fi
+if [ "$VARIANT" != standard ]; then
+  ls -lh "$BUILD_DIR/minimal.bin"
+  echo "  qemu-system-x86_64 -kernel $BUILD_DIR/minimal.bin -m 256M -nographic -no-reboot -serial stdio"
+fi
