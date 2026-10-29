@@ -99,6 +99,14 @@ The Space loader (`components/sci-loader.in`) is the binder:
    text in the caller's domain with the caller's capabilities.
 3. **Deny rule** — a component with an import that has no registered provider
    is denied before its entry point runs (`an import has no granted provider`).
+4. **Table bounds** — symbol tables are untrusted image data. The loader
+   denies an image unless each table lies inside `[64, image_size)`, each
+   name offset starts inside the image and is NUL-terminated before
+   `image_size`, each import call site satisfies
+   `0 <= site <= image_size - 64 - 5`, and each export code offset is below
+   `image_size - 64`. All import records are validated and resolved before
+   the first patch, so a denied image is left unmodified
+   (`scripts/check-sci-import-bounds.py`).
 
 v1 images (magic `0x5343490000000001`, 32-byte manifest, no symbol tables)
 keep loading unchanged; they are statically self-contained.
@@ -195,6 +203,15 @@ issue `inb`/`outb` and touch kernel-mapped memory. SCI guests loaded through
 table and enter at CPL3 via `domain-enter-user`, with no identity clone.
 Syscall `cap-check` gates serial and channel syscalls; for kernel-linked code
 it is a contract, not a hardware boundary.
+
+Shell `runapp` apps load through `sci-load-runtime-component`, which uses
+`domain-create()`: they run at CPL0 on the cloned identity map, not on the
+CPL3 guest path. Their grant mask is a constant chosen by the shell for the
+app name, and the minted capability holds the manifest's own declared bits.
+Bound kernel imports are called directly at CPL0 with no per-call capability
+check, so an app's grant is enforced only where it uses `int 0x80` syscalls.
+Per-import authority (denying a bind to a kernel export the grant does not
+cover) is not implemented.
 
 The sidecar JSON still records:
 

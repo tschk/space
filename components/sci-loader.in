@@ -16,6 +16,8 @@ const SCI-V2-EXPORT-COUNT = 32
 const SCI-V2-EXPORT-TABLE = 40
 const SCI-V2-IMPORT-COUNT = 48
 const SCI-V2-IMPORT-TABLE = 56
+// Longest accepted symbol name, NUL excluded. Bounds per-record validation.
+const SCI-V2-NAME-MAX = 255
 const SCI-GUEST-GRANTS = 1
 const SCI-DISPLAY-GRANTS = 1
 const SCI-INPUT-GRANTS = 3
@@ -505,6 +507,58 @@ fn dyn-register-kernel-exports(port: Int) -> Int {
   return 0
 }
 
+// SCI v2 symbol tables are untrusted image data. Every offset they carry is
+// manifest-relative and must stay inside [SCI-V2-HEADER, image-size) before
+// the kernel reads a name through it or patches code at it.
+fn sci-v2-table-valid(image-size: Int, count: Int, table-off: Int) -> Int {
+  if image-size <= SCI-V2-HEADER || image-size > 0x200000 {
+    return 0
+  }
+  if count < 0 || count > (image-size - SCI-V2-HEADER) / 16 {
+    return 0
+  }
+  if table-off < SCI-V2-HEADER || table-off > image-size - count * 16 {
+    return 0
+  }
+  return 1
+}
+
+// A symbol name must start inside the image payload and be NUL-terminated
+// within SCI-V2-NAME-MAX bytes and before the image ends.
+fn sci-v2-name-valid(load-addr: Int, image-size: Int, name-off: Int) -> Int {
+  if name-off < SCI-V2-HEADER || name-off >= image-size {
+    return 0
+  }
+  let p = name-off
+  while p < image-size && p <= name-off + SCI-V2-NAME-MAX {
+    if load8(load-addr + p) == 0 {
+      return 1
+    }
+    p = p + 1
+  }
+  return 0
+}
+
+// Validate a whole export table (name offset + code offset per record).
+fn sci-v2-exports-valid(load-addr: Int, image-size: Int, count: Int, table-off: Int) -> Int {
+  if sci-v2-table-valid(image-size, count, table-off) == 0 {
+    return 0
+  }
+  let i = 0
+  while i < count {
+    let rec = load-addr + table-off + i * 16
+    if sci-v2-name-valid(load-addr, image-size, load64(rec + 0)) == 0 {
+      return 0
+    }
+    let code-off = load64(rec + 8)
+    if code-off < 0 || code-off >= image-size - SCI-V2-HEADER {
+      return 0
+    }
+    i = i + 1
+  }
+  return 1
+}
+
 // Register the export table of a loaded SCI v2 image as a provider record so
 // later modules can import from it (chained dynamic modules).
 fn dyn-register-image-exports(port: Int, load-addr: Int, entry: Int, image-size: Int) -> Int {
@@ -515,8 +569,14 @@ fn dyn-register-image-exports(port: Int, load-addr: Int, entry: Int, image-size:
   if export-count == 0 {
     return 0
   }
+  let export-off = load64(load-addr + SCI-V2-EXPORT-TABLE)
+  if sci-v2-exports-valid(load-addr, image-size, export-count, export-off) == 0 {
+    serial-write-cstr(port, "  SCI: DENIED malformed export table")
+    serial-nl(port)
+    return -1
+  }
   dyn-ensure-tables()
-  let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
+  let export-table = load-addr + export-off
   let i = 0
   while i < export-count && dyn-count < DYN-MAX-EXPORTS {
     let rec = export-table + i * 16
@@ -552,9 +612,15 @@ fn sci-register-library(port: Int, load-addr: Int) -> Int {
   }
   let img-entry = load64(load-addr + 16)
   let img-size = load64(load-addr + 24)
-  dyn-ensure-tables()
   let export-count = load64(load-addr + SCI-V2-EXPORT-COUNT)
-  let export-table = load-addr + load64(load-addr + SCI-V2-EXPORT-TABLE)
+  let export-off = load64(load-addr + SCI-V2-EXPORT-TABLE)
+  if sci-image-acceptable(SCI-V2-HEADER, img-entry, img-size) == 0 || sci-v2-exports-valid(load-addr, img-size, export-count, export-off) == 0 {
+    serial-write-cstr(port, "  SCI: DENIED malformed library image")
+    serial-nl(port)
+    return -1
+  }
+  dyn-ensure-tables()
+  let export-table = load-addr + export-off
   let i = 0
   while i < export-count && dyn-count < DYN-MAX-EXPORTS {
     let rec = export-table + i * 16
@@ -594,8 +660,10 @@ fn dyn-map-provider(domain: Int, idx: Int) -> void {
 
 // Bind a component's imports: resolve each name against the registry, map
 // the provider's image into the component's domain as shared RX text, and
-// patch the `call rel32` displacement. Returns -1 (deny load) when any
-// import has no registered provider.
+// patch the `call rel32` displacement. Returns -1 (deny load) when the import
+// table is malformed or any import has no registered provider. Every record
+// is validated and resolved before the first patch, so a denied image is
+// left unmodified and no write can land outside its own code.
 fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
   // Only SCI v2 images carry an import table; v1 (32-byte manifest) images
   // have no symbol tables — offset 48 is component code there.
@@ -611,19 +679,39 @@ fn sci-bind-imports(port: Int, load-addr: Int, domain: Int, entry: Int) -> Int {
     serial-nl(port)
     return -1
   }
-  let import-table = load-addr + load64(load-addr + SCI-V2-IMPORT-TABLE)
+  let image-size = load64(load-addr + 24)
+  let import-off = load64(load-addr + SCI-V2-IMPORT-TABLE)
+  if sci-v2-table-valid(image-size, count, import-off) == 0 {
+    serial-write-cstr(port, "  SCI: DENIED malformed import table")
+    serial-nl(port)
+    return -1
+  }
+  let import-table = load-addr + import-off
   let i = 0
   while i < count {
     let rec = import-table + i * 16
-    let name = load-addr + load64(rec + 0)
     let site = load64(rec + 8)
-    let idx = dyn-resolve-idx(name)
-    if idx < 0 {
+    // The 5-byte call (opcode + rel32) must lie wholly inside the code.
+    if sci-v2-name-valid(load-addr, image-size, load64(rec + 0)) == 0 || site < 0 || site > image-size - SCI-V2-HEADER - 5 {
+      serial-write-cstr(port, "  SCI: DENIED malformed import record")
+      serial-nl(port)
+      return -1
+    }
+    let name = load-addr + load64(rec + 0)
+    if dyn-resolve-idx(name) < 0 {
       serial-write-cstr(port, "  SCI: DENIED unresolved import ")
       serial-write-cstr(port, name)
       serial-nl(port)
       return -1
     }
+    i = i + 1
+  }
+  i = 0
+  while i < count {
+    let rec = import-table + i * 16
+    let name = load-addr + load64(rec + 0)
+    let site = load64(rec + 8)
+    let idx = dyn-resolve-idx(name)
     dyn-map-provider(domain, idx)
     // rel32 displacement relative to the next instruction (site + 5).
     // Site offsets are manifest-relative (the 64-byte SCI v2 header precedes
@@ -727,7 +815,9 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     return -1
   }
   // Chained dynamic modules: this component's exports become importable.
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if magic == SCI-MAGIC-V2 && dyn-register-image-exports(port, load-addr, entry, image-size) != 0 {
+    return -1
+  }
 
   // Allocate and map a 2 MiB heap for the component.
   let heap-pages = COMP-HEAP-SIZE / 4096
@@ -1274,7 +1364,9 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   if sci-bind-imports(port, load-addr, domain, entry) != 0 {
     return -1
   }
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if magic == SCI-MAGIC-V2 && dyn-register-image-exports(port, load-addr, entry, image-size) != 0 {
+    return -1
+  }
   store64(component + 40, domain)
   obj-link(root-realm, component)
   serial-write-cstr(port, "  SCI: registered component object id 0x")
