@@ -324,9 +324,10 @@ but that domain is a CPL0 clone of the kernel identity map: an app can read
 and write kernel memory and is not isolated. Authority is declared per app
 and checked by the loader before entry against a per-app constant in the
 shell: grant bit 0 is the serial console, bit 1 adds filesystem read/write.
-That load-time check is the only enforcement. Imports bind directly to kernel
-exports and run at CPL0 without a capability check, so a declared grant does
-not limit what an app's bound calls can do.
+After load, the grant is checked again only by `int 0x80` syscalls that call
+`cap-require` (serial read/write, channel calls). Imports bind directly to
+kernel exports and run at CPL0 without a capability check, so a declared grant
+does not limit what an app's bound calls can do.
 
 Two shared libraries provide code without authority. libspace (boot-image
 kind 7, linked at `0x3F000000`) supplies C-library-style utilities. appapi

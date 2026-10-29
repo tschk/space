@@ -284,6 +284,10 @@ fn posix-exec-image(port: Int, image: Int, size: Int, path: Int) -> Int {
   if magic != SCI-MAGIC && magic != SCI-MAGIC-V2 {
     return LINUX-ENOEXEC
   }
+  // The loader trusts the manifest image-size; it must not exceed the bytes read.
+  if load64(image + 24) > size {
+    return LINUX-ENOEXEC
+  }
   serial-write-cstr(port, "posix: execve loading SCI from ")
   serial-write-cstr(port, path)
   serial-nl(port)

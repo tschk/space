@@ -38,6 +38,7 @@ const SCI-V2-EXPORT-COUNT=32;
 const SCI-V2-EXPORT-TABLE=40;
 const SCI-V2-IMPORT-COUNT=48;
 const SCI-V2-IMPORT-TABLE=56;
+const SCI-V2-NAME-MAX=255;
 const DYN-MAX-EXPORTS=8;
 const IMG=1024;
 const SIZE=1024;
@@ -110,6 +111,9 @@ fn main()->Int{
  setup(1,512);rec(0,5000,100);r=deny(30);if r!=0{return r;}
  setup(1,512);rec(0,8,100);r=deny(31);if r!=0{return r;}
  setup(1,512);let i=IMG+1000;while i<IMG+SIZE{store8(i,65);i+=1;}rec(0,1000,100);r=deny(32);if r!=0{return r;}
+ // Names longer than SCI-V2-NAME-MAX are refused, keeping validation linear.
+ setup(0,512);i=IMG+600;while i<IMG+900{store8(i,65);i+=1;}store64(IMG+SCI-V2-EXPORT-COUNT,1);store64(IMG+SCI-V2-EXPORT-TABLE,512);rec(0,600,0);
+ if dyn-register-image-exports(1,IMG,ENTRY,SIZE)!=-1 || dyn-count!=1{return 33;}
  // A later bad record leaves earlier sites untouched.
  setup(2,512);rec(0,200,100);rec(1,200,4096);r=deny(40);if r!=0{return r;}
  if patched(100)!=0{return 41;}

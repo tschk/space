@@ -216,7 +216,8 @@ notes), `hd` (file hexdump), `sysmon` (live kernel monitor), `bench`
 (deterministic CPU benchmark) — that load on demand into per-app page-table
 domains via the shell's `runapp` command (`scripts/check-image-variants.sh`).
 Those domains run at CPL0 on the kernel identity map, so apps are not
-isolated, and their declared grants are checked only at load time. Timer
+isolated; their declared grants are checked at load and by `int 0x80`
+syscalls, but not by the kernel exports apps call directly. Timer
 preemption runs only during boot; `kernel-entry` stops it before the shell.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).

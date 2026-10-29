@@ -16,6 +16,8 @@ const SCI-V2-EXPORT-COUNT = 32
 const SCI-V2-EXPORT-TABLE = 40
 const SCI-V2-IMPORT-COUNT = 48
 const SCI-V2-IMPORT-TABLE = 56
+// Longest accepted symbol name, NUL excluded. Bounds per-record validation.
+const SCI-V2-NAME-MAX = 255
 const SCI-GUEST-GRANTS = 1
 const SCI-DISPLAY-GRANTS = 1
 const SCI-INPUT-GRANTS = 3
@@ -522,13 +524,13 @@ fn sci-v2-table-valid(image-size: Int, count: Int, table-off: Int) -> Int {
 }
 
 // A symbol name must start inside the image payload and be NUL-terminated
-// before the image ends.
+// within SCI-V2-NAME-MAX bytes and before the image ends.
 fn sci-v2-name-valid(load-addr: Int, image-size: Int, name-off: Int) -> Int {
   if name-off < SCI-V2-HEADER || name-off >= image-size {
     return 0
   }
   let p = name-off
-  while p < image-size {
+  while p < image-size && p <= name-off + SCI-V2-NAME-MAX {
     if load8(load-addr + p) == 0 {
       return 1
     }
@@ -813,7 +815,9 @@ fn sci-load-runtime-component(port: Int, load-addr: Int, name: Int, grants: Int,
     return -1
   }
   // Chained dynamic modules: this component's exports become importable.
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if magic == SCI-MAGIC-V2 && dyn-register-image-exports(port, load-addr, entry, image-size) != 0 {
+    return -1
+  }
 
   // Allocate and map a 2 MiB heap for the component.
   let heap-pages = COMP-HEAP-SIZE / 4096
@@ -1360,7 +1364,9 @@ fn sci-load(port: Int, load-addr: Int) -> Int {
   if sci-bind-imports(port, load-addr, domain, entry) != 0 {
     return -1
   }
-  dyn-register-image-exports(port, load-addr, entry, image-size)
+  if magic == SCI-MAGIC-V2 && dyn-register-image-exports(port, load-addr, entry, image-size) != 0 {
+    return -1
+  }
   store64(component + 40, domain)
   obj-link(root-realm, component)
   serial-write-cstr(port, "  SCI: registered component object id 0x")
