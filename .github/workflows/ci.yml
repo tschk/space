@@ -11,8 +11,10 @@ jobs:
     uses: tschk/ci-recipes/.github/workflows/inauguration-ci.yml@master
     with:
       inauguration-path: inauguration
-      # Inauguration 0.9.251: typed flat record arrays for stream-pair metadata.
-      inauguration-ref: 77ac2ee0fad6bcea205979181accdf8ef835194b
+      # Inauguration 0.9.322: x86_64 CPU control, MSR and rep-string intrinsics
+      # (cr3-read/write, ltr, rdmsr, wrmsr, wrmsr64, mem-fill64, mem-copy64)
+      # used by components/cpu.in. Pinned to a commit; main moves quickly.
+      inauguration-ref: 7d152155cbcd5aad683976ef2303e6b4e62b969e
       install-deps: "nasm qemu-system-x86"
       build-command: |
         mkdir -p /tmp/space-boot
