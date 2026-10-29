@@ -199,7 +199,9 @@ nanokernel:
 - **Interrupts** — IDT, 8259 PIC, PIT timer, exception handlers
 - **Component supervisor** — validates and activates components
 - **Cooperative scheduler** — M:N threading with ctxsw, blocking, yield
-- **Preemptive scheduler** — timer-driven context switching
+- **Preemptive scheduler** — timer-driven context switching during boot only:
+  `kernel-entry` calls `preempt-stop` before `shell`, so after boot nothing is
+  preempted and runtime display/input threads no longer run
 - **Typed channels** — CSP-style ring buffers with blocking send/recv
 - **Cross-domain channels** — shared-page IPC between memory domains
 - **Memory domains** — SCI guests get exclusive CPL3 user page tables; kernel-linked services still clone the 4 GiB identity map at CPL0 (not a security boundary)
@@ -231,7 +233,7 @@ Domains are separate page-table trees. Two regimes exist today:
   page directories — the trampoline's 4 GiB identity map (`P|W|PS`, no NX).
   Extra SCI image/heap/shared mappings are additive. A kernel-linked
   component can still `load64(0x200000)` (kernel globals) and reach MMIO.
-- **SCI guests** (`sci-load`, `sci-load-file`, apps) use
+- **SCI guests** (`sci-load`, `sci-load-file`) use
   `domain_create_user()`: an empty PML4 with only trampoline, IDT, TSS RSP0
   stack, and exclusive `U=1` 4 KiB image/stub/stack pages — no identity
   clone, kernel globals unmapped. The GDT carries DPL3 segments and a TSS;
@@ -240,8 +242,12 @@ Domains are separate page-table trees. Two regimes exist today:
 - `domain_switch()` changes CR3. `domain_map()` installs a mapping.
   Shared pages are for IPC, not isolation.
 
-Kernel-linked CPL0 services are the remaining gap before domains can be
-advertised as isolation.
+- **Shell apps** (`runapp`) and runtime display/input components load
+  through `sci-load-runtime-component`, which calls `domain_create()`: they
+  run at CPL0 inside the identity-map clone, like kernel-linked services.
+
+Kernel-linked CPL0 services and CPL0 apps are the remaining gap before
+domains can be advertised as isolation.
 
 ---
 
@@ -304,17 +310,23 @@ then writes the return value back into the RAX slot for `iretq` to
 deliver to the caller. The IDT entry for vector 0x80 has DPL=3, so
 user-mode code can invoke it directly.
 
-Native Space syscalls (0-4): write, read, exit, yield, getpid.
+Native Space syscalls (0-4): write, read, exit, yield, getpid. `yield`
+returns `-1`: the trap path has no scheduler to switch to (see the
+preemptive-scheduler limit above).
 
 ---
 
 ## Application Surface
 
-Apps are SCI v2 dynamic modules compiled from `.in`, isolated in their own
-domain, and run on demand from the shell with `runapp <app> [args]`.
-Authority is declared per app and enforced by the loader before entry:
-grant bit 0 is the serial console, bit 1 adds filesystem read/write.
-Undeclared authority is a load-time denial, never a runtime surprise.
+Apps are SCI v2 dynamic modules compiled from `.in` and run on demand from
+the shell with `runapp <app> [args]`. Each app gets its own page-table domain,
+but that domain is a CPL0 clone of the kernel identity map: an app can read
+and write kernel memory and is not isolated. Authority is declared per app
+and checked by the loader before entry against a per-app constant in the
+shell: grant bit 0 is the serial console, bit 1 adds filesystem read/write.
+That load-time check is the only enforcement. Imports bind directly to kernel
+exports and run at CPL0 without a capability check, so a declared grant does
+not limit what an app's bound calls can do.
 
 Two shared libraries provide code without authority. libspace (boot-image
 kind 7, linked at `0x3F000000`) supplies C-library-style utilities. appapi

@@ -93,10 +93,12 @@ fn sys-exit(code: Int) -> Int {
   return 0
 }
 
-// Syscall 3: sys_yield() — yield CPU to scheduler.
-// In kernel context this is a no-op since there is nothing to yield to.
+// Syscall 3: sys_yield() — not implemented. The int 0x80 path has no
+// scheduler to hand the CPU to: guests run synchronously from the shell after
+// preempt-stop, and thr-yield switches kernel thread stacks, not trap frames.
+// Report the failure instead of claiming a yield happened.
 fn sys-yield() -> Int {
-  return 0
+  return -1
 }
 
 // Syscall 4: sys_getpid() — return current thread ID.

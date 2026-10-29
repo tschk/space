@@ -213,8 +213,11 @@ symbol is denied while boot continues (`scripts/check-dynamic-modules.sh`).
 image (core dynamic nanokernel + filesystem shell, ~3x smaller). Both carry
 preinstalled dynamic apps — `calc` (expression REPL), `notes` (persistent
 notes), `hd` (file hexdump), `sysmon` (live kernel monitor), `bench`
-(deterministic CPU benchmark) — that load on demand into per-app domains via
-the shell's `runapp` command (`scripts/check-image-variants.sh`).
+(deterministic CPU benchmark) — that load on demand into per-app page-table
+domains via the shell's `runapp` command (`scripts/check-image-variants.sh`).
+Those domains run at CPL0 on the kernel identity map, so apps are not
+isolated, and their declared grants are checked only at load time. Timer
+preemption runs only during boot; `kernel-entry` stops it before the shell.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
 Linux/Windows/Darwin personality progress: [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
