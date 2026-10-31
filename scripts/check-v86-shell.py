@@ -58,7 +58,11 @@ def main():
                 print("\nPASS: website i386 shell boot and writable command history")
         finally:
             process.terminate()
-            process.wait(timeout=5)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 if __name__ == "__main__":
