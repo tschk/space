@@ -78,7 +78,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: tschk/inauguration
-          ref: a25096eda9f52fb8b3cf01a628b6893edb3a637b
+          ref: b853baa56c49c98316c760694bbc327e28d1b871
           path: inauguration
           persist-credentials: false
       - name: Select stable Rust

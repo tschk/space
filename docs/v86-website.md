@@ -26,12 +26,11 @@ an older image or the 64-bit desktop kernel does not verify this demo.
 
 Inauguration already relocates bounded 32-bit addresses and loads initialized
 data at `0x200000`. Its boot entry point retained an obsolete refusal above that
-working path. Compiler commit
-[`ec8cc355`](https://github.com/tschk/inauguration/commit/ec8cc355e127902c75250de80a1e748e01248fb5) removes
-the refusal and tests scalar mutation and relocated pointers in real i386/i686
-QEMU boots. Its follow-up
-[`a25096ed`](https://github.com/tschk/inauguration/commit/a25096eda9f52fb8b3cf01a628b6893edb3a637b)
-distinguishes guest success from QEMU loader errors and adds negative controls.
+working path. Merged compiler commit
+[`b853baa5`](https://github.com/tschk/inauguration/commit/b853baa56c49c98316c760694bbc327e28d1b871)
+removes the refusal and tests scalar mutation and relocated pointers in real
+i386/i686 QEMU boots. Its test oracle distinguishes guest success from QEMU
+loader errors and includes corrupt-image, missing-image and wrong-return controls.
 Website CI builds that source revision, runs the normal website build
 and boots the resulting image. It does not change the older compiler pin for the
 separate 64-bit desktop gates.
