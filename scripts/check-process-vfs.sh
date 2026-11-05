@@ -73,6 +73,7 @@ def main() -> int:
     process = src("components/process.in")
     vfs = src("components/vfs.in")
     shell = src("components/shell.in")
+    shell_common = src("components/shell-common.in")
     dhcp = src("components/dhcp.in")
     libc = src("components/libc.in")
     syscall = src("components/syscall.in")
@@ -136,7 +137,7 @@ def main() -> int:
         and "hardening" not in help_line,
     )
     check('hardening command is registered', 'line-eq("hardening")' in shell)
-    check("read-line history slot is bounded at 254", "len < 254" in shell)
+    check("read-line history slot is bounded at 254", "len < 254" in (fn_body(shell_common, "read-line") or ""))
     check("halt command exists", 'line-eq("halt")' in shell)
 
     print("[4/5] DHCP xid and option walker...")
