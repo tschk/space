@@ -72,7 +72,12 @@ graph_guarded = ("sys-chan-create", "sys-chan-send", "sys-chan-recv", "sys-chan-
 for fn in graph_guarded:
     b = body(fn)
     check(f"{fn} exists", b is not None)
-    check(f"{fn} consults cap-graph", "cap-require(cap-graph())" in b)
+    if fn == "sys-chan-create":
+        check(f"{fn} consults cap-graph", "cap-require(cap-graph())" in b)
+    else:
+        check(f"{fn} uses the guarded handle lookup", "sys-chan-slot(ch)" in b)
+lookup = body("sys-chan-slot")
+check("channel handle lookup consults cap-graph", "cap-require(cap-graph())" in lookup)
 PY
 
 if ! grep -qF "clone the 4 GiB identity map" architecture.md; then

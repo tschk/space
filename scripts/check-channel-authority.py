@@ -25,11 +25,12 @@ var next:Int=100;
 var last-channel:Int=0;
 var sends:Int=0;
 var frees:Int=0;
+var allowed:Int=1;
 fn alloc(n:Int)->Int{let p=next;next+=n;return p;}
 fn load64(p:Int)->Int{return memory[p];}
 fn store64(p:Int,v:Int)->Void{memory[p]=v;}
 fn cap-graph()->Int{return 8;}
-fn cap-require(rights:Int)->Int{return 1;}
+fn cap-require(rights:Int)->Int{return allowed;}
 fn chan-new(cap:Int)->Int{last-channel=9000;return last-channel;}
 fn chan-send(ch:Int,msg:Int)->Void{sends+=1;return;}
 fn chan-recv(ch:Int)->Int{return 73;}
@@ -51,6 +52,12 @@ fn main()->Int{
  if sys-chan-send(first,42)!=-1 || sends!=1{return 9;}
  if sys-chan-send(last-channel,42)!=-1 || sends!=1{return 10;}
  if sys-chan-send(second,42)!=0 || sends!=2{return 11;}
+ current-cap=2;
+ if sys-chan-send(second,42)!=-1 || sends!=2{return 12;}
+ current-cap=1;allowed=0;
+ if sys-chan-send(second,42)!=-1 || sys-chan-create(2)!=0{return 13;}
+ allowed=1;
+ if sys-chan-close(second)!=0 || frees!=2{return 14;}
  return 42;
 }
 '''

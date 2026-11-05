@@ -316,11 +316,14 @@ def main() -> int:
         and "domain-create-user()" in read("components/process.in"),
     )
 
-    print("[6/6] Syscall channel handles remain raw pointers...")
+    print("[6/6] Syscall channel handles use caller-bound lookup...")
     check(
-        "sys-chan-send/recv keep their cap guard and pass the handle through",
-        "fn sys-chan-send(ch: Int, msg: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  chan-send(ch, msg)" in syscall
-        and "fn sys-chan-recv(ch: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  return chan-recv(ch)" in syscall,
+        "send/recv resolve handles through the guarded caller-bound table",
+        "sys-chan-slot(ch)" in (fn_body(syscall, "sys-chan-send") or "")
+        and "sys-chan-slot(ch)" in (fn_body(syscall, "sys-chan-recv") or "")
+        and "cap-require(cap-graph())" in (fn_body(syscall, "sys-chan-slot") or "")
+        and "domain-current" in (fn_body(syscall, "sys-chan-slot") or "")
+        and "current-cap" in (fn_body(syscall, "sys-chan-slot") or ""),
     )
 
     print("[7/7] Unimplemented guarantees are not claimed...")

@@ -24,7 +24,8 @@ The capability table in [object.in](../../components/object.in) stores a target
 pointer and rights mask. `cap-check` compares both the requested target and
 rights; the trusted foreign-file path uses it for the storage realm. This is
 not per-file authority: component-level `cap-require` remains an ambient mask
-check, and channel syscalls still lack object-scoped handles.
+check. The channel syscall draft binds opaque IDs to a domain and grant, but
+domain teardown and a real CPL3 cross-domain denial proof remain outstanding.
 Userspace mint and revoke currently return failure in `syscall.in`. The object
 arena checkpoint copies arena bytes and records `cap-count`; it does not copy
 capability-slot contents, device state, channels or external filesystem effects.
@@ -34,13 +35,12 @@ replay across those effects.
 
 The abstraction gaps have concrete consequences:
 
-- `sys-chan-send`, `sys-chan-recv` and `sys-chan-close` check the broad
-  `cap-graph` right and pass the caller's integer to the channel code. In
-  [channel.in](../../components/channel.in), `chan-valid` examines fields at
-  that address; it is not an ownership or generation lookup. A valid-looking
-  channel header is not proof that this caller owns the endpoint. The SPDP
-  shared-page path has separate provenance and frame checks; do not replace
-  those with this generic pointer interface.
+- `sys-chan-send`, `sys-chan-recv` and `sys-chan-close` resolve caller-bound
+  opaque IDs before accessing a channel. The backing [channel.in](../../components/channel.in)
+  header check is still not an ownership check. The draft does not yet reclaim
+  unclosed handles on domain teardown or prove denial through a real CPL3 trap.
+  The SPDP shared-page path has separate provenance and frame checks; do not
+  replace those with the generic channel interface.
 - [pack-spdp-sci.py](../../scripts/pack-spdp-sci.py) is an intentionally
   narrow example of source-to-policy translation: it checks one component's
   named interfaces and operations, then converts compiler ordinal bits to

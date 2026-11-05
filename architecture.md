@@ -272,7 +272,10 @@ require `cap-graph`. `sys-cap-mint` / `sys-cap-revoke` always return `-1`.
 `sys-cap-check` may only query the caller's current cap and compares both the
 requested target and rights. The trusted foreign-file path checks the storage
 realm as its target. Component-level `cap-require` is still an ambient mask
-check; in particular it does not make the raw channel syscall arguments safe.
+check. Channel syscalls resolve opaque IDs against a kernel-owned table bound
+to the domain and its current grant before accessing a channel. Closing an ID
+invalidates it; IDs are not reused. This does not yet establish cleanup on
+domain termination or a real CPL3 cross-domain denial proof.
 
 | Bit | Capability |
 |-----|-----------|
