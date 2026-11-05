@@ -141,3 +141,53 @@ provider, or both. Do not bind `abort` to a returning stub or drop the app's
 array test to make the gate pass. Establish non-returning failure and allocation
 ownership semantics, then verify emission, loading, failure and both image
 variants together.
+
+## Space requirement: component allocation and failure
+
+This section is a **target contract, not an implemented ABI**. It is Space's
+input to the generic Inauguration target contract; it does not authorize the
+compiler to hardcode Space policy or claim the current images support these
+operations. Compiler-injected allocation helpers and user-declared ecosystem
+adapter externs are separate contracts even when both appear as unresolved
+imports.
+
+- A component receives an explicit, instance-owned memory allocation authority
+  and a bounded budget from the loader/supervisor. Allocations must be charged
+  to that instance, aligned as required by the emitted code, and accessible only
+  in its allowed mappings. Size and alignment arithmetic must not wrap. Exhausted
+  budget or unavailable backing memory returns a defined allocation failure;
+  it must not silently draw on an unbounded kernel heap or another component's
+  allocation authority. The initial fixed SCI heap mapping and `api-heap-base`
+  expose a buffer, not an allocator, a quota protocol or a reclamation proof.
+- Space is willing to provide target-declared allocation and deallocation entry
+  points backed by that authority, plus a **non-returning component-failure**
+  entry point. Their names, native calling convention, size/alignment and zero-
+  size rules, and deallocation/lifetime rules must be negotiated as a generic
+  compiler target ABI and versioned in the compiler/artifact/runtime contract.
+  The currently emitted `malloc` and `abort` are not accepted as an implicit
+  POSIX or stable Space ABI. A proven non-escaping stack allocation may avoid
+  those imports, but must preserve language semantics and stack bounds.
+- An allocation operation that can report failure returns it to the component.
+  If generated code cannot propagate the failure, it calls the non-returning
+  failure entry with an out-of-memory reason. The supervisor terminates **only
+  that instance**, reports a distinguishable failure to its caller, revokes its
+  authority, and releases its owned resources according to their actual
+  lifetimes; already committed external effects are not rolled back. Another
+  component and the kernel continue to run. A null return from the failure entry,
+  a machine-wide panic, and an invalid-opcode instruction are not acceptable
+  implementations of this contract. If cleanup itself fails, report and contain
+  it rather than claiming complete reclamation.
+- The current kernel-linked CPL0 application path and kernel `alloc` do not
+  establish that containment: `alloc` panics on exhaustion, and the existing
+  invalid-opcode handler halts the kernel. Do not export those as an allocation
+  failure implementation for untrusted components. If isolation, failure
+  delivery and cleanup cannot be established for a load path, reject an image
+  requiring this ABI before entry rather than claiming the contract is met.
+
+Acceptance requires emitter and loader agreement on the selected ABI and
+imports; valid, exhausted, overflow and alignment cases; repeated allocation
+and reclamation; and an actual isolated guest whose forced allocation failure
+returns a failure to its supervisor while a second guest and the kernel remain
+usable. Check resource revocation and account for external effects. Run the
+same applicable checks on standard and minimal images; do not infer failure
+containment merely from a successful allocation or a source-level capability.
