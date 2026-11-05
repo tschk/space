@@ -106,37 +106,81 @@ fn sys-getpid() -> Int {
   return current-task
 }
 
-// Syscall 5: sys_chan_create(cap) — create a channel with capacity.
-fn sys-chan-create(cap: Int) -> Int {
-  if cap-require(cap-graph()) == 0 {
+// Syscall channel references are opaque, monotonically assigned IDs. The
+// kernel table owns the backing pointer and binds it to one domain and grant.
+const SYS-CHAN-LIMIT = 128
+var sys-chan-table: Int = 0
+var sys-chan-next: Int = 1
+
+fn sys-chan-slot(handle: Int) -> Int {
+  if handle <= 0 || sys-chan-table == 0 || cap-require(cap-graph()) == 0 {
     return 0
   }
-  return chan-new(cap)
+  let i = 0
+  while i < SYS-CHAN-LIMIT {
+    let slot = sys-chan-table + i * 32
+    if load64(slot) == handle && load64(slot + 8) == domain-current && load64(slot + 16) == current-cap {
+      return slot
+    }
+    i = i + 1
+  }
+  return 0
+}
+
+// Syscall 5: sys_chan_create(cap) — create a channel with capacity.
+fn sys-chan-create(cap: Int) -> Int {
+  if cap-require(cap-graph()) == 0 || sys-chan-next <= 0 || sys-chan-next == 0x7FFFFFFFFFFFFFFF {
+    return 0
+  }
+  if sys-chan-table == 0 {
+    sys-chan-table = alloc(SYS-CHAN-LIMIT * 32)
+    let i = 0
+    while i < SYS-CHAN-LIMIT {
+      store64(sys-chan-table + i * 32, 0)
+      i = i + 1
+    }
+  }
+  let i = 0
+  while i < SYS-CHAN-LIMIT {
+    let slot = sys-chan-table + i * 32
+    if load64(slot) == 0 {
+      let channel = chan-new(cap)
+      if channel == 0 { return 0 }
+      let handle = sys-chan-next
+      sys-chan-next = sys-chan-next + 1
+      store64(slot + 8, domain-current)
+      store64(slot + 16, current-cap)
+      store64(slot + 24, channel)
+      store64(slot, handle)
+      return handle
+    }
+    i = i + 1
+  }
+  return 0
 }
 
 // Syscall 6: sys_chan_send(ch, msg) — send a message to a channel.
 fn sys-chan-send(ch: Int, msg: Int) -> Int {
-  if cap-require(cap-graph()) == 0 {
-    return -1
-  }
-  chan-send(ch, msg)
+  let slot = sys-chan-slot(ch)
+  if slot == 0 { return -1 }
+  chan-send(load64(slot + 24), msg)
   return 0
 }
 
 // Syscall 7: sys_chan_recv(ch) — receive a message from a channel.
 fn sys-chan-recv(ch: Int) -> Int {
-  if cap-require(cap-graph()) == 0 {
-    return -1
-  }
-  return chan-recv(ch)
+  let slot = sys-chan-slot(ch)
+  if slot == 0 { return -1 }
+  return chan-recv(load64(slot + 24))
 }
 
 // Syscall 8: sys_chan_close(ch) — close/free a channel.
 fn sys-chan-close(ch: Int) -> Int {
-  if cap-require(cap-graph()) == 0 {
-    return -1
-  }
-  chan-heap-free(ch)
+  let slot = sys-chan-slot(ch)
+  if slot == 0 { return -1 }
+  let channel = load64(slot + 24)
+  store64(slot, 0)
+  chan-heap-free(channel)
   return 0
 }
 
