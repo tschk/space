@@ -169,8 +169,10 @@ imports.
   those imports, but must preserve language semantics and stack bounds.
 - An allocation operation that can report failure returns it to the component.
   If generated code cannot propagate the failure, it calls the non-returning
-  failure entry with an out-of-memory reason. The supervisor terminates **only
-  that instance**, reports a distinguishable failure to its caller, revokes its
+  failure entry. The proposed no-argument handler also covers invalid aggregate
+  copy, so the supervisor reports a generic component runtime failure rather
+  than attributing every invocation to exhaustion. It terminates **only that
+  instance**, reports failure to its caller, revokes its
   authority, and releases its owned resources according to their actual
   lifetimes; already committed external effects are not rolled back. Another
   component and the kernel continue to run. A null return from the failure entry,
@@ -183,6 +185,23 @@ imports.
   failure implementation for untrusted components. If isolation, failure
   delivery and cleanup cannot be established for a load path, reject an image
   requiring this ABI before entry rather than claiming the contract is met.
+
+Space's response to Inauguration's proposal at `3cb7bd28` accepts its candidate
+x86-64 convention: byte count in RDI, an eight-byte-aligned writable pointer or
+null in RAX, storage valid for every array use, and a no-argument non-returning
+failure handler. A non-escaping stack allocation remains an independent
+optimization. Space proposes instance-lifetime allocation accounting and
+reclamation at teardown; no per-array free is required until ownership semantics
+are agreed. Names and the full ABI still require agreement.
+
+The loader must resolve service imports using an explicit versioned provider
+binding and check the instance's authority, provider provenance and ABI, and
+relative-call reachability before entry. SCI v2 import names and call sites do
+not themselves establish these facts. An isolated guest's provider must run in
+its domain or use a checked syscall, not expose an unrestricted kernel export.
+The compiler must also report generated `memcpy` and other runtime imports,
+including those in retained exports. No such authorized binding is claimed to
+exist today.
 
 Acceptance requires emitter and loader agreement on the selected ABI and
 imports; valid, exhausted, overflow and alignment cases; repeated allocation
