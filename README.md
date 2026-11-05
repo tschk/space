@@ -221,6 +221,9 @@ syscalls, but not by the kernel exports apps call directly. Timer
 preemption runs only during boot; `kernel-entry` stops it before the shell.
 
 Subsystem status is tracked in [`architecture.md`](architecture.md).
+The [capability architecture roadmap](docs/plans/2026-11-05-capability-architecture-roadmap.md)
+distinguishes current enforcement from proposed capability, service-graph and
+recovery slices.
 Linux/Windows/Darwin personality progress: [`docs/personalities-roadmap.md`](docs/personalities-roadmap.md).
 
 ## Benchmarks
