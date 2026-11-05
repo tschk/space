@@ -83,6 +83,7 @@ for marker in \
   "SAVED" \
   "hello from vro on space" \
   "notes: closed" \
+  "68 65 6c 6c 6f" \
   "hd: dumped" \
   "sum: notes.txt " \
   " bytes crc32 0x" \
