@@ -1,0 +1,95 @@
+package space.kernel
+
+// Core-only command profile. Optional desktop/network/personality commands are
+// absent, not linked through successful stubs. Shared app/input/file behavior
+// comes from the same implementation as the full profile.
+import "shell-common.in"
+
+fn shell(port: Int) -> void {
+  line = alloc(256)
+  shell-cwd = alloc(1024)
+  shell-hist = alloc(SHELL-HIST-N * SHELL-HIST-LEN)
+  shell-draft = alloc(SHELL-HIST-LEN)
+  store8(shell-cwd, 47)
+  store8(shell-cwd + 1, 0)
+  serial-nl(port)
+  serial-write-cstr(port, "space interactive shell -- type 'help'")
+  serial-nl(port)
+  while true {
+    serial-write-cstr(port, "space> ")
+    let n = read-line(port)
+    shell-strip-bg(port)
+    if shell-try-pipe(port) != 0 {
+    } else if shell-try-redir(port) != 0 {
+    } else if line-eq("help") != 0 {
+      serial-write-cstr(port, "help verbose quiet apps runapp ls cat read write stat mkdir rmdir rm pwd cd echo mem status ticks uptime time ps halt up/down=hist")
+      serial-nl(port)
+    } else if line-eq("apps") != 0 {
+      shell-list-apps(port)
+    } else if line-prefix("runapp ") >= 0 {
+      shell-run-app(port, line + line-prefix("runapp "))
+    } else if line-eq("verbose") != 0 {
+      boot-quiet = 0
+    } else if line-eq("quiet") != 0 {
+      boot-quiet = 1
+    } else if line-eq("halt") != 0 {
+      serial-write-cstr(port, "  halting on request")
+      serial-nl(port)
+      outb(0xf4, 0)
+      outw(0x604, 0x2000)
+      cli()
+      while true { hlt() }
+    } else if line-eq("time") != 0 {
+      time-print(port)
+    } else if line-eq("pwd") != 0 {
+      serial-write-cstr(port, shell-cwd)
+      serial-nl(port)
+    } else if line-eq("ls") != 0 {
+      fs-list-path(shell-cwd, port)
+    } else if line-prefix("ls ") >= 0 {
+      fs-list-path(shell-path(line + line-prefix("ls ")), port)
+    } else if line-prefix("cat ") >= 0 || line-prefix("read ") >= 0 {
+      shell-run-with-redir(port)
+      serial-nl(port)
+    } else if line-prefix("echo ") >= 0 || line-eq("mem") != 0 || line-eq("status") != 0 || line-eq("ticks") != 0 || line-eq("uptime") != 0 || line-eq("ps") != 0 || line-prefix("stat ") >= 0 {
+      shell-run-with-redir(port)
+    } else if line-eq("cd") != 0 {
+      store8(shell-cwd, 47)
+      store8(shell-cwd + 1, 0)
+    } else if line-prefix("cd ") >= 0 {
+      let p = shell-path(line + line-prefix("cd "))
+      let stat = alloc(64)
+      if fs-stat(p, stat) == 0 && load32(stat + SF-ST-TYPE) == SF-TYPE-DIR {
+        shell-copy-cstr(shell-cwd, p, 1024)
+      } else {
+        serial-write-cstr(port, "  cd: not a directory or not found")
+        serial-nl(port)
+      }
+    } else if line-prefix("write ") >= 0 {
+      let first = line-prefix("write ")
+      let second = next-arg(first)
+      if second > 0 {
+        store8(line + second - 1, 0)
+        let rc = fs-write-file(shell-path(line + first), line + second, strlen(line + second))
+        if rc == 0 { serial-write-cstr(port, "  written") } else { serial-write-cstr(port, "  write: failed") }
+      } else { serial-write-cstr(port, "  usage: write <path> <data>") }
+      serial-nl(port)
+    } else if line-prefix("mkdir ") >= 0 {
+      let rc = fs-mkdir(shell-path(line + line-prefix("mkdir ")))
+      if rc >= 0 { serial-write-cstr(port, "  created") } else { serial-write-cstr(port, "  mkdir: failed") }
+      serial-nl(port)
+    } else if line-prefix("rmdir ") >= 0 {
+      let rc = fs-rmdir(shell-path(line + line-prefix("rmdir ")))
+      if rc == 0 { serial-write-cstr(port, "  removed") } else { serial-write-cstr(port, "  rmdir: failed") }
+      serial-nl(port)
+    } else if line-prefix("rm ") >= 0 {
+      let rc = fs-delete(shell-path(line + line-prefix("rm ")))
+      if rc == 0 { serial-write-cstr(port, "  deleted") } else { serial-write-cstr(port, "  rm: failed") }
+      serial-nl(port)
+    } else if n != 0 {
+      serial-write-cstr(port, "  unavailable in minimal image (try 'help')")
+      serial-nl(port)
+    }
+  }
+  return
+}

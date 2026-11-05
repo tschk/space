@@ -112,3 +112,30 @@ dependency [Inauguration #446](https://github.com/tschk/inauguration/pull/446)
 is being handled separately. Integrate independently verifiable slices without
 assuming that dependency has landed; retain the remainder until its compiler,
 ownership and integration gates are satisfied.
+
+## Image-variants compiler/runtime import investigation
+
+On 2026-11-05, the standard and minimal images both booted with the source-built
+Inauguration revision pinned in Space CI,
+`d4a70d23f5cccecd8f596ae6fa28450f3f93d76a`. Both then failed the full
+`scripts/check-image-variants.sh` gate: the SCI loader reported
+`SCI: DENIED unresolved import abort` for `app-sum`. The emitted image also
+imports `malloc`; refusal at `abort` does not establish whether `malloc` would
+resolve or work safely.
+
+At that compiler revision, `in-cli/src/native_emit/x86_64_lower.rs`, in
+`lower_array_allocation`, emits a `malloc` call followed by an `abort` call
+on allocation failure for freestanding heap arrays. `app-sum` contains a fixed
+array used by its self-test. Space's loader resolves SCI imports against its
+registered providers and rejects unresolved names before entry. An independent
+source-built compiler at `fe28e87aaec4c711ff8ae33bd51d4cd2b4d51de5` (dated
+later) produced the same loader refusal in both images. No older compiler was
+tested, and the two checked revisions were not established as ancestor and
+descendant.
+
+This is a compiler-emitter/Space-runtime contract mismatch; the evidence alone
+does not determine whether the correct fix is compiler lowering, a runtime
+provider, or both. Do not bind `abort` to a returning stub or drop the app's
+array test to make the gate pass. Establish non-returning failure and allocation
+ownership semantics, then verify emission, loading, failure and both image
+variants together.

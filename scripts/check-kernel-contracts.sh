@@ -35,6 +35,7 @@ def main() -> int:
     network = read("components/network.in")
     dns = read("components/dns.in")
     shell = read("components/shell.in")
+    shell_common = read("components/shell-common.in")
     boot = read("boot/multiboot.asm")
 
     print("[1/5] Syscall / capability surface...")
@@ -125,7 +126,7 @@ def main() -> int:
     )
     check(
         "read-line stops before overflowing the 256-byte history slot",
-        "len < 254" in shell,
+        "len < 254" in shell_common,
     )
 
     print("[5/5] Isolation honesty...")
