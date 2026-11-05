@@ -323,6 +323,26 @@ def main() -> int:
         and "fn sys-chan-recv(ch: Int) -> Int {\n  if cap-require(cap-graph()) == 0 {\n    return -1\n  }\n  return chan-recv(ch)" in syscall,
     )
 
+    print("[7/7] Unimplemented guarantees are not claimed...")
+    check(
+        "sys-yield reports failure instead of a yield that did not happen",
+        "fn sys-yield() -> Int {\n  return -1\n}" in syscall,
+    )
+    root = read("kernel/kernel-root.in")
+    arch = read("architecture.md")
+    check(
+        "preemption stops before the shell, and the docs say so",
+        0 <= root.find("  preempt-stop(port)\n") < root.find("  shell(port)\n")
+        and "during boot only" in arch,
+    )
+    runtime_load = fn_body(loader, "sci-load-runtime-component") or ""
+    check(
+        "runapp apps run in CPL0 identity-clone domains, and the docs say so",
+        "domain-create()" in runtime_load and "domain-create-user()" not in runtime_load
+        and "is not isolated" in arch
+        and "(`sci-load`, `sci-load-file`, apps)" not in arch,
+    )
+
     print(f"\n=== Results: {passed} passed, {failed} failed ===")
     if failed:
         print("FAIL: runtime honesty contracts")
