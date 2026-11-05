@@ -251,7 +251,7 @@ def main() -> int:
     print("[5/6] Capabilities, channels, SCI grants, preempt-stop...")
     check(
         "sys-cap-check only queries the caller's current cap",
-        "fn sys-cap-check(idx: Int, rights: Int) -> Int {\n  if idx != current-cap {" in syscall,
+        "fn sys-cap-check(idx: Int, target: Int, rights: Int) -> Int {\n  if idx != current-cap {" in syscall,
     )
     check(
         "kernel channel/domain/storage/net paths do not consult cap-check",
@@ -261,7 +261,7 @@ def main() -> int:
         and "cap-check(" not in network
         and "cap-check(" not in netstack,
     )
-    check("shell demo is the only in-tree cap-check caller besides syscall 11", shell.count("cap-check(") >= 1)
+    check("shell demo exercises object-scoped cap-check", shell.count("cap-check(") >= 1)
     chan_new = fn_body(channel, "chan-new") or ""
     check(
         "channel wait queues are single-slot (wait_send + wait_recv)",

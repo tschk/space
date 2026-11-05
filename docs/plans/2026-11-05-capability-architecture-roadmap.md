@@ -21,8 +21,10 @@ particular, see [architecture](../../architecture.md), [SCI](../../sci-schema.md
 | Nanokernel | [domain.in](../../components/domain.in) has distinct kernel-linked and CPL3 user-domain creation paths; [syscall.in](../../components/syscall.in) gates selected calls. | Kernel-linked domains clone the identity map and run at CPL0. Separation of source files or registry entries does not isolate them; a direct privileged import is not equivalent to a checked syscall. |
 
 The capability table in [object.in](../../components/object.in) stores a target
-pointer and rights mask. `cap-check` checks the mask and that the target is
-nonzero; the generic check does not compare a requested object identity.
+pointer and rights mask. `cap-check` compares both the requested target and
+rights; the trusted foreign-file path uses it for the storage realm. This is
+not per-file authority: component-level `cap-require` remains an ambient mask
+check, and channel syscalls still lack object-scoped handles.
 Userspace mint and revoke currently return failure in `syscall.in`. The object
 arena checkpoint copies arena bytes and records `cap-count`; it does not copy
 capability-slot contents, device state, channels or external filesystem effects.

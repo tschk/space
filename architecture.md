@@ -269,7 +269,10 @@ Capability slots are 16 bytes: `[target_object_ptr][rights]`. The
 kernel mints capabilities into a root table. Each domain records a cap
 index; `sys-write` / `sys-read` require `cap-serial`, channel syscalls
 require `cap-graph`. `sys-cap-mint` / `sys-cap-revoke` always return `-1`.
-`sys-cap-check` may only query the caller's current cap.
+`sys-cap-check` may only query the caller's current cap and compares both the
+requested target and rights. The trusted foreign-file path checks the storage
+realm as its target. Component-level `cap-require` is still an ambient mask
+check; in particular it does not make the raw channel syscall arguments safe.
 
 | Bit | Capability |
 |-----|-----------|

@@ -102,10 +102,11 @@ fn cap-mint(target-obj: Int, rights: Int) -> Int {
 }
 
 fn cap-require(rights: Int) -> Int {
-  return cap-check(current-cap, rights)
+  return cap-has-rights(current-cap, rights)
 }
 
-fn cap-check(idx: Int, rights: Int) -> Int {
+// Component grants are currently ambient masks, not object authority.
+fn cap-has-rights(idx: Int, rights: Int) -> Int {
   if idx < 0 || idx >= cap-count {
     return 0
   }
@@ -119,6 +120,16 @@ fn cap-check(idx: Int, rights: Int) -> Int {
     return 1
   }
   return 0
+}
+
+fn cap-check(idx: Int, target: Int, rights: Int) -> Int {
+  if target == 0 || cap-has-rights(idx, rights) == 0 {
+    return 0
+  }
+  if load64(cap-table-base + idx * 16) != target {
+    return 0
+  }
+  return 1
 }
 
 fn cap-revoke(idx: Int) -> Int {

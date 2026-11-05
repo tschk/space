@@ -36,6 +36,7 @@ jobs:
         bash scripts/check-volume-preservation.sh
         bash scripts/check-process-vfs.sh
         bash scripts/check-personality-abi.sh
+        python3 scripts/check-foreign-object-authority.py --in "$IN_BIN"
         python3 scripts/check-boot-data-reservation.py --in "$IN_BIN"
         python3 scripts/check-darwin-pipe-lifetime.py --in "$IN_BIN"
         python3 scripts/check-vfs-shared-offset.py --in "$IN_BIN"

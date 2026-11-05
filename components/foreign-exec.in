@@ -32,7 +32,7 @@ fn foreign-file-open(path: Int, flags: Int) -> Int {
   // The trusted runner disables interrupts; asynchronous volume RPC must wait
   // for a process execution contract. Only the synchronous RAM SparkFS path.
   if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
-  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  if cap-check(foreign-storage-cap, root-realm, cap-storage()) == 0 { return -13 }
   let fd = vfs-open(path, VFS-O-RDONLY)
   if fd == -16 { return -24 }
   if fd >= 3 { foreign-fds = foreign-fds | (1 << fd) }
@@ -42,7 +42,7 @@ fn foreign-file-open(path: Int, flags: Int) -> Int {
 fn foreign-file-read(fd: Int, buf: Int, len: Int) -> Int {
   if foreign-fd-owned(fd) == 0 { return -9 }
   if foreign-buffer-valid(buf, len) == 0 { return -14 }
-  if cap-check(foreign-storage-cap, cap-storage()) == 0 { return -13 }
+  if cap-check(foreign-storage-cap, root-realm, cap-storage()) == 0 { return -13 }
   if volume-ready != 0 || sf-mem-disk == 0 { return -38 }
   return vfs-read(fd, buf, len)
 }

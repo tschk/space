@@ -167,10 +167,10 @@ fn shell(port: Int) -> void {
     } else if line-eq("cap") != 0 {
       let o = obj-alloc(4)
       let idx = cap-mint(o, 7)
-      let ok1 = cap-check(idx, 3)
-      let ok2 = cap-check(idx, 8)
+      let ok1 = cap-check(idx, o, 3)
+      let ok2 = cap-check(idx, o, 8)
       let rev = cap-revoke(idx)
-      let ok3 = cap-check(idx, 1)
+      let ok3 = cap-check(idx, o, 1)
       if ok1 == 1 && ok2 == 0 && rev == 0 && ok3 == 0 {
         serial-write-cstr(port, "  cap OK")
       } else {

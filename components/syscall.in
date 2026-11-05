@@ -148,11 +148,11 @@ fn sys-cap-revoke(idx: Int) -> Int {
   return -1
 }
 
-fn sys-cap-check(idx: Int, rights: Int) -> Int {
+fn sys-cap-check(idx: Int, target: Int, rights: Int) -> Int {
   if idx != current-cap {
     return 0
   }
-  return cap-check(idx, rights)
+  return cap-check(idx, target, rights)
 }
 
 // Dispatch a syscall based on the number in the saved RAX slot of the frame.
@@ -198,8 +198,9 @@ fn syscall-dispatch(frame: Int) -> void {
     store64(frame + 112, sys-cap-revoke(idx))
   } else if num == 11 {
     let idx = load64(frame + 72)
-    let rights = load64(frame + 80)
-    store64(frame + 112, sys-cap-check(idx, rights))
+    let target = load64(frame + 80)
+    let rights = load64(frame + 88)
+    store64(frame + 112, sys-cap-check(idx, target, rights))
   } else {
     let port = com1()
     serial-write-cstr(port, "space: unknown syscall 0x")
